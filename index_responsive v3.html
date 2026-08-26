@@ -503,117 +503,6 @@
         .promo-btn i { font-size: 18px; }
         .promo-btn.telegram i { color: #0088cc; }
 
-        /* ===== نوتیفیکیشن ===== */
-        .notification-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.5s ease;
-        }
-        .notification-overlay.show {
-            opacity: 1;
-            pointer-events: auto;
-        }
-
-        .notification-box {
-            background: var(--notification-bg);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1.5px solid rgba(var(--accent-rgb), 0.5);
-            border-radius: 24px;
-            padding: 28px 24px 24px;
-            max-width: 360px;
-            width: 90%;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(var(--accent-rgb), 0.1);
-            text-align: center;
-            transform: scale(0.85) translateY(20px);
-            transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.5s ease;
-            opacity: 0;
-        }
-        .notification-overlay.show .notification-box {
-            transform: scale(1) translateY(0);
-            opacity: 1;
-        }
-
-        .notification-box .icon {
-            font-size: 32px;
-            color: var(--accent);
-            margin-bottom: 12px;
-            display: block;
-        }
-        .notification-box .title {
-            font-size: 17px;
-            font-weight: 700;
-            color: var(--text);
-            margin-bottom: 6px;
-        }
-        .notification-box .desc {
-            font-size: 14px;
-            color: var(--text-muted);
-            line-height: 1.6;
-            margin-bottom: 18px;
-        }
-        .notification-box .timer-bar {
-            width: 100%;
-            height: 3px;
-            background: rgba(var(--accent-rgb), 0.2);
-            border-radius: 4px;
-            margin-bottom: 18px;
-            overflow: hidden;
-        }
-        .notification-box .timer-bar .fill {
-            height: 100%;
-            width: 100%;
-            background: var(--accent);
-            border-radius: 4px;
-            transition: width 0.1s linear;
-        }
-
-        .notification-actions {
-            display: flex;
-            gap: 12px;
-            justify-content: center;
-        }
-        .notification-btn {
-            padding: 10px 24px;
-            border-radius: 14px;
-            font-size: 14px;
-            font-weight: 700;
-            border: none;
-            cursor: pointer;
-            transition: all 0.25s ease;
-            min-width: 100px;
-        }
-        .notification-btn:hover {
-            transform: scale(1.04);
-        }
-        .notification-btn:active {
-            transform: scale(0.96);
-        }
-        .notification-btn.danger {
-            background: rgba(var(--alert-rgb), 0.15);
-            color: var(--alert);
-            border: 1px solid rgba(var(--alert-rgb), 0.3);
-        }
-        .notification-btn.danger:hover {
-            background: rgba(var(--alert-rgb), 0.25);
-        }
-        .notification-btn.primary {
-            background: rgba(var(--accent-rgb), 0.2);
-            color: var(--accent);
-            border: 1px solid rgba(var(--accent-rgb), 0.4);
-        }
-        .notification-btn.primary:hover {
-            background: rgba(var(--accent-rgb), 0.35);
-        }
 
         /* ===== گرید جزئیات ===== */
         .details-grid {
@@ -993,22 +882,6 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         </defs>
     </svg>
 
-    <!-- ===== نوتیفیکیشن ===== -->
-    <div class="notification-overlay" id="notificationOverlay">
-        <div class="notification-box" id="notificationBox">
-            <span class="icon">🔔</span>
-            <div class="title">آیا مشکلی در اتصال کانفیگ دارید؟</div>
-            <div class="desc">به پشتیبانی پیام بدهید</div>
-            <div class="timer-bar">
-                <div class="fill" id="timerFill"></div>
-            </div>
-            <div class="notification-actions">
-                <button class="notification-btn danger" id="notificationDismiss">خیر</button>
-                <button class="notification-btn primary" id="notificationSupport">پشتیبانی</button>
-            </div>
-        </div>
-    </div>
-
     <div class="header">
         <div class="profile-container">
             <div class="profile-img-wrapper">
@@ -1362,11 +1235,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 designerLbl: "سازنده تم:", expiredText: "منقضی", unlimitedText: "نامحدود", emptyConfigs: "خالی", copyBtnText: "کپی",
                 lastConnectUnknown: "--", onlineText: "آنلاین", offlineText: "آفلاین",
                 promoText: "آیا نیاز به <span>خرید</span> یا <span>تمدید ساب</span> دارید؟<br>با پشتیبانی تماس بگیرید.",
-                promoTelegram: "تلگرام",
-                notificationTitle: "آیا مشکلی در اتصال کانفیگ دارید؟",
-                notificationDesc: "به پشتیبانی پیام بدهید",
-                notificationDismiss: "خیر",
-                notificationSupport: "پشتیبانی"
+                promoTelegram: "تلگرام"
             },
             en: {
                 dir: "ltr", greet: "Hello ", badgeActive: "Active", badgeInactive: "Inactive",
@@ -1383,11 +1252,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 designerLbl: "Theme Developer:", expiredText: "Expired", unlimitedText: "Unlimited", emptyConfigs: "Empty", copyBtnText: "Copy",
                 lastConnectUnknown: "--", onlineText: "Online", offlineText: "Offline",
                 promoText: "Need to <span>buy</span> or <span>renew</span> your subscription?<br>Contact support.",
-                promoTelegram: "Telegram",
-                notificationTitle: "Having trouble connecting?",
-                notificationDesc: "Contact support",
-                notificationDismiss: "No",
-                notificationSupport: "Support"
+                promoTelegram: "Telegram"
             },
             tr: {
                 dir: "ltr", greet: "Merhaba ", badgeActive: "Aktif", badgeInactive: "Pasif",
@@ -1404,11 +1269,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 designerLbl: "Tema Geliştirici:", expiredText: "Süresi Doldu", unlimitedText: "Sınırsız", emptyConfigs: "Boş", copyBtnText: "Kopyala",
                 lastConnectUnknown: "--", onlineText: "Çevrimiçi", offlineText: "Çevrimdışı",
                 promoText: "Aboneliğinizi <span>satın</span> veya <span>yenile</span> mi gerekiyor?<br>Destek ile iletişime geçin.",
-                promoTelegram: "Telegram",
-                notificationTitle: "Bağlantı sorunu mu yaşıyorsunuz?",
-                notificationDesc: "Destek ile iletişime geçin",
-                notificationDismiss: "Hayır",
-                notificationSupport: "Destek"
+                promoTelegram: "Telegram"
             },
             ar: {
                 dir: "rtl", greet: "أهلاً ", badgeActive: "نشط", badgeInactive: "غير نشط",
@@ -1425,11 +1286,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 designerLbl: "مطور القالب:", expiredText: "منتهي", unlimitedText: "غير محدود", emptyConfigs: "خالي", copyBtnText: "نسخ",
                 lastConnectUnknown: "--", onlineText: "متصل", offlineText: "غير متصل",
                 promoText: "هل تحتاج إلى <span>شراء</span> أو <span>تجديد</span> اشتراكك؟<br>اتصل بالدعم.",
-                promoTelegram: "تيليجرام",
-                notificationTitle: "هل تواجه مشكلة في الاتصال؟",
-                notificationDesc: "اتصل بالدعم",
-                notificationDismiss: "لا",
-                notificationSupport: "الدعم"
+                promoTelegram: "تيليجرام"
             }
         };
 
@@ -1560,60 +1417,6 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             const titleEl = document.getElementById('page-title');
             const username = sanaeiClientData.username || 'VPN Dashboard';
             titleEl.textContent = username;
-        }
-
-        // ===== توابع نوتیفیکیشن =====
-        function showNotification() {
-            const overlay = document.getElementById('notificationOverlay');
-            const fill = document.getElementById('timerFill');
-            const box = document.getElementById('notificationBox');
-
-            // تنظیم ترجمه
-            const data = locales[currentLang] || locales.fa;
-            document.querySelector('.notification-box .title').textContent = data.notificationTitle;
-            document.querySelector('.notification-box .desc').textContent = data.notificationDesc;
-            document.getElementById('notificationDismiss').textContent = data.notificationDismiss;
-            document.getElementById('notificationSupport').textContent = data.notificationSupport;
-
-            // ریست تایمر
-            let timeLeft = 10;
-            fill.style.width = '100%';
-
-            overlay.classList.add('show');
-
-            // تایمر شمارش معکوس
-            if (timerInterval) clearInterval(timerInterval);
-            timerInterval = setInterval(() => {
-                timeLeft -= 0.1;
-                const percent = (timeLeft / 10) * 100;
-                fill.style.width = Math.max(0, percent) + '%';
-                if (timeLeft <= 0) {
-                    clearInterval(timerInterval);
-                    dismissNotification();
-                }
-            }, 100);
-
-            // تایم‌اوت برای بسته شدن خودکار بعد از ۱۰ ثانیه
-            if (notificationTimeout) clearTimeout(notificationTimeout);
-            notificationTimeout = setTimeout(() => {
-                dismissNotification();
-            }, 10000);
-
-            // رویدادهای دکمه‌ها
-            document.getElementById('notificationDismiss').onclick = function() {
-                dismissNotification();
-            };
-            document.getElementById('notificationSupport').onclick = function() {
-                window.open('https://t.me/Comlong', '_blank');
-                dismissNotification();
-            };
-        }
-
-        function dismissNotification() {
-            const overlay = document.getElementById('notificationOverlay');
-            overlay.classList.remove('show');
-            if (timerInterval) clearInterval(timerInterval);
-            if (notificationTimeout) clearTimeout(notificationTimeout);
         }
 
         function parseConfigLink(rawLink) {
@@ -2014,11 +1817,6 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             selectLanguage(currentLang);
             loadConfigsFromRawEndpoint();
             loadClientIp();
-
-            // نمایش نوتیفیکیشن بعد از ۱۰ ثانیه
-            setTimeout(() => {
-                showNotification();
-            }, 10000);
         });
 
         const langToggleBtn = document.getElementById("lang-toggle-btn");
