@@ -503,117 +503,6 @@
         .promo-btn i { font-size: 18px; }
         .promo-btn.telegram i { color: #0088cc; }
 
-        /* ===== نوتیفیکیشن ===== */
-        .notification-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.5s ease;
-        }
-        .notification-overlay.show {
-            opacity: 1;
-            pointer-events: auto;
-        }
-
-        .notification-box {
-            background: var(--notification-bg);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1.5px solid rgba(var(--accent-rgb), 0.5);
-            border-radius: 24px;
-            padding: 28px 24px 24px;
-            max-width: 360px;
-            width: 90%;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(var(--accent-rgb), 0.1);
-            text-align: center;
-            transform: scale(0.85) translateY(20px);
-            transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.5s ease;
-            opacity: 0;
-        }
-        .notification-overlay.show .notification-box {
-            transform: scale(1) translateY(0);
-            opacity: 1;
-        }
-
-        .notification-box .icon {
-            font-size: 32px;
-            color: var(--accent);
-            margin-bottom: 12px;
-            display: block;
-        }
-        .notification-box .title {
-            font-size: 17px;
-            font-weight: 700;
-            color: var(--text);
-            margin-bottom: 6px;
-        }
-        .notification-box .desc {
-            font-size: 14px;
-            color: var(--text-muted);
-            line-height: 1.6;
-            margin-bottom: 18px;
-        }
-        .notification-box .timer-bar {
-            width: 100%;
-            height: 3px;
-            background: rgba(var(--accent-rgb), 0.2);
-            border-radius: 4px;
-            margin-bottom: 18px;
-            overflow: hidden;
-        }
-        .notification-box .timer-bar .fill {
-            height: 100%;
-            width: 100%;
-            background: var(--accent);
-            border-radius: 4px;
-            transition: width 0.1s linear;
-        }
-
-        .notification-actions {
-            display: flex;
-            gap: 12px;
-            justify-content: center;
-        }
-        .notification-btn {
-            padding: 10px 24px;
-            border-radius: 14px;
-            font-size: 14px;
-            font-weight: 700;
-            border: none;
-            cursor: pointer;
-            transition: all 0.25s ease;
-            min-width: 100px;
-        }
-        .notification-btn:hover {
-            transform: scale(1.04);
-        }
-        .notification-btn:active {
-            transform: scale(0.96);
-        }
-        .notification-btn.danger {
-            background: rgba(var(--alert-rgb), 0.15);
-            color: var(--alert);
-            border: 1px solid rgba(var(--alert-rgb), 0.3);
-        }
-        .notification-btn.danger:hover {
-            background: rgba(var(--alert-rgb), 0.25);
-        }
-        .notification-btn.primary {
-            background: rgba(var(--accent-rgb), 0.2);
-            color: var(--accent);
-            border: 1px solid rgba(var(--accent-rgb), 0.4);
-        }
-        .notification-btn.primary:hover {
-            background: rgba(var(--accent-rgb), 0.35);
-        }
 
         /* ===== گرید جزئیات ===== */
         .details-grid {
@@ -993,22 +882,6 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         </defs>
     </svg>
 
-    <!-- ===== نوتیفیکیشن ===== -->
-    <div class="notification-overlay" id="notificationOverlay">
-        <div class="notification-box" id="notificationBox">
-            <span class="icon">🔔</span>
-            <div class="title">آیا مشکلی در اتصال کانفیگ دارید؟</div>
-            <div class="desc">به پشتیبانی پیام بدهید</div>
-            <div class="timer-bar">
-                <div class="fill" id="timerFill"></div>
-            </div>
-            <div class="notification-actions">
-                <button class="notification-btn danger" id="notificationDismiss">خیر</button>
-                <button class="notification-btn primary" id="notificationSupport">پشتیبانی</button>
-            </div>
-        </div>
-    </div>
-
     <div class="header">
         <div class="profile-container">
             <div class="profile-img-wrapper">
@@ -1085,18 +958,18 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             <div class="stat-divider"></div>
             <div class="stat-item">
                 <div class="stat-header-row">
-                    <div class="stat-icon-wrapper"><i class="fa-solid fa-arrow-down" style="color: #4C8DFF;"></i></div>
-                    <div class="stat-title" id="title-download">دانلود</div>
+                    <div class="stat-icon-wrapper"><i class="fa-solid fa-calendar-day" style="color: #4C8DFF;"></i></div>
+                    <div class="stat-title" id="title-download">مصرف روزانه</div>
                 </div>
-                <div class="stat-value en-font" id="stat-dl-val">0 B</div>
+                <div class="stat-value en-font" id="stat-dl-val">0 GB</div>
             </div>
             <div class="stat-divider"></div>
             <div class="stat-item">
                 <div class="stat-header-row">
-                    <div class="stat-icon-wrapper"><i class="fa-solid fa-arrow-up" style="color: #F4A94A;"></i></div>
-                    <div class="stat-title" id="title-upload">آپلود</div>
+                    <div class="stat-icon-wrapper"><i class="fa-solid fa-gauge-high" style="color: #F4A94A;"></i></div>
+                    <div class="stat-title" id="title-upload">سقف روزانه</div>
                 </div>
-                <div class="stat-value en-font" id="stat-ul-val">0 B</div>
+                <div class="stat-value en-font" id="stat-ul-val">0 GB</div>
             </div>
         </div>
 
@@ -1244,83 +1117,81 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
     </div>
 
     <script>
-        // ===== داده‌های دریافتی از پنل =====
-        const sanaeiTemplateData = {
-            sId: "{{ .sId }}",
-            enabled: {{ .enabled }},
-            expireSeconds: {{ .expire }},
-            downloadByte: {{ .downloadByte }},
-            uploadByte: {{ .uploadByte }},
-            totalByte: {{ .totalByte }},
-            subUrl: "{{ .subUrl }}",
-            subJsonUrl: "{{ .subJsonUrl }}",
-            subClashUrl: "{{ .subClashUrl }}",
-            subTitle: "{{ .subTitle }}",
-            subSupportUrl: "{{ .subSupportUrl }}",
-            datepicker: "{{ .datepicker }}",
-            lastOnline: {{ .lastOnline }},
-            emails: [{{ range $i, $e := .emails }}{{ if $i }},{{ end }}"{{ $e }}"{{ end }}],
-            links: [{{ range $i, $l := .links }}{{ if $i }},{{ end }}"{{ $l }}"{{ end }}]
+        // ===== داده‌های دریافتی از پنل (همان placeholder های فایل شماره ۲ / بک‌اند نهان) =====
+        // این مقادیر به‌صورت متن ساده توسط بک‌اند جایگزین می‌شوند؛ هیچ Go-template و هیچ فچ زنده‌ای
+        // برای آمار/انقضا وجود ندارد. دقیقاً همان منبعی که فایل شماره ۲ استفاده می‌کند.
+        const panelData = {
+            username: "__USER_NAME__",
+            userId: "__USER_ID__",
+            statusCode: "__STATUS_CODE__",       // active | paused | expired | limit | dailyLimit
+            expiryDateText: "__EXPIRY_DATE__",   // متن آماده و فرمت‌شده از سمت سرور
+            totalUsedGB: parseFloat("__TOTAL_GB__"),
+            totalLimitGB: parseFloat("__LIMIT_TOTAL_GB__"),
+            dailyUsedGB: parseFloat("__DAILY_GB__"),
+            dailyLimitGB: parseFloat("__LIMIT_DAILY_GB__"),
+            subUrl: "__SYNC_NORMAL__",
+            subUrlBase64: "__SYNC_NORMAL_BASE64__",
+            rawUrl: "__SYNC_RAW__"
         };
 
         // ===== متغیرهای سراسری =====
         let currentLang = 'fa';
-        let isServerConnected = sanaeiTemplateData.enabled;
-        let liveRefreshTimer = null;
-        let notificationTimer = null;
-        let notificationTimeout = null;
-        let timerInterval = null;
+        let isServerConnected = panelData.statusCode === 'active';
 
         // ===== توابع کمکی =====
-        function calculateDaysLeft(expireSeconds) {
-            if (!expireSeconds || expireSeconds <= 0) return null;
-            const now = Date.now();
-            const diff = (expireSeconds * 1000) - now;
-            return diff > 0 ? Math.ceil(diff / (1000 * 60 * 60 * 24)) : -1;
+        function decodeBase64Unicode(str) {
+            const clean = str.replace(/-/g, '+').replace(/_/g, '/').trim();
+            const binary = atob(clean);
+            const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+            return new TextDecoder('utf-8').decode(bytes);
         }
-
-        function generateExpiryDates(expireSeconds) {
-            const dates = { fa: "--", en: "--", tr: "--", ar: "--" };
-            if (expireSeconds && expireSeconds > 0) {
-                const dateObj = new Date(expireSeconds * 1000);
-                dates.fa = dateObj.toLocaleDateString('fa-IR');
-                dates.en = dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-                dates.tr = dateObj.toLocaleDateString('tr-TR');
-                dates.ar = dateObj.toLocaleDateString('ar-EG');
-            }
-            return dates;
-        }
-
-        const initialExpiryDates = generateExpiryDates(sanaeiTemplateData.expireSeconds);
 
         let sanaeiClientData = {
-            username: "__USER_NAME__",
-            daysLeft: calculateDaysLeft(sanaeiTemplateData.expireSeconds),
-            expireSeconds: sanaeiTemplateData.expireSeconds,
-            expiryDateFa: initialExpiryDates.fa,
-            expiryDateEn: initialExpiryDates.en,
-            expiryDateTr: initialExpiryDates.tr,
-            expiryDateAr: initialExpiryDates.ar,
-            totalByte: sanaeiTemplateData.totalByte,
-            downloadByte: sanaeiTemplateData.downloadByte,
-            uploadByte: sanaeiTemplateData.uploadByte,
-            subUrl: "__SYNC_NORMAL__",
-            links: sanaeiTemplateData.links || [],
-            lastOnline: sanaeiTemplateData.lastOnline || 0
+            username: panelData.username,
+            userId: panelData.userId,
+            statusCode: panelData.statusCode,
+            expiryDateText: panelData.expiryDateText,
+            totalUsedGB: isNaN(panelData.totalUsedGB) ? 0 : panelData.totalUsedGB,
+            totalLimitGB: isNaN(panelData.totalLimitGB) ? 0 : panelData.totalLimitGB,
+            dailyUsedGB: isNaN(panelData.dailyUsedGB) ? 0 : panelData.dailyUsedGB,
+            dailyLimitGB: isNaN(panelData.dailyLimitGB) ? 0 : panelData.dailyLimitGB,
+            subUrl: panelData.subUrl,
+            links: [],
+            clientIp: null
         };
 
         function updateConnectionStatus() {
-            const now = Date.now();
-            const totalUsage = sanaeiClientData.downloadByte + sanaeiClientData.uploadByte;
-            const isExpired = sanaeiClientData.expireSeconds > 0 && (sanaeiClientData.expireSeconds * 1000) < now;
-            const isOverQuota = sanaeiClientData.totalByte > 0 && totalUsage >= sanaeiClientData.totalByte;
-            isServerConnected = !isExpired && !isOverQuota;
+            isServerConnected = sanaeiClientData.statusCode === 'active';
+        }
+        updateConnectionStatus();
+
+        // یک‌بار، درست مثل فایل شماره ۲، کانفیگ‌های خام را از همان __SYNC_RAW__ می‌گیریم
+        // (نه فچ زنده‌ی subscription-userinfo؛ همان مکانیزم فایل شماره ۲)
+        async function loadConfigsFromRawEndpoint() {
+            if (!panelData.rawUrl) return;
+            try {
+                const response = await fetch(panelData.rawUrl, { cache: 'no-store' });
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                const base64Str = (await response.text()).trim();
+                let decodedLinks = [];
+                try {
+                    decodedLinks = decodeBase64Unicode(base64Str).split('\n').map(l => l.trim()).filter(Boolean);
+                } catch (e) {
+                    decodedLinks = base64Str.split('\n').map(l => l.trim()).filter(Boolean);
+                }
+                sanaeiClientData.links = decodedLinks;
+                renderActionMenus();
+            } catch (error) {
+                console.error("خطا در دریافت کانفیگ‌ها از __SYNC_RAW__:", error);
+            }
         }
 
-        if (sanaeiClientData.daysLeft === -1) {
-            isServerConnected = false;
-        } else {
-            updateConnectionStatus();
+        // همان فچ IP کاربر که فایل شماره ۲ هم استفاده می‌کند
+        function loadClientIp() {
+            fetch('https://api.ipify.org?format=json')
+                .then(r => r.json())
+                .then(d => { sanaeiClientData.clientIp = d.ip; renderPanelData(); })
+                .catch(() => { sanaeiClientData.clientIp = null; renderPanelData(); });
         }
 
         const appDownloadLinks = {
@@ -1351,9 +1222,11 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         const locales = {
             fa: {
                 dir: "rtl", greet: "سلام ", badgeActive: "فعال", badgeInactive: "غیرفعال",
+                badgePaused: "متوقف", badgeExpired: "منقضی", badgeLimit: "اتمام حجم", badgeDailyLimit: "اتمام حجم روزانه",
+                detailUserIdLabel: "شناسه کاربری",
                 daysUnit: "روز", remainingLabel: "باقی‌مانده", titleLimit: "حجم کلی", titleTotal: "مصرف کل",
-                titleDownload: "دانلود", titleUpload: "آپلود",
-                detailTotal: "مصرف کل", detailRemaining: "باقی‌مانده", detailRemainingVolume: "حجم باقی‌مانده", detailLastConnect: "آخرین اتصال",
+                titleDownload: "مصرف روزانه", titleUpload: "سقف روزانه",
+                detailTotal: "مصرف کل", detailRemaining: "باقی‌مانده", detailRemainingVolume: "حجم باقی‌مانده", detailLastConnect: "IP اتصال",
                 actionRenew: "تمدید ساب", actionCopy: "کپی لینک ساب", actionCopied: "کپی شد!",
                 actionQr: "QR Code", actionConfig: "کپی کانفیگ", copyAllBtn: "کپی همه کانفیگ‌ها",
                 navDashboard: "<i class='fa-solid fa-house'></i>داشبورد", navDownload: "<i class='fa-solid fa-download'></i>دانلود برنامه",
@@ -1362,17 +1235,15 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 designerLbl: "سازنده تم:", expiredText: "منقضی", unlimitedText: "نامحدود", emptyConfigs: "خالی", copyBtnText: "کپی",
                 lastConnectUnknown: "--", onlineText: "آنلاین", offlineText: "آفلاین",
                 promoText: "آیا نیاز به <span>خرید</span> یا <span>تمدید ساب</span> دارید؟<br>با پشتیبانی تماس بگیرید.",
-                promoTelegram: "تلگرام",
-                notificationTitle: "آیا مشکلی در اتصال کانفیگ دارید؟",
-                notificationDesc: "به پشتیبانی پیام بدهید",
-                notificationDismiss: "خیر",
-                notificationSupport: "پشتیبانی"
+                promoTelegram: "تلگرام"
             },
             en: {
                 dir: "ltr", greet: "Hello ", badgeActive: "Active", badgeInactive: "Inactive",
+                badgePaused: "Paused", badgeExpired: "Expired", badgeLimit: "Limit Exceeded", badgeDailyLimit: "Daily Limit Exceeded",
+                detailUserIdLabel: "User ID",
                 daysUnit: "Days", remainingLabel: "Remaining", titleLimit: "Total Limit", titleTotal: "Total Usage",
-                titleDownload: "Download", titleUpload: "Upload",
-                detailTotal: "Total Usage", detailRemaining: "Remaining", detailRemainingVolume: "Remaining Volume", detailLastConnect: "Last Connect",
+                titleDownload: "Daily Usage", titleUpload: "Daily Limit",
+                detailTotal: "Total Usage", detailRemaining: "Remaining", detailRemainingVolume: "Remaining Volume", detailLastConnect: "Connection IP",
                 actionRenew: "Renew", actionCopy: "Copy Sub Link", actionCopied: "Copied!",
                 actionQr: "QR Code", actionConfig: "Copy Config", copyAllBtn: "Copy All Configs",
                 navDashboard: "<i class='fa-solid fa-house'></i>Dashboard", navDownload: "<i class='fa-solid fa-download'></i>App",
@@ -1381,17 +1252,15 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 designerLbl: "Theme Developer:", expiredText: "Expired", unlimitedText: "Unlimited", emptyConfigs: "Empty", copyBtnText: "Copy",
                 lastConnectUnknown: "--", onlineText: "Online", offlineText: "Offline",
                 promoText: "Need to <span>buy</span> or <span>renew</span> your subscription?<br>Contact support.",
-                promoTelegram: "Telegram",
-                notificationTitle: "Having trouble connecting?",
-                notificationDesc: "Contact support",
-                notificationDismiss: "No",
-                notificationSupport: "Support"
+                promoTelegram: "Telegram"
             },
             tr: {
                 dir: "ltr", greet: "Merhaba ", badgeActive: "Aktif", badgeInactive: "Pasif",
+                badgePaused: "Duraklatıldı", badgeExpired: "Süresi Doldu", badgeLimit: "Kota Doldu", badgeDailyLimit: "Günlük Kota Doldu",
+                detailUserIdLabel: "Kullanıcı ID",
                 daysUnit: "Gün", remainingLabel: "Kalan", titleLimit: "Toplam Kota", titleTotal: "Toplam",
-                titleDownload: "İndirme", titleUpload: "Yükleme",
-                detailTotal: "Toplam", detailRemaining: "Kalan", detailRemainingVolume: "Kalan Hacim", detailLastConnect: "Son Bağlantı",
+                titleDownload: "Günlük Kullanım", titleUpload: "Günlük Kota",
+                detailTotal: "Toplam", detailRemaining: "Kalan", detailRemainingVolume: "Kalan Hacim", detailLastConnect: "Bağlantı IP'si",
                 actionRenew: "Yenile", actionCopy: "Sub Linki Kopyala", actionCopied: "Kopyalandı!",
                 actionQr: "QR Kodu", actionConfig: "Konfig Kopyala", copyAllBtn: "Tüm Konfigleri Kopyala",
                 navDashboard: "<i class='fa-solid fa-house'></i>Panel", navDownload: "<i class='fa-solid fa-download'></i>Uygulama",
@@ -1400,17 +1269,15 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 designerLbl: "Tema Geliştirici:", expiredText: "Süresi Doldu", unlimitedText: "Sınırsız", emptyConfigs: "Boş", copyBtnText: "Kopyala",
                 lastConnectUnknown: "--", onlineText: "Çevrimiçi", offlineText: "Çevrimdışı",
                 promoText: "Aboneliğinizi <span>satın</span> veya <span>yenile</span> mi gerekiyor?<br>Destek ile iletişime geçin.",
-                promoTelegram: "Telegram",
-                notificationTitle: "Bağlantı sorunu mu yaşıyorsunuz?",
-                notificationDesc: "Destek ile iletişime geçin",
-                notificationDismiss: "Hayır",
-                notificationSupport: "Destek"
+                promoTelegram: "Telegram"
             },
             ar: {
                 dir: "rtl", greet: "أهلاً ", badgeActive: "نشط", badgeInactive: "غير نشط",
+                badgePaused: "متوقف", badgeExpired: "منتهي", badgeLimit: "تجاوز الحد", badgeDailyLimit: "تجاوز الحد اليومي",
+                detailUserIdLabel: "معرّف المستخدم",
                 daysUnit: "يوم", remainingLabel: "المتبقي", titleLimit: "الحجم الكلي", titleTotal: "الإجمالي",
-                titleDownload: "تحميل", titleUpload: "رفع",
-                detailTotal: "الإجمالي", detailRemaining: "المتبقي", detailRemainingVolume: "الحجم المتبقي", detailLastConnect: "آخر اتصال",
+                titleDownload: "الاستخدام اليومي", titleUpload: "الحد اليومي",
+                detailTotal: "الإجمالي", detailRemaining: "المتبقي", detailRemainingVolume: "الحجم المتبقي", detailLastConnect: "عنوان IP",
                 actionRenew: "تجديد", actionCopy: "نسخ رابط الساب", actionCopied: "تم النسخ!",
                 actionQr: "رمز QR", actionConfig: "نسخ التكوين", copyAllBtn: "نسخ كل التكوينات",
                 navDashboard: "<i class='fa-solid fa-house'></i>الرئيسية", navDownload: "<i class='fa-solid fa-download'></i>التطبيق",
@@ -1419,100 +1286,13 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 designerLbl: "مطور القالب:", expiredText: "منتهي", unlimitedText: "غير محدود", emptyConfigs: "خالي", copyBtnText: "نسخ",
                 lastConnectUnknown: "--", onlineText: "متصل", offlineText: "غير متصل",
                 promoText: "هل تحتاج إلى <span>شراء</span> أو <span>تجديد</span> اشتراكك؟<br>اتصل بالدعم.",
-                promoTelegram: "تيليجرام",
-                notificationTitle: "هل تواجه مشكلة في الاتصال؟",
-                notificationDesc: "اتصل بالدعم",
-                notificationDismiss: "لا",
-                notificationSupport: "الدعم"
+                promoTelegram: "تيليجرام"
             }
         };
 
         // ===== توابع اصلی =====
-        function decodeBase64Unicode(str) {
-            const clean = str.replace(/-/g, '+').replace(/_/g, '/').trim();
-            const binary = atob(clean);
-            const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
-            return new TextDecoder('utf-8').decode(bytes);
-        }
-
-        function parseSubscriptionUserinfo(headerValue) {
-            const result = { upload: null, download: null, total: null, expire: null };
-            if (!headerValue) return result;
-            headerValue.split(';').forEach(part => {
-                const [key, val] = part.trim().split('=');
-                if (key && val !== undefined && result.hasOwnProperty(key.trim())) {
-                    result[key.trim()] = parseInt(val.trim(), 10);
-                }
-            });
-            return result;
-        }
-
-        async function fetchLiveSubscriptionData() {
-            if (!sanaeiClientData.subUrl) return;
-            try {
-                const response = await fetch(sanaeiClientData.subUrl, {
-                    method: 'GET',
-                    cache: 'no-store',
-                    headers: { 'Accept': 'text/plain' }
-                });
-
-                if (!response.ok) throw new Error('HTTP ' + response.status);
-
-                const userInfoHeader = response.headers.get('subscription-userinfo');
-                const bodyText = (await response.text()).trim();
-
-                if (bodyText) {
-                    let decodedLinks = [];
-                    try {
-                        decodedLinks = decodeBase64Unicode(bodyText).split('\n').map(l => l.trim()).filter(Boolean);
-                    } catch (e) {
-                        decodedLinks = bodyText.split('\n').map(l => l.trim()).filter(Boolean);
-                    }
-                    if (decodedLinks.length > 0) {
-                        sanaeiClientData.links = decodedLinks;
-                    }
-                }
-
-                if (userInfoHeader) {
-                    const info = parseSubscriptionUserinfo(userInfoHeader);
-                    if (info.download !== null && info.upload !== null) {
-                        sanaeiClientData.downloadByte = info.download;
-                        sanaeiClientData.uploadByte = info.upload;
-                    }
-                    if (info.total !== null) sanaeiClientData.totalByte = info.total;
-                    if (info.expire !== null) {
-                        sanaeiClientData.expireSeconds = info.expire;
-                        sanaeiClientData.daysLeft = calculateDaysLeft(info.expire);
-                        const dates = generateExpiryDates(info.expire);
-                        sanaeiClientData.expiryDateFa = dates.fa;
-                        sanaeiClientData.expiryDateEn = dates.en;
-                        sanaeiClientData.expiryDateTr = dates.tr;
-                        sanaeiClientData.expiryDateAr = dates.ar;
-                    }
-                }
-
-                const lastOnlineHeader = response.headers.get('subscription-last-online');
-                if (lastOnlineHeader) {
-                    const parsed = parseInt(lastOnlineHeader, 10);
-                    if (!isNaN(parsed) && parsed > 0) {
-                        sanaeiClientData.lastOnline = parsed;
-                    }
-                }
-
-                updateConnectionStatus();
-                renderAll();
-            } catch (error) {
-                console.error("❌ خطا در دریافت اطلاعات زنده:", error);
-            }
-        }
-
         function isUserOnline() {
-            const now = Date.now();
-            if (sanaeiClientData.lastOnline && sanaeiClientData.lastOnline > 0) {
-                const diffSeconds = (now - sanaeiClientData.lastOnline) / 1000;
-                return diffSeconds < 300;
-            }
-            return false;
+            return isServerConnected;
         }
 
         function renderAll() {
@@ -1541,56 +1321,47 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 <span class="${usernameClass}">${username}</span>
             `;
 
-            if (sanaeiClientData.daysLeft === -1) {
+            // ===== وضعیت انقضا (از __STATUS_CODE__ و __EXPIRY_DATE__ که خود سرور آماده فرستاده) =====
+            if (sanaeiClientData.statusCode === 'expired') {
                 document.getElementById("live-days-count").innerHTML = `<span style="font-size:22px; color:#F0655F;">${data.expiredText}</span>`;
-            } else if (sanaeiClientData.daysLeft === null) {
+            } else if (!sanaeiClientData.expiryDateText || sanaeiClientData.expiryDateText === '__EXPIRY_DATE__') {
                 document.getElementById("live-days-count").innerHTML = `<span style="font-size:22px;">${data.unlimitedText}</span>`;
             } else {
-                document.getElementById("live-days-count").innerHTML = `${sanaeiClientData.daysLeft} <span id="days-label">${data.daysUnit}</span>`;
+                document.getElementById("live-days-count").innerHTML = `<span class="en-font" style="font-size:20px;">${sanaeiClientData.expiryDateText}</span>`;
             }
+            document.getElementById("expire-date").innerText = (data.detailUserIdLabel || "ID") + ": " + (sanaeiClientData.userId && sanaeiClientData.userId !== '__USER_ID__' ? sanaeiClientData.userId : "--");
 
-            document.getElementById("stat-limit").innerText = sanaeiClientData.totalByte > 0 ? formatBytes(sanaeiClientData.totalByte) : data.unlimitedText;
+            // ===== آمار مصرف (مستقیماً از __TOTAL_GB__ / __LIMIT_TOTAL_GB__ / __DAILY_GB__ / __LIMIT_DAILY_GB__) =====
+            const totalLimitGB = sanaeiClientData.totalLimitGB;
+            const totalUsedGB = sanaeiClientData.totalUsedGB;
+            const dailyUsedGB = sanaeiClientData.dailyUsedGB;
+            const dailyLimitGB = sanaeiClientData.dailyLimitGB;
 
-            if (currentLang === 'fa') document.getElementById("expire-date").innerText = "تاریخ انقضا: " + (sanaeiClientData.expireSeconds > 0 ? sanaeiClientData.expiryDateFa : data.unlimitedText);
-            else if (currentLang === 'en') document.getElementById("expire-date").innerText = "Expiry: " + (sanaeiClientData.expireSeconds > 0 ? sanaeiClientData.expiryDateEn : data.unlimitedText);
-            else if (currentLang === 'tr') document.getElementById("expire-date").innerText = "Son Kullanma: " + (sanaeiClientData.expireSeconds > 0 ? sanaeiClientData.expiryDateTr : data.unlimitedText);
-            else if (currentLang === 'ar') document.getElementById("expire-date").innerText = "تاريخ الانتهاء: " + (sanaeiClientData.expireSeconds > 0 ? sanaeiClientData.expiryDateAr : data.unlimitedText);
+            document.getElementById("stat-limit").innerText = totalLimitGB > 0 ? (totalLimitGB + " GB") : data.unlimitedText;
+            document.getElementById("stat-total-val").innerText = totalUsedGB + " GB";
+            document.getElementById("stat-dl-val").innerText = dailyUsedGB + " GB";
+            document.getElementById("stat-ul-val").innerText = dailyLimitGB > 0 ? (dailyLimitGB + " GB") : data.unlimitedText;
 
-            const totalUsage = sanaeiClientData.downloadByte + sanaeiClientData.uploadByte;
-            document.getElementById("stat-dl-val").innerText = formatBytes(sanaeiClientData.downloadByte);
-            document.getElementById("stat-ul-val").innerText = formatBytes(sanaeiClientData.uploadByte);
-            document.getElementById("stat-total-val").innerText = formatBytes(totalUsage);
-
-            document.getElementById("detail-total-value").innerText = formatBytes(totalUsage);
+            document.getElementById("detail-total-value").innerText = totalUsedGB + " GB";
 
             let percentRemaining = 100;
-            let remainingVolume = sanaeiClientData.totalByte - totalUsage;
-            if (sanaeiClientData.totalByte > 0) {
-                let percentUsage = (totalUsage / sanaeiClientData.totalByte) * 100;
+            let remainingVolume = totalLimitGB - totalUsedGB;
+            if (totalLimitGB > 0) {
+                let percentUsage = (totalUsedGB / totalLimitGB) * 100;
                 percentRemaining = Math.round(100 - percentUsage);
                 if (percentRemaining < 0) percentRemaining = 0;
                 if (percentRemaining > 100) percentRemaining = 100;
             }
             document.getElementById("detail-remaining-value").innerText = percentRemaining + '%';
 
-            if (sanaeiClientData.totalByte > 0) {
-                document.getElementById("detail-remaining-volume").innerText = remainingVolume > 0 ? formatBytes(remainingVolume) : '0 B';
+            if (totalLimitGB > 0) {
+                document.getElementById("detail-remaining-volume").innerText = remainingVolume > 0 ? (remainingVolume.toFixed(2) + " GB") : '0 GB';
             } else {
                 document.getElementById("detail-remaining-volume").innerText = data.unlimitedText;
             }
 
-            let lastConnectStr = data.lastConnectUnknown;
-            if (sanaeiClientData.lastOnline && sanaeiClientData.lastOnline > 0) {
-                const d = new Date(sanaeiClientData.lastOnline);
-                try {
-                    if (currentLang === 'fa') lastConnectStr = d.toLocaleString('fa-IR');
-                    else if (currentLang === 'en') lastConnectStr = d.toLocaleString('en-US');
-                    else if (currentLang === 'tr') lastConnectStr = d.toLocaleString('tr-TR');
-                    else if (currentLang === 'ar') lastConnectStr = d.toLocaleString('ar-EG');
-                    else lastConnectStr = d.toLocaleString();
-                } catch (e) { /* ignore */ }
-            }
-            document.getElementById("detail-last-connect-value").innerText = lastConnectStr;
+            // ===== IP اتصال کاربر (همان فچ api.ipify.org که فایل شماره ۲ استفاده می‌کند) =====
+            document.getElementById("detail-last-connect-value").innerText = sanaeiClientData.clientIp || data.lastConnectUnknown;
 
             document.getElementById("live-percent-display").innerText = percentRemaining + "%";
             const ringColor = getColorForPercentage(percentRemaining);
@@ -1628,75 +1399,24 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             const badgeText = document.getElementById("badge-text");
             const iconMark = document.getElementById("status-icon-mark");
 
-            if (isServerConnected) {
-                card.classList.remove("disconnected");
-                badgeText.innerText = data.badgeActive;
-                iconMark.className = "fa-solid fa-check";
-            } else {
-                card.classList.add("disconnected");
-                badgeText.innerText = data.badgeInactive;
-                iconMark.className = "fa-solid fa-xmark";
-            }
+            const statusMap = {
+                active: { text: data.badgeActive, icon: "fa-solid fa-check", disconnected: false },
+                paused: { text: data.badgePaused, icon: "fa-solid fa-pause", disconnected: true },
+                expired: { text: data.badgeExpired, icon: "fa-solid fa-xmark", disconnected: true },
+                limit: { text: data.badgeLimit, icon: "fa-solid fa-triangle-exclamation", disconnected: true },
+                dailyLimit: { text: data.badgeDailyLimit, icon: "fa-solid fa-triangle-exclamation", disconnected: true }
+            };
+            const s = statusMap[sanaeiClientData.statusCode] || statusMap.active;
+
+            card.classList.toggle("disconnected", s.disconnected);
+            badgeText.innerText = s.text;
+            iconMark.className = s.icon;
         }
 
         function updatePageTitle() {
             const titleEl = document.getElementById('page-title');
             const username = sanaeiClientData.username || 'VPN Dashboard';
             titleEl.textContent = username;
-        }
-
-        // ===== توابع نوتیفیکیشن =====
-        function showNotification() {
-            const overlay = document.getElementById('notificationOverlay');
-            const fill = document.getElementById('timerFill');
-            const box = document.getElementById('notificationBox');
-
-            // تنظیم ترجمه
-            const data = locales[currentLang] || locales.fa;
-            document.querySelector('.notification-box .title').textContent = data.notificationTitle;
-            document.querySelector('.notification-box .desc').textContent = data.notificationDesc;
-            document.getElementById('notificationDismiss').textContent = data.notificationDismiss;
-            document.getElementById('notificationSupport').textContent = data.notificationSupport;
-
-            // ریست تایمر
-            let timeLeft = 10;
-            fill.style.width = '100%';
-
-            overlay.classList.add('show');
-
-            // تایمر شمارش معکوس
-            if (timerInterval) clearInterval(timerInterval);
-            timerInterval = setInterval(() => {
-                timeLeft -= 0.1;
-                const percent = (timeLeft / 10) * 100;
-                fill.style.width = Math.max(0, percent) + '%';
-                if (timeLeft <= 0) {
-                    clearInterval(timerInterval);
-                    dismissNotification();
-                }
-            }, 100);
-
-            // تایم‌اوت برای بسته شدن خودکار بعد از ۱۰ ثانیه
-            if (notificationTimeout) clearTimeout(notificationTimeout);
-            notificationTimeout = setTimeout(() => {
-                dismissNotification();
-            }, 10000);
-
-            // رویدادهای دکمه‌ها
-            document.getElementById('notificationDismiss').onclick = function() {
-                dismissNotification();
-            };
-            document.getElementById('notificationSupport').onclick = function() {
-                window.open('https://t.me/Comlong', '_blank');
-                dismissNotification();
-            };
-        }
-
-        function dismissNotification() {
-            const overlay = document.getElementById('notificationOverlay');
-            overlay.classList.remove('show');
-            if (timerInterval) clearInterval(timerInterval);
-            if (notificationTimeout) clearTimeout(notificationTimeout);
         }
 
         function parseConfigLink(rawLink) {
@@ -2091,15 +1811,12 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         }
 
         // ===== راه‌اندازی اولیه =====
+        // نکته: بدون فچ زنده و بدون setInterval — دقیقاً مثل فایل شماره ۲، صفحه یک‌بار رندر می‌شود
+        // و فقط دو فچ ثابت (کانفیگ‌های خام از __SYNC_RAW__ و IP کاربر) مثل فایل شماره ۲ انجام می‌شود.
         document.addEventListener("DOMContentLoaded", () => {
             selectLanguage(currentLang);
-            fetchLiveSubscriptionData();
-            liveRefreshTimer = setInterval(fetchLiveSubscriptionData, 10000);
-
-            // نمایش نوتیفیکیشن بعد از ۱۰ ثانیه
-            setTimeout(() => {
-                showNotification();
-            }, 10000);
+            loadConfigsFromRawEndpoint();
+            loadClientIp();
         });
 
         const langToggleBtn = document.getElementById("lang-toggle-btn");
