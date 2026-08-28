@@ -231,10 +231,11 @@
         { p: 'auth.recoveryTg', l: 'بازیابی از تلگرام', t: 'sw' },
         { p: 'auth.recoveryCf', l: 'بازیابی با توکن کلودفلر', t: 'sw' },
       ] },
-      { t: 'مسیر ورود و استتار', icon: 'fa-mask', d: 'پنل فقط روی مسیر مخفی؛ ریشه سایت پوششی نشان می‌دهد', two: 1, f: [
-        { p: 'auth.path', l: 'مسیر ورود پنل', t: 'text', mono: 1, h: 'پنل روی /این‌مسیر سرو می‌شود. ریشه (/) سایت پوششی نشان می‌دهد' },
+      { t: 'مسیر ورود و سایت پوششی', icon: 'fa-mask', d: 'پنل روی مسیر مخفی؛ ریشه‌ی دامنه یک سایت واقعی نشان می‌دهد', two: 1, f: [
+        { p: 'auth.path', l: 'مسیر ورود پنل', t: 'text', mono: 1, h: 'پنل روی /این‌مسیر سرو می‌شود. ریشه (/) سایت پوششی واقعی نشان می‌دهد' },
         { p: 'auth.disguise', l: 'Disguise mode', t: 'sw', h: 'خاموش = ریشه هم پنل را نشان می‌دهد' },
-        { p: 'auth.maintenanceHost', l: 'سایت پوششی', t: 'sel', o: ['nginx', 'cloudflare-1101', 'maintenance', 'wp'], lbls: { nginx: 'nginx welcome', 'cloudflare-1101': 'خطای 1101 کلاودفلر', maintenance: 'Under maintenance', wp: 'وردپرس' } },
+        { p: 'auth.maintenanceHost', l: 'سایت پوششی واقعی', t: 'sel', o: ['nginx', 'wiki', 'wp', 'cloudflare', 'maintenance'], lbls: { nginx: 'nginx.org (سایت رسمی nginx)', wiki: 'ویکی‌پدیا — مقاله‌ی Web server', wp: 'wordpress.org', cloudflare: 'صفحه‌ی خطای کلاودفلر', maintenance: 'example.com' } },
+        { p: 'auth.decoyUrl', l: 'آدرس سایت پوششی دلخواه', t: 'text', mono: 1, h: 'خالی = یکی از سایت‌های بالا. هر آدرس واقعی دیگری هم می‌شود' },
         { p: 'auth.pathRotate', l: 'چرخش خودکار مسیر', t: 'sw' },
         { p: 'auth.panic', l: 'Panic mode', t: 'sw', bad: 1 },
         { p: 'sec.killSwitch', l: 'Kill Switch', t: 'sw', bad: 1 },
@@ -295,7 +296,7 @@
     return '<div class="login"><div class="box">' +
       '<header><span class="ic">' + icon('fa-lock') + '</span><div><h3>' + esc(nm) + '</h3><p>ورود مدیر' + (totp ? ' • 2FA فعال' : '') + '</p></div></header>' +
       '<div class="bd">' +
-      '<label class="f"><span>رمز عبور</span><input type="password" id="lgPw" placeholder="••••••••"></label>' +
+      '<label class="f"><span>رمز عبور</span><input type="password" id="lgPw" autocomplete="current-password" placeholder="••••••••"></label>' +
       (totp ? '<label class="f"><span>کد دو مرحله‌ای (TOTP)</span><input id="lgTp" class="mono" inputmode="numeric" maxlength="6" placeholder="——————"></label>' : '') +
       '<button class="btn p lg" style="width:100%" data-act="login">' + icon('fa-right-to-bracket') + ' ورود به پنل</button>' +
       '<p class="hint" style="margin-top:12px">محدودیت: ۵ تلاش در ۱۰ دقیقه. رمز پیش‌فرض: <span class="mono">simorgh</span></p>' +
@@ -522,15 +523,19 @@
       '<button class="btn" data-act="2fa-gen">' + icon('fa-mobile-screen') + ' ساخت کلید 2FA</button>' +
       '<button class="btn" data-act="rotate-path">' + icon('fa-shuffle') + ' چرخش مسیر ورود</button></div>' +
       '<div id="totpOut" style="margin-top:12px"></div></div></div>' +
-      '<div class="card"><header><span class="ic warn">' + icon('fa-mask') + '</span><div><h3>مسیر ورود و سایت پوششی</h3><p>پنل فقط روی مسیر مخفی سرو می‌شود</p></div></header><div class="bd">' +
-      '<div class="kv"><span>آدرس پنل</span><b class="mono">' + esc(location.origin + '/' + p) + '</b></div>' +
+      '<div class="card"><header><span class="ic warn">' + icon('fa-mask') + '</span><div><h3>مسیر ورود و سایت پوششی واقعی</h3><p>ریشه‌ی دامنه یک سایت زنده‌ی واقعی را کامل نشان می‌دهد</p></div>' +
+      '<div class="acts"><button class="btn sm s" data-act="decoy-test">' + icon('fa-vial') + ' تست سایت پوششی</button></div></header><div class="bd">' +
+      '<div class="kv"><span>' + icon('fa-lock') + ' آدرس پنل</span><b class="mono">' + esc(location.origin + '/' + p) + '</b></div>' +
       '<div class="kv"><span>Disguise</span><b>' + (s.auth.disguise ? 'فعال — ریشه سایت پوششی است' : 'خاموش — ریشه هم پنل است') + '</b></div>' +
-      '<div class="kv"><span>سایت پوششی</span><b class="mono">' + esc(s.auth.maintenanceHost) + '</b></div>' +
+      '<div class="kv"><span>سایت پوششی</span><b class="mono">' + esc(s.auth.decoyUrl || s.auth.maintenanceHost) + '</b></div>' +
+      '<div class="kv"><span>' + icon('fa-users') + ' صفحه‌ی کاربر</span><b class="mono">/' + esc(s.sub.path) + '/&lt;uuid&gt;</b></div>' +
       '<div class="kv"><span>CSP / XFO / nosniff</span><b>' + (s.sec.csp ? 'فعال' : 'خاموش') + '</b></div>' +
-      '<div class="btn-row" style="margin-top:10px"><button class="btn" data-act="open" data-v="' + esc(location.origin + '/' + p) + '">' + icon('fa-arrow-up-right-from-square') + ' باز کردن پنل</button>' +
-      '<button class="btn" data-act="open" data-v="' + esc(location.origin + '/') + '">' + icon('fa-eye') + ' پیش‌نمایش سایت پوششی</button>' +
+      '<div id="decoyOut" style="margin-top:10px"></div>' +
+      '<div class="btn-row" style="margin-top:10px">' +
+      '<button class="btn" data-act="open" data-v="' + esc(location.origin + '/' + p) + '">' + icon('fa-arrow-up-right-from-square') + ' باز کردن پنل</button>' +
+      '<button class="btn" data-act="open" data-v="' + esc(location.origin + '/?refresh=1') + '">' + icon('fa-eye') + ' پیش‌نمایش سایت پوششی</button>' +
       '<button class="btn ghost" data-act="copy" data-v="' + esc(location.origin + '/' + p) + '">' + icon('fa-copy') + ' کپی آدرس پنل</button></div>' +
-      '<div class="hint" style="margin-top:10px">پس از تغییر مسیر، این صفحه را با آدرس جدید باز کنید.</div></div></div></div>';
+      '<div class="hint" style="margin-top:10px">هر مسیر ناشناخته هم همان سایت پوششی را نشان می‌دهد. پس از تغییر مسیر ورود، صفحه را با آدرس جدید باز کنید.</div></div></div></div>';
   }
 
   const VIEWS = {
@@ -559,17 +564,15 @@
   function render() {
     const nav = $('#nav');
     if (!S.token || !S.d) {
-      $('#sidebar').classList.add('hide'); $('#scrim').classList.remove('show');
-      $('#menuBtn').classList.add('hide'); $('#themeBtn').classList.add('hide');
-      $('#panicBtn').classList.add('hide'); $('#logoutBtn').classList.add('hide'); $('#searchBox').classList.add('hide');
-      $('#tbState').textContent = 'ورود به پنل';
-      $('#tbDot').className = 'dot'; $('#tbReq').textContent = '';
+      /* در صفحه‌ی ورود هیچ هدر، سایدبار یا فوتر وجود ندارد */
+      document.body.classList.add('auth');
+      closeDrawer();
       $('#view').innerHTML = loginView();
       setTimeout(() => { const e = $('#lgPw'); if (e) e.focus(); }, 60);
       return;
     }
     const d = S.d, s = d.settings;
-    $('#sidebar').classList.remove('hide');
+    document.body.classList.remove('auth');
     ['#menuBtn', '#themeBtn', '#panicBtn', '#logoutBtn', '#searchBox'].forEach((x) => $(x).classList.remove('hide'));
     $('#brandName').textContent = s.panel.name;
     $('#brandVer').textContent = 'v' + d.version;
@@ -688,6 +691,18 @@
       else if (a === 'panel-sync') { busy(t, 'همگام‌سازی'); await api('POST', '/api/panels', { id, op: 'sync' }); free(t); toast('همگام شد'); await refresh(); }
       else if (a === 'domain-check') { busy(t, 'بررسی'); const r = await api('POST', '/api/action', { act: 'domain-health' }); free(t); const o = $('#domainOut'); if (o) o.innerHTML = (r.checks || []).map((c) => '<div class="kv"><span>' + icon(c.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' ' + esc(c.name) + '</span><b class="mono" style="color:' + (c.ok ? 'var(--ok)' : 'var(--bad)') + '">' + esc(c.note || '') + '</b></div>').join(''); }
       else if (a === 'tg-test') { busy(t, 'ارسال'); const r = await api('POST', '/api/action', { act: 'tg-test' }); free(t); toast(r.ok ? 'پیام تست ارسال شد' : 'ارسال نشد — توکن/چت‌آیدی را چک کنید', r.ok ? 'ok' : 'err'); }
+      else if (a === 'decoy-test') {
+        busy(t, 'در حال تست');
+        const r = await api('POST', '/api/action', { act: 'decoy-test' });
+        free(t);
+        const o = $('#decoyOut');
+        if (o) o.innerHTML = r.ok
+          ? '<div class="kv"><span>' + icon('fa-circle-check') + ' سایت پوششی فعال</span><b class="mono">' + esc(r.target) + '</b></div>' +
+            '<div class="kv"><span>حجم پاسخ</span><b class="mono">' + fa(r.size) + ' بایت</b></div>' +
+            '<div class="kv" style="flex-direction:column;align-items:flex-start"><span>متن صفحه</span><b style="font-weight:400;line-height:1.9">' + esc(r.sample) + '…</b></div>'
+          : '<div class="kv"><span>' + icon('fa-circle-xmark') + ' سایت پوششی</span><b class="mono">خطا در دریافت</b></div>';
+        toast(r.ok ? 'سایت پوششی واقعی کار می‌کند ✓' : 'سایت پوششی در دسترس نیست', r.ok ? 'ok' : 'err');
+      }
       else if (a === 'tunnel-test') {
         busy(t, 'در حال تست');
         const r = await api('POST', '/api/action', { act: 'tunnel-test' });
