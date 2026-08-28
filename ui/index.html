@@ -62,8 +62,9 @@
         window.__sgErr = null;
         window.addEventListener('error', function (e) { window.__sgErr = e.message + ' @' + (e.lineno || '?'); });
         setTimeout(function () {
+          if (window.__sgBooted) return;   /* app.js درست اجرا شده — کاری نکن */
           var el = document.getElementById('tbState');
-          if (el && /در حال بارگذاری/.test(el.textContent)) {
+          if (el) {
             el.textContent = 'خطا در اجرای app.js';
             el.style.color = 'var(--bad)';
             var box = document.getElementById('view');
