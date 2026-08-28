@@ -733,7 +733,7 @@
         if (o) o.innerHTML = (r.checks || []).map((c) => '<div class="kv"><span>' + icon(c.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' ' + esc(c.name) + '</span><b class="mono" style="font-size:10px;color:' + (c.ok ? 'var(--ok)' : 'var(--bad)') + ';max-width:60%;overflow:hidden;text-overflow:ellipsis">' + esc(c.note || '') + '</b></div>').join('') +
           '<div class="hint" style="margin-top:12px"><b>تست‌های بعدی (خودتان انجام دهید):</b></div>' +
           '<div class="btn-row" style="margin:8px 0">' +
-          '<a class="btn sm" href="' + esc(location.origin + S.d.settings.path) + '" target="_blank">' + icon('fa-vial') + ' تست مسیر تونل در مرورگر</a>' +
+          '<a class="btn sm" href="' + esc(location.origin + S.d.settings.path + '?test=1') + '" target="_blank">' + icon('fa-vial') + ' تست مسیر تونل در مرورگر</a>' +
           '<a class="btn sm" href="/health" target="_blank">' + icon('fa-heart-pulse') + ' تست سلامت ورکر</a></div>' +
           '<div class="hint">اگر روی «تست مسیر تونل» متن <span class="mono">TUNNEL_OK</span> دیدید، مسیر از اینترنت شما در دسترس است و مشکل قطعاً از تنظیمات کلاینت است.</div>' +
           '<div class="hint" style="margin-top:12px"><b>چک‌لیست کلاینت (به‌ترتیب):</b></div>' +
