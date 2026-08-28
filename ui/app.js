@@ -839,10 +839,22 @@
         setTimeout(() => { const el = $('#fkList .fk-row:last-child .fk-name'); if (el) { el.focus(); toast('یک کانفیگ فیک اضافه شد — نام و متغیرها را وارد کنید', 'info'); } }, 80);
       }
       else if (a === 'fake-del') {
+        if (!S.d.settings.sub.fakes) S.d.settings.sub.fakes = [];
         const i = Number(t.dataset.i);
         S.d.settings.sub.fakes.splice(i, 1);
         render(); refreshPreview();
         toast('حذف شد', 'err');
+      }
+      else if (a === 'fake-reset') {
+        S.d.settings.sub.fakes = [
+          { id: 'usage',     name: '📊 {usage}',        enabled: true,  proto: 'vless',  pin: true, pos: 1 },
+          { id: 'remaining', name: '🟢 {remaining}',    enabled: true,  proto: 'vless',  pin: true, pos: 2 },
+          { id: 'expiry',    name: '📅 {expiry}',       enabled: true,  proto: 'vless',  pin: true, pos: 3 },
+          { id: 'channel',   name: '📢 {channel}',      enabled: true,  proto: 'trojan', pin: true, pos: 4 },
+          { id: 'panel',     name: '⚙️ {panel} v{ver}', enabled: false, proto: 'trojan', pin: true, pos: 5 },
+        ];
+        render(); refreshPreview();
+        toast('به پیش‌فرض بازگشت — برای اعمال، ذخیره کنید', 'info');
       }
       else if (a === 'user-new') { const r = await api('POST', '/api/users', { name: 'کاربر ' + (S.d.users.length + 1) }); if (r.user) { S.sel = r.user.id; await refresh(); userModal(S.d.users.find((u) => u.id === r.user.id) || r.user, true); } }
       else if (a === 'user-edit') userModal(S.d.users.find((u) => u.id === id));
@@ -1031,7 +1043,8 @@
     return '<div class="card"><header><span class="ic">' + icon('fa-list-check') + '</span>' +
       '<div><h3>کانفیگ‌های فیک (اطلاعاتی)</h3>' +
       '<p>در ابتدای لیست ساب کلاینت نمایش داده می‌شوند تا مصرف و انقضا در برنامه دیده شود</p></div>' +
-      '<div class="acts"><button class="btn sm s" data-act="fake-add">' + icon('fa-plus') + ' افزودن</button></div></header>' +
+      '<div class="acts"><button class="btn sm" data-act="fake-reset" title="بازگشت به ۵ کانفیگ پیش‌فرض">' + icon('fa-rotate-left') + ' پیش‌فرض</button>' +
+      '<button class="btn sm s" data-act="fake-add">' + icon('fa-plus') + ' افزودن</button></div></header>' +
       '<div class="bd">' +
 
       /* راهنمای متغیرها */
@@ -1091,19 +1104,20 @@
 
   function readFakes() {
     const out = [];
+    const cur = (S.d.settings && S.d.settings.sub && Array.isArray(S.d.settings.sub.fakes)) ? S.d.settings.sub.fakes : [];
     $$('#fkList .fk-row').forEach((row) => {
-      const i = row.dataset.i;
-      const sw = row.querySelector('[data-fake-sw="' + i + '"]');
-      const nm = row.querySelector('[data-fake-name="' + i + '"]');
-      const pr = row.querySelector('[data-fake-proto="' + i + '"]');
-      const ps = row.querySelector('[data-fake-pos="' + i + '"]');
+      const i = Number(row.dataset.i);
+      const sw = row.querySelector('[data-fake-sw]');
+      const nm = row.querySelector('[data-fake-name]');
+      const pr = row.querySelector('[data-fake-proto]');
+      const ps = row.querySelector('[data-fake-pos]');
       out.push({
-        id: (S.d.settings.sub.fakes[i] || {}).id || 'fake_' + i,
-        name: nm ? nm.value : '',
+        id: (cur[i] && cur[i].id) || ('fake_' + Date.now().toString(36) + '_' + i),
+        name: nm ? String(nm.value || '') : '',
         enabled: sw ? sw.classList.contains('on') : false,
-        proto: pr ? pr.value : 'vless',
+        proto: (pr && pr.value === 'trojan') ? 'trojan' : 'vless',
         pos: ps ? (Number(ps.value) || 99) : 99,
-        pin: (S.d.settings.sub.fakes[i] || {}).pin || false,
+        pin: !!(cur[i] && cur[i].pin),
       });
     });
     return out;
