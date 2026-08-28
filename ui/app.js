@@ -909,11 +909,11 @@
   });
   document.addEventListener('click', (e) => { if (!e.target.closest('#searchBox')) $('#searchDrop').classList.remove('show'); });
 
-  /* کشوی منو */
+  /* ═══ کشوی منو — یک دکمه‌ی باز/بسته ═══ */
   const openDrawer = () => { $('#sidebar').classList.add('open'); $('#scrim').classList.add('show'); };
   const closeDrawer = () => { $('#sidebar').classList.remove('open'); $('#scrim').classList.remove('show'); };
-  $('#menuBtn').addEventListener('click', () => ($('#sidebar').classList.contains('open') ? closeDrawer() : openDrawer()));
-  $('#sbClose').addEventListener('click', closeDrawer);
+  const toggleDrawer = () => ($('#sidebar').classList.contains('open') ? closeDrawer() : openDrawer());
+  $('#menuBtn').addEventListener('click', (e) => { e.stopPropagation(); toggleDrawer(); });
   $('#scrim').addEventListener('click', closeDrawer);
 
   /* خروج */
