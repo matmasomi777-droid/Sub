@@ -357,7 +357,7 @@
     { t: 'تنظیمات اشتراک', icon: 'fa-link', two: 1, f: [
       { p: 'sub.path', l: 'مسیر ساب', t: 'text', mono: 1, h: 'هم صفحه‌ی کاربر و هم خروجی کلاینت روی همین مسیر است' },
       { p: 'sub.userAgent', l: 'فیلتر User-Agent', t: 'text', mono: 1 },
-      { p: 'sub.fakeConfigs', l: 'کانفیگ‌های فیک (مصرف/انقضا)', t: 'sw' },
+      { p: 'sub.fakeConfigs', l: 'کانفیگ‌های فیک فعال', t: 'sw', h: 'کانفیگ‌های اطلاعاتی در ابتدای لیست ساب کلاینت نمایش داده می‌شوند' },
       { p: 'sub.nodeLimit', l: 'Node limit', t: 'num' },
       { p: 'sub.converter', l: 'Converter API', t: 'text', mono: 1 },
       { p: 'sub.telegramChannel', l: 'خط کانال تلگرام', t: 'text', mono: 1, h: 'قابل غیرفعال‌سازی نیست' },
@@ -523,6 +523,7 @@
       '<div id="subOut"><div class="empty">خروجی اینجا نمایش داده می‌شود</div></div>' +
       (s.sub.telegramChannel ? '<div class="hint" style="margin-top:10px">خط کانال تلگرام: <span class="mono">' + esc(s.sub.telegramChannel) + '</span> — این خط قابل غیرفعال‌شدن نیست.</div>' : '') +
       '</div></div>') +
+      fakeConfigsCard() +
       SCHEMA_SUB.map((g) => group(g, S.d.settings)).join('') + saveBtn('save-sub');
   }
 
@@ -708,6 +709,7 @@
       (id === 'users' ? '<span class="cnt">' + fa(d.users.length) + '</span>' : '') +
       (id === 'logs' ? '<span class="cnt">' + fa((d.logs || []).length) + '</span>' : '') + '</button>').join('') + '</div>').join('');
     $('#view').innerHTML = '<div class="fade">' + (VIEWS[S.view] || dashView)() + '</div>';
+    if (S.view === 'sub') setTimeout(refreshPreview, 30);
     const cw = $('#chartWrap');
     if (cw) {
       const ser = S.view === 'monitor'
@@ -761,6 +763,37 @@
       }
       return;
     }
+    /* سوییچ کانفیگ فیک */
+    const fsw = e.target.closest('[data-fake-sw]');
+    if (fsw) {
+      e.preventDefault(); e.stopPropagation();
+      const on = !fsw.classList.contains('on');
+      fsw.classList.toggle('on', on);
+      const row = fsw.closest('.fk-row');
+      if (row) row.classList.toggle('off', !on);
+      refreshPreview();
+      return;
+    }
+    /* درج متغیر در فیلد فعال */
+    const fv = e.target.closest('.fk-var');
+    if (fv) {
+      e.preventDefault();
+      const active = document.activeElement;
+      const isFakeName = active && active.classList && active.classList.contains('fk-name');
+      const target = isFakeName ? active : ($('#fkList .fk-row .fk-name') || null);
+      if (target) {
+        const v = fv.dataset.var;
+        const st = target.selectionStart || target.value.length;
+        const en = target.selectionEnd || target.value.length;
+        target.value = target.value.slice(0, st) + v + target.value.slice(en);
+        target.focus();
+        const np = st + v.length;
+        target.setSelectionRange(np, np);
+        refreshPreview();
+      } else toast('ابتدا یک فیلد نام را انتخاب کنید', 'info');
+      return;
+    }
+
     const sw = e.target.closest('[data-sw]');
     if (sw) {
       e.preventDefault(); e.stopPropagation();
@@ -788,7 +821,29 @@
       else if (a === 'fmt') { S.fmt = v; render(); }
       else if (a === 'range') { S.range = v; render(); }
       else if (a === 'loglv') { S.tab.log = v; render(); }
-      else if (a.startsWith('save-')) { busy(t, 'ذخیره'); const r = await api('PUT', '/api/settings', { settings: collect($('#view')) }); free(t); if (r.ok) { toast('تنظیمات ذخیره شد'); await refresh(); } else toast(r.error || 'خطا', 'err'); }
+      else if (a.startsWith('save-')) {
+        busy(t, 'ذخیره');
+        const patch = collect($('#view'));
+        /* کانفیگ‌های فیک از DOM خوانده می‌شوند */
+        if ($('#fkList')) patch.sub = { ...(patch.sub || {}), fakes: readFakes() };
+        const r = await api('PUT', '/api/settings', { settings: patch });
+        free(t);
+        if (r.ok) { toast('تنظیمات ذخیره شد'); await refresh(); } else toast(r.error || 'خطا', 'err');
+      }
+      else if (a === 'fake-add') {
+        const fakes = S.d.settings.sub.fakes || [];
+        const used = fakes.filter((f) => f.name && f.name.trim()).length;
+        fakes.push({ id: 'fake_' + Date.now().toString(36), name: '', enabled: true, proto: 'vless', pin: false, pos: fakes.length + 1 });
+        S.d.settings.sub.fakes = fakes;
+        render(); refreshPreview();
+        setTimeout(() => { const el = $('#fkList .fk-row:last-child .fk-name'); if (el) { el.focus(); toast('یک کانفیگ فیک اضافه شد — نام و متغیرها را وارد کنید', 'info'); } }, 80);
+      }
+      else if (a === 'fake-del') {
+        const i = Number(t.dataset.i);
+        S.d.settings.sub.fakes.splice(i, 1);
+        render(); refreshPreview();
+        toast('حذف شد', 'err');
+      }
       else if (a === 'user-new') { const r = await api('POST', '/api/users', { name: 'کاربر ' + (S.d.users.length + 1) }); if (r.user) { S.sel = r.user.id; await refresh(); userModal(S.d.users.find((u) => u.id === r.user.id) || r.user, true); } }
       else if (a === 'user-edit') userModal(S.d.users.find((u) => u.id === id));
       else if (a === 'user-toggle') { const r = await api('POST', '/api/users', { id, op: 'toggle' }); if (r.ok) { toast('انجام شد'); await refresh(); } }
@@ -874,6 +929,7 @@
 
   document.addEventListener('change', async (e) => {
     if (e.target.closest('[data-act="sel-user"]')) { S.sel = e.target.value; render(); }
+    if (e.target.classList.contains('fk-proto')) refreshPreview();
     if (e.target.id === 'restoreFile') {
       const f = e.target.files[0]; if (!f) return;
       const r = await api('POST', '/api/action', { act: 'restore', data: JSON.parse(await f.text()) });
@@ -899,6 +955,8 @@
       bar.textContent = fa(vis) + ' از ' + fa(S.d.users.length) + ' کاربر';
     }
     if (e.target.id === 'tbSearch') doSearch(e.target.value);
+    /* به‌روزرسانی زنده‌ی پیش‌نمایش کانفیگ‌های فیک */
+    if (e.target.classList.contains('fk-name') || e.target.classList.contains('fk-pos')) refreshPreview();
     if (e.target.type === 'range') { const b = e.target.parentElement.querySelector('b'); if (b) b.textContent = e.target.value + (b.textContent.match(/[^\d۰-۹]+$/) || [''])[0]; }
   });
 
@@ -957,6 +1015,100 @@
   });
 
   /* ═══════════ مودال ویرایش کاربر — چیدمان دسته‌بندی‌شده ═══════════ */
+  /* ═══════════ کارت مدیریت کانفیگ‌های فیک ═══════════ */
+  const FAKE_VARS = [
+    ['{usage}', 'مصرف کل'], ['{remaining}', 'حجم باقی‌مانده'], ['{percent}', 'درصد مصرف'],
+    ['{expiry}', 'تاریخ انقضا'], ['{days}', 'روزهای باقی‌مانده'], ['{quota}', 'سهمیه کل'],
+    ['{up}', 'آپلود'], ['{down}', 'دانلود'], ['{req}', 'تعداد درخواست'],
+    ['{channel}', 'کانال تلگرام'], ['{panel}', 'نام پنل'], ['{ver}', 'نسخه'],
+    ['{user}', 'نام کاربر'], ['{mode}', 'حالت پروتکل'], ['{date}', 'تاریخ امروز'],
+    ['{time}', 'ساعت'], ['{ip}', 'آدرس پنل'],
+  ];
+
+  function fakeConfigsCard() {
+    const s = S.d.settings;
+    const fakes = (s.sub && Array.isArray(s.sub.fakes)) ? s.sub.fakes : [];
+    return '<div class="card"><header><span class="ic">' + icon('fa-list-check') + '</span>' +
+      '<div><h3>کانفیگ‌های فیک (اطلاعاتی)</h3>' +
+      '<p>در ابتدای لیست ساب کلاینت نمایش داده می‌شوند تا مصرف و انقضا در برنامه دیده شود</p></div>' +
+      '<div class="acts"><button class="btn sm s" data-act="fake-add">' + icon('fa-plus') + ' افزودن</button></div></header>' +
+      '<div class="bd">' +
+
+      /* راهنمای متغیرها */
+      '<div class="fk-help"><div class="fk-help-t">' + icon('fa-circle-info') + ' متغیرهای مجاز — روی هرکدام کلیک کنید تا در فیلد فعال درج شود</div>' +
+      '<div class="chips">' + FAKE_VARS.map(([v, d]) =>
+        '<button class="chip fk-var" data-var="' + esc(v) + '" title="' + esc(d) + '"><span class="mono">' + esc(v) + '</span></button>').join('') +
+      '</div></div>' +
+
+      /* فهرست کانفیگ‌های فیک */
+      '<div class="fk-list" id="fkList">' +
+      (fakes.map((f, i) => fakeRow(f, i)).join('') || '<div class="empty">هیچ کانفیگ فکی تعریف نشده</div>') +
+      '</div>' +
+
+      /* نمونه‌ی پیش‌نمایش */
+      '<div class="fk-preview" id="fkPreview"></div>' +
+      '</div></div>';
+  }
+
+  function fakeRow(f, i) {
+    const on = !!(f && f.enabled);
+    const pinned = !!(f && f.pin);
+    return '<div class="fk-row' + (on ? '' : ' off') + '" data-i="' + i + '">' +
+      /* سوییچ فعال */
+      '<div class="sw' + (on ? ' on' : '') + '" data-fake-sw="' + i + '"><i></i></div>' +
+      /* شماره ترتیب */
+      '<input class="fk-pos mono" data-fake-pos="' + i + '" value="' + esc(f.pos || (i + 1)) + '" title="ترتیب" inputmode="numeric">' +
+      /* نام با متغیرها */
+      '<input class="fk-name" data-fake-name="' + i + '" value="' + esc(f.name || '') + '" placeholder="📊 {usage}" ' + (pinned ? 'readonly' : '') + '>' +
+      /* پروتکل */
+      '<select class="fk-proto" data-fake-proto="' + i + '"' + (pinned ? ' disabled' : '') + '>' +
+      ['vless', 'trojan'].map((p) => '<option value="' + p + '"' + (f.proto === p ? ' selected' : '') + '>' + p + '</option>').join('') +
+      '</select>' +
+      /* دکمه‌ها */
+      (pinned ? '<span class="badge ac" title="از پیش تعریف‌شده">' + icon('fa-lock') + ' ثابت</span>'
+              : '<button class="btn sm d" data-act="fake-del" data-i="' + i + '" title="حذف">' + icon('fa-trash-can') + '</button>') +
+      '</div>';
+  }
+
+  function refreshPreview() {
+    const s = S.d.settings;
+    const box = $('#fkPreview');
+    if (!box) return;
+    const fakes = (s.sub && Array.isArray(s.sub.fakes)) ? s.sub.fakes : [];
+    const act = fakes.filter((f) => f.enabled && f.name).sort((a, b) => (a.pos || 99) - (b.pos || 99));
+    const u = S.d.users[0] || { name: 'کاربر نمونه', uuid: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', secret: 'sample', up: 5.5 * 1073741824, down: 24.3 * 1073741824, quotaGB: 50, totalReq: 1234, expiryAt: Date.now() + 45 * 86400000 };
+    const vars = { usage: 'مصرف: ۲۹.۸۰ GB از ۵۰.۰۰ GB', remaining: 'باقیمانده: ۲۰.۲۰ GB', percent: '۶۰٪',
+      expiry: new Date(u.expiryAt).toLocaleDateString('fa-IR'), days: '۴۵ روز', quota: '۵۰.۰۰ GB',
+      up: '۵.۵۰ GB', down: '۲۴.۳۰ GB', req: '۱۲۳۴', channel: s.sub.telegramChannel || '', panel: s.panel.name,
+      ver: S.d.version || '2.0.0', user: u.name, mode: s.mode, date: new Date().toLocaleDateString('fa-IR'),
+      time: new Date().toLocaleTimeString('fa-IR'), ip: s.panel.url || '' };
+    const render = (tpl) => { let o = String(tpl || ''); for (const [k, v] of Object.entries(vars)) o = o.split('{' + k + '}').join(v); return o; };
+    box.innerHTML = '<div class="fk-help-t" style="margin-bottom:8px">' + icon('fa-eye') + ' پیش‌نمایش خروجی</div>' +
+      '<div class="list">' + (act.map((f) => '<div class="row-item"><span class="dot on"></span>' +
+        '<div class="grow"><b>' + esc(render(f.name)) + '</b><div class="cell-sub mono">' + esc(f.proto) + '://…</div></div></div>').join('') ||
+        '<div class="empty">کانفیگ فعالی نیست</div>') + '</div>';
+  }
+
+  function readFakes() {
+    const out = [];
+    $$('#fkList .fk-row').forEach((row) => {
+      const i = row.dataset.i;
+      const sw = row.querySelector('[data-fake-sw="' + i + '"]');
+      const nm = row.querySelector('[data-fake-name="' + i + '"]');
+      const pr = row.querySelector('[data-fake-proto="' + i + '"]');
+      const ps = row.querySelector('[data-fake-pos="' + i + '"]');
+      out.push({
+        id: (S.d.settings.sub.fakes[i] || {}).id || 'fake_' + i,
+        name: nm ? nm.value : '',
+        enabled: sw ? sw.classList.contains('on') : false,
+        proto: pr ? pr.value : 'vless',
+        pos: ps ? (Number(ps.value) || 99) : 99,
+        pin: (S.d.settings.sub.fakes[i] || {}).pin || false,
+      });
+    });
+    return out;
+  }
+
   function userModal(u, isNew) {
     if (!u) return;
     const v = (p) => {
