@@ -322,7 +322,7 @@
         { p: 'cf.usageApi', l: 'آمار درخواست از CF API', t: 'sw' },
         { p: 'panel.name', l: 'نام پنل', t: 'text' },
         { p: 'panel.url', l: 'آدرس پنل', t: 'text', mono: 1 },
-        { p: 'kvBinding', l: 'بایندینگ KV', t: 'text', mono: 1 },
+        /* بایندینگ D1 با نام DB */
       ] },
       { t: 'پنل‌های لینک‌شده', icon: 'fa-network-wired', d: 'Hub & Spoke', two: 1, f: [
         { p: 'linked.enabled', l: 'اتصال چندپنلی', t: 'sw' },
@@ -433,7 +433,7 @@
     const p = (s.auth && s.auth.path) || 'panel';
     return '<div class="page-head"><div><h1>نمای کلی</h1><p>' + esc(s.panel.name) + ' • ' + esc(location.hostname) + ' • نسخه ' + esc(d.version) + '</p></div>' +
       '<div class="btn-row">' +
-      '<span class="badge ' + (d.storage === 'kv' ? 'ok' : 'warn') + '">' + icon(d.storage === 'kv' ? 'fa-database' : 'fa-triangle-exclamation') + ' ' + (d.storage === 'kv' ? 'KV پایدار' : 'ذخیره‌سازی موقت') + '</span>' +
+      '<span class="badge ' + (d.storage === 'd1' ? 'ok' : 'warn') + '">' + icon(d.storage === 'd1' ? 'fa-database' : 'fa-triangle-exclamation') + ' ' + (d.storage === 'd1' ? 'D1 پایدار' : 'ذخیره‌سازی موقت') + '</span>' +
       '<span class="badge ac">' + esc(s.mode === 'both' ? 'Alpha + Beta' : s.mode) + '</span>' +
       (s.fragment.enabled ? '<span class="badge ac">' + icon('fa-scissors') + ' Fragment</span>' : '') +
       (s.ech.enabled ? '<span class="badge b2">' + icon('fa-shield-halved') + ' ECH</span>' : '') +
@@ -910,7 +910,7 @@
     $('#brandName').textContent = s.panel.name;
     $('#brandVer').textContent = 'v' + d.version;
     $('#pageTitle').textContent = s.panel.name;
-    $('#sfStore').textContent = d.storage === 'kv' ? 'KV پایدار' : 'موقت';
+    $('#sfStore').textContent = d.storage === 'd1' ? 'D1 پایدار' : 'موقت';
     $('#sfUsers').textContent = fa(d.users.length) + ' کاربر';
     $('#sfVer').textContent = d.version;
     const panic = s.auth.panic;
@@ -1113,10 +1113,12 @@
         /* مقادیری که با کلیک (نه فیلد) تغییر کرده‌اند */
         patch.mode = s.mode;
         patch.auth = { ...(patch.auth || {}), maintenanceHost: s.auth.maintenanceHost };
-        /* آیدی‌های تلگرام */
+        /* آیدی‌های تلگرام + کانفیگ‌های فیک */
         patch.sub = { ...(patch.sub || {}) };
         if (s.sub.telegramSupport) patch.sub.telegramSupport = s.sub.telegramSupport;
         if (s.sub.telegramBuy) patch.sub.telegramBuy = s.sub.telegramBuy;
+        /* اگر کارت کانفیگ‌های فیک در صفحه است، مقادیرش را هم ذخیره کن */
+        if ($('#fkList')) patch.sub.fakes = readFakes();
         ['tls', 'sub.fakeConfigs', 'auth.disguise', 'auth.totp', 'tg.enabled', 'upd.auto'].forEach((k) => {
           setP(patch, k, getP(s, k));
         });
@@ -1133,6 +1135,15 @@
         const r = await api('PUT', '/api/settings', { settings: patch });
         free(t);
         if (r.ok) { toast('تنظیمات ذخیره شد'); await refresh(); } else toast(r.error || 'خطا', 'err');
+      }
+      else if (a === 'fake-save') {
+        busy(t, 'ذخیره');
+        const patch = collect($('#view'));
+        patch.sub = { ...(patch.sub || {}), fakes: readFakes() };
+        const r = await api('PUT', '/api/settings', { settings: patch });
+        free(t);
+        if (r.ok) { toast('کانفیگ‌های فیک ذخیره شد ✓'); await refresh(); }
+        else toast(r.error || 'خطا در ذخیره', 'err');
       }
       else if (a === 'fake-add') {
         const fakes = S.d.settings.sub.fakes || [];
@@ -1386,8 +1397,11 @@
     return '<div class="card"><header><span class="ic">' + icon('fa-list-check') + '</span>' +
       '<div><h3>کانفیگ‌های فیک (اطلاعاتی)</h3>' +
       '<p>در ابتدای لیست ساب کلاینت نمایش داده می‌شوند تا مصرف و انقضا در برنامه دیده شود</p></div>' +
-      '<div class="acts"><button class="btn sm" data-act="fake-reset" title="بازگشت به ۵ کانفیگ پیش‌فرض">' + icon('fa-rotate-left') + ' پیش‌فرض</button>' +
-      '<button class="btn sm s" data-act="fake-add">' + icon('fa-plus') + ' افزودن</button></div></header>' +
+      '<div class="acts">' +
+      '<button class="btn sm" data-act="fake-reset" title="بازگشت به ۵ کانفیگ پیش‌فرض">' + icon('fa-rotate-left') + ' پیش‌فرض</button>' +
+      '<button class="btn sm s" data-act="fake-add">' + icon('fa-plus') + ' افزودن</button>' +
+      '<button class="btn sm p" data-act="fake-save">' + icon('fa-floppy-disk') + ' ذخیره</button>' +
+      '</div></header>' +
       '<div class="bd">' +
 
       /* راهنمای متغیرها */
