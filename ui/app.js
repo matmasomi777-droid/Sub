@@ -219,11 +219,12 @@
   const saveBtn = (act, lbl) => '<button class="btn p" data-act="' + act + '">' + icon('fa-floppy-disk') + ' ' + (lbl || 'ذخیره') + '</button>';
 
   /* ─────────── ناوبری و اسکیمای تنظیمات ─────────── */
+  /* ناوبری مثل نهان — ۵ تب اصلی، تمیز و ساده */
   const NAV = [
-    { g: 'عملیات', items: [['dash', 'نمای کلی', 'fa-gauge-high'], ['users', 'کاربران', 'fa-users'], ['sub', 'اشتراک', 'fa-link']] },
-    { g: 'هسته', items: [['proto', 'پروتکل و کانفیگ', 'fa-shield-halved'], ['network', 'شبکه و آی‌پی', 'fa-network-wired'], ['monitor', 'مانیتورینگ', 'fa-chart-line']] },
-    { g: 'زیرساخت', items: [['telegram', 'ربات تلگرام', 'fa-brands fa-telegram'], ['cloud', 'کلودفلر و پنل‌ها', 'fa-cloud'], ['update', 'به‌روزرسانی', 'fa-rotate']] },
-    { g: 'سیستم', items: [['security', 'امنیت و استتار', 'fa-lock'], ['logs', 'لاگ فعالیت', 'fa-list-check'], ['settings', 'تنظیمات و پشتیبان', 'fa-gear']] },
+    { g: 'اصلی', items: [['dash', 'نمای کلی', 'fa-gauge-high'], ['users', 'کاربران', 'fa-users']] },
+    { g: 'شبکه', items: [['network', 'شبکه و IP', 'fa-network-wired'], ['monitor', 'آمار', 'fa-chart-line']] },
+    { g: 'پیکربندی', items: [['config', 'پیکربندی', 'fa-gear'], ['sub', 'اشتراک', 'fa-link']] },
+    { g: 'سیستم', items: [['logs', 'لاگ', 'fa-list-check'], ['settings', 'پشتیبان', 'fa-database']] },
   ];
 
   const SCHEMA = {
@@ -464,9 +465,7 @@
       '<div class="card"><header><span class="ic b2">' + icon('fa-gauge-high') + '</span><div><h3>سهمیه‌ی مصرف</h3></div></header><div class="bd" style="display:flex;justify-content:space-around;gap:12px;flex-wrap:wrap">' +
       ring(quota ? used / quota * 100 : 0, 'سهمیه') + ring(quota ? 100 - used / quota * 100 : 100, 'باقیمانده', 'var(--ac2)') +
       '</div></div>' +
-      '<div class="card"><header><span class="ic warn">' + icon('fa-list-check') + '</span><div><h3>آخرین رویدادها</h3></div><div class="acts"><button class="btn sm ghost" data-act="nav" data-view="logs">همه</button></div></header><div class="bd">' +
-      ((d.logs || []).slice(0, 5).map((l) => '<div class="log"><span class="dot ' + (l.level === 'success' ? 'on' : l.level === 'error' ? 'bad' : 'warn') + '"></span><div class="l"><b>' + esc(l.action) + '</b><div class="hint">' + esc(l.detail || l.actor) + '</div></div><span class="hint">' + ago(l.ts) + '</span></div>').join('') || '<div class="empty">رویدادی نیست</div>') +
-      '</div></div></div>';
+      '</div></div>';
   }
 
   function usersView() {
@@ -674,13 +673,90 @@
       '<div class="hint" style="margin-top:10px">هر مسیر ناشناخته هم همان سایت پوششی را نشان می‌دهد. پس از تغییر مسیر ورود، صفحه را با آدرس جدید باز کنید.</div></div></div></div>';
   }
 
+  /* ═══════════════════════════════════════════════════════════════
+     نمای پیکربندی — ایده از نهان ولی ساده‌تر
+     فقط تنظیماتی که واقعاً لازم است. بقیه پیش‌فرض هوشمند دارند.
+     ═══════════════════════════════════════════════════════════════ */
+  function configView() {
+    const s = S.d.settings;
+
+    /* ═══ حالت اصلی — مثل نهان: یک انتخاب ساده ═══ */
+    const modeCard = () => {
+      const modes = [
+        { v: 'alpha', t: 'Alpha', d: 'VLESS — سبک و سریع', ic: 'gauge' },
+        { v: 'beta',  t: 'Beta',  d: 'Trojan — مبهم‌سازی قوی', ic: 'shield' },
+        { v: 'both',  t: 'هر دو', d: 'VLESS + Trojan', ic: 'zap' },
+      ];
+      return '<div class="card"><header><span class="ic">' + icon('fa-shield-halved') + '</span><div><h3>حالت اصلی</h3><p>کدام پروتکل در کانفیگ‌ها استفاده شود</p></div></header>' +
+        '<div class="bd"><div class="mode-grid">' +
+        modes.map((m) => '<button class="mode-card' + (s.mode === m.v ? ' on' : '') + '" data-mode="' + m.v + '">' +
+          icon('fa-' + m.ic) + '<b>' + m.t + '</b><span>' + m.d + '</span></button>').join('') +
+        '</div></div></div>';
+    };
+
+    /* ═══ کارت‌های سریع — جای toggle های پراکنده ═══ */
+    const quickCard = () => {
+      const items = [
+        { k: 'tls', ic: 'lock',  t: 'TLS', d: 'رمزنگاری ترافیک' },
+        { k: 'sub.fakeConfigs', ic: 'chartbar', t: 'اطلاعات مصرف', d: 'نمایش در کلاینت' },
+        { k: 'auth.disguise', ic: 'eyeoff', t: 'سایت پوششی', d: 'استتار ریشه' },
+        { k: 'auth.totp', ic: 'mobile', t: 'ورود دومرحله‌ای', d: '2FA' },
+        { k: 'tg.enabled', ic: 'send', t: 'ربات تلگرام', d: 'مدیریت راه دور' },
+        { k: 'upd.auto', ic: 'rotate', t: 'بروزرسانی خودکار', d: 'از GitHub' },
+      ];
+      return '<div class="card"><header><span class="ic">' + icon('fa-bolt') + '</span><div><h3>میان‌برها</h3><p>روی هرکدام کلیک کنید تا روشن/خاموش شود</p></div></header>' +
+        '<div class="bd"><div class="qgrid">' +
+        items.map((it) => {
+          const val = !!getP(s, it.k);
+          return '<button class="qcard' + (val ? ' on' : '') + '" data-q="' + it.k + '">' +
+            icon('fa-' + it.ic) + '<div><b>' + it.t + '</b><span>' + it.d + '</span></div>' +
+            '<span class="qdot' + (val ? ' on' : '') + '"></span></button>';
+        }).join('') + '</div></div></div>';
+    };
+
+    /* ═══ فقط فیلدهای ضروری ═══ */
+    const essential = () => acc('تنظیمات ضروری', 'fa-gear', [
+      { p: 'path', l: 'مسیر تونل', t: 'text', mono: 1, h: 'پیش‌فرض: /sg' },
+      { p: 'ports', l: 'پورت‌ها', t: 'text', mono: 1, h: 'با کاما: 443, 2053' },
+      { p: 'auth.path', l: 'مسیر ورود پنل', t: 'text', mono: 1, h: 'یک کلمه‌ی مخفی بگذارید' },
+      { p: 'auth.password', l: 'کلید اصلی', t: 'pw', h: 'رمز ورود پنل' },
+    ], s);
+
+    /* ═══ شبکه ═══ */
+    const network = () => acc('شبکه', 'fa-network-wired', [
+      { p: 'cleanIPs', l: 'IPهای پاک', t: 'area', dt: 'lines', h: 'هر خط یک IP — از cfip.rip بگیرید' },
+      { p: 'proxyIPs', l: 'IPهای پروکسی', t: 'area', dt: 'lines', h: 'برای دور زدن تحریم' },
+      { p: 'doh.url', l: 'DNS', t: 'text', mono: 1 },
+    ], s);
+
+    /* ═══ پیشرفته — کمترین تعداد ═══ */
+    const advanced = () => acc('پیشرفته', 'fa-key', [
+      { p: 'tg.token', l: 'توکن تلگرام', t: 'pw', mono: 1 },
+      { p: 'tg.chatId', l: 'Chat ID', t: 'text', mono: 1 },
+      { p: 'cf.accountId', l: 'CF Account ID', t: 'text', mono: 1, h: 'برای آمار' },
+      { p: 'upd.repo', l: 'ریپو GitHub', t: 'text', mono: 1 },
+      { p: 'sec.killSwitch', l: 'Kill Switch', t: 'sw', bad: 1, h: 'قطع فوری' },
+    ], s);
+
+    return '<div class="page-head"><div><h1>پیکربندی</h1><p>فقط چیزهایی که لازم است</p></div>' +
+      '<button class="btn p" data-act="save-config">' + icon('fa-floppy-disk') + ' ذخیره</button></div>' +
+
+      modeCard() + quickCard() +
+      '<div style="padding:0 2px">' + essential() + network() + advanced() + '</div>' +
+
+      '<div class="btn-row" style="justify-content:center;margin-top:10px">' +
+      '<button class="btn p lg" data-act="save-config">' + icon('fa-floppy-disk') + ' ذخیره</button></div>';
+  }
+
   const VIEWS = {
-    dash: dashView, users: usersView, sub: subView, monitor: monitorView, update: updateView, logs: logsView, settings: settingsView,
-    proto: () => schemaView('proto', ['پروتکل و کانفیگ', 'حالت Alpha/Beta/Both، ترنسپورت، TLS، ECH و Fragment']) + protoExtra(),
-    network: () => schemaView('network', ['شبکه و آی‌پی', 'Clean IP، Proxy IP با failover، NAT64، DoH و GeoIP']),
-    telegram: () => schemaView('telegram', ['ربات تلگرام', 'پنل تلگرامی، اعلان‌ها و مدیریت چندپنلی']) + tgExtra(),
-    cloud: () => schemaView('cloud', ['کلودفلر و پنل‌های لینک‌شده', 'API، دامنه و معماری Hub & Spoke']) + cloudExtra(),
-    security: () => schemaView('security', ['امنیت و استتار', 'ورود، 2FA، مسیر مخفی و سایت پوششی']) + secExtra(),
+    dash: dashView, users: usersView, sub: subView, monitor: monitorView, logs: logsView, settings: settingsView,
+    config: configView,
+    update: () => configView(),
+    proto: () => configView(),
+    network: () => configView(),
+    telegram: () => configView(),
+    cloud: () => configView(),
+    security: () => configView(),
   };
   function protoExtra() {
     const s = S.d.settings;
@@ -785,6 +861,30 @@
     const ach = e.target.closest('[data-acc]');
     if (ach) { e.preventDefault(); e.stopPropagation(); ach.parentElement.classList.toggle('open'); return; }
 
+    /* کارت‌های انتخاب حالت */
+    const mc = e.target.closest('[data-mode]');
+    if (mc) {
+      e.preventDefault(); e.stopPropagation();
+      const v = mc.dataset.mode;
+      S.d.settings.mode = v;
+      $$('.mode-card').forEach((c) => c.classList.toggle('on', c.dataset.mode === v));
+      toast('حالت: ' + (v === 'alpha' ? 'Alpha (VLESS)' : v === 'beta' ? 'Beta (Trojan)' : 'هر دو') + ' — برای اعمال، ذخیره کنید', 'info');
+      return;
+    }
+
+    /* کارت‌های میان‌بر — با یک کلیک روشن/خاموش */
+    const qc = e.target.closest('[data-q]');
+    if (qc) {
+      e.preventDefault(); e.stopPropagation();
+      const k = qc.dataset.q;
+      const cur = !!getP(S.d.settings, k);
+      setP(S.d.settings, k, !cur);
+      qc.classList.toggle('on', !cur);
+      qc.querySelector('.qdot').classList.toggle('on', !cur);
+      toast((!cur ? 'روشن شد: ' : 'خاموش شد: ') + qc.querySelector('b').textContent + ' — ذخیره کنید', 'info');
+      return;
+    }
+
     /* انتخاب حالت کانفیگ فیک کاربر */
     const ufm = e.target.closest('[data-ufake-mode]');
     if (ufm) {
@@ -873,6 +973,21 @@
       else if (a === 'fmt') { S.fmt = v; render(); }
       else if (a === 'range') { S.range = v; render(); }
       else if (a === 'loglv') { S.tab.log = v; render(); }
+      else if (a === 'save-config') {
+        busy(t, 'ذخیره');
+        /* فیلدها از DOM + مقادیر کلیک‌شده از state */
+        const patch = collect($('#view'));
+        const s = S.d.settings;
+        /* مقادیری که با کلیک (نه فیلد) تغییر کرده‌اند */
+        patch.mode = s.mode;
+        ['tls', 'sub.fakeConfigs', 'auth.disguise', 'auth.totp', 'tg.enabled', 'upd.auto'].forEach((k) => {
+          setP(patch, k, getP(s, k));
+        });
+        const r = await api('PUT', '/api/settings', { settings: patch });
+        free(t);
+        if (r.ok) { toast('ذخیره شد ✓'); await refresh(); }
+        else toast(r.error || 'خطا در ذخیره', 'err');
+      }
       else if (a.startsWith('save-')) {
         busy(t, 'ذخیره');
         const patch = collect($('#view'));
