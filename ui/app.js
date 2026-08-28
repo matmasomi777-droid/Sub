@@ -87,7 +87,7 @@
   function field(f, val) {
     const p = esc(f.p);
     let inner;
-    if (f.t === 'sw') inner = '<div class="sw ' + (f.bad ? 'bad ' : '') + (val ? 'on' : '') + '" data-sw="' + p + '"><i></i></div><input type="checkbox" class="hide" data-p="' + p + '" data-t="bool"' + (val ? ' checked' : '') + '>';
+    if (f.t === 'sw') inner = '<div class="sw ' + (f.bad ? 'bad ' : '') + (val ? 'on' : '') + '" data-sw="' + p + '" data-val="' + (val ? '1' : '0') + '"><i></i></div>';
     else if (f.t === 'sel') inner = '<select data-p="' + p + '">' + f.o.map((o) => '<option value="' + esc(o) + '"' + (o === val ? ' selected' : '') + '>' + esc((f.lbls && f.lbls[o]) || o) + '</option>').join('') + '</select>';
     else if (f.t === 'num') inner = '<input type="number" data-p="' + p + '" data-t="num" value="' + esc(val ?? 0) + '">';
     else if (f.t === 'pw') inner = '<input type="password" data-p="' + p + '" value="' + esc(val ?? '') + '" class="mono">';
@@ -97,7 +97,12 @@
     return '<label class="f"><span>' + esc(f.l) + (f.req ? ' <b style="color:var(--bad)">*</b>' : '') + '</span>' + inner + (f.h ? '<div class="hint" style="margin-top:5px">' + f.h + '</div>' : '') + '</label>';
   }
   const group = (g, s) => '<div class="card"><header><span class="ic ' + (g.ic || '') + '">' + icon(g.icon || 'fa-gear') + '</span><div><h3>' + esc(g.t) + '</h3>' + (g.d ? '<p>' + g.d + '</p>' : '') + '</div></header><div class="bd"><div class="switches ' + (g.two ? 'two' : '') + '">' + g.f.map((f) => field(f, getP(s, f.p))).join('') + '</div></div></div>';
-  function collect(root) { const o = {}; if (!root) return o; $$('[data-p]', root).forEach((el) => { const t = el.dataset.t; let v = el.type === 'checkbox' ? el.checked : el.value; if (t === 'num') v = Number(v) || 0; if (t === 'bool') v = !!v; if (t === 'lines') v = String(v).split('\n').map((x) => x.trim()).filter(Boolean); setP(o, el.dataset.p, v); }); return o; }
+  function collect(root) { const o = {}; if (!root) return o;
+    /* فیلدهای عادی */
+    $$('[data-p]', root).forEach((el) => { const t = el.dataset.t; let v = el.value; if (t === 'num') v = Number(v) || 0; if (t === 'lines') v = String(v).split('\n').map((x) => x.trim()).filter(Boolean); setP(o, el.dataset.p, v); });
+    /* تاگل‌ها: مقدار را مستقیم از data-val روی div می‌خوانیم */
+    $$('[data-sw]', root).forEach((el) => { setP(o, el.dataset.sw, el.dataset.val === '1'); });
+    return o; }
   const saveBtn = (act, lbl) => '<div class="btn-row" style="margin-top:4px"><button class="btn p" data-act="' + act + '">' + icon('fa-floppy-disk') + ' ' + (lbl || 'ذخیره تنظیمات') + '</button><span class="hint">تغییرات بلافاصله روی کانفیگ‌ها اعمال می‌شود.</span></div>';
 
   /* ─────────── ناوبری و اسکیمای تنظیمات ─────────── */
@@ -354,7 +359,7 @@
     const us = S.d.users, q = (S.q || '').toLowerCase();
     const list = us.filter((u) => !q || [u.name, u.uuid, u.note, u.secret].join(' ').toLowerCase().includes(q));
     return '<div class="page-head"><div><h1>مدیریت کاربران</h1><p>' + fa(us.length) + ' کاربر • ' + fa(us.filter((u) => u.enabled).length) + ' فعال • تنظیمات اختصاصی برای هر کاربر</p></div>' +
-      '<div class="btn-row"><input id="uSearch" style="width:190px" placeholder="' + icon('') + 'جستجو…" value="' + esc(S.q || '') + '">' +
+      '<div class="btn-row"><input id="uSearch" style="width:190px" placeholder="جستجو در نام، UUID یا یادداشت…" value="' + esc(S.q || '') + '">' +
       '<button class="btn p" data-act="user-new">' + icon('fa-plus') + ' کاربر جدید</button></div></div>' +
       '<div class="card"><div class="bd" style="padding:0"><div class="tbl-wrap"><table>' +
       '<thead><tr><th>کاربر</th><th>UUID</th><th>مصرف</th><th>سهمیه</th><th>انقضا</th><th>حالت</th><th>اختصاصی</th><th>آخرین فعالیت</th><th>عملیات</th></tr></thead><tbody>' +
@@ -372,7 +377,7 @@
           '<td class="cell-sub">' + ago(u.lastSeen) + '<div>' + fa(u.totalReq || 0) + ' req</div></td>' +
           '<td><div class="row-btns">' +
           '<button class="btn sm" data-act="user-edit" data-id="' + u.id + '" title="ویرایش">' + icon('fa-pen') + '</button>' +
-          '<button class="btn sm" data-act="sub-of" data-id="' + u.id + '" title="صفحه‌ی کاربر و ساب">' + icon('fa-qrcode') + '</button>' +
+          '<button class="btn sm" data-act="copy-page" data-id="' + u.id + '" title="کپی آدرس صفحه‌ی کاربر">' + icon('fa-copy') + '</button>' +
           '<button class="btn sm" data-act="user-reset" data-id="' + u.id + '" title="ریست مصرف">' + icon('fa-rotate-left') + '</button>' +
           '<button class="btn sm ' + (u.enabled ? 'd' : 's') + '" data-act="user-toggle" data-id="' + u.id + '" title="' + (u.enabled ? 'قطع دسترسی' : 'فعال‌سازی') + '">' + icon(u.enabled ? 'fa-ban' : 'fa-circle-check') + '</button>' +
           '<button class="btn sm d" data-act="user-del" data-id="' + u.id + '" title="حذف">' + icon('fa-trash-can') + '</button>' +
@@ -385,26 +390,19 @@
     const s = S.d.settings, us = S.d.users;
     const u = us.find((x) => x.id === S.sel) || us[0];
     const page = u ? location.origin + '/' + s.sub.path + '/' + u.uuid : '';
-    return '<div class="page-head"><div><h1>مرکز اشتراک</h1><p>یک لینک = صفحه‌ی کاربر برای مرورگر + خروجی خام برای کلاینت</p></div></div>' +
-      (!u ? '<div class="card"><div class="bd"><div class="empty">ابتدا یک کاربر بسازید</div></div></div>' :
-      '<div class="card"><header><span class="ic">' + icon('fa-link') + '</span><div><h3>لینک اشتراک</h3><p>تشخیص خودکار کلاینت از روی User-Agent</p></div>' +
-      '<div class="acts"><div class="seg">' + ['base64', 'raw', 'clash', 'meta', 'singbox', 'v2ray'].map((x) => '<button data-act="fmt" data-v="' + x + '" class="' + (S.fmt === x ? 'on' : '') + '">' + x + '</button>').join('') + '</div></div></header>' +
+    return '<div class="page-head"><div><h1>تنظیمات اشتراک</h1><p>قواعد روتینگ، فرمت و محدودیت‌ها</p></div></div>' +
+      (!u ? '<div class="card"><div class="bd"><div class="empty">ابتدا از بخش کاربران یک کاربر بسازید</div></div></div>' :
+      '<div class="card"><header><span class="ic">' + icon('fa-qrcode') + '</span><div><h3>صفحه‌ی کاربر</h3><p>داشبورد + اشتراک در یک صفحه — در مرورگر داشبورد، در کلاینت خروجی خام</p></div></header>' +
       '<div class="bd">' +
       '<div class="grid g3" style="margin-bottom:12px">' +
       '<label class="f" style="margin:0"><span>کاربر</span><select data-act="sel-user">' + us.map((x) => '<option value="' + x.id + '"' + (x.id === u.id ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select></label>' +
-      '<div><div class="hint">مصرف</div><b class="mono">' + bytes(u.up + u.down) + '</b><div class="hint">' + (u.quotaGB ? fa(u.quotaGB) + ' GB' : 'نامحدود') + '</div></div>' +
-      '<div><div class="hint">سقف گره</div><b class="mono">' + fa(s.sub.nodeLimit || 0) + '</b><div class="hint">node limit</div></div></div>' +
-      '<div class="hint" style="margin-bottom:8px">صفحه‌ی کاربر (داشبورد + اشتراک در یک صفحه):</div>' +
-      '<div class="btn-row" style="margin-bottom:12px"><input class="mono" readonly value="' + esc(page) + '" style="flex:1;min-width:200px">' +
-      '<button class="btn sm" data-act="copy" data-v="' + esc(page) + '">' + icon('fa-copy') + ' کپی</button>' +
-      '<button class="btn sm" data-act="open" data-v="' + esc(page) + '">' + icon('fa-arrow-up-right-from-square') + ' باز کردن</button>' +
-      '<button class="btn sm" data-act="qr" data-v="' + esc(page) + '">' + icon('fa-qrcode') + ' QR</button></div>' +
-      '<div class="hint" style="margin-bottom:8px">خروجی کلاینت (' + esc(S.fmt) + '):</div>' +
-      '<div class="btn-row" style="margin-bottom:12px"><input class="mono" readonly value="' + esc(page + '?format=' + S.fmt) + '" style="flex:1;min-width:200px">' +
-      '<button class="btn sm" data-act="copy" data-v="' + esc(page + '?format=' + S.fmt) + '">' + icon('fa-copy') + ' کپی</button>' +
-      '<button class="btn sm s" data-act="sub-load" data-id="' + u.id + '">' + icon('fa-eye') + ' نمایش خروجی</button></div>' +
-      '<div id="subOut"><div class="empty">خروجی اینجا نمایش داده می‌شود</div></div>' +
-      (s.sub.telegramChannel ? '<div class="hint" style="margin-top:10px">خط کانال تلگرام: <span class="mono">' + esc(s.sub.telegramChannel) + '</span> — این خط قابل غیرفعال‌شدن نیست.</div>' : '') +
+      '<div><div class="hint">مصرف</div><b class="mono">' + bytes(u.up + u.down) + '</b></div>' +
+      '<div><div class="hint">سهمیه</div><b class="mono">' + (u.quotaGB ? fa(u.quotaGB) + ' GB' : 'نامحدود') + '</b></div></div>' +
+      '<div class="row-item" style="margin-bottom:10px"><div class="grow"><div class="cell-main" style="font-size:11px">آدرس صفحه‌ی کاربر</div><div class="mono" style="font-size:10px">' + esc(page) + '</div></div>' +
+      '<button class="btn sm s" data-act="copy" data-v="' + esc(page) + '">' + icon('fa-copy') + ' کپی صفحه</button>' +
+      '<button class="btn sm" data-act="open" data-v="' + esc(page) + '">' + icon('fa-arrow-up-right-from-square') + ' باز کردن</button></div>' +
+      '<div class="hint">هر کاربر یک صفحه‌ی اختصاصی دارد. مرورگر آن را به‌عنوان داشبورد نشان می‌دهد و اپ‌های VPN آن را به‌عنوان لینک ساب (Base64) می‌شناسند.</div>' +
+      (s.sub.telegramChannel ? '<div class="hint" style="margin-top:8px">خط کانال تلگرام: <span class="mono">' + esc(s.sub.telegramChannel) + '</span></div>' : '') +
       '</div></div>') +
       SCHEMA_SUB.map((g) => group(g, S.d.settings)).join('') + saveBtn('save-sub');
   }
@@ -645,7 +643,11 @@
       return;
     }
     const sw = e.target.closest('[data-sw]');
-    if (sw) { sw.classList.toggle('on'); const inp = sw.parentElement.querySelector('[data-p="' + sw.dataset.sw + '"]'); if (inp) inp.checked = sw.classList.contains('on'); return; }
+    if (sw) {
+      const on = sw.classList.toggle('on');
+      sw.dataset.val = on ? '1' : '0';
+      return;
+    }
 
     const t = e.target.closest('[data-act]'); if (!t) return;
     const a = t.dataset.act, id = t.dataset.id, v = t.dataset.v;
@@ -670,7 +672,7 @@
       else if (a === 'user-toggle') { const r = await api('POST', '/api/users', { id, op: 'toggle' }); if (r.ok) { toast('انجام شد'); await refresh(); } }
       else if (a === 'user-reset') { const r = await api('POST', '/api/users', { id, op: 'reset' }); if (r.ok) { toast('مصرف ریست شد'); await refresh(); } }
       else if (a === 'user-del') { const u = S.d.users.find((x) => x.id === id); if (!confirm('کاربر «' + (u ? u.name : '') + '» حذف شود؟')) return; const r = await api('POST', '/api/users', { id, op: 'delete' }); if (r.ok) { toast('کاربر حذف شد', 'err'); closeM(); await refresh(); } }
-      else if (a === 'sub-of') { S.sel = id; S.view = 'sub'; render(); }
+      else if (a === 'copy-page') { const pg = location.origin + '/' + S.d.settings.sub.path + '/' + S.d.users.find((u) => u.id === id)?.uuid; if (pg) copy(pg); else toast('کاربر یافت نشد', 'err'); }
       else if (a === 'qr') qrModal(v);
       else if (a === 'sub-load') {
         busy(t, 'دریافت');
@@ -736,7 +738,7 @@
   });
 
   document.addEventListener('input', (e) => {
-    if (e.target.id === 'uSearch') { S.q = e.target.value; const p = e.target.selectionStart; render(); const el = $('#uSearch'); if (el) { el.focus(); el.setSelectionRange(p, p); } }
+    if (e.target.id === 'uSearch') { const v = e.target.value; S.q = v; render(); const el = $('#uSearch'); if (el) { el.value = v; el.focus(); el.setSelectionRange(v.length, v.length); } }
     if (e.target.id === 'tbSearch') doSearch(e.target.value);
     if (e.target.type === 'range') { const b = e.target.parentElement.querySelector('b'); if (b) b.textContent = e.target.value + (b.textContent.match(/[^\d۰-۹]+$/) || [''])[0]; }
   });
