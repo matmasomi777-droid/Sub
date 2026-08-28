@@ -323,6 +323,32 @@ pre.code .hd{display:flex;align-items:center;justify-content:space-between;gap:8
 .um-stat span svg.ic{width:12px;height:12px}
 .um-stat b{font-size:13px;font-weight:700;font-family:'JetBrains Mono',monospace}
 
+/* ─────────── کانفیگ‌های فیک ─────────── */
+.fk-help{border:1px solid var(--bs);border-radius:14px;padding:11px 13px;margin-bottom:12px;
+  background:color-mix(in oklab,var(--ac2) 6%,transparent)}
+.fk-help-t{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:700;
+  color:var(--ac2);margin-bottom:8px}
+.fk-help-t svg.ic{width:13px;height:13px}
+.fk-var{cursor:pointer;border-color:color-mix(in oklab,var(--ac2) 35%,transparent);
+  background:color-mix(in oklab,var(--ac2) 10%,transparent);color:var(--ac2)}
+.fk-var:hover{background:var(--ac2);color:#fff}
+.fk-list{display:grid;gap:8px}
+.fk-row{display:flex;align-items:center;gap:8px;border:1px solid var(--bs);border-radius:12px;
+  padding:8px 10px;background:var(--panel2);transition:opacity .2s}
+.fk-row.off{opacity:.5}
+.fk-pos{width:44px;text-align:center;flex:none;padding:6px 4px!important;font-size:11px!important}
+.fk-name{flex:1;min-width:0;padding:7px 10px!important}
+.fk-proto{width:96px;flex:none;padding:7px 6px!important;font-size:11.5px!important}
+/* پیش‌نمایش */
+.fk-preview{margin-top:12px;border:1px dashed color-mix(in oklab,var(--ac) 30%,transparent);
+  border-radius:14px;padding:12px;background:color-mix(in oklab,var(--ac) 5%,transparent)}
+@media(max-width:640px){
+  .fk-row{flex-wrap:wrap}
+  .fk-name{flex:1 1 100%;order:5}
+  .fk-proto{flex:1}
+  .um-grid.three{grid-template-columns:1fr}
+}
+
 /* ─────────── ورود (بدون هدر و سایدبار) ─────────── */
 body.auth .topbar,body.auth .sidebar,body.auth .foot,body.auth .scrim{display:none!important}
 body.auth{padding:0}
