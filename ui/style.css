@@ -39,7 +39,18 @@ a{color:var(--ac);text-decoration:none}
 ::-webkit-scrollbar{width:9px;height:9px}
 ::-webkit-scrollbar-thumb{background:color-mix(in oklab,var(--mut) 30%,transparent);border-radius:9px}
 ::-webkit-scrollbar-thumb:hover{background:var(--ac)}
-i.fa-solid,i.fa-brands,i.fa-regular{width:1em;text-align:center;flex:none}
+/* Font Awesome: اطمینان از اعمال فونت و اندازه‌ی درست */
+i.fa-solid,i.fa-regular,i.fa-brands,i.fa{
+  font-family:"Font Awesome 6 Free","Font Awesome 6 Brands",inherit;
+  font-style:normal;font-variant:normal;text-rendering:auto;
+  -webkit-font-smoothing:antialiased;display:inline-block;
+  width:1em;text-align:center;flex:none;line-height:1
+}
+i.fa-brands{font-family:"Font Awesome 6 Brands"}
+i.fa-solid,i.fa-regular{font-family:"Font Awesome 6 Free";font-weight:900}
+i.fa-regular{font-weight:400}
+/* اندازه‌ی پیش‌فرض آیکون‌ها */
+i.fa-solid,i.fa-brands,i.fa-regular{font-size:.95em;vertical-align:-.06em}
 
 /* ─────────── چیدمان ─────────── */
 .app{display:flex;min-height:100vh}
