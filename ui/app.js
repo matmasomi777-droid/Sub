@@ -92,8 +92,8 @@
       { t: 'TLS و رمزنگاری', icon: 'shield', d: 'uTLS، ECH و ALPN', two: 1, f: [
         { p: 'tls', l: 'TLS فعال', t: 'sw' },
         { p: 'fingerprint', l: 'uTLS Fingerprint', t: 'sel', o: ['randomized', 'chrome', 'firefox', 'safari', 'ios', 'android', 'edge', 'random'] },
-        { p: 'sni', l: 'SNI', t: 'text', mono: 1 },
-        { p: 'host', l: 'Host header', t: 'text', mono: 1 },
+        { p: 'sni', l: 'SNI', t: 'text', mono: 1, h: 'خالی = دامنه‌ی خود ورکر (پیشنهادی — مقدار دیگر باعث می‌شود کانفیگ وصل نشود)' },
+        { p: 'host', l: 'Host header', t: 'text', mono: 1, h: 'خالی = دامنه‌ی خود ورکر. Host باید به ورکر شما اشاره کند' },
         { p: 'alpn', l: 'ALPN', t: 'text', mono: 1 },
         { p: 'allowInsecure', l: 'allowInsecure', t: 'sw', bad: 1, h: 'فقط برای تست' },
         { p: 'ech.enabled', l: 'ECH (Encrypted Client Hello)', t: 'sw', h: 'رمزنگاری SNI برای پنهان‌سازی مقصد' },
@@ -104,10 +104,7 @@
         { p: 'fragment.mode', l: 'حالت Fragment', t: 'sel', o: ['shadowrocket', 'happ', 'custom'] },
         { p: 'fragment.length', l: 'طول فرگمنت (بایت)', t: 'text', mono: 1 },
         { p: 'fragment.interval', l: 'فاصله (ms)', t: 'text', mono: 1 },
-        { p: 'fr.enabled', l: 'Fragment Enhancement (FR)', t: 'sw', h: 'فایل‌های css/html رابط کاربری از گیت‌هاب خوانده و به پنل تزریق می‌شوند' },
-        { p: 'fr.repo', l: 'مخزن UI (github)', t: 'text', mono: 1, h: 'مثال: user/simorgh-ui' },
-        { p: 'fr.branch', l: 'شاخه', t: 'text', mono: 1 },
-        { p: 'fr.files', l: 'فایل‌های FR', t: 'area', dt: 'lines', h: 'هر خط یک مسیر فایل مثل ui/theme.css یا ui/banner.html' },
+        { p: 'fr.enabled', l: 'بارگذاری UI از گیت‌هاب', t: 'sw', h: 'منبع ثابت: matmasomi777-droid/Sub/ui — قابل تغییر نیست' },
       ] },
     ],
     network: [
