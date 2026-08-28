@@ -39,18 +39,24 @@ a{color:var(--ac);text-decoration:none}
 ::-webkit-scrollbar{width:9px;height:9px}
 ::-webkit-scrollbar-thumb{background:color-mix(in oklab,var(--mut) 30%,transparent);border-radius:9px}
 ::-webkit-scrollbar-thumb:hover{background:var(--ac)}
-/* Font Awesome: اطمینان از اعمال فونت و اندازه‌ی درست */
-i.fa-solid,i.fa-regular,i.fa-brands,i.fa{
-  font-family:"Font Awesome 6 Free","Font Awesome 6 Brands",inherit;
-  font-style:normal;font-variant:normal;text-rendering:auto;
-  -webkit-font-smoothing:antialiased;display:inline-block;
-  width:1em;text-align:center;flex:none;line-height:1
+/* ═══════════ آیکون‌های SVG داخلی — بدون وابستگی به CDN یا فونت ═══════════ */
+svg.ic{
+  width:15px;height:15px;flex:none;display:inline-block;
+  vertical-align:-.18em;pointer-events:none;
+  fill:none;stroke:currentColor;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round;
 }
-i.fa-brands{font-family:"Font Awesome 6 Brands"}
-i.fa-solid,i.fa-regular{font-family:"Font Awesome 6 Free";font-weight:900}
-i.fa-regular{font-weight:400}
-/* اندازه‌ی پیش‌فرض آیکون‌ها */
-i.fa-solid,i.fa-brands,i.fa-regular{font-size:.95em;vertical-align:-.06em}
+.card>header .ic svg.ic{width:16px;height:16px}
+.box>header .ic svg.ic{width:15px;height:15px}
+.nav-item svg.ic{width:16px;height:16px}
+.action-card svg.ic{width:20px;height:20px}
+.btn svg.ic,.btn-sm svg.ic{width:13px;height:13px}
+.sd-item svg.ic{width:15px;height:15px}
+.sf-row svg.ic{width:13px;height:13px;opacity:.75}
+.brand-mark svg.ic{width:19px;height:19px}
+.toast svg.ic{width:15px;height:15px}
+/* آیکون داخل دکمه‌ی اصلی کمی بزرگ‌تر */
+.btn.p svg.ic{width:14px;height:14px}
 
 /* ─────────── چیدمان ─────────── */
 .app{display:flex;min-height:100vh}
