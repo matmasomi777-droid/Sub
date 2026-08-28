@@ -513,10 +513,12 @@
     if (!S.token || !S.d) {
       app.classList.add('login-mode');
       nav.innerHTML = ''; $('#sidebar').style.display = 'none'; $('.main').style.display = '';
-      $('#view').innerHTML = loginView();
-      setTimeout(() => $('#lgPw')?.focus(), 60);
-      return;
-    }
+    $('#view').innerHTML = loginView();
+    const tb0 = document.getElementById('tbState');
+    if (tb0) { tb0.textContent = 'آماده ورود'; tb0.style.color = ''; }
+    setTimeout(() => $('#lgPw')?.focus(), 60);
+    return;
+  }
     app.classList.remove('login-mode');
     $('#sidebar').style.display = '';
     const d = S.d, s = d.settings;
@@ -661,6 +663,7 @@
   document.documentElement.dataset.theme = localStorage.getItem('sg_theme') || 'dark';
   setThemeIcon();
   render();
+  window.__sgBooted = true;   /* برای اسکریپت نگهبان در index.html */
   refresh();
   setInterval(() => { if (S.token && S.view === 'dash') refresh(); }, 20000);
 })();
