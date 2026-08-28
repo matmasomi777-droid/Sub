@@ -13,7 +13,13 @@
   const n = (v) => (v == null || isNaN(v) ? '—' : fa(Number(v).toLocaleString('en-US')));
   const bytes = (b) => { if (!b || b < 0) return '۰ بایت'; const u = ['بایت', 'کیلوبایت', 'مگابایت', 'گیگابایت', 'ترابایت']; const i = Math.min(4, Math.floor(Math.log(b) / Math.log(1024))); return fa((b / 1024 ** i).toFixed(i ? 1 : 0)) + ' ' + u[i]; };
   const ago = (t) => { if (!t) return '—'; const s = (Date.now() - t) / 1000; if (s < 60) return 'همین حالا'; if (s < 3600) return fa(Math.floor(s / 60)) + ' دقیقه پیش'; if (s < 86400) return fa(Math.floor(s / 3600)) + ' ساعت پیش'; return fa(Math.floor(s / 86400)) + ' روز پیش'; };
-  const icon = (c, cls = '') => '<i class="' + (c.startsWith('fa-') ? c : 'fa-solid ' + c) + (cls ? ' ' + cls : '') + '"></i>';
+  /* Font Awesome 6 برای رندر شدن به کلاس سبک نیاز دارد: fa-solid / fa-regular / fa-brands
+     بدون آن، فونتِ آیکون اعمال نمی‌شود و جای آیکون خالی می‌ماند */
+  const icon = (c, cls = '') => {
+    let full = String(c || '');
+    if (!/\b(fa-solid|fa-regular|fa-brands|fa)\b/.test(full)) full = 'fa-solid ' + full;
+    return '<i class="' + full + (cls ? ' ' + cls : '') + '"></i>';
+  };
   const getP = (o, p) => p.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
   const setP = (o, p, v) => { const a = p.split('.'); let c = o; for (let i = 0; i < a.length - 1; i++) { c[a[i]] = c[a[i]] || {}; c = c[a[i]]; } c[a[a.length - 1]] = v; };
 
