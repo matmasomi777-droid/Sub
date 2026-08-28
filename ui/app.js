@@ -123,10 +123,22 @@
   const setP = (o, p, v) => { const a = p.split('.'); let c = o; for (let i = 0; i < a.length - 1; i++) { c[a[i]] = c[a[i]] || {}; c = c[a[i]]; } c[a[a.length - 1]] = v; };
 
   async function api(method, path, body) {
-    const r = await fetch(path, { method, headers: { authorization: 'Bearer ' + S.token, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
-    const j = await r.json().catch(() => ({ error: 'bad json' }));
-    if (r.status === 401 && S.token) { S.token = ''; sessionStorage.removeItem('sg_t'); S.d = null; render(); }
-    return j;
+    try {
+      const ctrl = new AbortController();
+      const to = setTimeout(() => ctrl.abort(), 15000);
+      const r = await fetch(path, {
+        method,
+        headers: { authorization: 'Bearer ' + S.token, 'content-type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: ctrl.signal,
+      });
+      clearTimeout(to);
+      const j = await r.json().catch(() => ({ error: 'bad json' }));
+      if (r.status === 401 && S.token) { S.token = ''; sessionStorage.removeItem('sg_t'); S.d = null; render(); }
+      return j;
+    } catch (e) {
+      return { error: e.name === 'AbortError' ? 'سرور پاسخ نداد' : 'خطای شبکه' };
+    }
   }
   const toast = (msg, kind = 'ok') => { const d = document.createElement('div'); d.className = 'toast ' + kind; const ic = kind === 'err' ? 'fa-circle-xmark' : kind === 'info' ? 'fa-circle-info' : 'fa-circle-check'; d.innerHTML = icon(ic) + '<span>' + esc(msg) + '</span>'; $('#toastRoot').appendChild(d); setTimeout(() => d.remove(), 3400); };
   const copy = (t) => { (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('در کلیپ‌بورد کپی شد')).catch(() => toast('کپی نشد', 'err')); };
@@ -1101,10 +1113,25 @@
       if (a === 'login') {
         const pw = $('#lgPw').value, tp = ($('#lgTp') || {}).value || '';
         busy(t, 'در حال ورود');
-        const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: pw, totp: tp }) }).then((x) => x.json());
-        free(t);
-        if (r.token) { S.token = r.token; sessionStorage.setItem('sg_t', r.token); await refresh(); toast('خوش آمدید 👋'); }
-        else toast(r.error || 'رمز نادرست است', 'err');
+        try {
+          /* timeout ۸ ثانیه — اگر سرور جواب نداد دکمه رها می‌شود */
+          const ctrl = new AbortController();
+          const to = setTimeout(() => ctrl.abort(), 8000);
+          const resp = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ password: pw, totp: tp }),
+            signal: ctrl.signal,
+          });
+          clearTimeout(to);
+          const r = await resp.json();
+          free(t);
+          if (r.token) { S.token = r.token; sessionStorage.setItem('sg_t', r.token); await refresh(); toast('خوش آمدید 👋'); }
+          else toast(r.error || 'رمز نادرست است', 'err');
+        } catch (e) {
+          free(t);
+          toast(e.name === 'AbortError' ? 'سرور پاسخ نداد — دوباره تلاش کنید' : 'خطای شبکه', 'err');
+        }
       }
       else if (a === 'nav') { S.view = t.dataset.view; closeDrawer(); render(); }
       else if (a === 'copy') copy(v);
