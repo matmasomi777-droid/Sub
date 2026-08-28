@@ -57,24 +57,7 @@
     <header class="topbar">
       <button class="icon-btn only-mobile" id="menuBtn" title="منو">☰</button>
       <div class="tb-live"><span class="dot on"></span><span id="tbState">در حال بارگذاری…</span></div>
-      <script>
-        /* اگر app.js با خطا مواجه شود، این پیام نشان داده می‌شود (به جای گیر کردن) */
-        window.__sgErr = null;
-        window.addEventListener('error', function (e) { window.__sgErr = e.message + ' @' + (e.lineno || '?'); });
-        setTimeout(function () {
-          if (window.__sgBooted) return;   /* app.js درست اجرا شده — کاری نکن */
-          var el = document.getElementById('tbState');
-          if (el) {
-            el.textContent = 'خطا در اجرای app.js';
-            el.style.color = 'var(--bad)';
-            var box = document.getElementById('view');
-            if (box) box.innerHTML = '<div class="card"><div class="bd"><h3 style="margin:0 0 8px">رابط کاربری اجرا نشد</h3>'
-              + '<p class="hint">فایل <span class="mono">ui/app.js</span> با خطا مواجه شد:</p>'
-              + '<pre class="code">' + String(window.__sgErr || 'خطای نامشخص — محتوای app.js را با نسخه‌ی پروژه مقایسه کنید') + '</pre>'
-              + '<p class="hint">سه فایل <span class="mono">index.html</span>، <span class="mono">style.css</span> و <span class="mono">app.js</span> باید دقیقاً نسخه‌ی این پروژه در مخزن <span class="mono">matmasomi777-droid/Sub/ui</span> باشند.</p></div></div>';
-          }
-        }, 5000);
-      </script>
+      <!-- اسکریپت نگهبان حذف شد: پیش‌اسکریپت داخل worker.js خطاهای واقعی را مدیریت می‌کند -->
       <span class="badge" id="tbReq"></span>
       <div class="spacer"></div>
       <input class="tb-search" id="tbSearch" placeholder="جستجوی سریع…">
