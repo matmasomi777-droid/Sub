@@ -304,6 +304,25 @@ pre.code .hd{display:flex;align-items:center;justify-content:space-between;gap:8
   padding:8px 12px;border-bottom:1px solid var(--bs);color:var(--mut);font-size:10px;
   text-transform:uppercase;letter-spacing:.1em;font-family:'Vazirmatn',sans-serif}
 
+/* ─────────── مودال کاربر: بخش‌بندی و چیدمان ─────────── */
+.um-sec{border:1px solid var(--bs);border-radius:14px;margin-bottom:12px;overflow:hidden;background:var(--panel2)}
+.um-sec-h{display:flex;align-items:center;gap:8px;padding:9px 13px;border-bottom:1px solid var(--bs);
+  font-size:12px;font-weight:700;color:var(--ac);background:color-mix(in oklab,var(--ac) 6%,transparent)}
+.um-sec-h svg.ic{width:14px;height:14px}
+.um-grid{display:grid;gap:10px;padding:12px 13px}
+.um-grid.two{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+.um-grid.three{grid-template-columns:repeat(auto-fit,minmax(155px,1fr))}
+.um-grid label.f,.um-grid div.f{margin:0}
+/* textarea تمام‌عرض باشد */
+.um-grid textarea{width:100%}
+/* نوار وضعیت پایین مودال */
+.um-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:12px}
+.um-stat{display:flex;flex-direction:column;gap:3px;border:1px solid var(--bs);border-radius:12px;
+  padding:9px 11px;background:var(--panel2)}
+.um-stat span{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--mut)}
+.um-stat span svg.ic{width:12px;height:12px}
+.um-stat b{font-size:13px;font-weight:700;font-family:'JetBrains Mono',monospace}
+
 /* ─────────── ورود (بدون هدر و سایدبار) ─────────── */
 body.auth .topbar,body.auth .sidebar,body.auth .foot,body.auth .scrim{display:none!important}
 body.auth{padding:0}
