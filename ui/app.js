@@ -128,7 +128,8 @@
         { p: 'grpcService', l: 'gRPC Service Name', t: 'text', mono: 1 },
         { p: 'xhttpMode', l: 'XHTTP Mode', t: 'sel', o: ['auto', 'packet-up', 'stream-up', 'stream-one'] },
         { p: 'tfo', l: 'TCP Fast Open (TFO)', t: 'sw' },
-        { p: 'randomJunk', l: 'جانک تصادفی مسیر', t: 'sw', h: 'مبهم‌سازی مسیر در برابر DPI' },
+        { p: 'randomJunk', l: 'جانک تصادفی مسیر (پایدار)', t: 'sw', h: 'مسیر برای هر کاربر ثابت می‌ماند و با رفرش ساب عوض نمی‌شود' },
+        { p: 'earlyData', l: 'Early Data (?ed=2048)', t: 'sw', h: 'خاموش = سازگار با همه‌ی کلاینت‌ها (پیشنهادی). روشن = سرعت اتصال بیشتر ولی بعضی کلاینت‌ها وصل نمی‌شوند' },
         { p: 'ports', l: 'پورت‌های TLS (با کاما)', t: 'text', mono: 1 },
         { p: 'mux', l: 'Mux multiplexing', t: 'sw' },
       ] },
@@ -730,6 +731,17 @@
         free(t);
         const o = $('#tunnelOut');
         if (o) o.innerHTML = (r.checks || []).map((c) => '<div class="kv"><span>' + icon(c.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' ' + esc(c.name) + '</span><b class="mono" style="font-size:10px;color:' + (c.ok ? 'var(--ok)' : 'var(--bad)') + ';max-width:60%;overflow:hidden;text-overflow:ellipsis">' + esc(c.note || '') + '</b></div>').join('') +
+          '<div class="hint" style="margin-top:12px"><b>تست‌های بعدی (خودتان انجام دهید):</b></div>' +
+          '<div class="btn-row" style="margin:8px 0">' +
+          '<a class="btn sm" href="' + esc(location.origin + S.d.settings.path) + '" target="_blank">' + icon('fa-vial') + ' تست مسیر تونل در مرورگر</a>' +
+          '<a class="btn sm" href="/health" target="_blank">' + icon('fa-heart-pulse') + ' تست سلامت ورکر</a></div>' +
+          '<div class="hint">اگر روی «تست مسیر تونل» متن <span class="mono">TUNNEL_OK</span> دیدید، مسیر از اینترنت شما در دسترس است و مشکل قطعاً از تنظیمات کلاینت است.</div>' +
+          '<div class="hint" style="margin-top:12px"><b>چک‌لیست کلاینت (به‌ترتیب):</b></div>' +
+          '<div class="hint">۱. ساب را در کلاینت <b>دوباره رفرش</b> کنید تا کانفیگ جدید (بدون <span class="mono">?ed=2048</span> و با ALPN درست) بیاید.</div>' +
+          '<div class="hint">۲. اگر از v2rayNG استفاده می‌کنید: تنظیمات → «Fragment» را خاموش کنید و در تنظیمات SSL، گزینه‌ی «allowInsecure» را روشن کنید و دوباره امتحان کنید.</div>' +
+          '<div class="hint">۳. در کلاینت، آدرس سرور را به‌جای IP پاک، خودِ دامنه‌ی ورکر بگذارید (کانفیگ دستی) — اگر وصل شد یعنی آن IP در ISP شما فیلتر است.</div>' +
+          '<div class="hint">۴. کانفیگ را در یک کلاینت دیگر (Hiddify یا v2rayN) امتحان کنید تا مشکل کلاینت مشخص شود.</div>' +
+          '<div class="hint">۵. اگر سایت مقصد خودش روی کلاودفلر است، از داخل تونل قابل دسترسی نیست (محدودیت <span class="mono">connect()</span>) — سایت دیگری را تست کنید.</div>' +
           '<div class="hint" style="margin-top:12px"><b>راهنمای تفسیر نتایج:</b></div>' +
           '<div class="hint">• <b>SNI / Host قرمز</b> = رایج‌ترین علت. SNI و Host را در «پروتکل و کانفیگ» خالی بگذارید تا دامنه‌ی خود ورکر استفاده شود.</div>' +
           '<div class="hint">• <b>ترنسپورت قرمز</b> = باید WebSocket باشد؛ gRPC و XHTTP فقط در ساب تولید می‌شوند.</div>' +
