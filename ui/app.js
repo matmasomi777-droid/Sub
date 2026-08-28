@@ -756,12 +756,19 @@
         }).join('') + '</div></div></div>';
     };
 
-    /* ═══ فقط فیلدهای ضروری ═══ */
+    /* ═══ فقط فیلدهای ضروری (مسیر پنل در بخش استتار است) ═══ */
     const essential = () => acc('تنظیمات ضروری', 'fa-gear', [
       { p: 'path', l: 'مسیر تونل', t: 'text', mono: 1, h: 'پیش‌فرض: /sg' },
       { p: 'ports', l: 'پورت‌ها', t: 'text', mono: 1, h: 'با کاما: 443, 2053' },
-      { p: 'auth.path', l: 'مسیر ورود پنل', t: 'text', mono: 1, h: 'یک کلمه‌ی مخفی بگذارید' },
       { p: 'auth.password', l: 'کلید اصلی', t: 'pw', h: 'رمز ورود پنل' },
+    ], s);
+
+    /* ═══ نام‌گذاری کانفیگ‌ها — مثل نهان ═══ */
+    const naming = () => acc('نام‌گذاری کانفیگ‌ها', 'fa-edit', [
+      { p: 'sub.namePrefix', l: 'پیشوند نام', t: 'text', h: 'مثل: پنل → «پنل | فرانکفورت | :443»' },
+      { p: 'sub.nameStrategy', t: 'sel', o: ['default', 'user-port', 'type-user-port', 'host-port-user', 'ip'],
+        lbls: { default: 'پیش‌فرض — V-Core-443', 'user-port': 'کاربر-پورت', 'type-user-port': 'پروتکل-کاربر-پورت', 'host-port-user': 'هاست-پورت-کاربر', ip: 'فقط IP' },
+        l: 'استراتژی نام' },
     ], s);
 
     /* ═══ شبکه ═══ */
@@ -863,7 +870,7 @@
       '<button class="btn p" data-act="save-config">' + icon('fa-floppy-disk') + ' ذخیره</button></div>' +
 
       modeCard() + quickCard() +
-      '<div style="padding:0 2px">' + essential() + network() + telegram() + stealth() + advanced() + '</div>' +
+      '<div style="padding:0 2px">' + essential() + naming() + network() + telegram() + stealth() + advanced() + '</div>' +
 
       '<div class="btn-row" style="justify-content:center;margin-top:10px">' +
       '<button class="btn p lg" data-act="save-config">' + icon('fa-floppy-disk') + ' ذخیره</button></div>';
@@ -1107,18 +1114,17 @@
       else if (a === 'loglv') { S.tab.log = v; render(); }
       else if (a === 'save-config') {
         busy(t, 'ذخیره');
-        /* فیلدها از DOM + مقادیر کلیک‌شده از state */
+        /* همه‌ی فیلدها از DOM خوانده می‌شوند — شامل تلگرام */
         const patch = collect($('#view'));
         const s = S.d.settings;
-        /* مقادیری که با کلیک (نه فیلد) تغییر کرده‌اند */
+        /* فقط مقادیری که با کلیک (نه فیلد) تغییر کرده‌اند از state می‌آیند */
         patch.mode = s.mode;
-        patch.auth = { ...(patch.auth || {}), maintenanceHost: s.auth.maintenanceHost };
-        /* آیدی‌های تلگرام + کانفیگ‌های فیک */
-        patch.sub = { ...(patch.sub || {}) };
-        if (s.sub.telegramSupport) patch.sub.telegramSupport = s.sub.telegramSupport;
-        if (s.sub.telegramBuy) patch.sub.telegramBuy = s.sub.telegramBuy;
+        if (!patch.auth) patch.auth = {};
+        patch.auth.maintenanceHost = s.auth.maintenanceHost;
         /* اگر کارت کانفیگ‌های فیک در صفحه است، مقادیرش را هم ذخیره کن */
+        if (!patch.sub) patch.sub = {};
         if ($('#fkList')) patch.sub.fakes = readFakes();
+        /* کلیدهای toggle که با کلیک تغییر کرده‌اند */
         ['tls', 'sub.fakeConfigs', 'auth.disguise', 'auth.totp', 'tg.enabled', 'upd.auto'].forEach((k) => {
           setP(patch, k, getP(s, k));
         });
@@ -1587,9 +1593,12 @@
         { p: 'maxConfigs', l: 'سقف کانفیگ', t: 'num', h: '۰ = پیش‌فرض' },
         { p: 'speedLimit', l: 'سقف سرعت (Mbps)', t: 'num', h: '۰ = نامحدود' },
       ], 'three') +
-      sec('تنظیمات اختصاصی', 'fa-gear', [
+      sec('نام‌گذاری و تنظیمات اختصاصی', 'fa-gear', [
         { p: 'mode', l: 'حالت پروتکل', t: 'sel', o: ['inherit', 'alpha', 'beta', 'both'], lbls: { inherit: 'از پنل', alpha: 'Alpha — VLESS', beta: 'Beta — Trojan', both: 'Both' } },
         { p: 'fakeMode', l: 'کانفیگ‌های فیک', t: 'sel', o: ['inherit', 'custom', 'off'], lbls: { inherit: 'از پنل', custom: 'اختصاصی', off: 'خاموش' } },
+        { p: 'namePrefix', l: 'پیشوند نام کانفیگ', t: 'text', h: 'خالی = پیش‌فرض پنل' },
+        { p: 'nameStrategy', l: 'استراتژی نام', t: 'sel', o: ['inherit', 'default', 'user-port', 'type-user-port', 'host-port-user', 'ip'],
+          lbls: { inherit: 'از پنل', default: 'پیش‌فرض', 'user-port': 'کاربر-پورت', 'type-user-port': 'پروتکل-کاربر-پورت', 'host-port-user': 'هاست-پورت-کاربر', ip: 'فقط IP' } },
         { p: 'ports', l: 'پورت‌های اختصاصی', t: 'text', mono: 1, h: 'خالی = پورت‌های پنل' },
         { p: 'nat64', l: 'NAT64 اختصاصی', t: 'text', mono: 1 },
         { p: 'panelUrl', l: 'Panel URL اختصاصی', t: 'text', mono: 1 },
