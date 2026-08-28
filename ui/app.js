@@ -737,16 +737,15 @@
         '</div></div></div>';
     };
 
-    /* ═══ کارت‌های سریع — جای toggle های پراکنده ═══ */
-    const quickCard = () => {
-      const items = [
-        { k: 'tls', ic: 'lock',  t: 'TLS', d: 'رمزنگاری ترافیک' },
-        { k: 'sub.fakeConfigs', ic: 'chartbar', t: 'اطلاعات مصرف', d: 'نمایش در کلاینت' },
-        { k: 'auth.disguise', ic: 'eyeoff', t: 'سایت پوششی', d: 'استتار ریشه' },
-        { k: 'auth.totp', ic: 'mobile', t: 'ورود دومرحله‌ای', d: '2FA' },
-        { k: 'tg.enabled', ic: 'send', t: 'ربات تلگرام', d: 'مدیریت راه دور' },
-        { k: 'upd.auto', ic: 'rotate', t: 'بروزرسانی خودکار', d: 'از GitHub' },
-      ];
+      /* ═══ کارت‌های سریع — جای toggle های پراکنده ═══ */
+      const quickCard = () => {
+        const items = [
+          { k: 'tls', ic: 'lock',  t: 'TLS', d: 'رمزنگاری ترافیک' },
+          { k: 'sub.fakeConfigs', ic: 'chartbar', t: 'اطلاعات مصرف', d: 'نمایش در کلاینت' },
+          { k: 'auth.totp', ic: 'mobile', t: 'ورود دومرحله‌ای', d: '2FA' },
+          { k: 'tg.enabled', ic: 'send', t: 'ربات تلگرام', d: 'مدیریت راه دور' },
+          { k: 'upd.auto', ic: 'rotate', t: 'بروزرسانی خودکار', d: 'از GitHub' },
+        ];
       return '<div class="card"><header><span class="ic">' + icon('fa-bolt') + '</span><div><h3>میان‌برها</h3><p>روی هرکدام کلیک کنید تا روشن/خاموش شود</p></div></header>' +
         '<div class="bd"><div class="qgrid">' +
         items.map((it) => {
@@ -772,6 +771,46 @@
       { p: 'doh.url', l: 'DNS', t: 'text', mono: 1 },
     ], s);
 
+    /* ═══ استتار — سیستم جدید مثل نهان ═══ */
+    const stealth = () => {
+      const sites = [
+        { v: 'nginx',      t: 'nginx',           d: 'سرور وب — سبک و شناخته‌شده' },
+        { v: 'ubuntu',     t: 'Ubuntu Server',   d: 'مستندات رسمی اوبونتو' },
+        { v: 'docker',     t: 'Docker Docs',     d: 'مستندات داکر' },
+        { v: 'cloudflare', t: 'Cloudflare',      d: 'مستندات ورکر' },
+        { v: 'python',     t: 'Python Docs',     d: 'مستندات پایتون' },
+        { v: 'node',       t: 'Node.js Docs',    d: 'مستندات نود' },
+      ];
+      const cur = s.auth.maintenanceHost || 'nginx';
+      return '<div class="acc open"><div class="acc-h" data-acc>' + icon('fa-mask') + '<span>استتار و سایت پوششی</span>' +
+        '<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>' +
+        '<div class="acc-b"><div class="bd" style="padding:0 12px 12px">' +
+
+        /* انتخاب سایت پوششی — کارت بصری */
+        '<div class="hint" style="margin-bottom:8px">مسیرهای ناشناخته این سایت را نشان می‌دهند — انتخاب کنید:</div>' +
+        '<div class="mode-grid">' +
+        sites.map((x) => '<button class="mode-card' + (cur === x.v ? ' on' : '') + '" data-decoy="' + x.v + '">' +
+          icon('fa-globe') + '<b>' + x.t + '</b><span>' + x.d + '</span></button>').join('') +
+        '</div>' +
+
+        /* آدرس دلخواه */
+        '<div style="margin-top:10px">' +
+        field({ p: 'auth.decoyUrl', l: 'یا آدرس دلخواه', t: 'text', mono: 1, h: 'خالی = یکی از سایت‌های بالا. هر سایت واقعی دیگری' }, s.auth.decoyUrl) +
+        '</div>' +
+
+        /* مسیر مخفی */
+        '<div style="margin-top:8px">' +
+        field({ p: 'auth.path', l: 'مسیر مخفی پنل', t: 'text', mono: 1, h: 'پنل روی /این‌مسیر — یک کلمه‌ی تصادفی مثل x7k2m' }, s.auth.path) +
+        '</div>' +
+
+        /* دکمه‌ی تست */
+        '<div class="btn-row" style="margin-top:8px">' +
+        '<a class="btn" href="' + esc(location.origin + '/?refresh=1') + '" target="_blank">' + icon('fa-eye') + ' پیش‌نمایش سایت پوششی</a>' +
+        '<a class="btn" href="' + esc(location.origin + '/' + (s.auth.path || 'panel')) + '" target="_blank">' + icon('fa-arrow-up-right-from-square') + ' باز کردن پنل</a>' +
+        '</div>' +
+        '</div></div></div>';
+    };
+
     /* ═══ پیشرفته — کمترین تعداد ═══ */
     const advanced = () => acc('پیشرفته', 'fa-key', [
       { p: 'tg.token', l: 'توکن تلگرام', t: 'pw', mono: 1 },
@@ -785,7 +824,7 @@
       '<button class="btn p" data-act="save-config">' + icon('fa-floppy-disk') + ' ذخیره</button></div>' +
 
       modeCard() + quickCard() +
-      '<div style="padding:0 2px">' + essential() + network() + advanced() + '</div>' +
+      '<div style="padding:0 2px">' + essential() + network() + stealth() + advanced() + '</div>' +
 
       '<div class="btn-row" style="justify-content:center;margin-top:10px">' +
       '<button class="btn p lg" data-act="save-config">' + icon('fa-floppy-disk') + ' ذخیره</button></div>';
@@ -903,6 +942,17 @@
     /* آکاردئون */
     const ach = e.target.closest('[data-acc]');
     if (ach) { e.preventDefault(); e.stopPropagation(); ach.parentElement.classList.toggle('open'); return; }
+
+    /* انتخاب سایت پوششی */
+    const dc = e.target.closest('[data-decoy]');
+    if (dc) {
+      e.preventDefault(); e.stopPropagation();
+      const v = dc.dataset.decoy;
+      S.d.settings.auth.maintenanceHost = v;
+      $$('[data-decoy]').forEach((c) => c.classList.toggle('on', c.dataset.decoy === v));
+      toast('سایت پوششی: ' + dc.querySelector('b').textContent + ' — ذخیره کنید', 'info');
+      return;
+    }
 
     /* کارت‌های انتخاب حالت */
     const mc = e.target.closest('[data-mode]');
@@ -1023,6 +1073,7 @@
         const s = S.d.settings;
         /* مقادیری که با کلیک (نه فیلد) تغییر کرده‌اند */
         patch.mode = s.mode;
+        patch.auth = { ...(patch.auth || {}), maintenanceHost: s.auth.maintenanceHost };
         ['tls', 'sub.fakeConfigs', 'auth.disguise', 'auth.totp', 'tg.enabled', 'upd.auto'].forEach((k) => {
           setP(patch, k, getP(s, k));
         });
