@@ -219,10 +219,10 @@
   const saveBtn = (act, lbl) => '<button class="btn p" data-act="' + act + '">' + icon('fa-floppy-disk') + ' ' + (lbl || 'ذخیره') + '</button>';
 
   /* ─────────── ناوبری و اسکیمای تنظیمات ─────────── */
-  /* ناوبری مثل نهان — ۵ تب اصلی، تمیز و ساده */
+  /* ناوبری — تمیز، بدون تکرار */
   const NAV = [
     { g: 'اصلی', items: [['dash', 'نمای کلی', 'fa-gauge-high'], ['users', 'کاربران', 'fa-users']] },
-    { g: 'شبکه', items: [['network', 'شبکه و IP', 'fa-network-wired'], ['monitor', 'آمار', 'fa-chart-line']] },
+    { g: 'شبکه', items: [['monitor', 'آمار مصرف', 'fa-chart-line']] },
     { g: 'پیکربندی', items: [['config', 'پیکربندی', 'fa-gear'], ['sub', 'اشتراک', 'fa-link']] },
     { g: 'سیستم', items: [['logs', 'لاگ', 'fa-list-check'], ['settings', 'پشتیبان', 'fa-database']] },
   ];
@@ -503,37 +503,80 @@
       '</tbody></table></div></div></div>';
   }
 
+  /* ═══════════════════════════════════════════════════════════════
+     نمای اشتراک — بازطراحی‌شده
+     یک لینک، دو کار: داشبورد کاربر در مرورگر + کانفیگ در کلاینت
+     ═══════════════════════════════════════════════════════════════ */
   function subView() {
     const s = S.d.settings, us = S.d.users;
     const u = us.find((x) => x.id === S.sel) || us[0];
-    const page = u ? location.origin + '/' + s.sub.path + '/' + u.uuid : '';
-    return '<div class="page-head"><div><h1>مرکز اشتراک</h1><p>یک لینک = صفحه‌ی کاربر برای مرورگر + خروجی خام برای کلاینت</p></div></div>' +
-      (!u ? '<div class="card"><div class="bd"><div class="empty">ابتدا یک کاربر بسازید</div></div></div>' :
-      '<div class="card"><header><span class="ic">' + icon('fa-link') + '</span><div><h3>لینک اشتراک</h3><p>تشخیص خودکار کلاینت از روی User-Agent</p></div>' +
-      '<div class="acts"><div class="seg">' + ['base64', 'raw', 'clash', 'meta', 'singbox', 'v2ray'].map((x) => '<button data-act="fmt" data-v="' + x + '" class="' + (S.fmt === x ? 'on' : '') + '">' + x + '</button>').join('') + '</div></div></header>' +
+    if (!u) return '<div class="page-head"><div><h1>اشتراک</h1><p>ابتدا یک کاربر بسازید</p></div></div>' +
+      '<div class="card"><div class="bd"><div class="empty">هیچ کاربری وجود ندارد — از بخش «کاربران» یکی بسازید</div></div></div>';
+
+    const page = location.origin + '/' + s.sub.path + '/' + u.uuid;
+    const q = (u.quotaGB || 0) * 1073741824;
+    const used = (u.up || 0) + (u.down || 0);
+    const pct = q ? Math.min(100, (used / q) * 100) : 0;
+    const dl = u.expiryAt ? Math.ceil((u.expiryAt - Date.now()) / 86400000) : null;
+
+    /* ── کارت اصلی: لینک + آواتار کاربر + وضعیت ── */
+    const heroCard = () =>
+      '<div class="card sub-hero"><div class="bd">' +
+      '<div class="sub-hero-top">' +
+        /* آواتار و نام */
+        '<div class="sub-user">' +
+          '<span class="sub-ava">' + esc(String(u.name || '?').charAt(0)) + '</span>' +
+          '<div><b>' + esc(u.name) + '</b>' +
+          '<span class="cell-sub mono">' + esc(String(u.uuid).slice(0, 18)) + '…</span></div>' +
+        '</div>' +
+        /* انتخاب کاربر */
+        '<select data-act="sel-user" style="width:auto;min-width:130px">' +
+          us.map((x) => '<option value="' + x.id + '"' + (x.id === u.id ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') +
+        '</select>' +
+      '</div>' +
+
+      /* لینک بزرگ + دکمه‌ها */
+      '<div class="sub-link-box">' +
+        '<div class="sub-link-url mono">' + esc(page) + '</div>' +
+        '<button class="btn p" data-act="copy" data-v="' + esc(page) + '">' + icon('fa-clipboard') + ' کپی</button>' +
+        '<button class="btn" data-act="open" data-v="' + esc(page) + '">' + icon('fa-arrow-up-right-from-square') + '</button>' +
+        '<button class="btn" data-act="qr" data-v="' + esc(page) + '">' + icon('fa-qrcode') + '</button>' +
+      '</div>' +
+
+      '<div class="hint">در <b>مرورگر</b> داشبورد کاربر را نشان می‌دهد، در <b>کلاینت</b> کانفیگ‌ها را می‌گیرد</div>' +
+      '</div></div>';
+
+    /* ── کارت وضعیت: مصرف + انقضا ── */
+    const statusCard = () =>
+      '<div class="card"><header><span class="ic">' + icon('fa-database') + '</span><div><h3>وضعیت</h3></div></header>' +
       '<div class="bd">' +
-      '<div class="grid g3" style="margin-bottom:14px">' +
-      '<label class="f" style="margin:0"><span>کاربر</span><select data-act="sel-user">' + us.map((x) => '<option value="' + x.id + '"' + (x.id === u.id ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select></label>' +
-      '<div><div class="hint">مصرف</div><b class="mono">' + bytes(u.up + u.down) + '</b><div class="hint">' + (u.quotaGB ? fa(u.quotaGB) + ' GB' : 'نامحدود') + '</div></div>' +
-      '<div><div class="hint">سقف گره</div><b class="mono">' + fa(s.sub.nodeLimit || 0) + '</b><div class="hint">node limit</div></div></div>' +
+      '<div class="sub-stats">' +
+        '<div class="sub-stat"><span>مصرف</span><b>' + bytes(used) + '</b><i>از ' + (q ? fa(u.quotaGB) + ' GB' : 'نامحدود') + '</i></div>' +
+        '<div class="sub-stat"><span>باقیمانده</span><b>' + (q ? bytes(Math.max(0, q - used)) : '∞') + '</b><i>' + (q ? fa(pct.toFixed(0)) + '٪ مصرف شده' : 'بدون سقف') + '</i></div>' +
+        '<div class="sub-stat"><span>انقضا</span><b>' + (dl === null ? 'نامحدود' : dl < 0 ? 'منقضی' : fa(dl) + ' روز') + '</b><i>' + (dl === null ? '—' : dl < 0 ? 'غیرفعال' : 'تا ' + new Date(u.expiryAt).toLocaleDateString('fa-IR')) + '</i></div>' +
+        '<div class="sub-stat"><span>وضعیت</span><b>' + (u.enabled ? 'فعال' : 'غیرفعال') + '</b><i>' + fa(u.totalReq || 0) + ' اتصال</i></div>' +
+      '</div>' +
+      (q ? '<div class="bar' + (pct > 90 ? ' bad' : pct > 70 ? ' warn' : '') + '" style="margin-top:10px"><i style="width:' + pct + '%"></i></div>' : '') +
+      '</div></div>';
 
-      /* ── دکمه‌ی اصلی: کپی صفحه‌ی کاربر (داشبورد + اشتراک در یک صفحه) ── */
-      '<div class="btn-row" style="margin-bottom:14px">' +
-      '<button class="btn p lg" data-act="copy" data-v="' + esc(page) + '">' + icon('fa-clipboard') + ' کپی صفحه‌ی کاربر</button>' +
-      '<button class="btn" data-act="open" data-v="' + esc(page) + '">' + icon('fa-arrow-up-right-from-square') + ' باز کردن</button>' +
-      '<button class="btn" data-act="qr" data-v="' + esc(page) + '">' + icon('fa-qrcode') + ' QR</button></div>' +
-      '<div class="hint" style="margin-bottom:14px">این یک لینک است: در <b>مرورگر</b> داشبورد کاربر را نشان می‌دهد و در <b>کلاینت</b> (v2rayNG، Hiddify، Clash و…) کانفیگ‌ها را به‌صورت خودکار دریافت می‌کند.' +
-      '<div class="mono" style="margin-top:6px;font-size:10.5px;word-break:break-all;direction:ltr;text-align:left">' + esc(page) + '</div></div>' +
+    /* ── کارت خروجی کلاینت ── */
+    const outputCard = () =>
+      '<div class="card"><header><span class="ic b2">' + icon('fa-download') + '</span>' +
+      '<div><h3>خروجی کلاینت</h3><p>فرمت را انتخاب و پیش‌نمایش بگیرید</p></div>' +
+      '<div class="acts"><div class="seg">' +
+        ['base64', 'raw', 'clash', 'singbox', 'v2ray'].map((x) =>
+          '<button data-act="fmt" data-v="' + x + '" class="' + (S.fmt === x ? 'on' : '') + '">' + x + '</button>').join('') +
+      '</div></div></header>' +
+      '<div class="bd">' +
+      '<div class="btn-row" style="margin-bottom:10px">' +
+        '<button class="btn s" data-act="sub-load" data-id="' + u.id + '">' + icon('fa-eye') + ' پیش‌نمایش</button>' +
+        '<button class="btn" data-act="copy" data-v="' + esc(page + '?format=' + S.fmt) + '">' + icon('fa-copy') + ' کپی لینک ' + esc(S.fmt) + '</button>' +
+      '</div>' +
+      '<div id="subOut"><div class="empty">برای دیدن خروجی، «پیش‌نمایش» را بزنید</div></div>' +
+      '</div></div>';
 
-      '<div class="hint" style="margin-bottom:6px">پیش‌نمایش خروجی کلاینت با فرمت <b>' + esc(S.fmt) + '</b>:</div>' +
-      '<div class="btn-row" style="margin-bottom:12px">' +
-      '<button class="btn sm s" data-act="sub-load" data-id="' + u.id + '">' + icon('fa-eye') + ' نمایش خروجی</button>' +
-      '<button class="btn sm" data-act="copy" data-v="' + esc(page + '?format=' + S.fmt) + '">' + icon('fa-copy') + ' کپی خروجی ' + esc(S.fmt) + '</button></div>' +
-      '<div id="subOut"><div class="empty">خروجی اینجا نمایش داده می‌شود</div></div>' +
-      (s.sub.telegramChannel ? '<div class="hint" style="margin-top:10px">خط کانال تلگرام: <span class="mono">' + esc(s.sub.telegramChannel) + '</span> — این خط قابل غیرفعال‌شدن نیست.</div>' : '') +
-      '</div></div>') +
-      fakeConfigsCard() +
-      SCHEMA_SUB.map((g) => group(g, S.d.settings)).join('') + saveBtn('save-sub');
+    return '<div class="page-head"><div><h1>اشتراک</h1><p>یک لینک برای همه‌ی کلاینت‌ها</p></div></div>' +
+      heroCard() + statusCard() + outputCard() + fakeConfigsCard();
   }
 
   function monitorView() {
