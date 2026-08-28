@@ -109,12 +109,19 @@ svg.ic{
   justify-content:center;gap:6px;transition:.18s;font-size:14px}
 .icon-btn:hover{color:var(--ac);border-color:var(--ac)}
 
-/* جستجو */
+/* جستجو — فقط ظرف بیرونی border و حالت فوکوس دارد؛ input داخلی کاملاً شفاف است
+   (قبلاً قاعده‌ی سراسری input:focus یک سایه‌ی دوم می‌ساخت = دو outline) */
 .search{position:relative;display:flex;align-items:center;gap:7px;background:var(--panel2);
-  border:1px solid var(--bd);border-radius:12px;padding:0 11px;height:36px;width:210px;transition:.2s}
-.search:focus-within{border-color:var(--ac);width:300px;box-shadow:0 0 0 3px color-mix(in oklab,var(--ac) 14%,transparent)}
-.search>i{font-size:12px;color:var(--mut)}
-.search input{border:0;background:transparent;outline:none;padding:0;height:100%;color:var(--tx);font-size:12px;width:100%}
+  border:1px solid var(--bd);border-radius:12px;padding:0 11px;height:36px;width:210px;
+  transition:border-color .18s,box-shadow .18s}
+.search:focus-within{border-color:var(--ac);box-shadow:0 0 0 3px color-mix(in oklab,var(--ac) 14%,transparent)}
+.search>svg.ic{width:14px;height:14px;color:var(--mut);flex:none}
+.search input{
+  border:0!important;background:transparent!important;outline:none!important;
+  box-shadow:none!important;padding:0;height:100%;color:var(--tx);
+  font-size:12px;width:100%;min-width:0;
+}
+.search input:focus{border:0!important;box-shadow:none!important;outline:none!important}
 .search input::placeholder{color:color-mix(in oklab,var(--mut) 80%,transparent)}
 .search-drop{position:absolute;top:calc(100% + 7px);inset-inline:0;max-height:340px;overflow:auto;
   background:var(--panel3);border:1px solid var(--bd);border-radius:14px;box-shadow:var(--shadow);
@@ -320,18 +327,23 @@ body.auth{padding:0}
   padding:7px 12px;font:600 12px 'Vazirmatn',sans-serif;cursor:pointer}
 .tabs button.on{background:var(--acsoft);color:var(--ac);border-color:color-mix(in oklab,var(--ac) 30%,transparent)}
 
-/* ─────────── واکنش‌گرا: کشوی ناوبری ─────────── */
+/* ─────────── واکنش‌گرا: کشوی ناوبری ───────────
+   سایدبار در RTL سمت راست است و در LTR سمت چپ.
+   برای مخفی‌شدن باید در جهت درست بیرون صفحه برود. */
 @media(max-width:1024px){
-  .sidebar{position:fixed;inset-block:0;inset-inline-end:0;transform:translateX(100%);
-    transition:transform .26s cubic-bezier(.22,1,.36,1);box-shadow:var(--shadow);z-index:60}
-  html[dir="ltr"] .sidebar{transform:translateX(100%)}
+  .sidebar{
+    position:fixed;top:0;bottom:0;left:0;
+    transform:translateX(-100%);
+    transition:transform .26s cubic-bezier(.22,1,.36,1);
+    box-shadow:var(--shadow);z-index:60;
+  }
+  html[dir="rtl"] .sidebar{left:auto;right:0;transform:translateX(100%)}
   .sidebar.open{transform:none!important}
   .sb-close{display:inline-flex}
-  .scrim.show{display:block;position:fixed;inset:0;background:rgba(3,6,12,.6);backdrop-filter:blur(3px);z-index:55}
+  .scrim{display:none;position:fixed;inset:0;background:rgba(3,6,12,.6);backdrop-filter:blur(3px);z-index:55}
+  .scrim.show{display:block}
   .search{width:150px}
-  .search:focus-within{width:210px}
   .content{padding:16px 13px 30px}
-  #panicBtn span,#logoutBtn span{display:none}
 }
 @media(max-width:560px){
   .search{width:118px}
