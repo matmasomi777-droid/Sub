@@ -763,6 +763,36 @@
       }
       return;
     }
+    /* انتخاب حالت کانفیگ فیک کاربر */
+    const ufm = e.target.closest('[data-ufake-mode]');
+    if (ufm) {
+      e.preventDefault(); e.stopPropagation();
+      const cur = S.d.users.find((x) => x.id === ($('#mbox [data-act="user-save"]') || {}).dataset?.id) || {};
+      const patch = collect($('#mbox')); patch.fakes = readUserFakes();
+      Object.assign(cur, patch);
+      cur.fakeMode = ufm.dataset.ufakeMode;
+      if (cur.fakeMode === 'custom' && (!Array.isArray(cur.fakes) || !cur.fakes.length)) {
+        cur.fakes = [
+          { id: 'usage',     name: '📊 {usage}',     enabled: true, proto: 'vless',  pos: 1 },
+          { id: 'remaining', name: '🟢 {remaining}', enabled: true, proto: 'vless',  pos: 2 },
+          { id: 'expiry',    name: '📅 {expiry}',    enabled: true, proto: 'vless',  pos: 3 },
+          { id: 'channel',   name: '📢 {channel}',   enabled: true, proto: 'trojan', pos: 4 },
+        ];
+      }
+      closeM(); userModal(cur);
+      return;
+    }
+    /* سوییچ کانفیگ فیک کاربر */
+    const ufsw = e.target.closest('[data-ufake-sw]');
+    if (ufsw) {
+      e.preventDefault(); e.stopPropagation();
+      const on = !ufsw.classList.contains('on');
+      ufsw.classList.toggle('on', on);
+      const row = ufsw.closest('.fk-row');
+      if (row) row.classList.toggle('off', !on);
+      return;
+    }
+
     /* سوییچ کانفیگ فیک */
     const fsw = e.target.closest('[data-fake-sw]');
     if (fsw) {
@@ -875,7 +905,46 @@
         const out = $('#subOut');
         if (out) out.innerHTML = '<pre class="code"><div class="hd"><span>' + esc(S.fmt) + ' • ' + esc(tx.length) + ' کاراکتر</span><button class="btn sm" data-act="copy" data-v="' + esc(tx.slice(0, 100000)).replace(/"/g, '&quot;') + '">کپی</button></div>' + esc(tx.slice(0, 6000)) + (tx.length > 6000 ? '\n…' : '') + '</pre>';
       }
-      else if (a === 'user-save') { busy(t, 'ذخیره'); const patch = collect($('#mbox')); const r = await api('POST', '/api/users', { id, op: 'update', patch }); free(t); if (r.ok) { toast('ذخیره شد'); closeM(); await refresh(); } else toast(r.error || 'خطا', 'err'); }
+      else if (a === 'user-save') {
+        busy(t, 'ذخیره');
+        const patch = collect($('#mbox'));
+        /* کانفیگ‌های فیک اختصاصی از DOM خوانده می‌شوند */
+        patch.fakes = readUserFakes();
+        patch.fakeMode = patch.fakeMode || 'inherit';
+        const r = await api('POST', '/api/users', { id, op: 'update', patch });
+        free(t);
+        if (r.ok) { toast('ذخیره شد'); closeM(); await refresh(); } else toast(r.error || 'خطا', 'err');
+      }
+      else if (a === 'ufake-add') {
+        if (!Array.isArray(u.fakes)) u.fakes = [];
+        u.fakes.push({ id: 'uf_' + Date.now().toString(36), name: '', enabled: true, proto: 'vless', pos: u.fakes.length + 1 });
+        /* بازتولید مودال برای نمایش ردیف جدید */
+        const patch = collect($('#mbox')); patch.fakes = readUserFakes(); patch.fakeMode = u.fakeMode || 'custom';
+        Object.assign(u, patch); u.fakeMode = 'custom';
+        closeM(); userModal(u);
+        setTimeout(() => { const el = $('#ufkList .fk-row:last-child .fk-name'); if (el) el.focus(); }, 80);
+      }
+      else if (a === 'ufake-reset') {
+        u.fakes = [
+          { id: 'usage',     name: '📊 {usage}',        enabled: true,  proto: 'vless',  pos: 1 },
+          { id: 'remaining', name: '🟢 {remaining}',    enabled: true,  proto: 'vless',  pos: 2 },
+          { id: 'expiry',    name: '📅 {expiry}',       enabled: true,  proto: 'vless',  pos: 3 },
+          { id: 'channel',   name: '📢 {channel}',      enabled: true,  proto: 'trojan', pos: 4 },
+          { id: 'panel',     name: '⚙️ {panel} v{ver}', enabled: false, proto: 'trojan', pos: 5 },
+        ];
+        const patch = collect($('#mbox')); patch.fakes = readUserFakes(); patch.fakeMode = 'custom';
+        Object.assign(u, patch); u.fakeMode = 'custom';
+        closeM(); userModal(u);
+        toast('به پیش‌فرض بازگشت', 'info');
+      }
+      else if (a === 'ufake-del') {
+        if (!Array.isArray(u.fakes)) u.fakes = [];
+        const patch = collect($('#mbox')); patch.fakes = readUserFakes(); patch.fakeMode = 'custom';
+        Object.assign(u, patch); u.fakeMode = 'custom';
+        u.fakes.splice(Number(t.dataset.i), 1);
+        closeM(); userModal(u);
+        toast('حذف شد', 'err');
+      }
       else if (a === 'regen') { const inp = $('#mbox [data-p="uuid"]'); if (inp) { inp.value = crypto.randomUUID(); toast('UUID جدید ساخته شد', 'info'); } }
       else if (a === 'close') closeM();
       else if (a === 'key-new') { const r = await api('POST', '/api/keys', {}); if (r.ok) { toast('کلید ساخته شد'); await refresh(); } else toast(r.error || 'خطا', 'err'); }
@@ -1123,6 +1192,75 @@
     return out;
   }
 
+  /* ═══════════ بخش کانفیگ‌های فیک اختصاصی کاربر ═══════════ */
+  function userFakeSection(u) {
+    const fakes = Array.isArray(u.fakes) ? u.fakes : [];
+    const mode = u.fakeMode || 'inherit';
+    return '<div class="um-sec"><div class="um-sec-h">' + icon('fa-list-check') + '<span>کانفیگ‌های فیک اختصاصی</span></div>' +
+      '<div class="bd" style="padding:11px 13px">' +
+
+      /* انتخاب حالت */
+      '<div class="seg" style="margin-bottom:10px">' +
+      [['inherit', 'از پنل'], ['custom', 'اختصاصی'], ['off', 'خاموش']].map(([k, l]) =>
+        '<button data-ufake-mode="' + k + '" class="' + (mode === k ? 'on' : '') + '">' + l + '</button>').join('') +
+      '</div>' +
+
+      '<div class="hint" style="margin-bottom:8px">' +
+      (mode === 'inherit' ? 'این کاربر از کانفیگ‌های فیک عمومی پنل استفاده می‌کند (بخش «اشتراک»).' :
+       mode === 'custom' ? 'فقط کانفیگ‌های زیر برای این کاربر نمایش داده می‌شوند.' :
+       'هیچ کانفیگ فکی برای این کاربر ساخته نمی‌شود.') + '</div>' +
+
+      /* لیست (فقط در حالت custom) */
+      (mode === 'custom' ? userFakeList(fakes) : '') +
+      '</div></div>';
+  }
+
+  function userFakeList(fakes) {
+    return '<div class="fk-help"><div class="fk-help-t">' + icon('fa-circle-info') + ' متغیرهای مجاز — کلیک کنید تا درج شود</div>' +
+      '<div class="chips">' + FAKE_VARS.map(([v, d]) =>
+        '<button class="chip fk-var" data-var="' + esc(v) + '" title="' + esc(d) + '"><span class="mono">' + esc(v) + '</span></button>').join('') +
+      '</div></div>' +
+      '<div class="btn-row" style="margin-bottom:8px">' +
+      '<button class="btn sm s" data-act="ufake-add">' + icon('fa-plus') + ' افزودن</button>' +
+      '<button class="btn sm" data-act="ufake-reset">' + icon('fa-rotate-left') + ' پیش‌فرض</button></div>' +
+      '<div class="fk-list" id="ufkList">' +
+      (fakes.map((f, i) => userFakeRow(f, i)).join('') || '<div class="empty">موردی نیست</div>') +
+      '</div>';
+  }
+
+  function userFakeRow(f, i) {
+    const on = !!(f && f.enabled);
+    return '<div class="fk-row' + (on ? '' : ' off') + '" data-i="' + i + '">' +
+      '<div class="sw' + (on ? ' on' : '') + '" data-ufake-sw="' + i + '"><i></i></div>' +
+      '<input class="fk-pos mono" data-ufake-pos="' + i + '" value="' + esc(f.pos || (i + 1)) + '" title="ترتیب" inputmode="numeric">' +
+      '<input class="fk-name" data-ufake-name="' + i + '" value="' + esc(f.name || '') + '" placeholder="📊 {usage}">' +
+      '<select class="fk-proto" data-ufake-proto="' + i + '">' +
+      ['vless', 'trojan'].map((p) => '<option value="' + p + '"' + (f.proto === p ? ' selected' : '') + '>' + p + '</option>').join('') +
+      '</select>' +
+      '<button class="btn sm d" data-act="ufake-del" data-i="' + i + '" title="حذف">' + icon('fa-trash-can') + '</button>' +
+      '</div>';
+  }
+
+  function readUserFakes() {
+    const out = [];
+    if (!$('#ufkList')) return out;
+    $$('#ufkList .fk-row').forEach((row) => {
+      const i = Number(row.dataset.i);
+      const sw = row.querySelector('[data-ufake-sw]');
+      const nm = row.querySelector('[data-ufake-name]');
+      const pr = row.querySelector('[data-ufake-proto]');
+      const ps = row.querySelector('[data-ufake-pos]');
+      out.push({
+        id: 'uf_' + i + '_' + Date.now().toString(36),
+        name: nm ? String(nm.value || '') : '',
+        enabled: sw ? sw.classList.contains('on') : false,
+        proto: (pr && pr.value === 'trojan') ? 'trojan' : 'vless',
+        pos: ps ? (Number(ps.value) || 99) : 99,
+      });
+    });
+    return out;
+  }
+
   function userModal(u, isNew) {
     if (!u) return;
     const v = (p) => {
@@ -1163,6 +1301,7 @@
       ], 'three') +
       sec('تنظیمات اختصاصی', 'fa-gear', [
         { p: 'mode', l: 'حالت پروتکل', t: 'sel', o: ['inherit', 'alpha', 'beta', 'both'], lbls: { inherit: 'از پنل', alpha: 'Alpha — VLESS', beta: 'Beta — Trojan', both: 'Both' } },
+        { p: 'fakeMode', l: 'کانفیگ‌های فیک', t: 'sel', o: ['inherit', 'custom', 'off'], lbls: { inherit: 'از پنل', custom: 'اختصاصی', off: 'خاموش' } },
         { p: 'ports', l: 'پورت‌های اختصاصی', t: 'text', mono: 1, h: 'خالی = پورت‌های پنل' },
         { p: 'nat64', l: 'NAT64 اختصاصی', t: 'text', mono: 1 },
         { p: 'panelUrl', l: 'Panel URL اختصاصی', t: 'text', mono: 1 },
@@ -1172,6 +1311,9 @@
         { p: 'proxyIPs', l: 'Proxy IPs', t: 'area', dt: 'lines', h: 'هر خط یکی' },
         { p: 'nodes', l: 'Nodes', t: 'area', dt: 'lines', h: 'هر خط یکی' },
       ], 'three') +
+
+      /* ── ۶. کانفیگ‌های فیک اختصاصی ── */
+      userFakeSection(u) +
       '<div class="um-sec"><div class="um-sec-h">' + icon('fa-shield-halved') + '<span>فیلترینگ و وضعیت</span></div>' +
       '<div class="switches two">' +
       field({ p: 'blockAdult', l: 'بلاک محتوای بزرگسال', t: 'sw' }, v('blockAdult')) +
