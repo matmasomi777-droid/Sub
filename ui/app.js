@@ -467,7 +467,7 @@
       return [u.name, u.uuid, u.note, u.secret].join(' ').toLowerCase().includes(q) ? 1 : 0;
     };
     return '<div class="page-head"><div><h1>مدیریت کاربران</h1><p>' + fa(us.length) + ' کاربر • ' + fa(us.filter((u) => u.enabled).length) + ' فعال • تنظیمات اختصاصی برای هر کاربر</p></div>' +
-      '<div class="btn-row"><div class="search" style="width:190px" id="uSearchBox"><i class="fa-solid fa-magnifying-glass"></i><input id="uSearch" placeholder="جستجوی نام، UUID، یادداشت…" value="' + esc(S.q || '') + '"></div>' +
+      '<div class="btn-row"><div class="search" style="width:190px" id="uSearchBox"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><input id="uSearch" placeholder="جستجوی نام، UUID، یادداشت…" value="' + esc(S.q || '') + '"></div>' +
       '<button class="btn p" data-act="user-new">' + icon('fa-plus') + ' کاربر جدید</button></div></div>' +
       '<div class="card"><div class="bd" style="padding:0"><div class="tbl-wrap"><table>' +
       '<thead><tr><th>کاربر</th><th>UUID</th><th>مصرف</th><th>سهمیه</th><th>انقضا</th><th>حالت</th><th>اختصاصی</th><th>آخرین فعالیت</th><th>عملیات</th></tr></thead><tbody>' +
@@ -955,6 +955,88 @@
     toast(r.panic ? 'Panic Mode فعال شد — همه‌ی تونل‌ها قطع شدند' : 'سرویس فعال شد', r.panic ? 'err' : 'ok');
     await refresh();
   });
+
+  /* ═══════════ مودال ویرایش کاربر — چیدمان دسته‌بندی‌شده ═══════════ */
+  function userModal(u, isNew) {
+    if (!u) return;
+    const v = (p) => {
+      if (p === 'expiryDays') return u.expiryAt ? Math.max(0, Math.ceil((u.expiryAt - Date.now()) / 86400000)) : 0;
+      const val = getP(u, p);
+      if (Array.isArray(val)) return val.join('\n');
+      if (val === null || val === undefined) return '';
+      return val;
+    };
+    const F = (f) => field(f, v(f.p));
+    const sec = (title, icn, fields, cols) =>
+      '<div class="um-sec"><div class="um-sec-h">' + icon(icn) + '<span>' + title + '</span></div>' +
+      '<div class="um-grid ' + (cols || '') + '">' + fields.map(F).join('') + '</div></div>';
+
+    modal(
+      '<header><span class="ic">' + icon('fa-user') + '</span>' +
+      '<div><h3>' + (isNew ? 'کاربر جدید' : 'ویرایش «' + esc(u.name) + '»') + '</h3>' +
+      '<p>شناسه، سهمیه و تنظیمات اختصاصی</p></div>' +
+      '<div class="acts"><button class="btn sm" data-act="regen" title="ساخت UUID جدید">' + icon('fa-shuffle') + ' UUID</button>' +
+      '<button class="btn sm ghost" data-act="close" title="بستن">' + icon('fa-xmark') + '</button></div></header>' +
+      '<div class="bd">' +
+      sec('اطلاعات پایه', 'fa-user', [
+        { p: 'name', l: 'نام کاربر', t: 'text', req: 1 },
+        { p: 'note', l: 'یادداشت', t: 'text' },
+      ], 'two') +
+      sec('شناسه‌های اتصال', 'fa-key', [
+        { p: 'uuid', l: 'UUID (VLESS / VMess)', t: 'text', mono: 1 },
+        { p: 'secret', l: 'رمز Trojan (خام)', t: 'text', mono: 1, h: 'کلاینت خودش sha224 می‌گیرد' },
+      ], 'two') +
+      sec('سهمیه و محدودیت', 'fa-database', [
+        { p: 'quotaGB', l: 'سهمیه کل (GB)', t: 'num', h: '۰ = نامحدود' },
+        { p: 'dailyQuotaMB', l: 'سهمیه روزانه (MB)', t: 'num', h: '۰ = بدون سقف' },
+        { p: 'expiryDays', l: 'انقضا (روز)', t: 'num', h: '۰ = نامحدود' },
+        { p: 'deviceLimit', l: 'اتصال همزمان', t: 'num' },
+        { p: 'ipLimit', l: 'سقف IP', t: 'num', h: '۰ = نامحدود' },
+        { p: 'maxConfigs', l: 'سقف کانفیگ', t: 'num', h: '۰ = پیش‌فرض' },
+        { p: 'speedLimit', l: 'سقف سرعت (Mbps)', t: 'num', h: '۰ = نامحدود' },
+      ], 'three') +
+      sec('تنظیمات اختصاصی', 'fa-gear', [
+        { p: 'mode', l: 'حالت پروتکل', t: 'sel', o: ['inherit', 'alpha', 'beta', 'both'], lbls: { inherit: 'از پنل', alpha: 'Alpha — VLESS', beta: 'Beta — Trojan', both: 'Both' } },
+        { p: 'ports', l: 'پورت‌های اختصاصی', t: 'text', mono: 1, h: 'خالی = پورت‌های پنل' },
+        { p: 'nat64', l: 'NAT64 اختصاصی', t: 'text', mono: 1 },
+        { p: 'panelUrl', l: 'Panel URL اختصاصی', t: 'text', mono: 1 },
+      ], 'two') +
+      sec('IPها و نودها', 'fa-network-wired', [
+        { p: 'cleanIPs', l: 'Clean IPs', t: 'area', dt: 'lines', h: 'هر خط یکی • خالی = لیست پنل' },
+        { p: 'proxyIPs', l: 'Proxy IPs', t: 'area', dt: 'lines', h: 'هر خط یکی' },
+        { p: 'nodes', l: 'Nodes', t: 'area', dt: 'lines', h: 'هر خط یکی' },
+      ], 'three') +
+      '<div class="um-sec"><div class="um-sec-h">' + icon('fa-shield-halved') + '<span>فیلترینگ و وضعیت</span></div>' +
+      '<div class="switches two">' +
+      field({ p: 'blockAdult', l: 'بلاک محتوای بزرگسال', t: 'sw' }, v('blockAdult')) +
+      field({ p: 'blockAds', l: 'بلاک تبلیغات', t: 'sw' }, v('blockAds')) +
+      field({ p: 'enabled', l: 'کاربر فعال باشد', t: 'sw' }, v('enabled')) +
+      '</div></div>' +
+      '<div class="um-stats">' +
+      '<div class="um-stat"><span>' + icon('fa-database') + ' مصرف</span><b>' + bytes((u.up || 0) + (u.down || 0)) + '</b></div>' +
+      '<div class="um-stat"><span>' + icon('fa-chart-column') + ' درخواست</span><b>' + fa(u.totalReq || 0) + '</b></div>' +
+      '<div class="um-stat"><span>' + icon('fa-check') + ' وضعیت</span><b>' + (u.enabled ? 'فعال' : 'غیرفعال') + '</b></div>' +
+      '<div class="um-stat"><span>' + icon('fa-activity') + ' آخرین اتصال</span><b>' + ago(u.lastSeen) + '</b></div>' +
+      '</div></div>' +
+      '<footer>' +
+      '<button class="btn d" data-act="user-del" data-id="' + esc(u.id) + '">' + icon('fa-trash-can') + ' حذف</button>' +
+      '<span class="spacer"></span>' +
+      '<button class="btn" data-act="user-copy-page" data-id="' + esc(u.id) + '">' + icon('fa-clipboard') + ' کپی لینک</button>' +
+      '<button class="btn ghost" data-act="close">انصراف</button>' +
+      '<button class="btn p" data-act="user-save" data-id="' + esc(u.id) + '">' + icon('fa-floppy-disk') + ' ذخیره</button>' +
+      '</footer>', true);
+  }
+
+  function qrModal(link) {
+    modal('<header><span class="ic">' + icon('fa-qrcode') + '</span><div><h3>QR</h3><p>اسکن کنید یا لینک را کپی کنید</p></div>' +
+      '<div class="acts"><button class="btn sm ghost" data-act="close">' + icon('fa-xmark') + '</button></div></header>' +
+      '<div class="bd" style="text-align:center">' +
+      '<div class="qr"><img src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=' + encodeURIComponent(link) + '" width="240" height="240" alt="QR"></div>' +
+      '<p class="mono" style="word-break:break-all;font-size:10.5px;margin:14px 0;direction:ltr;text-align:left">' + esc(link) + '</p>' +
+      '<div class="btn-row" style="justify-content:center">' +
+      '<button class="btn" data-act="copy" data-v="' + esc(link) + '">' + icon('fa-copy') + ' کپی لینک</button>' +
+      '<button class="btn ghost" data-act="close">بستن</button></div></div>');
+  }
 
   /* ─────────── راه‌اندازی ─────────── */
   try { document.documentElement.dataset.theme = localStorage.getItem('sg_theme') || 'dark'; } catch (e) { document.documentElement.dataset.theme = 'dark'; }
