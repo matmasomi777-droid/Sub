@@ -811,10 +811,49 @@
         '</div></div></div>';
     };
 
+    /* ═══ تلگرام — آیدی‌هایی که در ساب نمایش داده می‌شوند ═══ */
+    const telegram = () => {
+      const sup = s.sub.telegramSupport || s.sub.telegramChannel || '';
+      const buy = s.sub.telegramBuy || '';
+      const toUrl = (id) => {
+        if (!id) return '';
+        return id.startsWith('http') ? id : 'https://t.me/' + String(id).replace('@', '');
+      };
+      return '<div class="acc open"><div class="acc-h" data-acc>' + icon('fa-send') + '<span>تلگرام</span>' +
+        '<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>' +
+        '<div class="acc-b"><div class="um-grid two" style="padding:11px 12px">' +
+        field({ p: 'sub.telegramSupport', l: 'آیدی پشتیبانی', t: 'text', mono: 1, h: 'مثل @support — در صفحه‌ی کاربر و هدر ساب' }, sup) +
+        field({ p: 'sub.telegramBuy', l: 'آیدی خرید اشتراک', t: 'text', mono: 1, h: 'مثل @sales — خالی = همان پشتیبانی' }, buy) +
+        '</div>' +
+
+        /* پیش‌نمایش لینک‌ها */
+        '<div style="padding:0 12px 12px">' +
+        '<div class="hint" style="margin-bottom:6px"><b>پیش‌نمایش:</b></div>' +
+        '<div class="list">' +
+        (toUrl(sup) ? '<div class="row-item">' + icon('fa-send') + '<div class="grow"><b>پشتیبانی</b><div class="mono cell-sub">' + esc(toUrl(sup)) + '</div></div>' +
+          '<a class="btn sm" href="' + esc(toUrl(sup)) + '" target="_blank">' + icon('fa-arrow-up-right-from-square') + '</a></div>' : '') +
+        (toUrl(buy || sup) ? '<div class="row-item">' + icon('fa-clipboard') + '<div class="grow"><b>خرید اشتراک</b><div class="mono cell-sub">' + esc(toUrl(buy || sup)) + '</div></div>' +
+          '<a class="btn sm" href="' + esc(toUrl(buy || sup)) + '" target="_blank">' + icon('fa-arrow-up-right-from-square') + '</a></div>' : '') +
+        '</div>' +
+
+        /* متغیرهای قابل استفاده در کانفیگ فیک */
+        '<div class="hint" style="margin-top:10px">متغیرهای قابل استفاده در کانفیگ‌های فیک:</div>' +
+        '<div class="chips" style="margin-top:5px">' +
+        '<span class="chip"><span class="mono">{tgsupport}</span></span>' +
+        '<span class="chip"><span class="mono">{tgbuy}</span></span>' +
+        '</div>' +
+
+        /* ربات تلگرام (اختیاری) */
+        '<div class="hint" style="margin-top:12px"><b>ربات تلگرام</b> (اختیاری — برای اعلان‌ها):</div>' +
+        '<div class="um-grid two" style="margin-top:6px">' +
+        field({ p: 'tg.token', l: 'توکن ربات', t: 'pw', mono: 1 }, s.tg.token) +
+        field({ p: 'tg.chatId', l: 'Chat ID', t: 'text', mono: 1 }, s.tg.chatId) +
+        '</div>' +
+        '</div></div></div>';
+    };
+
     /* ═══ پیشرفته — کمترین تعداد ═══ */
     const advanced = () => acc('پیشرفته', 'fa-key', [
-      { p: 'tg.token', l: 'توکن تلگرام', t: 'pw', mono: 1 },
-      { p: 'tg.chatId', l: 'Chat ID', t: 'text', mono: 1 },
       { p: 'cf.accountId', l: 'CF Account ID', t: 'text', mono: 1, h: 'برای آمار' },
       { p: 'upd.repo', l: 'ریپو GitHub', t: 'text', mono: 1 },
       { p: 'sec.killSwitch', l: 'Kill Switch', t: 'sw', bad: 1, h: 'قطع فوری' },
@@ -824,7 +863,7 @@
       '<button class="btn p" data-act="save-config">' + icon('fa-floppy-disk') + ' ذخیره</button></div>' +
 
       modeCard() + quickCard() +
-      '<div style="padding:0 2px">' + essential() + network() + stealth() + advanced() + '</div>' +
+      '<div style="padding:0 2px">' + essential() + network() + telegram() + stealth() + advanced() + '</div>' +
 
       '<div class="btn-row" style="justify-content:center;margin-top:10px">' +
       '<button class="btn p lg" data-act="save-config">' + icon('fa-floppy-disk') + ' ذخیره</button></div>';
@@ -1074,6 +1113,10 @@
         /* مقادیری که با کلیک (نه فیلد) تغییر کرده‌اند */
         patch.mode = s.mode;
         patch.auth = { ...(patch.auth || {}), maintenanceHost: s.auth.maintenanceHost };
+        /* آیدی‌های تلگرام */
+        patch.sub = { ...(patch.sub || {}) };
+        if (s.sub.telegramSupport) patch.sub.telegramSupport = s.sub.telegramSupport;
+        if (s.sub.telegramBuy) patch.sub.telegramBuy = s.sub.telegramBuy;
         ['tls', 'sub.fakeConfigs', 'auth.disguise', 'auth.totp', 'tg.enabled', 'upd.auto'].forEach((k) => {
           setP(patch, k, getP(s, k));
         });
