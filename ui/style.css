@@ -327,23 +327,39 @@ body.auth{padding:0}
   padding:7px 12px;font:600 12px 'Vazirmatn',sans-serif;cursor:pointer}
 .tabs button.on{background:var(--acsoft);color:var(--ac);border-color:color-mix(in oklab,var(--ac) 30%,transparent)}
 
-/* ─────────── واکنش‌گرا: کشوی ناوبری ───────────
-   سایدبار در RTL سمت راست است و در LTR سمت چپ.
-   برای مخفی‌شدن باید در جهت درست بیرون صفحه برود. */
+/* ═══════════ کشوی ناوبری ═══════════
+   دسکتاپ (≥1025px): سایدبار همیشه ثابت است → دکمه‌ی همبرگری مخفی
+   موبایل/تبلت (≤1024px): سایدبار کشویی است → دکمه‌ی همبرگری فعال */
+#menuBtn{display:none}
+
+/* دسکتاپ: بستن سایدبار با دکمه‌ی همبرگری */
+@media(min-width:1025px){
+  body.nav-collapsed .sidebar{display:none}
+  body.nav-collapsed .main{width:100%}
+}
+
 @media(max-width:1024px){
+  #menuBtn{display:inline-flex}          /* فقط در موبایل دیده می‌شود */
+
   .sidebar{
-    position:fixed;top:0;bottom:0;left:0;
+    position:fixed!important;top:0;bottom:0;left:0;height:100vh;
     transform:translateX(-100%);
     transition:transform .26s cubic-bezier(.22,1,.36,1);
     box-shadow:var(--shadow);z-index:60;
   }
+  /* RTL: سایدبار سمت راست است → برای مخفی‌شدن باید به راست برود */
   html[dir="rtl"] .sidebar{left:auto;right:0;transform:translateX(100%)}
+  html[dir="rtl"] .sidebar.open{transform:none!important}
   .sidebar.open{transform:none!important}
-  .sb-close{display:inline-flex}
-  .scrim{display:none;position:fixed;inset:0;background:rgba(3,6,12,.6);backdrop-filter:blur(3px);z-index:55}
+
+  .scrim{display:none;position:fixed;inset:0;background:rgba(3,6,12,.6);
+    backdrop-filter:blur(3px);z-index:55;cursor:pointer}
   .scrim.show{display:block}
+
   .search{width:150px}
   .content{padding:16px 13px 30px}
+  /* در موبایل فقط آیکون دکمه‌های Panic و خروج */
+  #panicBtn,#logoutBtn{padding:0 11px}
 }
 @media(max-width:560px){
   .search{width:118px}
