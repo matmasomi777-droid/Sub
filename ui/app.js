@@ -909,12 +909,27 @@
   });
   document.addEventListener('click', (e) => { if (!e.target.closest('#searchBox')) $('#searchDrop').classList.remove('show'); });
 
-  /* ═══ کشوی منو — یک دکمه‌ی باز/بسته ═══ */
-  const openDrawer = () => { $('#sidebar').classList.add('open'); $('#scrim').classList.add('show'); };
-  const closeDrawer = () => { $('#sidebar').classList.remove('open'); $('#scrim').classList.remove('show'); };
-  const toggleDrawer = () => ($('#sidebar').classList.contains('open') ? closeDrawer() : openDrawer());
-  $('#menuBtn').addEventListener('click', (e) => { e.stopPropagation(); toggleDrawer(); });
+  /* ═══ ناوبری ═══
+     موبایل (≤1024px): سایدبار کشویی است → دکمه باز/بسته می‌کند
+     دسکتاپ (>1024px): سایدبار ثابت است → دکمه نمایش/مخفی می‌کند */
+  const isMobile = () => window.matchMedia('(max-width: 1024px)').matches;
+  const openDrawer = () => {
+    $('#sidebar').classList.add('open');
+    $('#scrim').classList.add('show');
+    document.body.classList.add('nav-open');
+  };
+  const closeDrawer = () => {
+    $('#sidebar').classList.remove('open');
+    $('#scrim').classList.remove('show');
+    document.body.classList.remove('nav-open');
+  };
+  const toggleNav = () => {
+    if (isMobile()) { $('#sidebar').classList.contains('open') ? closeDrawer() : openDrawer(); }
+    else { document.body.classList.toggle('nav-collapsed'); }
+  };
+  $('#menuBtn').addEventListener('click', (e) => { e.stopPropagation(); toggleNav(); });
   $('#scrim').addEventListener('click', closeDrawer);
+  window.addEventListener('resize', () => { if (!isMobile()) closeDrawer(); });
 
   /* خروج */
   $('#logoutBtn').addEventListener('click', () => {
