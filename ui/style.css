@@ -28,8 +28,13 @@ body{
   font-family:'Vazirmatn',ui-sans-serif,system-ui,sans-serif;
   font-size:14px;line-height:1.75;-webkit-font-smoothing:antialiased;
   background-color:var(--bg);
-  background-image:radial-gradient(var(--grid) 1px,transparent 1px);
-  background-size:18px 18px;
+  background-image:
+    radial-gradient(var(--grid) 1px, transparent 1px),
+    radial-gradient(760px 420px at 100% -6%, rgba(76,141,255,.13), transparent 62%),
+    radial-gradient(680px 380px at -8% 8%, rgba(45,212,191,.11), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,.015), transparent 340px);
+  background-size:18px 18px, auto, auto, auto;
+  background-attachment:fixed;
   overflow-x:hidden;
 }
 /* همه‌چیز همین دو فونت — بدون فونت پیش‌فرض مرورگر */
@@ -317,4 +322,45 @@ body.auth{padding:0}
   table{font-size:11.5px}
   td,th{padding:7px 6px}
   .card .bd{padding:13px}
+}
+
+/* ─────────── سوئیچ (toggle) ─────────── */
+.tog-txt{min-width:0;flex:1}
+.tog .sw{transition:.24s cubic-bezier(.34,1.4,.64,1)}
+.sw:active{transform:scale(.9)}
+.tog:has(.sw.on){border-color:color-mix(in oklab,var(--ac) 30%,transparent);background:color-mix(in oklab,var(--ac) 5%,transparent)}
+
+/* ─────────── نتایج تست ─────────── */
+.test-head{display:flex;align-items:center;gap:9px;padding:11px 13px;border-radius:12px;font-size:12.5px;font-weight:700;margin-bottom:10px}
+.test-head.ok{background:color-mix(in oklab,var(--ok) 12%,transparent);color:var(--ok);border:1px solid color-mix(in oklab,var(--ok) 30%,transparent)}
+.test-head.bad{background:color-mix(in oklab,var(--bad) 12%,transparent);color:var(--bad);border:1px solid color-mix(in oklab,var(--bad) 30%,transparent)}
+.test-row{border-radius:8px;padding-inline:7px;align-items:center}
+.test-row b{max-width:58%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10.5px;text-align:end}
+.test-row.bad{background:color-mix(in oklab,var(--bad) 7%,transparent);color:var(--bad)}
+.test-row .fa-circle-check{color:var(--ok)}
+.test-row .fa-circle-xmark{color:var(--bad)}
+.test-row .fa-triangle-exclamation{color:var(--warn)}
+
+/* ─────────── ریزتعامل‌ها و حرکت ─────────── */
+.card{transition:border-color .25s ease, box-shadow .25s ease, transform .25s ease}
+.card:hover{border-color:color-mix(in oklab,var(--ac) 22%,transparent)}
+#view>.fade>.card,#view .grid>.card{animation:rise .5s cubic-bezier(.22,1,.36,1) both}
+#view .card:nth-of-type(2){animation-delay:.05s}
+#view .card:nth-of-type(3){animation-delay:.1s}
+#view .card:nth-of-type(4){animation-delay:.14s}
+#view .card:nth-of-type(5){animation-delay:.18s}
+#view .card:nth-of-type(6){animation-delay:.22s}
+@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.btn:hover{transform:translateY(-1px)}
+.btn:active{transform:translateY(0) scale(.97)}
+.nav-item:hover{transform:translateX(-3px)}
+.row-btns .btn{padding:6px 8px}
+tbody tr{transition:background .16s ease, box-shadow .16s ease}
+tbody tr:hover{box-shadow:inset 3px 0 0 var(--ac)}
+.badge,.chip,.stat,.detail-card,.row-item{transition:.2s ease}
+.chip:hover,.badge:hover{transform:translateY(-1px)}
+.seg button{transition:.16s}
+.toast{animation:pop .22s cubic-bezier(.34,1.4,.64,1)}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
 }
