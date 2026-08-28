@@ -730,8 +730,13 @@
         free(t);
         const o = $('#tunnelOut');
         if (o) o.innerHTML = (r.checks || []).map((c) => '<div class="kv"><span>' + icon(c.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' ' + esc(c.name) + '</span><b class="mono" style="font-size:10px;color:' + (c.ok ? 'var(--ok)' : 'var(--bad)') + ';max-width:60%;overflow:hidden;text-overflow:ellipsis">' + esc(c.note || '') + '</b></div>').join('') +
-          '<div class="hint" style="margin-top:10px">هر مورد قرمز = علت وصل نشدن کانفیگ. رایج‌ترین: SNI متفاوت با دامنه‌ی ورکر، یا ترنسپورت غیر از WebSocket.</div>';
+          '<div class="hint" style="margin-top:12px"><b>راهنمای تفسیر نتایج:</b></div>' +
+          '<div class="hint">• <b>SNI / Host قرمز</b> = رایج‌ترین علت. SNI و Host را در «پروتکل و کانفیگ» خالی بگذارید تا دامنه‌ی خود ورکر استفاده شود.</div>' +
+          '<div class="hint">• <b>ترنسپورت قرمز</b> = باید WebSocket باشد؛ gRPC و XHTTP فقط در ساب تولید می‌شوند.</div>' +
+          '<div class="hint">• <b>محدودیت کلاودفلر:</b> اگر «خروجی TCP» خطای <span class="mono">HTTP-based service</span> داد، یعنی مقصدِ تست روی IP کلاودفلر است. <b>سایت‌های میزبانی‌شده روی کلاودفلر از داخل تونل قابل دسترسی نیستند</b> (محدودیت <span class="mono">connect()</span>). سایت‌های معمولی (گوگل، یوتیوب، تلگرام و…) مشکلی ندارند.</div>' +
+          '<div class="hint">• <b>هسته‌ی تونل VLESS/Trojan</b> اگر سبز باشد، یعنی پارس پروتکل، تطبیق UUID/رمز و اتصال واقعی به مقصد همه سالم‌اند — پس کانفیگ از سمت سرور درست است؛ اگر کلاینت وصل نمی‌شود، مسیر شبکه (فیلتر بودن workers.dev) یا SNI است.</div>';
         toast(r.ok ? 'همه‌ی بررسی‌ها سالم بود ✓' : 'مشکلی پیدا شد — جزئیات را ببینید', r.ok ? 'ok' : 'err');
+        if (r.error) toast('خطای سرور: ' + r.error, 'err');
       }
       else if (a === 'upd-check') { busy(t, 'بررسی'); const r = await api('POST', '/api/action', { act: 'update-check' }); free(t); toast(r.msg || 'بررسی شد', 'info'); await refresh(); }
       else if (a === 'upd-deploy') { busy(t, 'نصب'); const r = await api('POST', '/api/action', { act: 'update-deploy' }); free(t); toast(r.msg || 'نصب شد'); await refresh(); }
