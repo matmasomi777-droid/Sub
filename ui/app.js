@@ -204,9 +204,19 @@
     const tag = f.t === 'sw' ? 'div' : 'label';
     return '<' + tag + ' class="f"><span>' + esc(f.l) + (f.req ? ' <b style="color:var(--bad)">*</b>' : '') + '</span>' + inner + (f.h ? '<div class="hint" style="margin-top:5px">' + f.h + '</div>' : '') + '</' + tag + '>';
   }
-  const group = (g, s) => '<div class="card"><header><span class="ic ' + (g.ic || '') + '">' + icon(g.icon || 'fa-gear') + '</span><div><h3>' + esc(g.t) + '</h3>' + (g.d ? '<p>' + g.d + '</p>' : '') + '</div></header><div class="bd"><div class="switches ' + (g.two ? 'two' : '') + '">' + g.f.map((f) => field(f, getP(s, f.p))).join('') + '</div></div></div>';
+  /* ═══ آکاردئون — جایگزین کارت‌های تودرتو و toggle های پراکنده ═══ */
+  const acc = (title, icn, fields, s, cols) => {
+    const html = fields.map((f) => field(f, getP(s, f.p))).join('');
+    return '<div class="acc open"><div class="acc-h" data-acc>' + icon(icn) + '<span>' + title + '</span>' +
+      '<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>' +
+      '<div class="acc-b"><div class="um-grid ' + (cols || 'two') + '">' + html + '</div></div></div>';
+  };
+
+  /* گروه کلاسیک (فقط برای بخش‌های کوچک) */
+  const group = (g, s) => '<div class="card"><header><span class="ic">' + icon(g.icon || 'fa-gear') + '</span><div><h3>' + esc(g.t) + '</h3>' + (g.d ? '<p>' + g.d + '</p>' : '') + '</div></header><div class="bd">' +
+    g.f.map((f) => field(f, getP(s, f.p))).join('') + '</div></div>';
   function collect(root) { const o = {}; if (!root) return o; $$('[data-p]', root).forEach((el) => { const t = el.dataset.t; let v = el.type === 'checkbox' ? el.checked : el.value; if (t === 'num') v = Number(v) || 0; if (t === 'bool') v = !!v; if (t === 'lines') v = String(v).split('\n').map((x) => x.trim()).filter(Boolean); setP(o, el.dataset.p, v); }); return o; }
-  const saveBtn = (act, lbl) => '<div class="btn-row" style="margin-top:4px"><button class="btn p" data-act="' + act + '">' + icon('fa-floppy-disk') + ' ' + (lbl || 'ذخیره تنظیمات') + '</button><span class="hint">تغییرات بلافاصله روی کانفیگ‌ها اعمال می‌شود.</span></div>';
+  const saveBtn = (act, lbl) => '<button class="btn p" data-act="' + act + '">' + icon('fa-floppy-disk') + ' ' + (lbl || 'ذخیره') + '</button>';
 
   /* ─────────── ناوبری و اسکیمای تنظیمات ─────────── */
   const NAV = [
@@ -606,7 +616,15 @@
       '<button class="btn d" data-act="logs-clear">' + icon('fa-broom') + ' پاک‌سازی لاگ</button></div></div></div></div>';
   }
 
-  const schemaView = (key, head) => '<div class="page-head"><div><h1>' + head[0] + '</h1><p>' + head[1] + '</p></div></div>' + SCHEMA[key].map((g) => group(g, S.d.settings)).join('') + saveBtn('save-' + key);
+  /* نمایش اسکیما با آکاردئون به‌جای کارت‌های تودرتو */
+  const schemaView = (key, head) => {
+    const s = S.d.settings;
+    return '<div class="page-head"><div><h1>' + head[0] + '</h1><p>' + head[1] + '</p></div></div>' +
+      '<div class="card"><header><span class="ic">' + icon('fa-gear') + '</span><div><h3>تنظیمات</h3><p>روی هر بخش کلیک کنید تا باز/بسته شود</p></div>' +
+      '<div class="acts">' + saveBtn('save-' + key) + '</div></header><div class="bd" style="padding:12px">' +
+      SCHEMA[key].map((g) => acc(g.t, g.icon || 'fa-gear', g.f, s, g.two ? 'two' : 'two')).join('') +
+      '</div></div>';
+  };
 
   function tgExtra() {
     const cmds = ['/panel', '/users', '/usage', '/sub <uuid>', '/add <name>', '/del <name>', '/reset <name>', '/extend <name> <days>', '/rename <name> <new>', '/note <name> <text>', '/limit <name> <n>', '/search <q>', '/inactive', '/panic', '/kill', '/dns <url>', '/ips <list>', '/relay <url>', '/nodes', '/lang en'];
@@ -763,6 +781,10 @@
       }
       return;
     }
+    /* آکاردئون */
+    const ach = e.target.closest('[data-acc]');
+    if (ach) { e.preventDefault(); e.stopPropagation(); ach.parentElement.classList.toggle('open'); return; }
+
     /* انتخاب حالت کانفیگ فیک کاربر */
     const ufm = e.target.closest('[data-ufake-mode]');
     if (ufm) {
