@@ -1719,18 +1719,26 @@ async function apiHandler(req, env, url) {
     for (const u of st.users) {
       const row = usage.get(u.uuid);
       const sessions = await sessionsOf(env, u.uuid);
-      /* هر اتصال یک ردیف دارد → تعداد ردیف‌ها همان «اتصال همزمان» است و
-         IPهای متمایز جداگانه استخراج می‌شوند. */
-      const ips = [...new Set(sessions.map((s) => s.ip))];
+      /* هر اتصال یک ردیف دارد → تعداد ردیف‌ها همان «اتصال همزمان» است.
+         برای نمایش در پنل، اتصال‌ها بر اساس IP گروه‌بندی می‌شوند تا هم
+         تعداد اتصال و هم تعداد IP یکتا در دسترس باشد.
+         ⚠️ قراردادِ خروجی باید با ui/app.js هماهنگ بماند:
+            activeIPs: [{ip, conns}] | activeConns: تعداد اتصال | activeIPCount: تعداد IP */
+      const byIp = new Map();
+      for (const s of sessions) {
+        const e = byIp.get(s.ip);
+        if (e) e.conns++; else byIp.set(s.ip, { ip: s.ip, conns: 1 });
+      }
+      const activeIPs = [...byIp.values()].sort((a, b) => b.conns - a.conns);
       usersWithUsage.push({
         ...u,
         up: row ? row.up : 0,
         down: row ? row.down : 0,
         totalReq: row ? row.reqs : 0,
         lastSeen: row ? row.lastSeen : null,
-        activeIPs: ips,
-        activeCount: sessions.length,
-        activeIpCount: ips.length,
+        activeIPs,                                    /* [{ip, conns}] */
+        activeConns: sessions.length,                 /* تعداد اتصال‌های همزمان */
+        activeIPCount: activeIPs.length,              /* تعداد IPهای یکتا */
       });
     }
     /* ⚠️ st.users را بازنویسی نمی‌کنیم: st همان حافظه‌ی مشترک (MEM) است و
