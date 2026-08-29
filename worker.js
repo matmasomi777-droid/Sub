@@ -66,7 +66,7 @@ const DEF = () => ({
     auth: { totp: false, totpSecret: '', sessionMin: 15, loginRate: '5/10m', path: 'panel', pathRotate: false, disguise: true, maintenanceHost: 'nginx', decoyUrl: '', panic: false, password: 'simorgh' },
     /* ipConnLimit: پیش‌فرضِ سراسریِ «حداکثر اتصال همزمانِ هر IP» —
        فقط وقتی کاربر ipLimit خودش را ندارد (۰) استفاده می‌شود */
-    sec: { cors: true, csp: true, killSwitch: false, ipConnLimit: 0 },
+    sec: { cors: true, csp: true, killSwitch: false, ipConnLimit: 0, speedTestUrl: '' },
     sub: {
       path: 'sub', userAgent: '', fakeConfigs: true, nodeLimit: 12, converter: '', telegramChannel: '@simorgh_channel',
       /* آیدی تلگرامی که در صفحه‌ی کاربر و لینک ساب نمایش داده می‌شود */
@@ -183,9 +183,14 @@ let WRITING = false;                  // جلوگیری از نوشتن همزم
 let WRITE_COUNT = { day: '', n: 0 };  // شمارنده‌ی روزانه
 let DB_READY = false;                 // جدول D1 ساخته شده است
 
-/** نوشتن در D1 — یک خط SQL */
+/** نوشتن در D1 — یک خط SQL (با افتادن خودکار روی KV اگر D1 بایند نشده باشد) */
 async function d1Write(env, json) {
-  if (!env.DB) return false;
+  if (!env.DB) {
+    /* بدون D1 وضعیت اصلاً ذخیره نمی‌شد (هر ری‌استارت = تنظیمات صفر).
+       اگر KV در دسترس باشد، وضعیت را آن‌جا نگه می‌داریم. */
+    if (env.KV) { try { await env.KV.put(D1_KEY, json); return true; } catch (e) { return false; } }
+    return false;
+  }
   try {
     await env.DB.prepare('INSERT INTO kv_store (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
       .bind(D1_KEY, json).run();
@@ -193,9 +198,55 @@ async function d1Write(env, json) {
   } catch (e) { return false; }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   لایه‌ی ذخیره‌سازی — D1 → KV → حافظه
+
+   ⚠️ علتِ اصلی «شمارش حجم و محدودیت اتصال کار نمی‌کند» در استقرار واقعی:
+   worker.js معمولاً با کپی/پیست در داشبورد کلادفلر منتشر می‌شود و هیچ
+   بایندینگی ندارد → env.DB وجود ندارد → تمام کوئری‌ها بی‌صدا رد می‌شدند
+   (هر اتصال مجاز، هر مصرفی صفر). از این به بعد:
+     • env.DB  → D1 (بهترین حالت: افزایش اتمیک واقعی)
+     • env.KV  → KV (افزایش در حافظه + ثبت دوره‌ای؛ ماندگار ولی تقریبی)
+     • هیچ‌کدام → حافظهٔ همین isolate (موقت) + هشدار صریح در کارت سلامت
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const MEM_USAGE = new Map();        // uuid -> {up,down,reqs,last_seen,day,day_up,day_down}
+const MEM_SESS = new Map();         // uuid|ip -> {conns,last_active}
+
+function backendOf(env) {
+  if (env && env.DB) return 'd1';
+  if (env && env.KV) return 'kv';
+  return 'mem';
+}
+const KV_U = (uuid) => 'u:' + uuid;
+const KV_S = (uuid, ip) => 's:' + uuid + ':' + ip;
+const emptyUsage = () => ({ up: 0, down: 0, reqs: 0, last_seen: null, day: null, day_up: 0, day_down: 0 });
+
+async function kvGetJson(env, key) {
+  try { const raw = await env.KV.get(key); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+}
+async function kvPutJson(env, key, val) {
+  try { await env.KV.put(key, JSON.stringify(val)); return true; } catch (e) { return false; }
+}
+
+/** اعمال یک افزایش روی رکورد مصرف (همه‌ی بک‌اندها یکسان) */
+function applyDelta(c, dUp, dDown, dReqs, day) {
+  c.up = (c.up || 0) + dUp;
+  c.down = (c.down || 0) + dDown;
+  c.reqs = (c.reqs || 0) + dReqs;
+  c.last_seen = Date.now();
+  if (c.day !== day) { c.day = day; c.day_up = 0; c.day_down = 0; }   /* سطل روزانه */
+  c.day_up = (c.day_up || 0) + dUp;
+  c.day_down = (c.day_down || 0) + dDown;
+  return c;
+}
+
 /** خواندن از D1 — یک خط SQL */
 async function d1Read(env) {
-  if (!env.DB) return null;
+  if (!env.DB) {
+    if (!env.KV) return null;
+    try { return await env.KV.get(D1_KEY); } catch (e) { return null; }
+  }
   try {
     const r = await env.DB.prepare('SELECT value FROM kv_store WHERE key = ?').bind(D1_KEY).first();
     return r ? r.value : null;
@@ -224,7 +275,13 @@ let USAGE_FAILS = 0;
     عمر isolate بی‌صدا از کار می‌افتاد و هیچ مصرفی ثبت نمی‌شد. حالا هر بار که
     نوشتن شکست بخورد، پیش از تلاشِ دوباره صدا زده می‌شود. */
 async function usageEnsure(env) {
-  if (!env.DB) { USAGE_LAST_ERR = 'اتصال D1 تعریف نشده است (env.DB موجود نیست)'; return false; }
+  /* KV و حافظه به ساخت جدول نیاز ندارند — اما نبودِ D1 را شفاف اعلام می‌کنیم */
+  if (!env.DB) {
+    USAGE_LAST_ERR = env.KV
+      ? 'D1 بایند نشده است — مصرف در KV نگه داشته می‌شود (تقریبی اما ماندگار)'
+      : 'هیچ بایندینگی (D1/KV) تعریف نشده است — مصرف فقط در حافظهٔ همین isolate است و با ری‌استارت پاک می‌شود';
+    return false;
+  }
   try {
     await env.DB.prepare(`CREATE TABLE IF NOT EXISTS usage (
       uuid TEXT PRIMARY KEY,
@@ -301,6 +358,16 @@ const SESSION_HB = 45000;               // heartbeat هر ۴۵ ثانیه (even 
 
 /** پاک‌سازی ردیف‌های مرده — در هر admission صدا زده می‌شود */
 async function sessionsSweep(env) {
+  const kind = backendOf(env);
+  if (kind === 'mem') {
+    const cut = Date.now() - SESSION_TTL;
+    MEM_SESS.forEach((v, k) => { if (!v || (v.last_active || 0) < cut || (v.conns || 0) <= 0) MEM_SESS.delete(k); });
+    return;
+  }
+  if (kind === 'kv') {
+    /* KV فهرست‌کردن ارزان نیست — پاک‌سازیِ تنبل هنگام acquire انجام می‌شود */
+    return;
+  }
   if (!env.DB) return;
   try {
     await env.DB.prepare('DELETE FROM sessions WHERE last_active < ?')
@@ -314,7 +381,30 @@ async function sessionsSweep(env) {
  * برمی‌گرداند: { ok, conns, limit, enforced }
  */
 async function connAcquire(env, uuid, ip, limit) {
-  if (!env.DB || !uuid || !ip) return { ok: true, conns: 0, limit: limit || 0, enforced: false, reason: 'no-db' };
+  const kind = backendOf(env);
+  if (!uuid || !ip) return { ok: true, conns: 0, limit: limit || 0, enforced: false, reason: 'missing-identity' };
+
+  /* ── KV / حافظه: افزایش شمارنده‌ی همین IP ── */
+  if (kind === 'mem' || kind === 'kv') {
+    const key = kind === 'mem' ? (uuid + '|' + ip) : KV_S(uuid, ip);
+    let s = kind === 'mem' ? MEM_SESS.get(key) : await kvGetJson(env, key);
+    /* ردیف‌های مرده (بی‌heartbeat) را اینجا هم پاک می‌کنیم */
+    if (s && Date.now() - (s.last_active || 0) > SESSION_TTL) s = null;
+    s = s || { conns: 0, last_active: 0 };
+    s.conns = (s.conns || 0) + 1;
+    s.last_active = Date.now();
+    const conns = s.conns;
+    if (kind === 'mem') MEM_SESS.set(key, s); else await kvPutJson(env, key, s);
+    if (limit > 0 && conns > limit) {
+      s.conns = Math.max(0, conns - 1);                 // برگرداندنِ افزایشِ رد شده
+      if (kind === 'mem') { if (s.conns <= 0) MEM_SESS.delete(key); else MEM_SESS.set(key, s); }
+      else if (s.conns <= 0) { try { await env.KV.delete(key); } catch (e) {} } else await kvPutJson(env, key, s);
+      return { ok: false, conns, limit, enforced: true, storage: kind };
+    }
+    return { ok: true, conns, limit, enforced: limit > 0, storage: kind };
+  }
+
+  if (!env.DB) return { ok: true, conns: 0, limit: limit || 0, enforced: false, reason: 'no-db' };
 
   /* پاک‌سازی ردیف‌های مرده — isolate کشته‌شده نمی‌تواند کاربر را قفل کند */
   await sessionsSweep(env);
@@ -347,7 +437,22 @@ async function connAcquire(env, uuid, ip, limit) {
 
 /** کاهش شمارنده — فقط ردیف همین IP؛ اگر صفر شد ردیف حذف می‌شود */
 async function connRelease(env, uuid, ip) {
-  if (!env.DB || !uuid || !ip) return 0;
+  if (!uuid || !ip) return 0;
+  const kind = backendOf(env);
+  if (kind === 'mem' || kind === 'kv') {
+    const key = kind === 'mem' ? (uuid + '|' + ip) : KV_S(uuid, ip);
+    const s = kind === 'mem' ? MEM_SESS.get(key) : await kvGetJson(env, key);
+    if (!s) return 0;
+    s.conns = Math.max(0, (s.conns || 0) - 1);
+    s.last_active = Date.now();
+    if (s.conns <= 0) {
+      if (kind === 'mem') MEM_SESS.delete(key); else { try { await env.KV.delete(key); } catch (e) {} }
+      return 0;
+    }
+    if (kind === 'mem') MEM_SESS.set(key, s); else await kvPutJson(env, key, s);
+    return s.conns;
+  }
+  if (!env.DB) return 0;
   try {
     await env.DB.prepare(`
       UPDATE sessions SET conns = conns - 1, last_active = ?
@@ -364,7 +469,11 @@ async function connRelease(env, uuid, ip) {
 
 /** تمدید heartbeat — هر بار داده‌ای رد و بدل شد */
 async function sessionTouch(env, uuid, ip) {
-  if (!env.DB || !uuid || !ip) return;
+  if (!uuid || !ip) return;
+  const kind = backendOf(env);
+  if (kind === 'mem') { const s = MEM_SESS.get(uuid + '|' + ip); if (s) { s.last_active = Date.now(); MEM_SESS.set(uuid + '|' + ip, s); } return; }
+  if (kind === 'kv') { const s = await kvGetJson(env, KV_S(uuid, ip)); if (s) { s.last_active = Date.now(); await kvPutJson(env, KV_S(uuid, ip), s); } return; }
+  if (!env.DB) return;
   try {
     await env.DB.prepare('UPDATE sessions SET last_active = ? WHERE uuid = ? AND ip = ? AND conns > 0')
       .bind(Date.now(), uuid, ip).run();
@@ -373,6 +482,26 @@ async function sessionTouch(env, uuid, ip) {
 
 /** IPهای فعال یک کاربر با تعداد اتصال — برای نمایش در پنل */
 async function sessionsOf(env, uuid) {
+  const kind = backendOf(env);
+  if (kind === 'mem') {
+    const cut = Date.now() - SESSION_TTL, out = [];
+    MEM_SESS.forEach((v, k) => {
+      if (!String(k).startsWith(uuid + '|')) return;
+      if ((v.conns || 0) > 0 && (v.last_active || 0) > cut) out.push({ ip: String(k).split('|')[1], conns: v.conns, last_active: v.last_active });
+    });
+    return out.sort((a, b) => (b.conns || 0) - (a.conns || 0));
+  }
+  if (kind === 'kv') {
+    try {
+      const list = await env.KV.list({ prefix: 's:' + uuid + ':' });
+      const out = [], cut = Date.now() - SESSION_TTL;
+      for (const k of (list && list.keys) || []) {
+        const s = await kvGetJson(env, k.name);
+        if (s && (s.conns || 0) > 0 && (s.last_active || 0) > cut) out.push({ ip: String(k.name).split(':').pop(), conns: s.conns, last_active: s.last_active });
+      }
+      return out.sort((a, b) => (b.conns || 0) - (a.conns || 0));
+    } catch (e) { return []; }
+  }
   if (!env.DB) return [];
   try {
     const { results } = await env.DB.prepare(
@@ -390,12 +519,29 @@ const dayKey = () => new Date().toISOString().slice(0, 10);
  *  سهمیه‌ی روزانه واقعاً محاسبه شود (قبلاً همیشه صفر بود). */
 async function usageDelta(env, uuid, dUp, dDown, dReqs, _retry) {
   if (!uuid) return false;
-  if (!env.DB) { USAGE_LAST_ERR = 'اتصال D1 تعریف نشده است (env.DB موجود نیست)'; USAGE_FAILS++; return false; }
   dUp = Math.floor(Number(dUp) || 0);
   dDown = Math.floor(Number(dDown) || 0);
   dReqs = Math.floor(Number(dReqs) || 0);
   if (!dUp && !dDown && !dReqs) return true;
   const day = dayKey();
+  const kind = backendOf(env);
+
+  /* ── حافظه (بدون هیچ بایندینگی) — موقت، فقط تا زنده بودن isolate ── */
+  if (kind === 'mem') {
+    const c = applyDelta(MEM_USAGE.get(uuid) || emptyUsage(), dUp, dDown, dReqs, day);
+    MEM_USAGE.set(uuid, c);
+    USAGE_CACHE.ts = 0;
+    return true;
+  }
+  /* ── KV: خواندن → افزایش → نوشتن (ماندگار، تقریبی در اوج ترافیک) ── */
+  if (kind === 'kv') {
+    const c = (await kvGetJson(env, KV_U(uuid))) || emptyUsage();
+    applyDelta(c, dUp, dDown, dReqs, day);
+    const ok = await kvPutJson(env, KV_U(uuid), c);
+    USAGE_CACHE.ts = 0;
+    if (ok) USAGE_LAST_ERR = null; else { USAGE_FAILS++; USAGE_LAST_ERR = 'نوشتن در KV ناموفق بود — دسترسی namespace را بررسی کنید'; }
+    return ok;
+  }
   try {
     await env.DB.prepare(`INSERT INTO usage (uuid, up, down, reqs, last_seen, day, day_up, day_down)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -429,7 +575,12 @@ async function usageDelta(env, uuid, dUp, dDown, dReqs, _retry) {
 async function usageReset(env, uuid, _retry) {
   USAGE_CACHE.ts = 0;                     // کش را بی‌اعتبار کن
   if (!uuid) return false;
-  if (!env.DB) { USAGE_LAST_ERR = 'اتصال D1 تعریف نشده است (env.DB موجود نیست)'; return false; }
+  const kind = backendOf(env);
+  if (kind === 'mem') { MEM_USAGE.delete(uuid); return true; }
+  if (kind === 'kv') {
+    try { await env.KV.delete(KV_U(uuid)); return true; }
+    catch (e) { USAGE_LAST_ERR = String((e && e.message) || e); return false; }
+  }
   try {
     await env.DB.prepare('DELETE FROM usage WHERE uuid = ?').bind(uuid).run();
     return true;
@@ -445,7 +596,35 @@ async function usageReset(env, uuid, _retry) {
 
 /** خواندن مصرف همه‌ی کاربران — با کش ۴ ثانیه‌ای */
 async function usageRead(env) {
-  if (!env.DB) return new Map();
+  const kind = backendOf(env);
+  if (kind === 'mem') {
+    if (Date.now() - USAGE_CACHE.ts < USAGE_CACHE_TTL) return USAGE_CACHE.data;
+    const m = new Map();
+    MEM_USAGE.forEach((c, uuid) => m.set(uuid, {
+      up: c.up || 0, down: c.down || 0, reqs: c.reqs || 0, lastSeen: c.last_seen,
+      day: c.day || null, dayUp: c.day === dayKey() ? (c.day_up || 0) : 0, dayDown: c.day === dayKey() ? (c.day_down || 0) : 0,
+    }));
+    USAGE_CACHE = { ts: Date.now(), data: m };
+    return m;
+  }
+  if (kind === 'kv') {
+    if (Date.now() - USAGE_CACHE.ts < USAGE_CACHE_TTL) return USAGE_CACHE.data;
+    const m = new Map();
+    try {
+      const list = await env.KV.list({ prefix: 'u:' });
+      for (const k of (list && list.keys) || []) {
+        const c = await kvGetJson(env, k.name);
+        if (!c) continue;
+        const uuid = String(k.name).slice(2);
+        m.set(uuid, {
+          up: c.up || 0, down: c.down || 0, reqs: c.reqs || 0, lastSeen: c.last_seen,
+          day: c.day || null, dayUp: c.day === dayKey() ? (c.day_up || 0) : 0, dayDown: c.day === dayKey() ? (c.day_down || 0) : 0,
+        });
+      }
+      USAGE_CACHE = { ts: Date.now(), data: m };
+    } catch (e) { return USAGE_CACHE.data; }
+    return m;
+  }
   if (Date.now() - USAGE_CACHE.ts < USAGE_CACHE_TTL) return USAGE_CACHE.data;
   try {
     const { results } = await env.DB.prepare('SELECT uuid, up, down, reqs, last_seen, day, day_up, day_down FROM usage').all();
@@ -467,7 +646,20 @@ async function usageOf(env, uuid) {
 
 /** مصرف یک کاربر — مستقیم از D1، بدون کش (برای تست ترافیک) */
 async function usageFresh(env, uuid) {
-  if (!env.DB || !uuid) return { up: 0, down: 0, reqs: 0, lastSeen: null, dayUp: 0, dayDown: 0 };
+  if (!uuid) return { up: 0, down: 0, reqs: 0, lastSeen: null, dayUp: 0, dayDown: 0 };
+  const kind = backendOf(env);
+  if (kind === 'mem') {
+    const c = MEM_USAGE.get(uuid);
+    if (!c) return { up: 0, down: 0, reqs: 0, lastSeen: null, dayUp: 0, dayDown: 0 };
+    return { up: c.up || 0, down: c.down || 0, reqs: c.reqs || 0, lastSeen: c.last_seen || null,
+      dayUp: c.day === dayKey() ? (c.day_up || 0) : 0, dayDown: c.day === dayKey() ? (c.day_down || 0) : 0 };
+  }
+  if (kind === 'kv') {
+    const c = await kvGetJson(env, KV_U(uuid));
+    if (!c) return { up: 0, down: 0, reqs: 0, lastSeen: null, dayUp: 0, dayDown: 0 };
+    return { up: c.up || 0, down: c.down || 0, reqs: c.reqs || 0, lastSeen: c.last_seen || null,
+      dayUp: c.day === dayKey() ? (c.day_up || 0) : 0, dayDown: c.day === dayKey() ? (c.day_down || 0) : 0 };
+  }
   try {
     const r = await env.DB.prepare('SELECT up, down, reqs, last_seen, day, day_up, day_down FROM usage WHERE uuid = ?').bind(uuid).first();
     if (!r) return { up: 0, down: 0, reqs: 0, lastSeen: null, dayUp: 0, dayDown: 0 };
@@ -1692,7 +1884,7 @@ async function statusPage(env, name, url) {
 }
 
 /* ════════════════════════════ API ════════════════════════════ */
-async function apiHandler(req, env, url) {
+async function apiHandler(req, env, url, ctx) {
   const st = seed(await load(env));
   const s = st.settings, route = url.pathname.replace(/^\/api\/?/, ''), m = req.method.toUpperCase();
 
@@ -1715,7 +1907,7 @@ async function apiHandler(req, env, url) {
   if (route === 'health') return json({
     ok: true, version: VERSION, build: BUILD,
     uptimeSec: Math.floor((Date.now() - BOOT) / 1000),
-    storage: env.DB ? 'd1' : 'memory',
+    storage: backendOf(env),
     users: st.users.length, panic: s.auth.panic,
     db: {
       writesToday: WRITE_COUNT.n,
@@ -1748,7 +1940,7 @@ async function apiHandler(req, env, url) {
     }
     st.users = usersWithUsage;
     st.stats.requests++;
-    return json({ ...st, storage: env.DB ? 'd1' : 'memory', version: VERSION, build: BUILD, boot: BOOT, settings: { ...st.settings, auth: { ...st.settings.auth, password: undefined, totpSecret: st.settings.auth.totpSecret ? '•••••' : '' } } });
+    return json({ ...st, storage: backendOf(env), version: VERSION, build: BUILD, boot: BOOT, settings: { ...st.settings, auth: { ...st.settings.auth, password: undefined, totpSecret: st.settings.auth.totpSecret ? '•••••' : '' } } });
   }
 
   if (route === 'settings' && (m === 'PUT' || m === 'POST')) {
@@ -1757,7 +1949,7 @@ async function apiHandler(req, env, url) {
     if (b.settings) merge(s, b.settings);
     addLog(st, 'info', 'panel', 'تنظیمات ذخیره شد', Object.keys(b.settings || {}).join(', '));
     await save(env, st);
-    return json({ ok: true, storage: env.DB ? 'd1' : 'memory' });
+    return json({ ok: true, storage: backendOf(env) });
   }
 
   if (route === 'users' && m === 'POST') {
@@ -2078,39 +2270,64 @@ async function apiHandler(req, env, url) {
     }
     if (a === 'usage-health') {
       /* ═══ سلامت شمارش مصرف (volume counting health check) ═══
-         بررسی می‌کند: جدول usage خوانا؟، جدول sessions ستون conns دارد؟،
-         مصرف هر کاربر چقدر ثبت شده؟، آخرین write چه زمانی بوده؟،
-         جریان افزایش (last_seen) تازه است؟ */
-      const out = { ok: true, db: { bound: !!env.DB, storage: env.DB ? 'd1' : 'memory' }, checks: [], users: [] };
+         بررسی می‌کند: کدام بایندینگ ذخیره‌سازی در دسترس است؟، جدول usage
+         خوانا؟، ستون conns وجود دارد؟، افزایش واقعاً ثبت می‌شود؟،
+         محدودیت IP واقعاً اتصال سوم را رد می‌کند؟، مصرف هر کاربر چقدر است؟ */
+      const kind = backendOf(env);
+      const out = { ok: true, storage: kind, db: { bound: !!env.DB, kv: !!env.KV, storage: kind }, checks: [], users: [] };
       const chk = (name, ok, note) => { out.checks.push({ name, ok: !!ok, note: String(note || '') }); if (!ok) out.ok = false; };
-      if (!env.DB) {
-        chk('اتصال D1', false, 'بایندینگ env.DB وجود ندارد — مصرف فقط در حافظه است و با ری‌استارت از بین می‌رود');
-        return json(out);
-      }
-      /* جدول usage */
+
+      /* ۱) بایندینگ ذخیره‌سازی — علتِ شماره‌ی یکِ «شمارش کار نمی‌کند» */
+      if (kind === 'd1') chk('اتصال D1 (env.DB)', true, 'بایند شده — افزایش اتمیک واقعی ✓');
+      else if (kind === 'kv') chk('بایندینگ ذخیره‌سازی', true, 'D1 ندارید و مصرف در KV ذخیره می‌شود (ماندگار، تقریبی در اوج ترافیک). برای دقت کامل یک پایگاه D1 بسازید و binding آن را DB بگذارید.');
+      else chk('بایندینگ ذخیره‌سازی', false, 'هیچ بایندینگی (DB یا KV) تعریف نشده — مصرف فقط در حافظهٔ همین isolate است و با ری‌استارت پاک می‌شود. در Settings → Variables یک KV namespace با نام KV (یا D1 با نام DB) بایند کنید.');
+
+      /* ۲) خواندن همه‌ی مصرف‌ها — برای هر سه بک‌اند یکسان */
       let rows = null;
-      try { const r = await env.DB.prepare('SELECT uuid, up, down, reqs, last_seen, day FROM usage').all(); rows = r.results || []; chk('جدول usage', true, fa(rows.length) + ' ردیف'); }
-      catch (e) { chk('جدول usage', false, 'خوانده نشد: ' + String((e && e.message) || e)); }
-      /* جدول sessions + ستون conns */
-      try { const r = await env.DB.prepare('SELECT conns FROM sessions LIMIT 1').all(); chk('جدول sessions (ستون conns)', true, 'محدودیت اتصال همزمان فعال است'); }
-      catch (e) { chk('جدول sessions (ستون conns)', false, 'ستون conns نیست یا جدول خراب است — محدودیت اتصال کار نمی‌کند: ' + String((e && e.message) || e)); }
-      /* تست زنده‌ی نوشتن/خواندن روی یک ردیف موقت — یعنی واقعاً امتحان می‌کنیم
-         که افزایش مصرف در پایگاه‌داده ثبت و بازخوانی می‌شود یا نه */
+      try {
+        if (kind === 'd1') { const r = await env.DB.prepare('SELECT uuid, up, down, reqs, last_seen, day, day_up, day_down FROM usage').all(); rows = r.results || []; }
+        else { const m = await usageRead(env); rows = []; m.forEach((v, uuid) => rows.push({ uuid, up: v.up, down: v.down, reqs: v.reqs, last_seen: v.lastSeen, day: v.day, day_up: v.dayUp, day_down: v.dayDown })); }
+        chk('خواندن جدول مصرف', true, fa(rows.length) + ' ردیف • ذخیره‌سازی: ' + kind);
+      } catch (e) { chk('خواندن جدول مصرف', false, 'خوانده نشد: ' + String((e && e.message) || e)); }
+
+      /* ستون conns — فقط برای D1 معنا دارد */
+      if (kind === 'd1') {
+        try { await env.DB.prepare('SELECT conns FROM sessions LIMIT 1').all(); chk('جدول sessions (ستون conns)', true, 'محدودیت اتصال همزمان فعال است ✓'); }
+        catch (e) { chk('جدول sessions (ستون conns)', false, 'ستون conns نیست یا جدول خراب است — محدودیت اتصال کار نمی‌کند: ' + String((e && e.message) || e)); }
+      }
+
+      /* ۳) تست زنده‌ی افزایش مصرف — واقعاً می‌نویسیم و بازمی‌خوانیم */
       try {
         const probe = '__health_probe__';
-        await env.DB.prepare('DELETE FROM usage WHERE uuid = ?').bind(probe).run();
+        if (kind === 'd1') await env.DB.prepare('DELETE FROM usage WHERE uuid = ?').bind(probe).run();
         const wrote = await usageDelta(env, probe, 1234, 4321, 1);
         const back = await usageFresh(env, probe);
-        await env.DB.prepare('DELETE FROM usage WHERE uuid = ?').bind(probe).run();
+        await usageReset(env, probe);
         chk('تست زنده‌ی افزایش مصرف', wrote && back.up === 1234 && back.down === 4321,
           wrote ? ('نوشتن و بازخوانی درست انجام شد (' + fa(back.up) + ' بایت ارسال / ' + fa(back.down) + ' بایت دریافت) ✓')
                 : 'نوشتن ناموفق — شمارنده عملاً مصرف را ثبت نمی‌کند');
       } catch (e) { chk('تست زنده‌ی افزایش مصرف', false, 'خطا: ' + String((e && e.message) || e)); }
-      /* خطاهای اخیرِ نوشتن — علتِ از کار افتادن شمارنده را نشان می‌دهد */
+
+      /* ۴) تست زنده‌ی محدودیت IP — سقف ۲: اولی و دومی مجاز، سومی رد، IP دیگر مجاز */
+      try {
+        const pu = '__limit_probe__', ipA = '198.51.100.7', ipB = '198.51.100.8';
+        if (kind === 'd1') { await env.DB.prepare('DELETE FROM sessions WHERE uuid = ?').bind(pu).run(); }
+        const a1 = await connAcquire(env, pu, ipA, 2);
+        const a2 = await connAcquire(env, pu, ipA, 2);
+        const a3 = await connAcquire(env, pu, ipA, 2);        /* باید رد شود */
+        const b1 = await connAcquire(env, pu, ipB, 2);        /* IP دیگر → مجاز */
+        await connRelease(env, pu, ipA); await connRelease(env, pu, ipA); await connRelease(env, pu, ipB);
+        if (kind === 'd1') { await env.DB.prepare('DELETE FROM sessions WHERE uuid = ?').bind(pu).run(); }
+        chk('تست زنده‌ی محدودیت IP', a1.ok && a2.ok && !a3.ok && b1.ok,
+          'سقف ۲ برای هر IP • اتصال ۱: ' + (a1.ok ? 'مجاز' : 'رد') + ' • ۲: ' + (a2.ok ? 'مجاز' : 'رد') +
+          ' • ۳: ' + (a3.ok ? 'مجاز ✗' : 'رد ✓') + ' • IP دیگر: ' + (b1.ok ? 'مجاز ✓' : 'رد ✗'));
+      } catch (e) { chk('تست زنده‌ی محدودیت IP', false, 'خطا: ' + String((e && e.message) || e)); }
+
+      /* خطاهای اخیرِ نوشتن — علتِ از کار افتادنِ شمارنده را نشان می‌دهد */
       chk('خطای اخیر پایگاه‌داده', !USAGE_LAST_ERR,
         USAGE_LAST_ERR ? (USAGE_LAST_ERR + ' • ' + fa(USAGE_FAILS) + ' نوشتن ناموفق') : 'بدون خطا ✓');
-      /* آخرین نوشتن blob وضعیت */
-      chk('آخرین ذخیره‌ی وضعیت (D1)', !!LAST_WRITE, LAST_WRITE ? Math.floor((Date.now() - LAST_WRITE) / 1000) + ' ثانیه پیش • ' + fa(WRITE_COUNT.n || 0) + ' نوشتن امروز' : 'هنوز نوشته نشده');
+      /* آخرین نوشتن وضعیت */
+      chk('آخرین ذخیره‌ی وضعیت', !!LAST_WRITE, LAST_WRITE ? Math.floor((Date.now() - LAST_WRITE) / 1000) + ' ثانیه پیش • ' + fa(WRITE_COUNT.n || 0) + ' نوشتن امروز' : 'هنوز نوشته نشده');
       /* محدودیت اتصال — فقط بر اساس IP */
       const gLimit = Number(s.sec.ipConnLimit) || 0;
       const withLimit = st.users.filter((u) => (Number(u.ipLimit) || 0) > 0).length;
@@ -2148,68 +2365,96 @@ async function apiHandler(req, env, url) {
       if (!target) return json({ ok: false, error: 'هیچ کاربری برای تست وجود ندارد' }, 400);
       if (!s.protocols.vless) return json({ ok: false, error: 'پروتکل VLESS غیرفعال است — تست نیاز دارد' }, 400);
 
-      const host = url.hostname;
+      /* ═══ مقصد تست: یک نشانی «خارجی» ═══
+         ⚠️ نسخه‌ی قبلی با fetch() به «خودِ ورکر» وصل می‌شد. کلادفلر اجازه‌ی
+         self-fetch نمی‌دهد → همیشه خطا می‌داد، هیچ بایتی جابه‌جا نمی‌شد و
+         در نتیجه هیچ مصرفی هم ثبت نمی‌شد (تست همیشه ناموفق بود).
+         اینجا مقصد یک دامنه‌ی خارجی است، پس بایت‌ها واقعاً از تونل عبور
+         می‌کنند و شمرده می‌شوند. */
       const nonce = randTok(8);
+      const testUrl = String((b && b.url) || (s.sec && s.sec.speedTestUrl) || '').trim()
+        || ('https://speed.cloudflare.com/__down?bytes=' + want + '&n=' + nonce);
+      let tHost = '', tPort = 443, tPath = '/';
+      try {
+        const tu = new URL(testUrl);
+        tHost = tu.hostname;
+        tPort = tu.protocol === 'http:' ? 80 : 443;
+        /* جلوگیری از کش: پارامتر یکتا */
+        tu.searchParams.set('n', nonce);
+        tPath = (tu.pathname || '/') + (tu.search || '');
+      } catch (e) { return json({ ok: false, error: 'نشانی تست نامعتبر است: ' + testUrl }, 400); }
+
+      await usageEnsure(env);
       const before = await usageFresh(env, target.uuid);
       let received = 0, err = null;
 
       try {
         const payload = new TextEncoder().encode(
-          `GET /__speedtest?bytes=${want}&n=${nonce} HTTP/1.1\r\nHost: ${host}\r\nUser-Agent: panel-traffic-test/1\r\nConnection: close\r\n\r\n`);
-        const header = vlessHeader(target, host, 443, payload);
-        const resp = await Promise.race([
-          fetch('https://' + host + '/', {
-            headers: { Upgrade: 'websocket', Connection: 'Upgrade', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': b64(randTok(16)) },
-          }),
-          new Promise((_, rj) => setTimeout(() => rj(new Error('timeout در اتصال به ورکر')), 10000)),
-        ]);
-        const ws = resp.webSocket;
-        if (!ws) throw new Error('ارتقای WebSocket انجام نشد (HTTP ' + resp.status + ')');
-        ws.accept();
+          `GET ${tPath} HTTP/1.1\r\nHost: ${tHost}\r\nUser-Agent: panel-traffic-test/1\r\nAccept: */*\r\nConnection: close\r\n\r\n`);
+        const header = vlessHeader(target, tHost, tPort, payload);
+
+        /* تونلِ درون‌برنامه‌ای: همان تابع session() که اتصال واقعیِ کلاینت‌ها
+           را اداره می‌کند — فقط به‌جای شبکه با یک WebSocketPair به آن وصل
+           می‌شویم. پس مسیر دقیقاً همان مسیری است که مصرف را می‌شمارد. */
+        const [cli, srv] = new WebSocketPair();
+        srv.binaryType = 'arraybuffer'; srv.accept();
+        cli.binaryType = 'arraybuffer'; cli.accept();
+        /* IP ساختگیِ مخصوص تست (بلاک مستند TEST-NET-2) تا با سهمیه‌ی
+           اتصالِ کاربران واقعی تداخل نکند */
+        const ipTag = '198.51.100.' + (2 + Math.floor(Math.random() * 250));
+        const pend = [];
+        const testCtx = (ctx && ctx.waitUntil) ? ctx
+          : { waitUntil: (p) => { try { pend.push(Promise.resolve(p).catch(() => {})); } catch (e) {} } };
+        const sess = session(srv, '', st, env, testCtx, ipTag, null, '').catch(() => {});
+
         received = await new Promise((resolve, reject) => {
           let total = 0;
-          const to = setTimeout(() => reject(new Error('تونل در ۳۰ ثانیه پاسخ نداد (timeout)')), 30000);
-          ws.addEventListener('message', (ev) => {
+          const to = setTimeout(() => { try { cli.close(); } catch (e) {} reject(new Error('تونل در ۳۰ ثانیه پاسخ نداد (timeout)')); }, 30000);
+          cli.addEventListener('message', (ev) => {
             const d = ev.data;
             const len = d && d.byteLength !== undefined ? d.byteLength : (typeof d === 'string' ? new TextEncoder().encode(d).length : 0);
             total += len;
-            if (total >= want) { clearTimeout(to); resolve(total); }
+            /* دریافتِ کل فایل + هدرِ پاسخ */
+            if (total >= want + 4096) { clearTimeout(to); resolve(total); }
           });
-          ws.addEventListener('close', () => { clearTimeout(to); resolve(total); });
-          ws.addEventListener('error', () => { clearTimeout(to); reject(new Error('خطای WebSocket')); });
-          try { ws.send(header); } catch (e) { clearTimeout(to); reject(new Error('ارسال هدر ناموفق')); }
+          cli.addEventListener('close', () => { clearTimeout(to); resolve(total); });
+          cli.addEventListener('error', () => { clearTimeout(to); reject(new Error('خطای WebSocket در تونل تست')); });
+          try { cli.send(header); } catch (e) { clearTimeout(to); reject(new Error('ارسال هدر VLESS ناموفق')); }
         });
-        try { ws.close(); } catch (e) {}
+        try { cli.close(); } catch (e) {}
+        try { srv.close(); } catch (e) {}
+        await Promise.race([sess, new Promise((r) => setTimeout(r, 3000))]);
+        /* صبر برای ثبتِ مصرفِ باقیمانده‌ای که session در پس‌زمینه نوشته */
+        await Promise.race([Promise.all(pend), new Promise((r) => setTimeout(r, 2000))]);
       } catch (e) { err = String((e && e.message) || e); }
 
-      /* مصرف در isolateِ دیگر نوشته می‌شود — صبر می‌کنیم تا دلتا کامل برسد */
+      /* مصرف در پس‌زمینه (waitUntil) ثبت می‌شود — صبر می‌کنیم تا دلتا کامل برسد */
       let after = before, waited = 0;
       while (waited < 9000) {
         after = await usageFresh(env, target.uuid);
         const d = (after.up - before.up) + (after.down - before.down);
-        if (d >= want) break;
+        if (received > 0 && d >= Math.max(0, received - 8192)) break;
         await new Promise((r) => setTimeout(r, 300));
         waited += 300;
       }
-      if (waited < 9000) {
-        await new Promise((r) => setTimeout(r, 400));           // یک نمونه‌ی نهایی
-        after = await usageFresh(env, target.uuid);
-        waited += 400;
-      }
+      if (waited < 9000) { await new Promise((r) => setTimeout(r, 400)); after = await usageFresh(env, target.uuid); waited += 400; }
 
       const measured = Math.max(0, (after.up - before.up) + (after.down - before.down));
-      const diff = measured - want;
-      /* تلورانس: فقط سربارِ هدرها (حدود ۳۰۰ بایت) — با این حال چند کیلوبایت مجاز */
-      const tol = Math.max(4096, Math.round(want * 0.001));
-      const ok = !err && measured > 0 && Math.abs(diff) <= tol;
+      /* معیارِ اصلی: هر بایتی که واقعاً از تونل رد شده باید ثبت شده باشد.
+         معیارِ فرعی: اندازه‌ی فایل همان چیزی باشد که درخواست کردیم. */
+      const expect = received > 0 ? received : want;
+      const diff = measured - expect;
+      const tol = Math.max(4096, Math.round(expect * 0.001));       // چند کیلوبایت سربار مجاز
+      const sizeOk = received === 0 || Math.abs(received - want) <= Math.max(8192, Math.round(want * 0.05));
+      const ok = !err && measured > 0 && Math.abs(diff) <= tol && sizeOk && received >= Math.round(want * 0.9);
       addLog(st, ok ? 'success' : 'warn', 'core', 'تست ترافیک',
-        fa(Math.round(measured / 1048576 * 100) / 100) + ' مگابایت • انتظار ' + fa(Math.round(want / 1048576 * 100) / 100));
+        fa(Math.round(measured / 1048576 * 100) / 100) + ' مگابایت • انتظار ' + fa(Math.round(expect / 1048576 * 100) / 100));
       await save(env, st);
       return json({
-        ok, want, measured, diff, tolerance: tol,
+        ok, want, expected: expect, measured, diff, tolerance: tol,
         up: after.up - before.up, down: after.down - before.down,
-        received, waitedMs: waited, error: err,
-        user: target.name, uuid: target.uuid, storage: env.DB ? 'd1' : 'memory',
+        received, waitedMs: waited, error: err, url: testUrl, target: tHost,
+        user: target.name, uuid: target.uuid, storage: backendOf(env),
       });
     }
     return json({ error: 'unknown action' }, 400);
@@ -2980,7 +3225,7 @@ export default {
       /* ⚠️ اگر apiHandler ردّ (reject) شود، try/catch بیرونی آن را نمی‌گیرد چون async است.
          پس پاسخ HTML خطای کلاودفلار برمی‌گشت = «bad json». با .catch این مشکل حل می‌شود. */
       if (url.pathname === '/health' || url.pathname.startsWith('/api/')) {
-        try { return await apiHandler(request, env, url); }
+        try { return await apiHandler(request, env, url, ctx); }
         catch (e) { return json({ ok: false, error: 'خطای داخلی: ' + String((e && e.message) || e) }, 500); }
       }
 
@@ -3007,7 +3252,7 @@ export default {
       const isHealth = path === '/health' || path.startsWith('/api/');
 
       /* health و api همیشه آزادند (برای مانیتورینگ) */
-      if (isHealth) { try { return await apiHandler(request, env, url); } catch (e) { return json({ ok: false, error: String((e && e.message) || e) }, 500); } }
+      if (isHealth) { try { return await apiHandler(request, env, url, ctx); } catch (e) { return json({ ok: false, error: String((e && e.message) || e) }, 500); } }
 
       /* ۳) پنل — روی مسیر مخفی */
       if (isPanel) {

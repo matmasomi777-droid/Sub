@@ -374,6 +374,7 @@
         { p: 'auth.panic', l: 'Panic mode', t: 'sw', bad: 1 },
         { p: 'sec.killSwitch', l: 'Kill Switch', t: 'sw', bad: 1 },
         { p: 'sec.ipConnLimit', l: 'سقف اتصال همزمان — هر IP (پیش‌فرض سراسری)', t: 'num', h: '۰ = نامحدود • فقط بر اساس IP واقعی کلاینت. مقدار هر کاربر (در کارت کاربر) بر این اولویت دارد. محدودیت دستگاهی حذف شده است' },
+        { p: 'sec.speedTestUrl', l: 'نشانی فایل تست ترافیک', t: 'text', h: 'پیش‌فرض: speed.cloudflare.com/__down • باید یک نشانی «خارجی» باشد (ورکر نمی‌تواند خودش را صدا بزند)' },
         { p: 'sec.cors', l: 'هدرهای CORS', t: 'sw' },
         { p: 'sec.csp', l: 'Security headers (CSP/XFO/nosniff)', t: 'sw' },
       ] },
@@ -631,6 +632,8 @@
       '<span class="hint">مگابایت</span>' +
       '<button class="btn sm p" data-act="traffic-test">' + icon('fa-download') + ' اجرای تست ترافیک</button>' +
       '</div>' +
+      '<div class="hint" style="margin-top:6px">نشانی فایل تست (خارجی — نباید خودِ ورکر باشد):</div>' +
+      '<input id="ttUrl" type="text" placeholder="https://speed.cloudflare.com/__down" value="' + esc((S.d.settings.sec && S.d.settings.sec.speedTestUrl) || '') + '" style="margin-top:4px">' +
       '<div id="trafficTestOut" style="margin-top:10px"><div class="empty">هنوز تستی اجرا نشده است.</div></div>' +
       '</div></div>';
   }
@@ -1310,12 +1313,13 @@
           '<div class="hint" style="margin-top:10px">اگر «در حال ثبت ✓» می‌بینید یعنی افزایش مصرف برای آن کاربر جریان دارد. «مصرفی ثبت نشده» فقط برای کاربرانی که وصل نبوده‌اند طبیعی است.</div>';
       }
       else if (a === 'traffic-test') {
-        const sel = $('#ttUser'), sz = $('#ttSize');
+        const sel = $('#ttUser'), sz = $('#ttSize'), ur = $('#ttUrl');
         const uuid = (sel && sel.value) || '';
         const sizeMB = Math.max(1, Math.min(20, Number(sz && sz.value) || 1));
+        const url = (ur && String(ur.value || '').trim()) || '';
         TT.uuid = uuid; TT.mb = sizeMB;
         busy(t, 'در حال دانلود…');
-        const r = await api('POST', '/api/action', { act: 'traffic-test', uuid, sizeMB });
+        const r = await api('POST', '/api/action', { act: 'traffic-test', uuid, sizeMB, url });
         free(t);
         const o = $('#trafficTestOut');
         const mb = (x) => fa(((x || 0) / 1048576).toFixed(2)) + ' مگابایت';
@@ -1330,15 +1334,16 @@
         if (o) o.innerHTML =
           '<div class="kv"><span>' + icon(r.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' نتیجه‌ی تست</span>' +
           '<b class="mono" style="color:' + (r.ok ? 'var(--ok)' : 'var(--bad)') + '">' + verdict + '</b></div>' +
-          '<div class="kv"><span>انتظار</span><b class="mono">' + mb(r.want) + ' (' + fa(r.want) + ' بایت)</b></div>' +
+          '<div class="kv"><span>انتظار (عبور از تونل)</span><b class="mono">' + mb(r.expected || r.want) + ' (' + fa(r.expected || r.want) + ' بایت)</b></div>' +
           '<div class="kv"><span>ثبت‌شده برای کاربر</span><b class="mono" style="color:' + (r.ok ? 'var(--ok)' : 'var(--bad)') + '">' + mb(r.measured) + ' (' + fa(r.measured) + ' بایت)</b></div>' +
           '<div class="kv"><span>اختلاف</span><b class="mono">' + (r.diff >= 0 ? '+' : '−') + kb(Math.abs(r.diff)) + '</b></div>' +
           '<div class="kv"><span>تلورانس مجاز</span><b class="mono">±' + kb(r.tolerance) + '</b></div>' +
-          '<div class="hint" style="margin-top:8px;font-weight:700;color:' + (r.ok ? 'var(--ok)' : 'var(--bad)') + '">انتظار: ' + mb(r.want) + ' / ثبت‌شده: ' + mb(r.measured) + ' ' + (r.ok ? '✓' : '✗') + '</div>' +
-          '<div class="hint" style="margin-top:8px">کاربر: ' + esc(r.user || '—') + ' • دریافت از تونل: ' + fa(r.received || 0) + ' بایت • ⬆ ' + fa(r.up || 0) + ' / ⬇ ' + fa(r.down || 0) +
+          '<div class="hint" style="margin-top:8px;font-weight:700;color:' + (r.ok ? 'var(--ok)' : 'var(--bad)') + '">انتظار: ' + mb(r.expected || r.want) + ' / ثبت‌شده: ' + mb(r.measured) + ' ' + (r.ok ? '✓' : '✗') + '</div>' +
+          '<div class="hint" style="margin-top:8px">کاربر: ' + esc(r.user || '—') + ' • مقصد: ' + esc(r.target || '—') + ' • دریافت از تونل: ' + fa(r.received || 0) + ' بایت • ⬆ ' + fa(r.up || 0) + ' / ⬇ ' + fa(r.down || 0) +
           ' • ذخیره‌سازی: ' + esc(r.storage || '—') + (r.waitedMs ? ' • انتظار برای ثبت: ' + fa(r.waitedMs) + ' ms' : '') + '</div>' +
+          (r.url ? '<div class="hint" style="margin-top:6px;direction:ltr;text-align:left">' + esc(r.url) + '</div>' : '') +
           (r.error ? '<div class="hint" style="margin-top:8px;color:var(--bad)">خطا: ' + esc(r.error) + '</div>' : '') +
-          '<div class="hint" style="margin-top:8px">چند کیلوبایت اختلاف به‌خاطر هدرهای HTTP و VLESS طبیعی است.</div>';
+          '<div class="hint" style="margin-top:8px">چند کیلوبایت اختلاف به‌خاطر هدرهای HTTP و VLESS طبیعی است. مقصد باید «خارجی» باشد؛ اتصال ورکر به خودش توسط کلادفلر مسدود است.</div>';
         toast(r.ok ? 'شمارش مصرف درست است ✓' : 'اختلاف بیش از حد مجاز — شمارش بررسی شود', r.ok ? 'ok' : 'err');
         await refresh();
       }
