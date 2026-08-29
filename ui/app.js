@@ -503,7 +503,9 @@
           '<td>' + (dl === null ? '<span class="badge ok">نامحدود</span>' : dl < 0 ? '<span class="badge bad">منقضی</span>' : '<span class="badge' + (dl <= 7 ? ' warn' : '') + '">' + fa(dl) + ' روز</span>') + '</td>' +
           '<td><span class="badge ' + (u.mode === 'both' ? 'ac' : 'b2') + '">' + esc(u.mode || 'inherit') + '</span></td>' +
           '<td>' + (own.length ? own.map((o) => '<span class="badge ac">' + esc(o) + '</span>').join(' ') : '<span class="cell-sub">—</span>') + '</td>' +
-          '<td class="cell-sub">' + ago(u.lastSeen) + '<div>' + fa(u.totalReq || 0) + ' req</div></td>' +
+          '<td class="cell-sub">' + ago(u.lastSeen) +
+            (u.activeCount ? '<div>' + icon('fa-globe') + ' ' + fa(u.activeCount) + ' IP</div>' : '') +
+            '<div>' + fa(u.totalReq || 0) + ' req</div></td>' +
           '<td><div class="row-btns">' +
           '<button class="btn sm" data-act="user-edit" data-id="' + u.id + '" title="ویرایش">' + icon('fa-pen') + '</button>' +
           '<button class="btn sm" data-act="user-copy-page" data-id="' + u.id + '" title="کپی لینک صفحه‌ی کاربر (داشبورد + اشتراک)">' + icon('fa-clipboard') + '</button>' +
@@ -1649,7 +1651,15 @@
       '<div class="um-stat"><span>' + icon('fa-chart-column') + ' درخواست</span><b>' + fa(u.totalReq || 0) + '</b></div>' +
       '<div class="um-stat"><span>' + icon('fa-check') + ' وضعیت</span><b>' + (u.enabled ? 'فعال' : 'غیرفعال') + '</b></div>' +
       '<div class="um-stat"><span>' + icon('fa-activity') + ' آخرین اتصال</span><b>' + ago(u.lastSeen) + '</b></div>' +
-      '</div></div>' +
+      '</div>' +
+
+      /* IPهای فعال */
+      (u.activeIPs && u.activeIPs.length ? '<div class="um-sec"><div class="um-sec-h">' + icon('fa-globe') + '<span>IPهای فعال (' + fa(u.activeCount) + ')</span></div>' +
+        '<div class="bd" style="padding:9px 12px"><div class="list">' +
+        u.activeIPs.map((ip) => '<div class="row-item"><span class="dot on"></span><span class="mono">' + esc(ip) + '</span>' +
+          '<span class="badge ac" style="margin-inline-start:auto">فعال</span></div>').join('') +
+        '</div></div></div>' : '') +
+      '</div>' +
       '<footer>' +
       '<button class="btn d" data-act="user-del" data-id="' + esc(u.id) + '">' + icon('fa-trash-can') + ' حذف</button>' +
       '<span class="spacer"></span>' +
