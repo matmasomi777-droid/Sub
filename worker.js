@@ -200,6 +200,191 @@ async function d1Read(env) {
   } catch (e) { return null; }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   جدول مصرف اختصاصی — افزایش اتمیک (atomic deltas)
+   مشکل قبلی: مصرف در blob JSON بود و isolateهای همزمان یکدیگر را overwrite می‌کردند.
+   راه‌حل: INSERT ... ON CONFLICT DO UPDATE SET up = up + excluded.up
+   یعنی افزایش اتمیک در دیتابیس — بدون read-modify-write.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const USAGE_CACHE_TTL = 4000;            // کش ۴ ثانیه‌ای برای خواندن
+let USAGE_CACHE = { ts: 0, data: new Map() };
+
+/** ساخت جدول‌ها + مهاجرت یک‌باره از blob قدیمی */
+async function usageInit(env, st) {
+  if (!env.DB) return;
+  try {
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS usage (
+      uuid TEXT PRIMARY KEY,
+      up INTEGER NOT NULL DEFAULT 0,
+      down INTEGER NOT NULL DEFAULT 0,
+      reqs INTEGER NOT NULL DEFAULT 0,
+      last_seen INTEGER
+    )`).run();
+    /* جدول نشست‌ها — برای محدودیت IP و اتصال همزمان */
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS sessions (
+      uuid TEXT NOT NULL,
+      ip TEXT NOT NULL,
+      last_active INTEGER NOT NULL,
+      PRIMARY KEY (uuid, ip)
+    )`).run();
+    /* ایندکس برای پاک‌سازی سریع */
+    await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_sessions_active ON sessions(last_active)').run();
+    /* مهاجرت یک‌باره: مقادیر blob قدیمی را به جدول منتقل کن */
+    if (st && st.users && st.users.length) {
+      for (const u of st.users) {
+        if (!u.uuid) continue;
+        await env.DB.prepare('INSERT OR IGNORE INTO usage (uuid, up, down, reqs, last_seen) VALUES (?, ?, ?, ?, ?)')
+          .bind(u.uuid, Math.floor(u.up || 0), Math.floor(u.down || 0), Math.floor(u.totalReq || 0), u.lastSeen || null).run();
+      }
+    }
+  } catch (e) {}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   محدودیت اتصال همزمان — با شمارش مرجع (refcount) در D1
+
+   مشکلات قبلی:
+   ۱. نشست‌ها (uuid, ip) بودند با یک ردیف مشترک — isolate ب که اتصالش را
+      می‌بست، ردیف را حذف می‌کرد در حالی که isolate A هنوز فعال بود.
+   ۲. رد شدن اتصال، جای یک اتصال فعال را آزاد می‌کرد.
+   ۳. چهار رفت‌وبرگشت غیرتراکنشی (TOCTOU).
+   ۴. deviceLimit با COUNT(DISTINCT ip) سنجیده می‌شد — ۵ پشت یک NAT = ۱.
+   ۵. ipLimit هرگز خوانده نمی‌شد.
+
+   راه‌حل:
+   - conns (تعداد اتصال) در ردیف با افزایش/کاهش اتمیک
+   - deviceLimit = مجموع conns (اتصال همزمان)
+   - ipLimit = تعداد IPهای یکتا
+   - پاک‌سازی با TTL (۹۰ ثانیه بدون heartbeat)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const SESSION_TTL = 90000;              // ۹۰ ثانیه heartbeat window
+
+/** پاک‌سازی ردیف‌های مرده — در هر admission صدا زده می‌شود */
+async function sessionsSweep(env) {
+  if (!env.DB) return;
+  try {
+    await env.DB.prepare('DELETE FROM sessions WHERE last_active < ?')
+      .bind(Date.now() - SESSION_TTL).run();
+  } catch (e) {}
+}
+
+/**
+ * افزایش اتمیک شمارنده‌ی اتصال — برای (uuid, ip)
+ * برمی‌گرداند: { ok, totalConns, totalIps }
+ */
+async function connAcquire(env, uuid, ip, deviceLimit, ipLimit) {
+  if (!env.DB || !uuid || !ip) return { ok: true, totalConns: 0, totalIps: 0 };
+
+  /* پاک‌سازی ردیف‌های مرده — isolate کشته‌شده نمی‌تواند کاربر را قفل کند */
+  await sessionsSweep(env);
+
+  try {
+    /* افزایش اتمیک */
+    await env.DB.prepare(`INSERT INTO sessions (uuid, ip, conns, last_active)
+      VALUES (?, ?, 1, ?)
+      ON CONFLICT(uuid, ip) DO UPDATE SET conns = conns + 1, last_active = ?`)
+      .bind(uuid, ip, Date.now(), Date.now()).run();
+
+    /* خواندن مجموع — بعد از افزایش */
+    const r = await env.DB.prepare(`
+      SELECT COALESCE(SUM(conns), 0) AS total_conns,
+             COUNT(DISTINCT CASE WHEN conns > 0 THEN ip END) AS total_ips
+      FROM sessions WHERE uuid = ? AND last_active > ?`)
+      .bind(uuid, Date.now() - SESSION_TTL).first();
+    const totalConns = r ? (r.total_conns || 0) : 0;
+    const totalIps = r ? (r.total_ips || 0) : 0;
+
+    /* بررسی محدودیت‌ها */
+    const overDevice = deviceLimit > 0 && totalConns > deviceLimit;
+    const overIp = ipLimit > 0 && totalIps > ipLimit;
+
+    if (overDevice || overIp) {
+      /* برگرداندن — کاهش اتمیک */
+      await connRelease(env, uuid, ip);
+      return { ok: false, totalConns, totalIps };
+    }
+
+    return { ok: true, totalConns, totalIps };
+  } catch (e) {
+    return { ok: true, totalConns: 0, totalIps: 0 };     // در خطا اجازه بده
+  }
+}
+
+/** کاهش شمارنده — اگر صفر شد ردیف حذف می‌شود */
+async function connRelease(env, uuid, ip) {
+  if (!env.DB || !uuid || !ip) return 0;
+  try {
+    /* کاهش و حذف اگر صفر شد */
+    const r = await env.DB.prepare(`
+      UPDATE sessions SET conns = conns - 1, last_active = ?
+      WHERE uuid = ? AND ip = ? AND conns > 0`)
+      .bind(Date.now(), uuid, ip).run();
+    /* حذف ردیف‌های صفر شده */
+    await env.DB.prepare('DELETE FROM sessions WHERE uuid = ? AND conns <= 0')
+      .bind(uuid).run();
+    /* شمارش باقی‌مانده */
+    const c = await env.DB.prepare('SELECT COALESCE(SUM(conns), 0) AS c FROM sessions WHERE uuid = ?')
+      .bind(uuid).first();
+    return c ? (c.c || 0) : 0;
+  } catch (e) { return 0; }
+}
+
+/** تمدید heartbeat — هر بار داده‌ای رد و بدل شد */
+async function sessionTouch(env, uuid, ip) {
+  if (!env.DB || !uuid || !ip) return;
+  try {
+    await env.DB.prepare('UPDATE sessions SET last_active = ? WHERE uuid = ? AND ip = ? AND conns > 0')
+      .bind(Date.now(), uuid, ip).run();
+  } catch (e) {}
+}
+
+/** IPهای فعال یک کاربر با تعداد اتصال — برای نمایش در پنل */
+async function sessionsOf(env, uuid) {
+  if (!env.DB) return [];
+  try {
+    const { results } = await env.DB.prepare(
+      'SELECT ip, conns, last_active FROM sessions WHERE uuid = ? AND conns > 0 AND last_active > ? ORDER BY conns DESC, last_active DESC'
+    ).bind(uuid, Date.now() - SESSION_TTL).all();
+    return results || [];
+  } catch (e) { return []; }
+}
+
+/** افزایش اتمیک مصرف — هم安全 در برابر isolateهای همزمان */
+async function usageDelta(env, uuid, dUp, dDown, dReqs) {
+  if (!env.DB || !uuid) return false;
+  if (!dUp && !dDown && !dReqs) return true;
+  try {
+    await env.DB.prepare(`INSERT INTO usage (uuid, up, down, reqs, last_seen)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(uuid) DO UPDATE SET up = up + excluded.up, down = down + excluded.down,
+        reqs = reqs + excluded.reqs, last_seen = excluded.last_seen`)
+      .bind(uuid, dUp, dDown, dReqs, Date.now()).run();
+    USAGE_CACHE.ts = 0;                   // کش را بی‌اعتبار کن
+    return true;
+  } catch (e) { return false; }
+}
+
+/** خواندن مصرف همه‌ی کاربران — با کش ۴ ثانیه‌ای */
+async function usageRead(env) {
+  if (!env.DB) return new Map();
+  if (Date.now() - USAGE_CACHE.ts < USAGE_CACHE_TTL) return USAGE_CACHE.data;
+  try {
+    const { results } = await env.DB.prepare('SELECT uuid, up, down, reqs, last_seen FROM usage').all();
+    const m = new Map();
+    (results || []).forEach((r) => m.set(r.uuid, { up: r.up, down: r.down, reqs: r.reqs, lastSeen: r.last_seen }));
+    USAGE_CACHE = { ts: Date.now(), data: m };
+    return m;
+  } catch (e) { return USAGE_CACHE.data; }
+}
+
+/** مصرف یک کاربر */
+async function usageOf(env, uuid) {
+  const all = await usageRead(env);
+  return all.get(uuid) || { up: 0, down: 0, reqs: 0, lastSeen: null };
+}
+
 /** بارگذاری — فقط یک‌بار در طول عمر isolate */
 async function load(env) {
   if (MEM) return MEM;                        // کش در حافظه
@@ -671,7 +856,14 @@ function sniff(ua) {
   if (s.includes('v2rayn') || s.includes('nekoray') || s.includes('qv2ray')) return 'v2ray';
   return 'base64';
 }
-const quotaHdr = (u) => `upload=${Math.floor((u.up || 0) / 1048576)}; download=${Math.floor((u.down || 0) / 1048576)}; total=${Math.floor(((u.quotaGB || 0) * 1073741824) / 1048576)}; expire=${u.expiryAt ? Math.floor(u.expiryAt / 1000) : 0}`;
+/* ⚠️ واحد: بایت — همه‌ی کلاینت‌ها (Clash، sing-box، v2rayN) بایت انتظار دارند */
+const quotaHdr = (u) => {
+  const up = Math.max(0, Math.floor(Number(u.up) || 0));
+  const down = Math.max(0, Math.floor(Number(u.down) || 0));
+  const total = Math.max(0, Math.floor((Number(u.quotaGB) || 0) * 1073741824));
+  const exp = u.expiryAt ? Math.floor(u.expiryAt / 1000) : 0;
+  return `upload=${up}; download=${down}; total=${total}; expire=${exp}`;
+};
 
 /* ════════════════════════════ صفحات ════════════════════════════ */
 const DECOY = {
@@ -1438,8 +1630,26 @@ async function apiHandler(req, env, url) {
 
   if (route === 'state' && m === 'GET') {
     if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    /* مصرف و IPهای فعال از جداول خوانده می‌شوند */
+    const usage = await usageRead(env);
+    const usersWithUsage = [];
+    for (const u of st.users) {
+      const row = usage.get(u.uuid);
+      const sessions = await sessionsOf(env, u.uuid);
+      const totalConns = sessions.reduce((a, s) => a + (s.conns || 0), 0);
+      usersWithUsage.push({
+        ...u,
+        up: row ? row.up : 0,
+        down: row ? row.down : 0,
+        totalReq: row ? row.reqs : 0,
+        lastSeen: row ? row.lastSeen : null,
+        activeIPs: sessions.map((s) => ({ ip: s.ip, conns: s.conns })),
+        activeIPCount: sessions.length,
+        activeConns: totalConns,
+      });
+    }
+    st.users = usersWithUsage;
     st.stats.requests++;
-    await save(env, st);
     return json({ ...st, storage: env.DB ? 'd1' : 'memory', version: VERSION, build: BUILD, boot: BOOT, settings: { ...st.settings, auth: { ...st.settings.auth, password: undefined, totpSecret: st.settings.auth.totpSecret ? '•••••' : '' } } });
   }
 
@@ -1821,8 +2031,11 @@ async function subHandler(req, env, url, cf, wantPage) {
   const st = seed(await load(env)), s = st.settings;
   if (s.auth.panic || s.sec.killSwitch) return txt('503 Service Unavailable', {}, 503);
   const id = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || '');
-  const u = st.users.find((x) => x.uuid === id || x.secret === id || x.name === id);
+  let u = st.users.find((x) => x.uuid === id || x.secret === id || x.name === id);
   if (!u) return wantPage ? notFoundPage() : txt('user not found', {}, 404);
+  /* مصرف واقعی از جدول usage (نه از blob که ممکن است قدیمی باشد) */
+  const usageRow = await usageOf(env, u.uuid);
+  u = { ...u, up: usageRow.up || 0, down: usageRow.down || 0, totalReq: usageRow.reqs || 0, lastSeen: usageRow.lastSeen };
   if (!u.enabled) return wantPage ? renderUserPage(u, st, url, 0) : txt('user disabled' + (u.reason ? ' — ' + u.reason : ''), {}, 403);
 
   /* صفحه‌ی HTML: وقتی کلاینت شناخته‌شده نیست و format هم داده نشده */
@@ -1831,7 +2044,9 @@ async function subHandler(req, env, url, cf, wantPage) {
   if (wantPage || (!fmtQ && !CLIENT_UA.test(ua))) return renderUserPage(u, st, url, 0);
   if (u.expiryAt && u.expiryAt < Date.now()) return txt('subscription expired', {}, 403);
   const q = (u.quotaGB || 0) * 1073741824;
-  if (q && u.up + u.down >= q) return txt('quota exceeded', {}, 403);
+  /* ⚠️ NaN-safe: اگر up/down undefined باشند، NaN >= q برابر false می‌شد و سهمیه هرگز فعال نمی‌شد */
+  const usedBytes = (Number(u.up) || 0) + (Number(u.down) || 0);
+  if (q > 0 && usedBytes >= q) return txt('quota exceeded', {}, 403);
 
   const list = await buildList(u, s, url, cf);
   const format = url.searchParams.get('format') || sniff(req.headers.get('user-agent'));
@@ -1910,70 +2125,53 @@ function parseTrojan(buf) {
   return { pass, cmd: cmd === 3 ? 2 : 1, port, addr, payload: buf.slice(i) };
 }
 
-async function tunnelHandler(request, env, st) {
+async function tunnelHandler(request, env, st, ctx) {
   const s = st.settings;
   if (s.auth.panic || s.sec.killSwitch) return txt('service unavailable', {}, 503);
 
-  /* ⚠️ state را دوباره از حافظه می‌خوانیم — چون st ممکن است کپی قدیمی باشد */
-  const freshState = await load(env);
-  const users = freshState.users.filter((u) => u.enabled && (!u.expiryAt || u.expiryAt > Date.now()));
-  if (!users.length) return txt('no active user', {}, 403);
+  /* ⚠️ هیچ await قبل از accept() — دست‌دادنی WebSocket را کند می‌کند
+     و روی موبایل باعث timeout می‌شود */
 
   const [client, server] = new WebSocketPair();
-  server.accept();
-  /* حیاتی: بدون این، پیام‌ها به‌صورت Blob/رشته می‌آیند و پارس خراب می‌شود */
+  /* طبق مستندات Cloudflare: binaryType قبل از accept() */
   server.binaryType = 'arraybuffer';
-  session(server, request.headers.get('sec-websocket-protocol') || '', freshState, env)
+  server.accept();
+
+  const clientIp = request.headers.get('cf-connecting-ip') || '0.0.0.0';
+
+  /* همه‌ی کارهای سنگین در پس‌زمینه — بدون مسدود کردن handshake */
+  session(server, request.headers.get('sec-websocket-protocol') || '', st, env, ctx, clientIp)
     .catch(() => { try { server.close(); } catch (e) {} });
+
   return new Response(null, { status: 101, webSocket: client });
 }
 
-async function session(ws, early, st, env) {
-  /* ⚠️ هر اتصال WebSocket یک session جدید است.
-     st همان شیء مشترک MEM است — پس user هم همان مرجع است و
-     تغییرات مصرفی مستقیماً روی آن اعمال می‌شود. */
-  const allUsers = st.users;
-  const users = allUsers.filter((u) => u.enabled && (!u.expiryAt || u.expiryAt > Date.now()));
+async function session(ws, early, st, env, ctx, clientIp) {
+  /* ⚠️ state از caller می‌آید — بدون await اضافی که پیام‌های اولیه را گم می‌کند */
+  const state = st;
+  /* ساخت جدول‌ها در پس‌زمینه — مسدود نمی‌کند */
+  if (ctx && ctx.waitUntil) ctx.waitUntil(usageInit(env, state).catch(() => {}));
+
+  const users = state.users.filter((u) => u.enabled && (!u.expiryAt || u.expiryAt > Date.now()));
   const byUuid = new Map(users.map((u) => [u.uuid, u]));
   const byPass = new Map(users.map((u) => [sha224(u.secret), u]));
-  const s = st.settings;
+  const s = state.settings;
   let sock = null, user = null, up = 0, down = 0, closed = false;
   let dnsWriter = null;
+  const ip = clientIp || '0.0.0.0';
+  let connAcquired = false;
 
-  /** ثبت مصرف — ساده و مستقیم. شمارنده‌ها صفر می‌شوند تا دوباره‌شماری نشود */
-  const commitUsage = () => {
-    if (!user) return;
-    if (up > 0) user.up = (user.up || 0) + up;
-    if (down > 0) user.down = (user.down || 0) + down;
-    up = 0;
-    down = 0;
-    user.lastSeen = Date.now();
-  };
+  /* ═══ مصرف فقط در حافظه جمع می‌شود ═══
+     روی موبایل، هر کوئری D1 در مسیر پیام اختلال شدید ایجاد می‌کند.
+     نوشتن در D1 فقط در finish() (disconnect) انجام می‌شود. */
+  let pendUp = 0, pendDown = 0;
 
-  /** ذخیره‌ی مصرف در D1 — هر ۵ ثانیه یا هر ۱ مگابایت */
-  let lastSave = Date.now();
-  let savingUsage = false;
-  const maybeSaveUsage = () => {
-    if (savingUsage || !user) return;
-    const now = Date.now();
-    const total = (up + down);
-    if (now - lastSave > 5000 || total > 1048576) {
-      lastSave = now;
-      savingUsage = true;
-      commitUsage();
-      save(env, st).catch(() => {}).finally(() => {
-        savingUsage = false;
-        /* بررسی سهمیه */
-        if (user) {
-          const quota = (user.quotaGB || 0) * 1073741824;
-          if (quota > 0 && (user.up + user.down) >= quota) {
-            user.enabled = false;
-            user.reason = 'اتمام سهمیه';
-            finish();
-          }
-        }
-      });
-    }
+  /** ثبت دوره‌ای — هر ۳ ثانیه یا ۵۰۰KB */
+  /* ⚠️ روی موبایل، هر کوئری D1 در مسیر پیام باعث اختلال شدید می‌شود.
+     مصرف فقط در حافظه جمع می‌شود و در disconnect یک‌بار در D1 نوشته می‌شود. */
+  const maybeFlush = () => {
+    /* هیچ کاری نمی‌کنیم — فقط شمارش در حافظه */
+    return;
   };
 
   const finish = async () => {
@@ -1981,12 +2179,25 @@ async function session(ws, early, st, env) {
     closed = true;
     try { if (ws.readyState === 1 || ws.readyState === 2) ws.close(); } catch (e) {}
     try { sock && sock.close(); } catch (e) {}
-    /* ثبت نهایی مصرف + ذخیره‌ی قطعی در D1 */
-    if (user) {
-      commitUsage();                                        // مصرف باقیمانده → user
-      user.totalReq = (user.totalReq || 0) + 1;
-      user.lastSeen = Date.now();
-      try { await save(env, st); } catch (e) {}
+    /* ثبت مصرف — فقط یک‌بار در disconnect، کاملاً در پس‌زمینه */
+    if (user && (pendUp > 0 || pendDown > 0)) {
+      const dUp = pendUp, dDown = pendDown;
+      pendUp = 0; pendDown = 0;
+      const p = (async () => {
+        try { await usageDelta(env, user.uuid, dUp, dDown, 1); } catch (e) {}
+        if (connAcquired) {
+          try { await connRelease(env, user.uuid, ip); } catch (e) {}
+        }
+      })();
+      if (ctx && ctx.waitUntil) ctx.waitUntil(p.catch(() => {}));
+    } else if (user) {
+      /* حتی اگر مصرف صفر است، release کن */
+      const p = (async () => {
+        if (connAcquired) {
+          try { await connRelease(env, user.uuid, ip); } catch (e) {}
+        }
+      })();
+      if (ctx && ctx.waitUntil) ctx.waitUntil(p.catch(() => {}));
     }
   };
 
@@ -2011,7 +2222,13 @@ async function session(ws, early, st, env) {
       const hb = new TextEncoder().encode(head);
       const full = new Uint8Array(hb.length + buf.length);
       full.set(hb); full.set(buf, hb.length);
-      down += full.length;
+      down += full.length; pendDown += full.length;      // downstream
+      /* upstream: درخواست HTTP که کلاینت فرستاد */
+      if (info.payload) {
+        const uLen = info.payload.byteLength || info.payload.length || 0;
+        if (uLen) { up += uLen; pendUp += uLen; }
+      }
+      maybeFlush();
       ws.send(full);
       return true;
     } catch (e) { return false; }
@@ -2035,8 +2252,8 @@ async function session(ws, early, st, env) {
           const vLen = value.byteLength || value.length || 0;
           if (!vLen) continue;
           hasData = true;
-          down += vLen;
-          maybeSaveUsage();                         // ثبت دوره‌ای
+          down += vLen; pendDown += vLen;
+          maybeFlush();
           if (ws.readyState !== 1) break;
           if (header && header.length) {
             const merged = new Uint8Array(header.length + vLen);
@@ -2070,10 +2287,11 @@ async function session(ws, early, st, env) {
     let host = String(address || '');
     if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host)) host = 'www.' + host + '.sslip.io';
     const tcpSock = connect({ hostname: host, port });
-    /* سوکت فوراً ثبت می‌شود (قبل از هر await) تا بسته‌های بعدی گم نشوند */
     sock = tcpSock;
     const w = tcpSock.writable.getWriter();
-    if (payload && payload.length) { up += payload.length; await w.write(payload); }
+    /* ⚠️ up اینجا شمرده نمی‌شود — چون retry همان payload را دوباره می‌فرستد
+       و باعث دوباره‌شماری می‌شود. آپلود در handle() شمرده می‌شود. */
+    if (payload && payload.length) await w.write(payload);
     w.releaseLock();
     return tcpSock;
   };
@@ -2104,6 +2322,22 @@ async function session(ws, early, st, env) {
     user = info.user;
     if (info.cmd === 2) { await finish(); return; }
     if (!info.addr || !info.port) return finish();
+
+    /* محدودیت اتصال — در پس‌زمینه، بدون مسدود کردن تونل */
+    const deviceLimit = Number(user.deviceLimit) || 0;
+    const ipLimit = Number(user.ipLimit) || 0;
+    if (deviceLimit > 0 || ipLimit > 0) {
+      connAcquired = true;
+      if (ctx && ctx.waitUntil) {
+        ctx.waitUntil(connAcquire(env, user.uuid, ip, deviceLimit, ipLimit)
+          .then((adm) => {
+            if (!adm.ok) {
+              connAcquired = false;
+              try { ws.close(1013, 'connection limit reached'); } catch (e) {}
+            }
+          }).catch(() => {}));
+      }
+    }
 
     const respHeader = info.isTrojan ? new Uint8Array(0) : new Uint8Array([info.version || 0, 0]);
     const s = st.settings;
@@ -2199,7 +2433,7 @@ async function session(ws, early, st, env) {
         merged.set(dnsResp, 2);
       }
       ws.send(merged);
-      down += len;
+      down += len; pendDown += len;                 // شمارش پاسخ DNS
     };
 
     /** ارسال پرس‌وجوی DNS از طریق DoH با POST */
@@ -2277,9 +2511,14 @@ async function session(ws, early, st, env) {
         /* پشتیبانی UDP برای DNS (port 53) — با DoH */
         if (v.cmd === 2) {
           if (v.port === 53) {
+            /* ⚠️ user را ست می‌کنیم تا مصرف DNS هم شمرده شود */
+            user = info.user;
             const respHeader = new Uint8Array([info.version || 0, 0]);
-            const w = await dnsUdp(v.payload, respHeader);   // ← درست await می‌شود
+            const qLen = v.payload ? (v.payload.byteLength || v.payload.length || 0) : 0;
+            up += qLen; pendUp += qLen;
+            const w = await dnsUdp(v.payload, respHeader);
             dnsWriter = w;
+            maybeFlush();
             return;
           }
           return finish();                                    // UDP غیر DNS پشتیبانی نمی‌شود
@@ -2301,8 +2540,8 @@ async function session(ws, early, st, env) {
     if (!sock) return;
     try {
       const w = sock.writable.getWriter();
-      up += buf.byteLength;
-      maybeSaveUsage();                             // ثبت دوره‌ای
+      up += buf.byteLength; pendUp += buf.byteLength;
+      maybeFlush();
       await w.write(buf);
       w.releaseLock();
     } catch (e) { finish(); }
@@ -2406,7 +2645,8 @@ export default {
 
       /* ۱) تونل: هر درخواست ارتقای WebSocket — مستقل از مسیر (مثل نهان) */
       const isWs = String(request.headers.get('upgrade') || '').toLowerCase() === 'websocket';
-      if (isWs) return tunnelHandler(request, env, st);
+      /* تونل: state از fetch handler می‌آید — بدون await اضافی */
+      if (isWs) return tunnelHandler(request, env, await load(env), ctx);
 
       /* ۲) مسیرهای ریشه‌ای زیر مسیر مخفی */
       const route = '/' + String(s.auth.path || 'panel').replace(/^\/+/, '');
