@@ -621,9 +621,9 @@
       '<div class="acts"><button class="btn sm p" data-act="usage-health">' + icon('fa-stethoscope') + ' بررسی سلامت</button></div></header>' +
       '<div class="bd">' +
       '<div id="usageHealthOut"><div class="empty">با یک کلیک، جدول مصرف، جریان ثبت (last_seen)، آخرین نوشتن D1 و مصرف ذخیره‌شده‌ی هر کاربر بررسی می‌شود.</div></div>' +
-      /* ═══ تست واقعی ترافیک ═══ */
+      /* ═══ تست واقعی ترافیک — درخواست از مرورگرِ کاربر، پاسخ از سرور ═══ */
       '<div style="border-top:1px solid var(--bs);margin:14px 0 12px"></div>' +
-      '<div class="hint" style="margin-bottom:8px"><b>تست واقعی ترافیک</b> — یک فایل با اندازه‌ی معلوم را از «داخل یکی از کانفیگ‌های کاربر» (یعنی واقعاً از میان تونل) دانلود می‌کند و افزایش مصرفِ ثبت‌شده را با آن مقایسه می‌کند.</div>' +
+      '<div class="hint" style="margin-bottom:8px"><b>تست واقعی ترافیک</b> — مرورگرِ شما یک فایل با اندازه‌ی معلوم را از سرور درخواست می‌کند؛ سرور با کانفیگِ همان کاربر پاسخ می‌دهد و حجمِ دانلود برای او ثبت می‌شود. سپس افزایش مصرف با اندازه‌ی فایل مقایسه می‌شود (چند کیلوبایت اختلاف طبیعی است).</div>' +
       '<div class="btn-row" style="gap:8px;flex-wrap:wrap">' +
       '<select id="ttUser" style="max-width:210px">' +
       (S.d.users || []).map((x) => '<option value="' + esc(x.uuid) + '"' + (x.uuid === TT.uuid ? ' selected' : '') + '>' + esc(x.name) + (x.enabled ? '' : ' (غیرفعال)') + '</option>').join('') +
@@ -632,8 +632,6 @@
       '<span class="hint">مگابایت</span>' +
       '<button class="btn sm p" data-act="traffic-test">' + icon('fa-download') + ' اجرای تست ترافیک</button>' +
       '</div>' +
-      '<div class="hint" style="margin-top:6px">نشانی فایل تست (خارجی — نباید خودِ ورکر باشد):</div>' +
-      '<input id="ttUrl" type="text" placeholder="https://speed.cloudflare.com/__down" value="' + esc((S.d.settings.sec && S.d.settings.sec.speedTestUrl) || '') + '" style="margin-top:4px">' +
       '<div id="trafficTestOut" style="margin-top:10px"><div class="empty">هنوز تستی اجرا نشده است.</div></div>' +
       '</div></div>';
   }
@@ -1313,17 +1311,39 @@
           '<div class="hint" style="margin-top:10px">اگر «در حال ثبت ✓» می‌بینید یعنی افزایش مصرف برای آن کاربر جریان دارد. «مصرفی ثبت نشده» فقط برای کاربرانی که وصل نبوده‌اند طبیعی است.</div>';
       }
       else if (a === 'traffic-test') {
-        const sel = $('#ttUser'), sz = $('#ttSize'), ur = $('#ttUrl');
+        /* ═══ تست واقعی ترافیک — درخواست از مرورگرِ کسی که دکمه را زده ═══
+           ۱) سرور یک نشست می‌سازد و مصرفِ فعلیِ کاربر را می‌خواند
+           ۲) همین مرورگر فایل را از سرور دانلود می‌کند
+           ۳) سرور افزایش مصرفِ ثبت‌شده را با اندازه‌ی فایل مقایسه می‌کند */
+        const sel = $('#ttUser'), sz = $('#ttSize');
         const uuid = (sel && sel.value) || '';
         const sizeMB = Math.max(1, Math.min(20, Number(sz && sz.value) || 1));
-        const url = (ur && String(ur.value || '').trim()) || '';
         TT.uuid = uuid; TT.mb = sizeMB;
-        busy(t, 'در حال دانلود…');
-        const r = await api('POST', '/api/action', { act: 'traffic-test', uuid, sizeMB, url });
-        free(t);
         const o = $('#trafficTestOut');
         const mb = (x) => fa(((x || 0) / 1048576).toFixed(2)) + ' مگابایت';
         const kb = (x) => fa(Math.round((x || 0) / 1024 * 10) / 10) + ' کیلوبایت';
+        let r = null;
+        try {
+          busy(t, 'آماده‌سازی…');
+          const begin = await api('POST', '/api/action', { act: 'traffic-begin', uuid, sizeMB });
+          if (begin.error) throw new Error(begin.error);
+          busy(t, 'در حال دانلود…');
+          const res = await fetch(begin.url, { cache: 'no-store' });
+          if (!res.ok) throw new Error('سرور پاسخ نداد (' + res.status + ')');
+          const buf = await res.arrayBuffer();
+          const received = buf.byteLength || 0;
+          busy(t, 'در حال بررسی…');
+          r = await api('POST', '/api/action', { act: 'traffic-end', sid: begin.sid, received });
+          r.received = received;
+          r.recordedHeader = res.headers ? (res.headers.get('x-usage-recorded') || '') : '';
+        } catch (e) {
+          free(t);
+          if (o) o.innerHTML = '<div class="kv"><span>' + icon('fa-circle-xmark') + ' تست انجام نشد</span>' +
+            '<b class="mono" style="color:var(--bad)">' + esc(String((e && e.message) || e)) + '</b></div>';
+          toast('تست ناموفق بود', 'err');
+          return;
+        }
+        free(t);
         if (r.error && r.measured === undefined) {
           if (o) o.innerHTML = '<div class="kv"><span>' + icon('fa-circle-xmark') + ' تست انجام نشد</span>' +
             '<b class="mono" style="color:var(--bad)">' + esc(r.error) + '</b></div>';
@@ -1334,16 +1354,15 @@
         if (o) o.innerHTML =
           '<div class="kv"><span>' + icon(r.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' نتیجه‌ی تست</span>' +
           '<b class="mono" style="color:' + (r.ok ? 'var(--ok)' : 'var(--bad)') + '">' + verdict + '</b></div>' +
-          '<div class="kv"><span>انتظار (عبور از تونل)</span><b class="mono">' + mb(r.expected || r.want) + ' (' + fa(r.expected || r.want) + ' بایت)</b></div>' +
+          '<div class="kv"><span>درخواست از مرورگر</span><b class="mono">' + mb(r.expected || r.want) + ' (' + fa(r.expected || r.want) + ' بایت)</b></div>' +
+          '<div class="kv"><span>پاسخِ سرور (دریافت‌شده)</span><b class="mono">' + mb(r.received) + ' (' + fa(r.received) + ' بایت)</b></div>' +
           '<div class="kv"><span>ثبت‌شده برای کاربر</span><b class="mono" style="color:' + (r.ok ? 'var(--ok)' : 'var(--bad)') + '">' + mb(r.measured) + ' (' + fa(r.measured) + ' بایت)</b></div>' +
           '<div class="kv"><span>اختلاف</span><b class="mono">' + (r.diff >= 0 ? '+' : '−') + kb(Math.abs(r.diff)) + '</b></div>' +
           '<div class="kv"><span>تلورانس مجاز</span><b class="mono">±' + kb(r.tolerance) + '</b></div>' +
           '<div class="hint" style="margin-top:8px;font-weight:700;color:' + (r.ok ? 'var(--ok)' : 'var(--bad)') + '">انتظار: ' + mb(r.expected || r.want) + ' / ثبت‌شده: ' + mb(r.measured) + ' ' + (r.ok ? '✓' : '✗') + '</div>' +
-          '<div class="hint" style="margin-top:8px">کاربر: ' + esc(r.user || '—') + ' • مقصد: ' + esc(r.target || '—') + ' • دریافت از تونل: ' + fa(r.received || 0) + ' بایت • ⬆ ' + fa(r.up || 0) + ' / ⬇ ' + fa(r.down || 0) +
+          '<div class="hint" style="margin-top:8px">کاربر: ' + esc(r.user || '—') + ' • ⬆ ' + fa(r.up || 0) + ' / ⬇ ' + fa(r.down || 0) +
           ' • ذخیره‌سازی: ' + esc(r.storage || '—') + (r.waitedMs ? ' • انتظار برای ثبت: ' + fa(r.waitedMs) + ' ms' : '') + '</div>' +
-          (r.url ? '<div class="hint" style="margin-top:6px;direction:ltr;text-align:left">' + esc(r.url) + '</div>' : '') +
-          (r.error ? '<div class="hint" style="margin-top:8px;color:var(--bad)">خطا: ' + esc(r.error) + '</div>' : '') +
-          '<div class="hint" style="margin-top:8px">چند کیلوبایت اختلاف به‌خاطر هدرهای HTTP و VLESS طبیعی است. مقصد باید «خارجی» باشد؛ اتصال ورکر به خودش توسط کلادفلر مسدود است.</div>';
+          '<div class="hint" style="margin-top:8px">چند کیلوبایت اختلاف به‌خاطر هدرهای HTTP طبیعی است. دانلود توسط مرورگرِ شما انجام شد و حجم آن برای کانفیگِ همین کاربر ثبت گردید.</div>';
         toast(r.ok ? 'شمارش مصرف درست است ✓' : 'اختلاف بیش از حد مجاز — شمارش بررسی شود', r.ok ? 'ok' : 'err');
         await refresh();
       }

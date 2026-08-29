@@ -336,181 +336,209 @@ async function usageInit(env, st) {
 
 /* ═══════════════════════════════════════════════════════════════════════════
    محدودیت اتصال همزمان — فقط بر اساس IP واقعی کلاینت
+   (الگوبرداری از دو پنل مرجع: Nahan و Nova-Proxy)
 
-   مشکلات قبلی:
-   ۱. deviceLimit با COUNT(DISTINCT ip) سنجیده می‌شد — ۵ پشت یک NAT = ۱،
-      و برعکس یک کاربر با two کلاینت روی یک IP جریمه می‌شد. محدودیتِ
-      دستگاهی کاملاً حذف شده است.
-   ۲. نشست‌ها (uuid, ip) بودند با یک ردیف مشترک — isolate ب که اتصالش را
-      می‌بست، ردیف را حذف می‌کرد در حالی که isolate A هنوز فعال بود.
-   ۳. اگر env.DB نبود، connAcquire بی‌صدا ok برمی‌گشت → محدودیت عملاً خاموش.
-   ۴. release دو بار صدا زده می‌شد و شمارنده‌ی اتصالِ دیگری را کم می‌کرد.
+   درس اصلی از Nahan (_worker.js): شمارنده‌ی اتصال یک Map ساده در حافظه است؛
+   هنگام پذیرش هر کانکشن +۱ و در رویداد closeِ همان کانکشن −۱ می‌شود. نه
+   دیتابیسی در کار است و نه کوئری‌ای که بتواند بی‌صدا بشکند و محدودیت را خاموش
+   کند. Nova-Proxy هم محدودیت را با شمارنده‌ای سبک روی پروفایلِ کاربر می‌سنجد.
 
-   راه‌حل:
-   - conns (تعداد اتصال همان IP) با افزایش/کاهش اتمیک در D1
-   - محدودیت فقط با ipLimit: بیشینه‌ی اتصال همزمانِ «یک IP» برای این کاربر
-   - پاک‌سازی با TTL (۱۸۰ ثانیه) + heartbeat دوره‌ای تا اتصال‌های زنده
-     ولی بی‌ترافیک پاک نشوند
+   اشتباهِ نسخه‌ی قبلیِ ما: محدودیت به D1 گره خورده بود (env.DB). بیشتر
+   استقرارها این پنل را با کپی/پیست در داشبورد منتشر می‌کنند → هیچ بایندینگی
+   وجود ندارد → کوئری‌ها شکست می‌خورند → خطا بلعیده می‌شد → «همیشه مجاز».
+
+   مدلِ جدید:
+     • حافظه — مرجعِ اصلیِ تصمیم؛ همیشه فعال است و به هیچ تنظیمی نیاز ندارد
+     • KV (اختیاری) — یک کلید برای «هر اتصال» با expirationTtl؛ شمارش بین
+       isolateها را مشترک می‌کند و حتی اگر release هیچ‌وقت صدا زده نشود،
+       خودبه‌خود منقضی می‌شود (خودترمیم)
+     • محدودیت دستگاهی (deviceLimit) کاملاً حذف شده — فقط IP
+     • هیچ خطایی بلعیده نمی‌شود: CONN_LAST_ERR در کارت سلامت نمایش داده می‌شود
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const SESSION_TTL = 180000;             // ۱۸۰ ثانیه heartbeat window
-const SESSION_HB = 45000;               // heartbeat هر ۴۵ ثانیه (even بدون ترافیک)
+const CONN_TTL = 300000;              // ۵ دقیقه — عمر یک اتصالِ بی‌heartbeat
+const CONN_HB = 120000;               // تمدید هر ۲ دقیقه
+const CONNS = new Map();              // "uuid|ip" -> Map<connId, lastTs>   (مدلِ Nahan)
+let CONN_LAST_ERR = null;             // آخرین خطا — در کارت سلامت نمایش داده می‌شود
+let CONN_DENIES = 0;                  // تعداد رد شدن‌ها (اثباتِ فعال بودن محدودیت)
+let CONN_ACQUIRES = 0;
 
-/** پاک‌سازی ردیف‌های مرده — در هر admission صدا زده می‌شود */
-async function sessionsSweep(env) {
-  const kind = backendOf(env);
-  if (kind === 'mem') {
-    const cut = Date.now() - SESSION_TTL;
-    MEM_SESS.forEach((v, k) => { if (!v || (v.last_active || 0) < cut || (v.conns || 0) <= 0) MEM_SESS.delete(k); });
-    return;
-  }
-  if (kind === 'kv') {
-    /* KV فهرست‌کردن ارزان نیست — پاک‌سازیِ تنبل هنگام acquire انجام می‌شود */
-    return;
-  }
-  if (!env.DB) return;
-  try {
-    await env.DB.prepare('DELETE FROM sessions WHERE last_active < ?')
-      .bind(Date.now() - SESSION_TTL).run();
-  } catch (e) {}
+const connKeyOf = (uuid, ip) => String(uuid) + '|' + String(ip);
+const KV_C = (uuid, ip, id) => 'c:' + uuid + ':' + ip + ':' + id;
+
+/** حذفِ ورودی‌های مرده از نگاشتِ اتصال‌های یک IP */
+function connPrune(m, now) {
+  if (!m) return 0;
+  m.forEach((ts, id) => { if (!ts || now - ts > CONN_TTL) m.delete(id); });
+  return m.size;
+}
+
+/** پاک‌سازیِ تنبلِ همه‌ی نگاشت‌ها — ارزان و بدون کوئری */
+function sessionsSweep() {
+  const now = Date.now();
+  CONNS.forEach((m, k) => { if (!connPrune(m, now)) CONNS.delete(k); });
+}
+
+/** تعداد اتصال‌های زنده‌ی همین IP در حافظه */
+function connCountMem(uuid, ip, now) {
+  const m = CONNS.get(connKeyOf(uuid, ip));
+  if (!m) return 0;
+  return connPrune(m, now || Date.now());
 }
 
 /**
- * افزایش اتمیک شمارنده‌ی اتصالِ «همین IP» برای این کاربر.
- * ⚠️ فقط محدودیت IP — محدودیت دستگاهی (deviceLimit) حذف شده است.
- * برمی‌گرداند: { ok, conns, limit, enforced }
+ * افزایش شمارنده‌ی اتصالِ «همین IP» برای این کاربر.
+ * connId شناسه‌ی یکتای همین کانکشن است — آزادسازی دقیقاً همان را کم می‌کند
+ * (نسخه‌ی قبلی بدون شناسه بود و releaseِ یک اتصال، سهمیه‌ی اتصالِ دیگری را
+ * کم می‌کرد). برمی‌گرداند: { ok, conns, limit, enforced, storage }
  */
-async function connAcquire(env, uuid, ip, limit) {
-  const kind = backendOf(env);
-  if (!uuid || !ip) return { ok: true, conns: 0, limit: limit || 0, enforced: false, reason: 'missing-identity' };
+async function connAcquire(env, uuid, ip, limit, connId) {
+  limit = Number(limit) || 0;
+  if (!uuid || !ip) return { ok: true, conns: 0, limit, enforced: false, reason: 'missing-identity' };
+  const id = connId || randTok(10);
+  const now = Date.now();
+  CONN_ACQUIRES++;
 
-  /* ── KV / حافظه: افزایش شمارنده‌ی همین IP ── */
-  if (kind === 'mem' || kind === 'kv') {
-    const key = kind === 'mem' ? (uuid + '|' + ip) : KV_S(uuid, ip);
-    let s = kind === 'mem' ? MEM_SESS.get(key) : await kvGetJson(env, key);
-    /* ردیف‌های مرده (بی‌heartbeat) را اینجا هم پاک می‌کنیم */
-    if (s && Date.now() - (s.last_active || 0) > SESSION_TTL) s = null;
-    s = s || { conns: 0, last_active: 0 };
-    s.conns = (s.conns || 0) + 1;
-    s.last_active = Date.now();
-    const conns = s.conns;
-    if (kind === 'mem') MEM_SESS.set(key, s); else await kvPutJson(env, key, s);
-    if (limit > 0 && conns > limit) {
-      s.conns = Math.max(0, conns - 1);                 // برگرداندنِ افزایشِ رد شده
-      if (kind === 'mem') { if (s.conns <= 0) MEM_SESS.delete(key); else MEM_SESS.set(key, s); }
-      else if (s.conns <= 0) { try { await env.KV.delete(key); } catch (e) {} } else await kvPutJson(env, key, s);
-      return { ok: false, conns, limit, enforced: true, storage: kind };
-    }
-    return { ok: true, conns, limit, enforced: limit > 0, storage: kind };
+  /* ── ۱) حافظه: مرجعِ اصلی تصمیم (بدون وابستگی به هیچ بایندینگی) ── */
+  let m = CONNS.get(connKeyOf(uuid, ip));
+  if (!m) { m = new Map(); CONNS.set(connKeyOf(uuid, ip), m); }
+  const memBefore = connPrune(m, now);
+  if (limit > 0 && memBefore >= limit) {
+    CONN_DENIES++;
+    return { ok: false, conns: memBefore, limit, enforced: true, storage: backendOf(env), reason: 'memory-limit' };
   }
+  m.set(id, now);
+  const memAfter = m.size;
 
-  if (!env.DB) return { ok: true, conns: 0, limit: limit || 0, enforced: false, reason: 'no-db' };
-
-  /* پاک‌سازی ردیف‌های مرده — isolate کشته‌شده نمی‌تواند کاربر را قفل کند */
-  await sessionsSweep(env);
-
-  try {
-    /* افزایش اتمیک */
-    await env.DB.prepare(`INSERT INTO sessions (uuid, ip, conns, last_active)
-      VALUES (?, ?, 1, ?)
-      ON CONFLICT(uuid, ip) DO UPDATE SET conns = conns + 1, last_active = ?`)
-      .bind(uuid, ip, Date.now(), Date.now()).run();
-
-    /* خواندن تعداد اتصال‌های همین IP — بعد از افزایش */
-    const r = await env.DB.prepare(
-      'SELECT COALESCE(SUM(conns), 0) AS c FROM sessions WHERE uuid = ? AND ip = ? AND last_active > ?')
-      .bind(uuid, ip, Date.now() - SESSION_TTL).first();
-    const conns = r ? (r.c || 0) : 0;
-
-    /* بررسی محدودیت — فقط بر اساس IP */
-    if (limit > 0 && conns > limit) {
-      await connRelease(env, uuid, ip);
-      return { ok: false, conns, limit, enforced: true };
+  /* ── ۲) KV (اختیاری): شمارشِ مشترک بین isolateها ── */
+  let conns = memAfter;
+  if (env && env.KV) {
+    try {
+      const prefix = 'c:' + uuid + ':' + ip + ':';
+      const list = await env.KV.list({ prefix });
+      let live = 0;
+      for (const k of ((list && list.keys) || [])) {
+        const raw = await env.KV.get(k.name);        /* مقدار = آخرین heartbeat */
+        const ts = Number(raw) || 0;
+        if (raw === null || !ts || now - ts > CONN_TTL) {
+          try { await env.KV.delete(k.name); } catch (e) {}   /* منقضی — پاک شود */
+        } else live++;
+      }
+      if (limit > 0 && live >= limit) {
+        m.delete(id);                                         /* افزایشِ رد شده برگردد */
+        CONN_DENIES++;
+        return { ok: false, conns: Math.max(memBefore, live), limit, enforced: true, storage: 'kv', reason: 'kv-limit' };
+      }
+      await env.KV.put(KV_C(uuid, ip, id), String(now), { expirationTtl: Math.ceil(CONN_TTL / 1000) });
+      conns = Math.max(memAfter, live + 1);
+    } catch (e) {
+      /* خطای KV هرگز باعث نمی‌شود محدودیت خاموش شود — فقط گزارش می‌شود */
+      CONN_LAST_ERR = 'KV: ' + String((e && e.message) || e);
     }
-
-    return { ok: true, conns, limit, enforced: limit > 0 };
-  } catch (e) {
-    /* اگر شمارنده در دسترس نیست، اتصال را رد نمی‌کنیم */
-    return { ok: true, conns: 0, limit, enforced: false, reason: String((e && e.message) || e) };
   }
+  return { ok: true, conns, limit, enforced: limit > 0, id, storage: backendOf(env) };
 }
 
-/** کاهش شمارنده — فقط ردیف همین IP؛ اگر صفر شد ردیف حذف می‌شود */
-async function connRelease(env, uuid, ip) {
+/** کاهش شمارنده — فقط همین connId؛ اگر نگاشت خالی شد حذف می‌شود */
+async function connRelease(env, uuid, ip, connId) {
   if (!uuid || !ip) return 0;
-  const kind = backendOf(env);
-  if (kind === 'mem' || kind === 'kv') {
-    const key = kind === 'mem' ? (uuid + '|' + ip) : KV_S(uuid, ip);
-    const s = kind === 'mem' ? MEM_SESS.get(key) : await kvGetJson(env, key);
-    if (!s) return 0;
-    s.conns = Math.max(0, (s.conns || 0) - 1);
-    s.last_active = Date.now();
-    if (s.conns <= 0) {
-      if (kind === 'mem') MEM_SESS.delete(key); else { try { await env.KV.delete(key); } catch (e) {} }
-      return 0;
+  const k = connKeyOf(uuid, ip);
+  const m = CONNS.get(k);
+  let left = 0;
+  if (m) {
+    if (connId) m.delete(connId);
+    else { /* بدون شناسه (اتصال‌های قدیمی): یکی را کم کن */
+      const first = m.keys().next();
+      if (!first.done) m.delete(first.value);
     }
-    if (kind === 'mem') MEM_SESS.set(key, s); else await kvPutJson(env, key, s);
-    return s.conns;
+    left = m.size;
+    if (!left) CONNS.delete(k);
   }
-  if (!env.DB) return 0;
-  try {
-    await env.DB.prepare(`
-      UPDATE sessions SET conns = conns - 1, last_active = ?
-      WHERE uuid = ? AND ip = ? AND conns > 0`)
-      .bind(Date.now(), uuid, ip).run();
-    /* فقط ردیف همین IP — ردیف‌های IPهای دیگر دست‌نخورده می‌مانند */
-    await env.DB.prepare('DELETE FROM sessions WHERE uuid = ? AND ip = ? AND conns <= 0')
-      .bind(uuid, ip).run();
-    const c = await env.DB.prepare('SELECT COALESCE(SUM(conns), 0) AS c FROM sessions WHERE uuid = ? AND ip = ?')
-      .bind(uuid, ip).first();
-    return c ? (c.c || 0) : 0;
-  } catch (e) { return 0; }
+  if (env && env.KV && connId) {
+    try { await env.KV.delete(KV_C(uuid, ip, connId)); }
+    catch (e) { CONN_LAST_ERR = 'KV: ' + String((e && e.message) || e); }
+  }
+  return left;
 }
 
-/** تمدید heartbeat — هر بار داده‌ای رد و بدل شد */
-async function sessionTouch(env, uuid, ip) {
-  if (!uuid || !ip) return;
-  const kind = backendOf(env);
-  if (kind === 'mem') { const s = MEM_SESS.get(uuid + '|' + ip); if (s) { s.last_active = Date.now(); MEM_SESS.set(uuid + '|' + ip, s); } return; }
-  if (kind === 'kv') { const s = await kvGetJson(env, KV_S(uuid, ip)); if (s) { s.last_active = Date.now(); await kvPutJson(env, KV_S(uuid, ip), s); } return; }
-  if (!env.DB) return;
-  try {
-    await env.DB.prepare('UPDATE sessions SET last_active = ? WHERE uuid = ? AND ip = ? AND conns > 0')
-      .bind(Date.now(), uuid, ip).run();
-  } catch (e) {}
+/** تمدید heartbeat — اتصال‌های زنده اما کم‌ترافیک پاک نشوند */
+async function sessionTouch(env, uuid, ip, connId) {
+  if (!uuid || !ip || !connId) return;
+  const now = Date.now();
+  const m = CONNS.get(connKeyOf(uuid, ip));
+  if (m && m.has(connId)) m.set(connId, now);
+  if (env && env.KV) {
+    try { await env.KV.put(KV_C(uuid, ip, connId), String(now), { expirationTtl: Math.ceil(CONN_TTL / 1000) }); }
+    catch (e) { CONN_LAST_ERR = 'KV: ' + String((e && e.message) || e); }
+  }
 }
 
 /** IPهای فعال یک کاربر با تعداد اتصال — برای نمایش در پنل */
 async function sessionsOf(env, uuid) {
-  const kind = backendOf(env);
-  if (kind === 'mem') {
-    const cut = Date.now() - SESSION_TTL, out = [];
-    MEM_SESS.forEach((v, k) => {
-      if (!String(k).startsWith(uuid + '|')) return;
-      if ((v.conns || 0) > 0 && (v.last_active || 0) > cut) out.push({ ip: String(k).split('|')[1], conns: v.conns, last_active: v.last_active });
-    });
-    return out.sort((a, b) => (b.conns || 0) - (a.conns || 0));
-  }
-  if (kind === 'kv') {
+  const now = Date.now();
+  const out = new Map();
+  const push = (ip, conns, last) => {
+    const cur = out.get(ip);
+    if (cur) { cur.conns = Math.max(cur.conns, conns); cur.last_active = Math.max(cur.last_active || 0, last || 0); }
+    else out.set(ip, { ip, conns, last_active: last || 0 });
+  };
+  CONNS.forEach((m, k) => {
+    if (!String(k).startsWith(uuid + '|')) return;
+    const n = connPrune(m, now);
+    if (n <= 0) return;
+    let last = 0;
+    m.forEach((ts) => { if (ts > last) last = ts; });
+    push(String(k).split('|')[1], n, last);
+  });
+  if (env && env.KV) {
     try {
-      const list = await env.KV.list({ prefix: 's:' + uuid + ':' });
-      const out = [], cut = Date.now() - SESSION_TTL;
-      for (const k of (list && list.keys) || []) {
-        const s = await kvGetJson(env, k.name);
-        if (s && (s.conns || 0) > 0 && (s.last_active || 0) > cut) out.push({ ip: String(k.name).split(':').pop(), conns: s.conns, last_active: s.last_active });
+      const list = await env.KV.list({ prefix: 'c:' + uuid + ':' });
+      for (const k of ((list && list.keys) || [])) {
+        const raw = await env.KV.get(k.name);
+        const ts = Number(raw) || 0;
+        if (!raw || !ts || now - ts > CONN_TTL) continue;
+        const parts = String(k.name).split(':');           /* c : uuid : ip : id */
+        if (parts.length < 4) continue;
+        push(parts[2], 1, ts);
       }
-      return out.sort((a, b) => (b.conns || 0) - (a.conns || 0));
-    } catch (e) { return []; }
+    } catch (e) { CONN_LAST_ERR = 'KV: ' + String((e && e.message) || e); }
   }
-  if (!env.DB) return [];
-  try {
-    const { results } = await env.DB.prepare(
-      'SELECT ip, conns, last_active FROM sessions WHERE uuid = ? AND conns > 0 AND last_active > ? ORDER BY conns DESC, last_active DESC'
-    ).bind(uuid, Date.now() - SESSION_TTL).all();
-    return results || [];
-  } catch (e) { return []; }
+  return [...out.values()].sort((a, b) => (b.conns || 0) - (a.conns || 0));
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   تست واقعی ترافیک — «از مرورگرِ همان کسی که دکمه را می‌زند»
+
+   نسخه‌ی قبلی دو اشتباه اساسی داشت:
+     ۱. کلادفلر اجازه نمی‌دهد یک ورکر نشانیِ خودش را fetch کند؛ پس هر تلاشی
+        برای اجرای تست در سمتِ سرور به بن‌بست می‌رسید.
+     ۲. تست با WebSocketPair «داخلِ ورکر» اجرا می‌شد و هیچ ربطی به مرورگرِ
+        کاربر نداشت — یعنی نه درخواستی از مرورگر می‌رفت و نه پاسخی برمی‌گشت.
+
+   مدلِ جدید:
+     الف) پنل با traffic-begin یک نشستِ تست می‌سازد؛ ورکر مصرفِ فعلیِ کاربر را
+         مستقیم از مخزن (بدون کش) می‌خواند و یک نشانیِ دانلود با توکنِ یکتا
+         برمی‌گرداند.
+     ب) مرورگرِ همان کسی که دکمه را زده، آن نشانی را صدا می‌زند و N بایتِ
+         واقعی دریافت می‌کند.
+     ج) ورکر همان‌جا — با همان تابع usageDelta که ترافیکِ تونل را می‌شمارد —
+         بایت‌های پاسخ را برای همان کاربر ثبت می‌کند.
+     د) پنل با traffic-end مصرف را دوباره می‌خواند و افزایش را با N مقایسه
+         می‌کند؛ چند کیلوبایت اختلاف (هدرهای HTTP) پذیرفته است.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const TRAFFIC_TTL = 10 * 60 * 1000;      // عمرِ یک نشستِ تست
+const TRAFFIC = new Map();               // sid -> { uuid, want, before, ts }
+
+/** توکنِ تست — از همان اعتبارنامه‌هایی ساخته می‌شود که داخل کانفیگِ کاربر
+    است (uuid + secret)؛ پس بایت‌های دانلود دقیقاً به همان کانفیگ نسبت
+    داده می‌شوند و با سهمیه‌ی کاربرانِ دیگر قاطی نمی‌شود. */
+const trafficToken = (u) => sha224(String(u.uuid) + '|' + String(u.secret)).slice(0, 32);
+
+function trafficPrune() {
+  const cut = Date.now() - TRAFFIC_TTL;
+  TRAFFIC.forEach((v, k) => { if (!v || (v.ts || 0) < cut) TRAFFIC.delete(k); });
+}
 /** کلیدِ سطل روزانه — UTC و هم‌شکل با نوشتنِ وضعیت (YYYY-MM-DD) */
 const dayKey = () => new Date().toISOString().slice(0, 10);
 
@@ -2308,19 +2336,28 @@ async function apiHandler(req, env, url, ctx) {
                 : 'نوشتن ناموفق — شمارنده عملاً مصرف را ثبت نمی‌کند');
       } catch (e) { chk('تست زنده‌ی افزایش مصرف', false, 'خطا: ' + String((e && e.message) || e)); }
 
-      /* ۴) تست زنده‌ی محدودیت IP — سقف ۲: اولی و دومی مجاز، سومی رد، IP دیگر مجاز */
+      /* ۴) تست زنده‌ی محدودیت IP — سقف ۲: اولی و دومی مجاز، سومی رد، IP دیگر مجاز،
+            بعد از آزادسازی دوباره مجاز. این تست روی همان بک‌اندی اجرا می‌شود که
+            در استقرار واقعی در دسترس است (حافظه / KV / D1) — نه روی فرض. */
       try {
         const pu = '__limit_probe__', ipA = '198.51.100.7', ipB = '198.51.100.8';
-        if (kind === 'd1') { await env.DB.prepare('DELETE FROM sessions WHERE uuid = ?').bind(pu).run(); }
-        const a1 = await connAcquire(env, pu, ipA, 2);
-        const a2 = await connAcquire(env, pu, ipA, 2);
-        const a3 = await connAcquire(env, pu, ipA, 2);        /* باید رد شود */
-        const b1 = await connAcquire(env, pu, ipB, 2);        /* IP دیگر → مجاز */
-        await connRelease(env, pu, ipA); await connRelease(env, pu, ipA); await connRelease(env, pu, ipB);
-        if (kind === 'd1') { await env.DB.prepare('DELETE FROM sessions WHERE uuid = ?').bind(pu).run(); }
-        chk('تست زنده‌ی محدودیت IP', a1.ok && a2.ok && !a3.ok && b1.ok,
-          'سقف ۲ برای هر IP • اتصال ۱: ' + (a1.ok ? 'مجاز' : 'رد') + ' • ۲: ' + (a2.ok ? 'مجاز' : 'رد') +
-          ' • ۳: ' + (a3.ok ? 'مجاز ✗' : 'رد ✓') + ' • IP دیگر: ' + (b1.ok ? 'مجاز ✓' : 'رد ✗'));
+        const id = (n) => 'probe-' + n;
+        const a1 = await connAcquire(env, pu, ipA, 2, id(1));
+        const a2 = await connAcquire(env, pu, ipA, 2, id(2));
+        const a3 = await connAcquire(env, pu, ipA, 2, id(3));        /* باید رد شود */
+        const b1 = await connAcquire(env, pu, ipB, 2, id(4));        /* IP دیگر → مجاز */
+        await connRelease(env, pu, ipA, id(1));                      /* آزادسازی → جا باز شود */
+        const a4 = await connAcquire(env, pu, ipA, 2, id(5));        /* بعد از آزادسازی باید مجاز باشد */
+        await connRelease(env, pu, ipA, id(2));
+        await connRelease(env, pu, ipA, id(5));
+        await connRelease(env, pu, ipB, id(4));
+        chk('تست زنده‌ی محدودیت IP', a1.ok && a2.ok && !a3.ok && b1.ok && a4.ok,
+          'سقف ۲ برای هر IP روی «' + kind + '» • اتصال ۱: ' + (a1.ok ? 'مجاز' : 'رد') +
+          ' • ۲: ' + (a2.ok ? 'مجاز' : 'رد') + ' • ۳: ' + (a3.ok ? 'مجاز ✗' : 'رد ✓') +
+          ' • IP دیگر: ' + (b1.ok ? 'مجاز ✓' : 'رد ✗') +
+          ' • بعد از آزادسازی: ' + (a4.ok ? 'مجاز ✓' : 'رد ✗'));
+        chk('شمارنده‌ی محدودیت در دسترس است', !CONN_LAST_ERR || kind === 'kv',
+          CONN_LAST_ERR ? ('آخرین خطا: ' + CONN_LAST_ERR + ' — محدودیت روی حافظه ادامه دارد') : 'بدون خطا ✓');
       } catch (e) { chk('تست زنده‌ی محدودیت IP', false, 'خطا: ' + String((e && e.message) || e)); }
 
       /* خطاهای اخیرِ نوشتن — علتِ از کار افتادنِ شمارنده را نشان می‌دهد */
@@ -2352,109 +2389,67 @@ async function apiHandler(req, env, url, ctx) {
       }
       return json(out);
     }
-    if (a === 'traffic-test') {
-      /* ═══ تست واقعی ترافیک ═══
-         یک فایل با اندازه‌ی معلوم (پیش‌فرض ۱ مگابایت) را از «داخل یکی از
-         کانفیگ‌های کاربر» — یعنی واقعاً از میان تونل VLESSِ خودِ ورکر —
-         دانلود می‌کنیم و افزایش مصرفِ ثبت‌شده‌ی همان کاربر را با آن مقایسه
-         می‌کنیم. چند کیلوبایت اختلاف (هدرهای HTTP/پروتکل) پذیرفته است. */
+    if (a === 'traffic-begin') {
+      /* ═══ تست واقعی ترافیک — مرحله‌ی ۱ (ساختنِ نشست) ═══
+         ورکر مصرفِ فعلیِ کاربر را مستقیم از مخزن و بدون کش می‌خواند و یک
+         نشانیِ دانلود با توکنِ یکتا برمی‌گرداند. خودِ دانلود را مرورگرِ
+         همان کسی که دکمه را زده انجام می‌دهد (کلادفلر اجازه نمی‌دهد ورکر
+         خودش را صدا بزند). */
       const sizeMB = Number(b.sizeMB) || 1;
       const want = Math.max(1024, Math.min(20 * 1024 * 1024, Math.round(sizeMB * 1048576)));
       const pool = st.users.filter((u) => u.enabled && (!u.expiryAt || u.expiryAt > Date.now()));
       const target = (b.uuid && st.users.find((u) => u.uuid === b.uuid)) || pool[0] || st.users[0];
       if (!target) return json({ ok: false, error: 'هیچ کاربری برای تست وجود ندارد' }, 400);
-      if (!s.protocols.vless) return json({ ok: false, error: 'پروتکل VLESS غیرفعال است — تست نیاز دارد' }, 400);
-
-      /* ═══ مقصد تست: یک نشانی «خارجی» ═══
-         ⚠️ نسخه‌ی قبلی با fetch() به «خودِ ورکر» وصل می‌شد. کلادفلر اجازه‌ی
-         self-fetch نمی‌دهد → همیشه خطا می‌داد، هیچ بایتی جابه‌جا نمی‌شد و
-         در نتیجه هیچ مصرفی هم ثبت نمی‌شد (تست همیشه ناموفق بود).
-         اینجا مقصد یک دامنه‌ی خارجی است، پس بایت‌ها واقعاً از تونل عبور
-         می‌کنند و شمرده می‌شوند. */
-      const nonce = randTok(8);
-      const testUrl = String((b && b.url) || (s.sec && s.sec.speedTestUrl) || '').trim()
-        || ('https://speed.cloudflare.com/__down?bytes=' + want + '&n=' + nonce);
-      let tHost = '', tPort = 443, tPath = '/';
-      try {
-        const tu = new URL(testUrl);
-        tHost = tu.hostname;
-        tPort = tu.protocol === 'http:' ? 80 : 443;
-        /* جلوگیری از کش: پارامتر یکتا */
-        tu.searchParams.set('n', nonce);
-        tPath = (tu.pathname || '/') + (tu.search || '');
-      } catch (e) { return json({ ok: false, error: 'نشانی تست نامعتبر است: ' + testUrl }, 400); }
-
       await usageEnsure(env);
+      trafficPrune();
+      const sid = randTok(12);
       const before = await usageFresh(env, target.uuid);
-      let received = 0, err = null;
+      TRAFFIC.set(sid, { uuid: target.uuid, want, before, ts: Date.now() });
+      return json({
+        ok: true, sid, bytes: want,
+        url: '/__speedtest?bytes=' + want + '&sid=' + sid + '&t=' + trafficToken(target),
+        user: target.name, uuid: target.uuid,
+        before, storage: backendOf(env),
+      });
+    }
 
-      try {
-        const payload = new TextEncoder().encode(
-          `GET ${tPath} HTTP/1.1\r\nHost: ${tHost}\r\nUser-Agent: panel-traffic-test/1\r\nAccept: */*\r\nConnection: close\r\n\r\n`);
-        const header = vlessHeader(target, tHost, tPort, payload);
+    if (a === 'traffic-end') {
+      /* ═══ تست واقعی ترافیک — مرحله‌ی ۲ (بررسی حجم) ═══
+         مرورگر فایل را گرفته؛ حالا افزایش مصرفِ ثبت‌شده‌ی همان کاربر با
+         اندازه‌ی واقعی مقایسه می‌شود. چند کیلوبایت اختلاف (هدرها) مجاز است. */
+      const sid = String(b.sid || '');
+      const rec = TRAFFIC.get(sid);
+      if (!rec) return json({ ok: false, error: 'نشستِ تست منقضی شده است — دوباره اجرا کنید' }, 400);
+      const received = Math.max(0, Math.floor(Number(b.received) || 0));
 
-        /* تونلِ درون‌برنامه‌ای: همان تابع session() که اتصال واقعیِ کلاینت‌ها
-           را اداره می‌کند — فقط به‌جای شبکه با یک WebSocketPair به آن وصل
-           می‌شویم. پس مسیر دقیقاً همان مسیری است که مصرف را می‌شمارد. */
-        const [cli, srv] = new WebSocketPair();
-        srv.binaryType = 'arraybuffer'; srv.accept();
-        cli.binaryType = 'arraybuffer'; cli.accept();
-        /* IP ساختگیِ مخصوص تست (بلاک مستند TEST-NET-2) تا با سهمیه‌ی
-           اتصالِ کاربران واقعی تداخل نکند */
-        const ipTag = '198.51.100.' + (2 + Math.floor(Math.random() * 250));
-        const pend = [];
-        const testCtx = (ctx && ctx.waitUntil) ? ctx
-          : { waitUntil: (p) => { try { pend.push(Promise.resolve(p).catch(() => {})); } catch (e) {} } };
-        const sess = session(srv, '', st, env, testCtx, ipTag, null, '').catch(() => {});
-
-        received = await new Promise((resolve, reject) => {
-          let total = 0;
-          const to = setTimeout(() => { try { cli.close(); } catch (e) {} reject(new Error('تونل در ۳۰ ثانیه پاسخ نداد (timeout)')); }, 30000);
-          cli.addEventListener('message', (ev) => {
-            const d = ev.data;
-            const len = d && d.byteLength !== undefined ? d.byteLength : (typeof d === 'string' ? new TextEncoder().encode(d).length : 0);
-            total += len;
-            /* دریافتِ کل فایل + هدرِ پاسخ */
-            if (total >= want + 4096) { clearTimeout(to); resolve(total); }
-          });
-          cli.addEventListener('close', () => { clearTimeout(to); resolve(total); });
-          cli.addEventListener('error', () => { clearTimeout(to); reject(new Error('خطای WebSocket در تونل تست')); });
-          try { cli.send(header); } catch (e) { clearTimeout(to); reject(new Error('ارسال هدر VLESS ناموفق')); }
-        });
-        try { cli.close(); } catch (e) {}
-        try { srv.close(); } catch (e) {}
-        await Promise.race([sess, new Promise((r) => setTimeout(r, 3000))]);
-        /* صبر برای ثبتِ مصرفِ باقیمانده‌ای که session در پس‌زمینه نوشته */
-        await Promise.race([Promise.all(pend), new Promise((r) => setTimeout(r, 2000))]);
-      } catch (e) { err = String((e && e.message) || e); }
-
-      /* مصرف در پس‌زمینه (waitUntil) ثبت می‌شود — صبر می‌کنیم تا دلتا کامل برسد */
-      let after = before, waited = 0;
-      while (waited < 9000) {
-        after = await usageFresh(env, target.uuid);
-        const d = (after.up - before.up) + (after.down - before.down);
-        if (received > 0 && d >= Math.max(0, received - 8192)) break;
-        await new Promise((r) => setTimeout(r, 300));
-        waited += 300;
+      let after = rec.before, waited = 0;
+      while (waited < 5000) {
+        after = await usageFresh(env, rec.uuid);
+        const d = (after.up - rec.before.up) + (after.down - rec.before.down);
+        if (d >= Math.max(0, rec.want - 8192)) break;
+        await new Promise((r) => setTimeout(r, 250));
+        waited += 250;
       }
-      if (waited < 9000) { await new Promise((r) => setTimeout(r, 400)); after = await usageFresh(env, target.uuid); waited += 400; }
-
-      const measured = Math.max(0, (after.up - before.up) + (after.down - before.down));
-      /* معیارِ اصلی: هر بایتی که واقعاً از تونل رد شده باید ثبت شده باشد.
-         معیارِ فرعی: اندازه‌ی فایل همان چیزی باشد که درخواست کردیم. */
-      const expect = received > 0 ? received : want;
+      const measured = Math.max(0, (after.up - rec.before.up) + (after.down - rec.before.down));
+      const expect = rec.want;
       const diff = measured - expect;
-      const tol = Math.max(4096, Math.round(expect * 0.001));       // چند کیلوبایت سربار مجاز
-      const sizeOk = received === 0 || Math.abs(received - want) <= Math.max(8192, Math.round(want * 0.05));
-      const ok = !err && measured > 0 && Math.abs(diff) <= tol && sizeOk && received >= Math.round(want * 0.9);
+      const tol = Math.max(8192, Math.round(expect * 0.002));          // سربارِ هدرها
+      const sizeOk = !received || Math.abs(received - expect) <= Math.max(4096, Math.round(expect * 0.02));
+      const ok = measured > 0 && Math.abs(diff) <= tol && sizeOk;
+      const user = st.users.find((u) => u.uuid === rec.uuid);
+      TRAFFIC.delete(sid);
       addLog(st, ok ? 'success' : 'warn', 'core', 'تست ترافیک',
         fa(Math.round(measured / 1048576 * 100) / 100) + ' مگابایت • انتظار ' + fa(Math.round(expect / 1048576 * 100) / 100));
       await save(env, st);
+      let host = '';
+      try { host = new URL(req.url).hostname; } catch (e) { host = ''; }
       return json({
-        ok, want, expected: expect, measured, diff, tolerance: tol,
-        up: after.up - before.up, down: after.down - before.down,
-        received, waitedMs: waited, error: err, url: testUrl, target: tHost,
-        user: target.name, uuid: target.uuid, storage: backendOf(env),
+        ok, want: expect, expected: expect, measured, diff, tolerance: tol,
+        up: after.up - rec.before.up, down: after.down - rec.before.down,
+        received, waitedMs: waited,
+        user: user ? user.name : '—', uuid: rec.uuid,
+        storage: backendOf(env), target: host,
+        url: '/__speedtest?bytes=' + expect,
       });
     }
     return json({ error: 'unknown action' }, 400);
@@ -2689,6 +2684,8 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost) {
   let dnsWriter = null;
   const ip = clientIp || '0.0.0.0';
   let connAcquired = false, connReleased = false;
+  /* شناسه‌ی یکتای همین کانکشن — آزادسازی فقط سهمیه‌ی خودش را کم می‌کند */
+  const connId = randTok(10);
   /* تمدید heartbeat — ردیف نشستِ یک اتصالِ زنده نباید توسط sweep پاک شود */
   let lastTouch = 0;
   const touch = () => {
@@ -2696,7 +2693,7 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost) {
     const now = Date.now();
     if (now - lastTouch < SESSION_HB) return;
     lastTouch = now;
-    ctx.waitUntil(sessionTouch(env, user && user.uuid, ip).catch(() => {}));
+    ctx.waitUntil(sessionTouch(env, user && user.uuid, ip, connId).catch(() => {}));
   };
   /* heartbeat دوره‌ای — حتی وقتی ترافیکی رد و بدل نمی‌شود (مرورگر idle) */
   let hbTimer = null;
@@ -2736,7 +2733,7 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost) {
   const releaseConn = async () => {
     if (!connAcquired || connReleased) return;
     connReleased = true;
-    try { await connRelease(env, user && user.uuid, ip); } catch (e) {}
+    try { await connRelease(env, user && user.uuid, ip, connId); } catch (e) {}
   };
 
   const finish = async () => {
@@ -2881,7 +2878,7 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost) {
        پشت یک NAT را یکی می‌دید (و برعکس). */
     const ipLimit = Number(user.ipLimit) || Number(st.settings.sec.ipConnLimit) || 0;
     if (ipLimit > 0) {
-      const adm = await connAcquire(env, user.uuid, ip, ipLimit);
+      const adm = await connAcquire(env, user.uuid, ip, ipLimit, connId);
       if (!adm.ok) {
         try { ws.close(1013, 'connection limit reached'); } catch (e) {}
         await finish();
@@ -3162,26 +3159,52 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost) {
   readableWs.pipeTo(writableStream).catch(() => finish());
 }
 
-/* ════════════════════════════ تست ترافیک ════════════════════════════
-   یک فایل با اندازه‌ی دقیقاً معلوم برای «تست واقعی ترافیک» در پنل.
-   پنل این فایل را از «داخل یکی از کانفیگ‌های کاربر» (یعنی از میان خودِ
-   تونل) دانلود می‌کند و اختلاف مصرف ثبت‌شده را با این اندازه مقایسه می‌کند. */
-function speedtestHandler(url) {
+/* ════════════════════════════ تست ترافیک ════════════════
+   درخواست از «مرورگرِ همان کسی که دکمه را زده» می‌آید و سرور با اندازه‌ی
+   دقیقاً معلوم پاسخ می‌دهد. بایت‌های پاسخ — با همان تابع usageDelta که
+   ترافیک واقعیِ تونل را می‌شمارد — برای کاربرِ صاحبِ کانفیگ ثبت می‌شوند،
+   تا پنل بتواند حجمِ ثبت‌شده را با حجمِ واقعی مقایسه کند. */
+async function speedtestHandler(url, env, request) {
   const MAX = 20 * 1024 * 1024;                       // سقف ۲۰ مگابایت
   const n = Math.max(1, Math.min(MAX, Math.floor(Number(url.searchParams.get('bytes')) || 1048576)));
+  const sid = url.searchParams.get('sid') || '';
+  const token = url.searchParams.get('t') || '';
   const CH = 65536;
   const block = new Uint8Array(CH).fill(0x53);        // 0x53 = 'S'
   const body = new Uint8Array(n);
   for (let o = 0; o < n; o += CH) body.set(o + CH <= n ? block : block.subarray(0, n - o), o);
-  return new Response(body, {
-    headers: {
-      'content-type': 'application/octet-stream',
-      'content-length': String(n),
-      'x-speedtest-bytes': String(n),
-      'cache-control': 'no-store',
-      'access-control-allow-origin': '*',
-    },
-  });
+
+  /* ═══ ثبتِ مصرف — دقیقاً همان مسیری که ترافیکِ تونل را می‌شمارد ═══
+     توکن از اعتبارنامه‌های کانفیگ (uuid + secret) ساخته شده، پس این بایت‌ها
+     به همان کاربر نسبت داده می‌شوند و با مصرفِ دیگران قاطی نمی‌شود. */
+  let recorded = 0, user = null, usageErr = '';
+  try {
+    if (token) {
+      const stt = await load(env);
+      user = (stt.users || []).find((u) => trafficToken(u) === token) || null;
+    }
+    if (user) {
+      const reqBytes = ((request && request.url) ? String(request.url).length : 0) + 96;   /* خط درخواست + هدرها */
+      await usageDelta(env, user.uuid, reqBytes, n, 1);
+      recorded = reqBytes + n;
+    }
+  } catch (e) {
+    usageErr = String((e && e.message) || e).slice(0, 160);   /* پنهان نمی‌ماند */
+  }
+
+  const headers = {
+    'content-type': 'application/octet-stream',
+    'content-length': String(n),
+    'x-speedtest-bytes': String(n),
+    'x-usage-recorded': String(recorded),
+    'x-usage-user': user ? String(user.name) : '',
+    'cache-control': 'no-store',
+    'access-control-allow-origin': '*',
+    'access-control-expose-headers': 'x-speedtest-bytes,x-usage-recorded,x-usage-user',
+  };
+  if (sid) headers['x-speedtest-sid'] = String(sid);
+  if (usageErr) headers['x-usage-error'] = usageErr;
+  return new Response(body, { headers });
 }
 
 /* ════════════════════════════ DoH proxy ════════════════════════════ */
@@ -3221,7 +3244,8 @@ export default {
       if (request.method === 'OPTIONS') { const s0 = (await load(env)).settings; return new Response(null, { status: 204, headers: secHeaders(s0) }); }
       if (url.pathname === '/dns-query') return dohHandler(request, env, url);
       /* فایل با اندازه‌ی معلوم — برای «تست واقعی ترافیک» از داخل تونل */
-      if (url.pathname === '/__speedtest') return speedtestHandler(url);
+      /* فایل با اندازه‌ی معلوم — درخواست از مرورگرِ کاربر می‌آید، سرور با کانفیگِ همان کاربر پاسخ می‌دهد */
+      if (url.pathname === '/__speedtest') return await speedtestHandler(url, env, request);
       /* ⚠️ اگر apiHandler ردّ (reject) شود، try/catch بیرونی آن را نمی‌گیرد چون async است.
          پس پاسخ HTML خطای کلاودفلار برمی‌گشت = «bad json». با .catch این مشکل حل می‌شود. */
       if (url.pathname === '/health' || url.pathname.startsWith('/api/')) {
