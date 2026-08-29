@@ -358,19 +358,19 @@ async function usageInit(env, st) {
 
 const CONN_TTL = 300000;              // ۵ دقیقه — عمر یک اتصالِ بی‌heartbeat
 const CONN_HB = 120000;               // تمدید هر ۲ دقیقه
-const CONNS = new Map();              // "uuid|ip" -> Map<connId, lastTs>   (مدلِ Nahan)
+const CONNS = new Map();              // uuid -> Map<ip, Map<connId, lastTs>>
 let CONN_LAST_ERR = null;             // آخرین خطا — در کارت سلامت نمایش داده می‌شود
 let CONN_DENIES = 0;                  // تعداد رد شدن‌ها (اثباتِ فعال بودن محدودیت)
 let CONN_ACQUIRES = 0;
 
-const connKeyOf = (uuid, ip) => String(uuid) + '|' + String(ip);
 const KV_C = (uuid, ip, id) => 'c:' + uuid + ':' + ip + ':' + id;
+const connErr = (tag, e) => { CONN_LAST_ERR = tag + ': ' + String((e && e.message) || e); };
 
 /* ═══ انتخابِ بک‌اندِ محدودیت (علتِ شماره‌ی یکِ «محدودیت کار نمی‌کند») ═══
    یک ورکر روی صدها isolate اجرا می‌شود و هر isolate حافظه‌ی خودش را دارد؛
-   پس یک Map در حافظه فقط «همین isolate» را می‌شمرد و اتصالِ سوم که به
-   isolate دیگری می‌افتد، از صفر شمرده می‌شود → محدودیت عملاً بی‌اثر.
-   برای شمارشِ واقعاً سراسری باید یک مرجعِ مشترک وجود داشته باشد:
+   پس یک Map در حافظه فقط «همین isolate» را می‌شمارد و اتصالی که به isolate
+   دیگری می‌افتد از صفر شمرده می‌شود → محدودیت عملاً بی‌اثر. برای شمارشِ
+   واقعاً سراسری باید یک مرجعِ مشترک وجود داشته باشد:
      do  → Durable Object: یک نمونه‌ی جهانی برای کل ورکر — دقیق و همگام
      kv  → KV: مشترک بین isolateها، اما eventually-consistent (تقریبی)
      mem → فقط حافظه‌ی همین isolate: هیچ تضمینی بین isolateها نمی‌دهد
@@ -398,35 +398,73 @@ async function limiterRpc(env, path, body) {
   return await r.json();
 }
 
-/** حذفِ ورودی‌های مرده از نگاشتِ اتصال‌های یک IP */
-function connPrune(m, now) {
-  if (!m) return 0;
-  m.forEach((ts, id) => { if (!ts || now - ts > CONN_TTL) m.delete(id); });
-  return m.size;
+/* ═══════════════════════════════════════════════════════════════════════════
+   معنای سقف — مدلِ Nova-Proxy (نه تعدادِ کانکشن)
+   ───────────────────────────────────────────────────────────────────────────
+   Nova-Proxy سقف را «تعداد IPهای همزمانِ مجاز برای هر کاربر» می‌سنجد
+   (فیلد ipLimit روی پروفایل + activeIps). منطقش دقیقاً این است:
+
+       if (ip در فهرستِ فعال‌ها هست)  → همیشه مجاز (فقط شمارنده‌اش +۱)
+       else if (تعداد IPهای فعال >= سقف) → رد با دلیل ip-limit
+
+   پس با سقفِ ۱: اولین IP وصل می‌شود و IP دوم رد می‌شود — و اتصالِ دوم
+   از همان IP اول همچنان مجاز است. این همان رفتاری است که کاربر انتظار دارد.
+
+   نگه‌داری:  uuid -> { ip -> { connId -> lastTs } }
+   • یک IP تا وقتی «زنده» است که دست‌کم یک اتصالِ فعال داشته باشد؛
+   • هر اتصال شناسه‌ی یکتا دارد، پس آزادسازی فقط سهمیه‌ی خودش را کم می‌کند؛
+   • ورودی‌های بی‌heartbeat بعد از CONN_TTL خودبه‌خود پاک می‌شوند؛
+   • سقفِ ۰ یا خالی = نامحدود.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** نگاشتِ کاربر (در صورت نیاز ساخته می‌شود) */
+function userMapOf(uuid, create) {
+  let um = CONNS.get(uuid);
+  if (!um && create) { um = new Map(); CONNS.set(uuid, um); }
+  return um;
 }
 
-/** پاک‌سازیِ تنبلِ همه‌ی نگاشت‌ها — ارزان و بدون کوئری */
-function sessionsSweep() {
-  const now = Date.now();
-  CONNS.forEach((m, k) => { if (!connPrune(m, now)) CONNS.delete(k); });
+/** حذفِ ورودی‌های مرده؛ می‌گرداند: Map<ip, تعداد اتصال‌های زنده> */
+function pruneUser(um, now) {
+  if (!um) return new Map();
+  um.forEach((m, ip) => {
+    if (!m || !(m instanceof Map)) { um.delete(ip); return; }
+    m.forEach((ts, id) => { if (!ts || now - ts > CONN_TTL) m.delete(id); });
+    if (!m.size) um.delete(ip);
+  });
+  const out = new Map();
+  um.forEach((m, ip) => { if (m && m.size) out.set(ip, m.size); });
+  return out;
 }
 
-/** تعداد اتصال‌های زنده‌ی همین IP در حافظه */
-function connCountMem(uuid, ip, now) {
-  const m = CONNS.get(connKeyOf(uuid, ip));
-  if (!m) return 0;
-  return connPrune(m, now || Date.now());
+/** تصمیمِ پذیرش — یکجا و مشترک بین DO / KV / حافظه تا رفتار یکی باشد */
+function admitDecision(ips, ip, limit) {
+  if (ips.has(ip)) return { ok: true, reason: 'same-ip' };          /* همان IP → همیشه مجاز */
+  if (limit > 0 && ips.size >= limit) return { ok: false, reason: 'ip-limit' };
+  return { ok: true, reason: 'new-ip' };
+}
+
+/** آینه‌ی حافظه برای نمایشِ فوری در پنل (مرجعِ تصمیم، DO است) */
+function mirrorSet(uuid, ip, connId, now, ok) {
+  if (!uuid || !ip || !connId) return;
+  const um = userMapOf(uuid, false);
+  if (!um) return;
+  const m = um.get(ip);
+  if (!m) return;
+  if (ok) m.set(connId, now); else m.delete(connId);
+  if (!m.size) um.delete(ip);
+  if (!um.size) CONNS.delete(uuid);
 }
 
 /**
- * افزایش شمارنده‌ی اتصالِ «همین IP» برای این کاربر.
- * connId شناسه‌ی یکتای همین کانکشن است — آزادسازی دقیقاً همان را کم می‌کند
- * (نسخه‌ی قبلی بدون شناسه بود و releaseِ یک اتصال، سهمیه‌ی اتصالِ دیگری را
- * کم می‌کرد). برمی‌گرداند: { ok, conns, limit, enforced, storage }
+ * ثبت یک اتصال برای (کاربر، IP) و اعمالِ سقفِ همزمانی.
+ * برمی‌گرداند: { ok, ips, conns, limit, enforced, reason, storage }
+ *   ips   = تعداد IPهای همزمانِ این کاربر
+ *   conns = تعداد اتصال‌های همین IP
  */
 async function connAcquire(env, uuid, ip, limit, connId) {
   limit = Number(limit) || 0;
-  if (!uuid || !ip) return { ok: true, conns: 0, limit, enforced: false, reason: 'missing-identity' };
+  if (!uuid || !ip) return { ok: true, ips: 0, conns: 0, limit, enforced: false, reason: 'missing-identity' };
   const id = connId || randTok(10);
   const now = Date.now();
   CONN_ACQUIRES++;
@@ -436,81 +474,80 @@ async function connAcquire(env, uuid, ip, limit, connId) {
   if (backend === 'do') {
     try {
       const r = await limiterRpc(env, '/acquire', { uuid, ip, connId: id, limit, now });
-      /* حافظه‌ی محلی فقط آینه است برای نمایشِ فوری در پنل */
-      let m0 = CONNS.get(connKeyOf(uuid, ip));
-      if (!m0) { m0 = new Map(); CONNS.set(connKeyOf(uuid, ip), m0); }
-      if (r && r.ok) m0.set(id, now);
-      else { connPrune(m0, now); CONN_DENIES++; }
+      mirrorSet(uuid, ip, id, now, !!(r && r.ok));
+      if (r && !r.ok) CONN_DENIES++;
       return Object.assign({}, r, { storage: 'do' });
     } catch (e) {
       /* خطای DO هرگز محدودیت را خاموش نمی‌کند — گزارش می‌شود و با حافظه ادامه می‌یابد */
-      CONN_LAST_ERR = 'DO: ' + String((e && e.message) || e);
+      connErr('DO', e);
     }
   }
 
   /* ── ۲) حافظه: سریع، بدون نیاز به بایندینگ (فقط همین isolate) ── */
-  let m = CONNS.get(connKeyOf(uuid, ip));
-  if (!m) { m = new Map(); CONNS.set(connKeyOf(uuid, ip), m); }
-  const memBefore = connPrune(m, now);
-  if (limit > 0 && memBefore >= limit) {
+  const um = userMapOf(uuid, true);
+  const ipsMem = pruneUser(um, now);
+  const dec = admitDecision(ipsMem, ip, limit);
+  if (!dec.ok) {
     CONN_DENIES++;
-    return { ok: false, conns: memBefore, limit, enforced: true, storage: backendOf(env), reason: 'memory-limit' };
+    return { ok: false, ips: ipsMem.size, conns: ipsMem.get(ip) || 0, limit, enforced: true, storage: backendOf(env), reason: dec.reason };
   }
-  m.set(id, now);
-  const memAfter = m.size;
+  let im = um.get(ip);
+  if (!im) { im = new Map(); um.set(ip, im); }
+  im.set(id, now);
+  let ips = um.size;
 
   /* ── ۳) KV (اختیاری): شمارشِ مشترک بین isolateها ── */
-  let conns = memAfter;
   if (backend === 'kv' && env && env.KV) {
     try {
-      const prefix = 'c:' + uuid + ':' + ip + ':';
-      const list = await env.KV.list({ prefix });
-      let live = 0;
+      const list = await env.KV.list({ prefix: 'c:' + uuid + ':' });
+      const kvIps = new Map();                       /* ip -> تعداد اتصال */
       for (const k of ((list && list.keys) || [])) {
-        const raw = await env.KV.get(k.name);        /* مقدار = آخرین heartbeat */
-        const ts = Number(raw) || 0;
-        if (raw === null || !ts || now - ts > CONN_TTL) {
-          try { await env.KV.delete(k.name); } catch (e) {}   /* منقضی — پاک شود */
-        } else live++;
+        const p = String(k.name).split(':');         /* c : uuid : ip : connId */
+        if (p.length < 4) continue;
+        kvIps.set(p[2], (kvIps.get(p[2]) || 0) + 1); /* منقضی‌شده‌ها در فهرست نیستند */
       }
-      if (limit > 0 && live >= limit) {
-        m.delete(id);                                         /* افزایشِ رد شده برگردد */
+      const dec2 = admitDecision(kvIps, ip, limit);
+      if (!dec2.ok) {
+        const m2 = um.get(ip);                       /* افزایشِ رد شده برگردد */
+        if (m2) { m2.delete(id); if (!m2.size) um.delete(ip); }
+        if (!um.size) CONNS.delete(uuid);
         CONN_DENIES++;
-        return { ok: false, conns: Math.max(memBefore, live), limit, enforced: true, storage: 'kv', reason: 'kv-limit' };
+        return { ok: false, ips: Math.max(ipsMem.size, kvIps.size), conns: kvIps.get(ip) || 0, limit, enforced: true, storage: 'kv', reason: dec2.reason };
       }
       await env.KV.put(KV_C(uuid, ip, id), String(now), { expirationTtl: Math.ceil(CONN_TTL / 1000) });
-      conns = Math.max(memAfter, live + 1);
+      ips = Math.max(ips, kvIps.size + (kvIps.has(ip) ? 0 : 1));
     } catch (e) {
       /* خطای KV هرگز باعث نمی‌شود محدودیت خاموش شود — فقط گزارش می‌شود */
-      CONN_LAST_ERR = 'KV: ' + String((e && e.message) || e);
+      connErr('KV', e);
     }
   }
-  return { ok: true, conns, limit, enforced: limit > 0, id, storage: backend };
+  const cur = um.get(ip);
+  return { ok: true, ips, conns: cur ? cur.size : 0, limit, enforced: limit > 0, id, reason: dec.reason, storage: backend };
 }
 
-/** کاهش شمارنده — فقط همین connId؛ اگر نگاشت خالی شد حذف می‌شود */
+/** کاهش شمارنده — فقط همین connId؛ اگر IP بی‌اتصال شد، آزاد می‌شود */
 async function connRelease(env, uuid, ip, connId) {
   if (!uuid || !ip) return 0;
   const backend = limiterBackend(env);
   if (backend === 'do') {
     try { await limiterRpc(env, '/release', { uuid, ip, connId }); }
-    catch (e) { CONN_LAST_ERR = 'DO: ' + String((e && e.message) || e); }
+    catch (e) { connErr('DO', e); }
   }
-  const k = connKeyOf(uuid, ip);
-  const m = CONNS.get(k);
+  const um = CONNS.get(uuid);
   let left = 0;
-  if (m) {
-    if (connId) m.delete(connId);
-    else { /* بدون شناسه (اتصال‌های قدیمی): یکی را کم کن */
-      const first = m.keys().next();
-      if (!first.done) m.delete(first.value);
+  if (um) {
+    const m = um.get(ip);
+    if (m) {
+      if (connId) m.delete(connId);
+      else { const f = m.keys().next(); if (!f.done) m.delete(f.value); }
+      left = m.size;
+      if (!left) um.delete(ip);
     }
-    left = m.size;
-    if (!left) CONNS.delete(k);
+    if (!um.size) CONNS.delete(uuid);
   }
   if (backend === 'kv' && env && env.KV && connId) {
     try { await env.KV.delete(KV_C(uuid, ip, connId)); }
-    catch (e) { CONN_LAST_ERR = 'KV: ' + String((e && e.message) || e); }
+    catch (e) { connErr('KV', e); }
   }
   return left;
 }
@@ -519,16 +556,16 @@ async function connRelease(env, uuid, ip, connId) {
 async function sessionTouch(env, uuid, ip, connId) {
   if (!uuid || !ip || !connId) return;
   const now = Date.now();
-  const m = CONNS.get(connKeyOf(uuid, ip));
-  if (m && m.has(connId)) m.set(connId, now);
+  const um = CONNS.get(uuid);
+  if (um) { const m = um.get(ip); if (m && m.has(connId)) m.set(connId, now); }
   if (env && env.LIMITER) {
     try { await limiterRpc(env, '/touch', { uuid, ip, connId, now }); }
-    catch (e) { CONN_LAST_ERR = 'DO: ' + String((e && e.message) || e); }
+    catch (e) { connErr('DO', e); }
     return;
   }
   if (env && env.KV) {
     try { await env.KV.put(KV_C(uuid, ip, connId), String(now), { expirationTtl: Math.ceil(CONN_TTL / 1000) }); }
-    catch (e) { CONN_LAST_ERR = 'KV: ' + String((e && e.message) || e); }
+    catch (e) { connErr('KV', e); }
   }
 }
 
@@ -536,39 +573,42 @@ async function sessionTouch(env, uuid, ip, connId) {
 async function sessionsOf(env, uuid) {
   const now = Date.now();
   const out = new Map();
+  const push = (ip, conns, last) => {
+    const cur = out.get(ip);
+    if (cur) { cur.conns = Math.max(cur.conns, conns); cur.last_active = Math.max(cur.last_active || 0, last || 0); }
+    else out.set(ip, { ip, conns, last_active: last || 0 });
+  };
   /* مرجعِ جهانی: هرچه Durable Object می‌بیند همان حقیقت است */
   if (env && env.LIMITER) {
     try {
       const r = await limiterRpc(env, '/list', { uuid });
       for (const s of ((r && r.sessions) || [])) out.set(s.ip, s);
       return [...out.values()].sort((a, b) => (b.conns || 0) - (a.conns || 0));
-    } catch (e) { CONN_LAST_ERR = 'DO: ' + String((e && e.message) || e); }
+    } catch (e) { connErr('DO', e); }
   }
-  const push = (ip, conns, last) => {
-    const cur = out.get(ip);
-    if (cur) { cur.conns = Math.max(cur.conns, conns); cur.last_active = Math.max(cur.last_active || 0, last || 0); }
-    else out.set(ip, { ip, conns, last_active: last || 0 });
-  };
-  CONNS.forEach((m, k) => {
-    if (!String(k).startsWith(uuid + '|')) return;
-    const n = connPrune(m, now);
-    if (n <= 0) return;
-    let last = 0;
-    m.forEach((ts) => { if (ts > last) last = ts; });
-    push(String(k).split('|')[1], n, last);
-  });
+  const um = CONNS.get(uuid);
+  if (um) {
+    const ips = pruneUser(um, now);
+    ips.forEach((n, ip) => {
+      let last = 0;
+      const m = um.get(ip);
+      if (m) m.forEach((ts) => { if (ts > last) last = ts; });
+      push(ip, n, last);
+    });
+  }
   if (env && env.KV) {
     try {
       const list = await env.KV.list({ prefix: 'c:' + uuid + ':' });
+      const agg = new Map();
       for (const k of ((list && list.keys) || [])) {
-        const raw = await env.KV.get(k.name);
-        const ts = Number(raw) || 0;
-        if (!raw || !ts || now - ts > CONN_TTL) continue;
-        const parts = String(k.name).split(':');           /* c : uuid : ip : id */
-        if (parts.length < 4) continue;
-        push(parts[2], 1, ts);
+        const p = String(k.name).split(':');
+        if (p.length < 4) continue;
+        const cur = agg.get(p[2]) || { conns: 0, last: 0 };
+        cur.conns++;
+        agg.set(p[2], cur);
       }
-    } catch (e) { CONN_LAST_ERR = 'KV: ' + String((e && e.message) || e); }
+      agg.forEach((v, ip) => push(ip, v.conns, now));
+    } catch (e) { connErr('KV', e); }
   }
   return [...out.values()].sort((a, b) => (b.conns || 0) - (a.conns || 0));
 }
@@ -2404,26 +2444,47 @@ async function apiHandler(req, env, url, ctx) {
                 : 'نوشتن ناموفق — شمارنده عملاً مصرف را ثبت نمی‌کند');
       } catch (e) { chk('تست زنده‌ی افزایش مصرف', false, 'خطا: ' + String((e && e.message) || e)); }
 
-      /* ۴) تست زنده‌ی محدودیت IP — سقف ۲: اولی و دومی مجاز، سومی رد، IP دیگر مجاز،
-            بعد از آزادسازی دوباره مجاز. این تست روی همان بک‌اندی اجرا می‌شود که
-            در استقرار واقعی در دسترس است (حافظه / KV / D1) — نه روی فرض. */
+      /* ۴) تست زنده‌ی محدودیت — سقف = «تعداد IPهای همزمانِ هر کاربر» (مدلِ Nova-Proxy)
+            سناریو ۱ (سقف ۱): IP اول مجاز • اتصالِ دوم از همان IP هم مجاز • IP دوم رد می‌شود
+            سناریو ۲ (سقف ۲): دو IP مجاز • IP سوم رد می‌شود • بعد از آزادسازی جا باز می‌شود
+            تست روی همان بک‌اندی اجرا می‌شود که در استقرار واقعی در دسترس است. */
       try {
-        const pu = '__limit_probe__', ipA = '198.51.100.7', ipB = '198.51.100.8';
+        const pu = '__limit_probe__', ipA = '198.51.100.7', ipB = '198.51.100.8', ipC = '198.51.100.9';
         const id = (n) => 'probe-' + n;
-        const a1 = await connAcquire(env, pu, ipA, 2, id(1));
-        const a2 = await connAcquire(env, pu, ipA, 2, id(2));
-        const a3 = await connAcquire(env, pu, ipA, 2, id(3));        /* باید رد شود */
-        const b1 = await connAcquire(env, pu, ipB, 2, id(4));        /* IP دیگر → مجاز */
-        await connRelease(env, pu, ipA, id(1));                      /* آزادسازی → جا باز شود */
-        const a4 = await connAcquire(env, pu, ipA, 2, id(5));        /* بعد از آزادسازی باید مجاز باشد */
-        await connRelease(env, pu, ipA, id(2));
-        await connRelease(env, pu, ipA, id(5));
-        await connRelease(env, pu, ipB, id(4));
-        chk('تست زنده‌ی محدودیت IP', a1.ok && a2.ok && !a3.ok && b1.ok && a4.ok,
-          'سقف ۲ برای هر IP روی «' + lim + '» • اتصال ۱: ' + (a1.ok ? 'مجاز' : 'رد') +
-          ' • ۲: ' + (a2.ok ? 'مجاز' : 'رد') + ' • ۳: ' + (a3.ok ? 'مجاز ✗' : 'رد ✓') +
-          ' • IP دیگر: ' + (b1.ok ? 'مجاز ✓' : 'رد ✗') +
-          ' • بعد از آزادسازی: ' + (a4.ok ? 'مجاز ✓' : 'رد ✗'));
+        const nums = [11, 12, 13, 14, 21, 22, 23, 24];
+        const relAll = async () => {
+          for (const n of nums) {
+            await connRelease(env, pu, ipA, id(n));
+            await connRelease(env, pu, ipB, id(n));
+            await connRelease(env, pu, ipC, id(n));
+          }
+        };
+        /* ── سناریو ۱: سقفِ ۱ IP ── */
+        const s1a = await connAcquire(env, pu, ipA, 1, id(11));      /* مجاز */
+        const s1b = await connAcquire(env, pu, ipA, 1, id(12));      /* همان IP → مجاز */
+        const s1c = await connAcquire(env, pu, ipB, 1, id(13));      /* IP دوم → باید رد شود */
+        await connRelease(env, pu, ipA, id(11));
+        await connRelease(env, pu, ipA, id(12));
+        const s1d = await connAcquire(env, pu, ipB, 1, id(14));      /* بعد از آزادسازی → مجاز */
+        await relAll();
+        /* ── سناریو ۲: سقفِ ۲ IP ── */
+        const s2a = await connAcquire(env, pu, ipA, 2, id(21));      /* مجاز */
+        const s2b = await connAcquire(env, pu, ipB, 2, id(22));      /* مجاز */
+        const s2c = await connAcquire(env, pu, ipC, 2, id(23));      /* سومین IP → باید رد شود */
+        await connRelease(env, pu, ipA, id(21));
+        const s2d = await connAcquire(env, pu, ipC, 2, id(24));      /* بعد از آزادسازی → مجاز */
+        await relAll();
+        const okOne = s1a.ok && s1b.ok && !s1c.ok && s1d.ok;
+        const okTwo = s2a.ok && s2b.ok && !s2c.ok && s2d.ok;
+        const yn = (r, want) => (r.ok === want ? (want ? 'مجاز ✓' : 'مجاز ✗') : (want ? 'رد ✗' : 'رد ✓'));
+        chk('تست زنده‌ی محدودیت (سقف ۱ IP)', okOne,
+          'روی «' + lim + '» • اتصال ۱ از IP اول: ' + yn(s1a, true) +
+          ' • اتصال ۲ از همان IP: ' + yn(s1b, true) +
+          ' • IP دوم: ' + yn(s1c, false) +
+          ' • بعد از آزادسازی: ' + yn(s1d, true));
+        chk('تست زنده‌ی محدودیت (سقف ۲ IP)', okTwo,
+          'IP اول: ' + yn(s2a, true) + ' • IP دوم: ' + yn(s2b, true) +
+          ' • IP سوم: ' + yn(s2c, false) + ' • بعد از آزادسازی: ' + yn(s2d, true));
         /* بک‌اندِ محدودیت — باید صریح باشد: حافظه بین isolateها مشترک نیست */
         chk('مرجعِ شمارشِ محدودیت اتصال', lim === 'do',
           lim === 'do' ? 'Durable Object — یک نمونه‌ی سراسری؛ شمارش بین همه‌ی isolateها دقیق ✓'
@@ -2446,7 +2507,7 @@ async function apiHandler(req, env, url, ctx) {
       const gLimit = Number(s.sec.ipConnLimit) || 0;
       const withLimit = st.users.filter((u) => (Number(u.ipLimit) || 0) > 0).length;
       chk('محدودیت اتصال (فقط IP)', gLimit > 0 || withLimit > 0,
-        (gLimit > 0 ? 'پیش‌فرض سراسری: ' + fa(gLimit) + ' اتصال برای هر IP • ' : 'پیش‌فرض سراسری: نامحدود • ') +
+        (gLimit > 0 ? 'پیش‌فرض سراسری: ' + fa(gLimit) + ' IP همزمان برای هر کاربر • ' : 'پیش‌فرض سراسری: نامحدود • ') +
         fa(withLimit) + ' کاربر سقف اختصاصی دارد' + (gLimit > 0 || withLimit > 0 ? ' ✓' : ' — عملاً هیچ محدودیتی اعمال نمی‌شود'));
       /* جریان افزایش */
       const now = Date.now();
@@ -3323,16 +3384,22 @@ export class ConnLimiter {
   constructor(state) {
     this.state = state;
     /* حافظه‌ی داخلِ شیء — بین فراخوانی‌ها زنده می‌ماند (تنها یک نمونه وجود دارد) */
-    this.conns = new Map();          // "uuid|ip" -> Map<connId, ts>
+    this.users = new Map();          // uuid -> Map<ip, Map<connId, ts>>
   }
 
-  /** حذفِ ورودی‌های مرده؛ تعدادِ زنده‌ی یک کلید را برمی‌گرداند */
-  prune(key, now) {
-    const m = this.conns.get(key);
-    if (!m) return 0;
-    m.forEach((ts, id) => { if (!ts || now - ts > CONN_TTL) m.delete(id); });
-    if (!m.size) this.conns.delete(key);
-    return m.size;
+  /** حذفِ ورودی‌های مرده؛ می‌گرداند: Map<ip, تعداد اتصال‌های زنده> */
+  prune(uuid, now) {
+    const um = this.users.get(uuid);
+    const out = new Map();
+    if (!um) return out;
+    um.forEach((m, ip) => {
+      if (!m || !(m instanceof Map)) { um.delete(ip); return; }
+      m.forEach((ts, id) => { if (!ts || now - ts > CONN_TTL) m.delete(id); });
+      if (!m.size) um.delete(ip);
+    });
+    um.forEach((m, ip) => { if (m && m.size) out.set(ip, m.size); });
+    if (!um.size) this.users.delete(uuid);
+    return out;
   }
 
   async fetch(req) {
@@ -3340,58 +3407,70 @@ export class ConnLimiter {
     let b = {};
     try { b = await req.json(); } catch (e) { b = {}; }
     const now = Number(b.now) || Date.now();
-    const key = String(b.uuid) + '|' + String(b.ip);
+    const uuid = String(b.uuid || '');
+    const ip = String(b.ip || '');
     const limit = Number(b.limit) || 0;
     const j = (o) => new Response(JSON.stringify(o), { headers: { 'content-type': 'application/json' } });
 
     if (url.pathname === '/acquire') {
-      if (!b.uuid || !b.ip) return j({ ok: true, conns: 0, limit, enforced: false, reason: 'missing-identity' });
-      let m = this.conns.get(key);
-      if (!m) { m = new Map(); this.conns.set(key, m); }
-      const live = this.prune(key, now);
-      if (limit > 0 && live >= limit) return j({ ok: false, conns: live, limit, enforced: true, storage: 'do', reason: 'limit' });
-      /* prune ممکن است کلید را (در صورت خالی شدن) حذف کرده باشد — دوباره ثبت می‌شود */
-      this.conns.set(key, m);
+      if (!uuid || !ip) return j({ ok: true, ips: 0, conns: 0, limit, enforced: false, reason: 'missing-identity' });
+      let um = this.users.get(uuid);
+      if (!um) { um = new Map(); this.users.set(uuid, um); }
+      const ips = this.prune(uuid, now);
+      const dec = admitDecision(ips, ip, limit);
+      if (!dec.ok) {
+        return j({ ok: false, ips: ips.size, conns: ips.get(ip) || 0, limit, enforced: true, storage: 'do', reason: dec.reason });
+      }
+      /* prune ممکن است کاربر را (در صورت خالی شدن) حذف کرده باشد — دوباره ثبت می‌شود */
+      if (!this.users.has(uuid)) this.users.set(uuid, um);
+      let m = um.get(ip);
+      if (!m) { m = new Map(); um.set(ip, m); }
       m.set(String(b.connId), now);
-      return j({ ok: true, conns: m.size, limit, enforced: limit > 0, id: String(b.connId), storage: 'do' });
+      return j({ ok: true, ips: um.size, conns: m.size, limit, enforced: limit > 0, id: String(b.connId), reason: dec.reason, storage: 'do' });
     }
 
     if (url.pathname === '/release') {
-      const m = this.conns.get(key);
+      const um = this.users.get(uuid);
       let left = 0;
-      if (m) {
-        if (b.connId) m.delete(String(b.connId));
-        else { const f = m.keys().next(); if (!f.done) m.delete(f.value); }
-        left = m.size;
-        if (!left) this.conns.delete(key);
+      if (um) {
+        const m = um.get(ip);
+        if (m) {
+          if (b.connId) m.delete(String(b.connId));
+          else { const f = m.keys().next(); if (!f.done) m.delete(f.value); }
+          left = m.size;
+          if (!left) um.delete(ip);
+        }
+        if (!um.size) this.users.delete(uuid);
       }
       return j({ ok: true, left });
     }
 
     if (url.pathname === '/touch') {
-      const m = this.conns.get(key);
-      if (m && b.connId && m.has(String(b.connId))) m.set(String(b.connId), now);
+      const um = this.users.get(uuid);
+      if (um) {
+        const m = um.get(ip);
+        if (m && b.connId && m.has(String(b.connId))) m.set(String(b.connId), now);
+      }
       return j({ ok: true });
     }
 
     if (url.pathname === '/list') {
       const out = new Map();
-      this.conns.forEach((m, k) => {
-        if (!String(k).startsWith(String(b.uuid) + '|')) return;
-        const n = this.prune(k, now);
-        if (n <= 0) return;
-        let last = 0;
-        m.forEach((ts) => { if (ts > last) last = ts; });
-        const ip = String(k).split('|')[1];
-        const cur = out.get(ip);
-        if (cur) { cur.conns = Math.max(cur.conns, n); cur.last_active = Math.max(cur.last_active || 0, last); }
-        else out.set(ip, { ip, conns: n, last_active: last });
-      });
+      const um = this.users.get(uuid);
+      if (um) {
+        const ips = this.prune(uuid, now);
+        ips.forEach((n, ipk) => {
+          let last = 0;
+          const m = um.get(ipk);
+          if (m) m.forEach((ts) => { if (ts > last) last = ts; });
+          out.set(ipk, { ip: ipk, conns: n, last_active: last });
+        });
+      }
       const sessions = [...out.values()].sort((a, c) => (c.conns || 0) - (a.conns || 0));
       return j({ ok: true, sessions });
     }
 
-    if (url.pathname === '/reset') { this.conns.clear(); return j({ ok: true }); }
+    if (url.pathname === '/reset') { this.users.clear(); return j({ ok: true }); }
 
     return j({ ok: false, error: 'unknown-path' });
   }
