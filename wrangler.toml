@@ -1,0 +1,31 @@
+# ─────────────────────────────────────────────────────────────
+#  Wrangler config — VPN Panel Worker
+#
+#  Deploy:
+#    npx wrangler login
+#    npx wrangler secret put MASTER_KEY
+#    npx wrangler deploy
+#
+#  The UI (ui/index.html, ui/style.css, ui/app.js) is pulled from
+#  GitHub raw at runtime, so no [assets] binding is needed here.
+# ─────────────────────────────────────────────────────────────
+
+name = "panel"
+main = "worker.js"
+compatibility_date = "2026-01-15"
+
+# ── D1 (required) ────────────────────────────────────────────
+# Without this binding the worker silently falls back to memory:
+# users reset on cold start and the concurrent-connection limit
+# is disabled (sessionAdmit returns early when env.DB is absent).
+#
+# Get both values with:   npx wrangler d1 list
+[[d1_databases]]
+binding       = "DB"
+database_name = "REPLACE_WITH_DB_NAME"
+database_id   = "REPLACE_WITH_DB_ID"
+
+# ── Secrets (never put these in this file) ───────────────────
+#   npx wrangler secret put MASTER_KEY
+# Used by the panel to encrypt stored data; if unset a default is
+# used and existing encrypted data stays unreadable after a change.
