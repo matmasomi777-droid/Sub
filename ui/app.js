@@ -7,7 +7,19 @@
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const S = { token: sessionStorage.getItem('sg_t') || '', d: null, view: 'dash', tab: {}, sel: null, fmt: 'base64', range: 'd', q: '' };
   /* انتخاب‌های «تست واقعی ترافیک» — بین رفرش‌ها حفظ می‌شوند */
-  const TT = { uuid: '', mb: 1 };
+  const TT = { uuid: '', mb: 1, last: null };
+  /* ═══ گزارش تست ترافیک تا وقتی تستِ تازه‌ای گرفته نشود باقی می‌ماند ═══
+     نتیجه در localStorage هم ذخیره می‌شود تا با رفرش یا جابه‌جایی بین
+     بخش‌های پنل پاک نشود؛ فقط اجرای یک تستِ جدید آن را جایگزین می‌کند. */
+  const TT_KEY = 'sg_tt_last';
+  try {
+    const raw = localStorage.getItem(TT_KEY);
+    if (raw) { const p = JSON.parse(raw); if (p && typeof p === 'object') TT.last = p; }
+  } catch (e) { TT.last = null; }
+  const ttSave = (r) => {
+    TT.last = r;
+    try { localStorage.setItem(TT_KEY, JSON.stringify(r)); } catch (e) {}
+  };
 
   /* ─────────── ابزارها ─────────── */
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -597,6 +609,39 @@
       heroCard() + statusCard() + outputCard() + fakeConfigsCard();
   }
 
+  /* ═══════════ رندرِ گزارشِ «تست واقعی ترافیک» ═══════════
+     هر بار که پنل بازسازی می‌شود (رفرش، تغییر بخش، ذخیره‌ی تنظیمات)
+     این تابع گزارشِ آخرین تست را دوباره می‌نویسد — پس گزارش هیچ‌وقت
+     به‌طور خودکار پاک نمی‌شود؛ فقط تستِ جدید جایگزینش می‌کند. */
+  function ttHtml(r) {
+    if (!r) return '<div class="empty">هنوز تستی اجرا نشده است.</div>';
+    const mb = (x) => fa(((x || 0) / 1048576).toFixed(2)) + ' مگابایت';
+    const kb = (x) => fa(Math.round((x || 0) / 1024 * 10) / 10) + ' کیلوبایت';
+    const stamp = r.ts ? new Date(r.ts).toLocaleString('fa-IR', { hour12: false }) : '';
+    const head = '<div class="hint" style="margin-bottom:8px">آخرین تست: <b>' + (stamp ? fa(stamp) : '—') + '</b>' +
+      ' • <span class="hint">این گزارش تا وقتی تستِ تازه‌ای نگیرید باقی می‌ماند.</span></div>';
+    if (r.failed) {
+      return head +
+        '<div class="kv"><span>' + icon('fa-circle-xmark') + ' نتیجه‌ی تست</span>' +
+        '<b class="mono" style="color:var(--bad)">✗ ناموفق</b></div>' +
+        '<div class="kv" style="flex-direction:column;align-items:flex-start"><span>علت</span>' +
+        '<b style="font-weight:400;line-height:1.9;color:var(--bad)">' + esc(r.error || 'تست انجام نشد') + '</b></div>';
+    }
+    return head +
+      '<div class="kv"><span>' + icon(r.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' نتیجه‌ی تست</span>' +
+      '<b class="mono" style="color:' + (r.ok ? 'var(--ok)' : 'var(--bad)') + '">' + (r.ok ? '✓ موفق' : '✗ ناموفق') + '</b></div>' +
+      '<div class="kv"><span>درخواست از مرورگر</span><b class="mono">' + mb(r.expected || r.want) + ' (' + fa(r.expected || r.want) + ' بایت)</b></div>' +
+      '<div class="kv"><span>پاسخِ سرور (دریافت‌شده)</span><b class="mono">' + mb(r.received) + ' (' + fa(r.received) + ' بایت)</b></div>' +
+      '<div class="kv"><span>ثبت‌شده برای کاربر</span><b class="mono" style="color:' + (r.ok ? 'var(--ok)' : 'var(--bad)') + '">' + mb(r.measured) + ' (' + fa(r.measured) + ' بایت)</b></div>' +
+      '<div class="kv"><span>اختلاف</span><b class="mono">' + (r.diff >= 0 ? '+' : '−') + kb(Math.abs(r.diff)) + '</b></div>' +
+      '<div class="kv"><span>تلورانس مجاز</span><b class="mono">±' + kb(r.tolerance) + '</b></div>' +
+      '<div class="hint" style="margin-top:8px;font-weight:700;color:' + (r.ok ? 'var(--ok)' : 'var(--bad)') + '">انتظار: ' + mb(r.expected || r.want) + ' / ثبت‌شده: ' + mb(r.measured) + ' ' + (r.ok ? '✓' : '✗') + '</div>' +
+      '<div class="hint" style="margin-top:8px">کاربر: ' + esc(r.user || '—') + ' • ⬆ ' + fa(r.up || 0) + ' / ⬇ ' + fa(r.down || 0) +
+      ' • ذخیره‌سازی: ' + esc(r.storage || '—') + (r.waitedMs ? ' • انتظار برای ثبت: ' + fa(r.waitedMs) + ' ms' : '') + '</div>' +
+      '<div class="hint" style="margin-top:8px">چند کیلوبایت اختلاف به‌خاطر هدرهای HTTP طبیعی است. دانلود توسط مرورگرِ شما انجام شد و حجم آن برای کانفیگِ همین کاربر ثبت گردید.</div>';
+  }
+  const ttShow = () => { const o = $('#trafficTestOut'); if (o) o.innerHTML = ttHtml(TT.last); };
+
   function monitorView() {
     const st = S.d.stats || {}, u = S.d.users, r = S.range;
     const ser = (r === 'm' ? st.monthly : r === 'y' ? st.yearly : st.daily) || st.daily || Array(14).fill(.3);
@@ -632,7 +677,7 @@
       '<span class="hint">مگابایت</span>' +
       '<button class="btn sm p" data-act="traffic-test">' + icon('fa-download') + ' اجرای تست ترافیک</button>' +
       '</div>' +
-      '<div id="trafficTestOut" style="margin-top:10px"><div class="empty">هنوز تستی اجرا نشده است.</div></div>' +
+      '<div id="trafficTestOut" style="margin-top:10px">' + ttHtml(TT.last) + '</div>' +
       '</div></div>';
   }
 
@@ -1319,9 +1364,6 @@
         const uuid = (sel && sel.value) || '';
         const sizeMB = Math.max(1, Math.min(20, Number(sz && sz.value) || 1));
         TT.uuid = uuid; TT.mb = sizeMB;
-        const o = $('#trafficTestOut');
-        const mb = (x) => fa(((x || 0) / 1048576).toFixed(2)) + ' مگابایت';
-        const kb = (x) => fa(Math.round((x || 0) / 1024 * 10) / 10) + ' کیلوبایت';
         let r = null;
         try {
           busy(t, 'آماده‌سازی…');
@@ -1338,31 +1380,26 @@
           r.recordedHeader = res.headers ? (res.headers.get('x-usage-recorded') || '') : '';
         } catch (e) {
           free(t);
-          if (o) o.innerHTML = '<div class="kv"><span>' + icon('fa-circle-xmark') + ' تست انجام نشد</span>' +
-            '<b class="mono" style="color:var(--bad)">' + esc(String((e && e.message) || e)) + '</b></div>';
+          /* گزارشِ شکست هم ذخیره می‌شود تا علت روی صفحه بماند */
+          ttSave({ failed: true, ok: false, error: String((e && e.message) || e), ts: Date.now() });
+          ttShow();
           toast('تست ناموفق بود', 'err');
           return;
         }
         free(t);
         if (r.error && r.measured === undefined) {
-          if (o) o.innerHTML = '<div class="kv"><span>' + icon('fa-circle-xmark') + ' تست انجام نشد</span>' +
-            '<b class="mono" style="color:var(--bad)">' + esc(r.error) + '</b></div>';
+          ttSave({ failed: true, ok: false, error: String(r.error || 'تست انجام نشد'), ts: Date.now() });
+          ttShow();
           toast('تست ناموفق بود', 'err');
           return;
         }
-        const verdict = r.ok ? '✓ موفق' : '✗ ناموفق';
-        if (o) o.innerHTML =
-          '<div class="kv"><span>' + icon(r.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' نتیجه‌ی تست</span>' +
-          '<b class="mono" style="color:' + (r.ok ? 'var(--ok)' : 'var(--bad)') + '">' + verdict + '</b></div>' +
-          '<div class="kv"><span>درخواست از مرورگر</span><b class="mono">' + mb(r.expected || r.want) + ' (' + fa(r.expected || r.want) + ' بایت)</b></div>' +
-          '<div class="kv"><span>پاسخِ سرور (دریافت‌شده)</span><b class="mono">' + mb(r.received) + ' (' + fa(r.received) + ' بایت)</b></div>' +
-          '<div class="kv"><span>ثبت‌شده برای کاربر</span><b class="mono" style="color:' + (r.ok ? 'var(--ok)' : 'var(--bad)') + '">' + mb(r.measured) + ' (' + fa(r.measured) + ' بایت)</b></div>' +
-          '<div class="kv"><span>اختلاف</span><b class="mono">' + (r.diff >= 0 ? '+' : '−') + kb(Math.abs(r.diff)) + '</b></div>' +
-          '<div class="kv"><span>تلورانس مجاز</span><b class="mono">±' + kb(r.tolerance) + '</b></div>' +
-          '<div class="hint" style="margin-top:8px;font-weight:700;color:' + (r.ok ? 'var(--ok)' : 'var(--bad)') + '">انتظار: ' + mb(r.expected || r.want) + ' / ثبت‌شده: ' + mb(r.measured) + ' ' + (r.ok ? '✓' : '✗') + '</div>' +
-          '<div class="hint" style="margin-top:8px">کاربر: ' + esc(r.user || '—') + ' • ⬆ ' + fa(r.up || 0) + ' / ⬇ ' + fa(r.down || 0) +
-          ' • ذخیره‌سازی: ' + esc(r.storage || '—') + (r.waitedMs ? ' • انتظار برای ثبت: ' + fa(r.waitedMs) + ' ms' : '') + '</div>' +
-          '<div class="hint" style="margin-top:8px">چند کیلوبایت اختلاف به‌خاطر هدرهای HTTP طبیعی است. دانلود توسط مرورگرِ شما انجام شد و حجم آن برای کانفیگِ همین کاربر ثبت گردید.</div>';
+        /* نتیجه ذخیره می‌شود: تا تستِ بعدی روی صفحه می‌ماند */
+        ttSave({
+          ok: !!r.ok, expected: r.expected || r.want, want: r.want, received: r.received,
+          measured: r.measured, diff: r.diff, tolerance: r.tolerance, user: r.user,
+          up: r.up, down: r.down, storage: r.storage, waitedMs: r.waitedMs, ts: Date.now(),
+        });
+        ttShow();
         toast(r.ok ? 'شمارش مصرف درست است ✓' : 'اختلاف بیش از حد مجاز — شمارش بررسی شود', r.ok ? 'ok' : 'err');
         await refresh();
       }
