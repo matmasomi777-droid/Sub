@@ -2691,14 +2691,14 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost) {
   const touch = () => {
     if (!connAcquired || connReleased || !ctx || !ctx.waitUntil) return;
     const now = Date.now();
-    if (now - lastTouch < SESSION_HB) return;
+    if (now - lastTouch < CONN_HB) return;
     lastTouch = now;
     ctx.waitUntil(sessionTouch(env, user && user.uuid, ip, connId).catch(() => {}));
   };
   /* heartbeat دوره‌ای — حتی وقتی ترافیکی رد و بدل نمی‌شود (مرورگر idle) */
   let hbTimer = null;
   if (typeof setInterval === 'function') {
-    hbTimer = setInterval(() => { try { if (!closed) touch(); } catch (e) {} }, SESSION_HB);
+    hbTimer = setInterval(() => { try { if (!closed) touch(); } catch (e) {} }, CONN_HB);
   }
 
   /* ═══ مصرف ابتدا در حافظه جمع می‌شود ═══
