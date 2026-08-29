@@ -1349,13 +1349,27 @@
         const lim = r.limiter || 'mem';
         const limBadge = lim === 'do'
           ? '<span class="badge ok">' + icon('fa-server') + ' مرجع محدودیت: Durable Object — سراسری و دقیق ✓</span>'
-          : lim === 'kv'
-            ? '<span class="badge warn">' + icon('fa-database') + ' مرجع محدودیت: KV — مشترک اما تقریبی</span>'
-            : '<span class="badge bad">' + icon('fa-triangle-exclamation') + ' مرجع محدودیت: حافظه — فقط همین isolate؛ بین isolateها تضمین نمی‌شود</span>';
+          : lim === 'd1'
+            ? '<span class="badge ok">' + icon('fa-database') + ' مرجع محدودیت: D1 — سراسری و دقیق ✓</span>'
+            : lim === 'kv'
+              ? '<span class="badge warn">' + icon('fa-database') + ' مرجع محدودیت: KV — مشترک اما تقریبی</span>'
+              : '<span class="badge bad">' + icon('fa-triangle-exclamation') + ' مرجع محدودیت: حافظه — فقط همین isolate؛ بین isolateها تضمین نمی‌شود</span>';
+        const d = r.diag || null;
+        const diagHtml = d
+          ? '<div class="hint" style="margin-bottom:10px" >بایندینگ‌ها: D1 ' + (d.bound && d.bound.DB ? '✓' : '✗') +
+            ' • KV ' + (d.bound && d.bound.KV ? '✓' : '✗') +
+            ' • Durable Object ' + (d.bound && d.bound.LIMITER ? '✓' : '✗') +
+            ' • آی‌پیِ شما: <span class="mono">' + esc(d.callerIp || '—') + '</span>' +
+            ' • سقف سراسری: <span class="mono">' + fa(d.defaultLimit || 0) + '</span>' +
+            ' • پذیرش/رد: <span class="mono">' + fa(d.acquires || 0) + '/' + fa(d.denies || 0) + '</span>' +
+            (d.connErr ? '<br>آخرین خطای محدودیت: <span class="mono">' + esc(String(d.connErr)) + '</span>' : '') +
+            '</div>'
+          : '';
         if (o) o.innerHTML =
           '<div style="margin-bottom:10px">' + limBadge + '</div>' +
-          (lim !== 'do'
-            ? '<div class="hint" style="margin-bottom:10px">برای محدودیتِ واقعاً سراسری باید پروژه را با <span class="mono">wrangler deploy</span> منتشر کنید تا Durable Object با نام <span class="mono">LIMITER</span> ساخته شود (در داشبورد کلاودفلر قابل ساخت نیست). بدون آن، هر isolate شمارنده‌ی خودش را دارد و اتصالِ سوم در isolate دیگر از صفر شمرده می‌شود و مجاز می‌ماند.</div>'
+          diagHtml +
+          (lim !== 'do' && lim !== 'd1'
+            ? '<div class="hint" style="margin-bottom:10px">هیچ مرجعِ مشترکی بین isolateها ندارید: هر isolate شمارنده‌ی خودش را دارد و محدودیت عملاً اعمال نمی‌شود. در Settings → Variables یک پایگاه D1 با نام <span class="mono">DB</span> ببندید (در داشبورد کلاودفلر هم می‌توان ساخت).</div>'
             : '') +
           (r.checks || []).map((c) => '<div class="kv"><span>' + icon(c.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' ' + esc(c.name) + '</span><b class="mono" style="color:' + (c.ok ? 'var(--ok)' : 'var(--bad)') + '">' + esc(c.note || '') + '</b></div>').join('') +
           '<div class="hint" style="margin-top:12px"><b>مصرف ذخیره‌شده‌ی هر کاربر:</b></div>' +

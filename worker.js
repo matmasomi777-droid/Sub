@@ -378,11 +378,13 @@ const connErr = (tag, e) => { CONN_LAST_ERR = tag + ': ' + String((e && e.messag
    نباشد. */
 function limiterBackend(env) {
   if (env && env.LIMITER) return 'do';
+  if (env && env.DB) return 'd1';      /* ⚠️ استقرارِ واقعیِ بیشتر کاربران: فقط D1 بایند است */
   if (env && env.KV) return 'kv';
   return 'mem';
 }
 const LIM_LABEL = {
   do: 'Durable Object — سراسری و دقیق',
+  d1: 'D1 — سراسری و دقیق (همهٔ isolateها یک پایگاه‌داده)',
   kv: 'KV — مشترک اما تقریبی',
   mem: 'حافظه — فقط همین isolate (محدودیت بین isolateها تضمین نمی‌شود)'
 };
@@ -456,6 +458,133 @@ function mirrorSet(uuid, ip, connId, now, ok) {
   if (!um.size) CONNS.delete(uuid);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   مرجعِ مشترک روی D1 — جدولِ «اتصال‌های زنده» (conns)
+   ───────────────────────────────────────────────────────────────────────────
+   چرا این جدول لازم شد؟ چون واقعیتِ استقرار این است:
+     • کاربر worker.js را در داشبورد کلاودفلر paste می‌کند → Durable Object
+       اصلاً ساخته نمی‌شود (فقط با wrangler deploy ممکن است)؛
+     • معمولاً فقط یک پایگاه D1 با نام DB بایند است و نه KV.
+   در آن حالت تنها مرجعِ مشترکِ بین isolateها همان D1 است؛ بدون آن هر isolate
+   شمارنده‌ی خودش را دارد و محدودیت هرگز اعمال نمی‌شود. جدولِ conns دقیقاً یک
+   ردیف برای هر اتصالِ زنده نگه می‌دارد و همان معنای سقف (تعداد IPهای متمایز)
+   را پیاده می‌کند.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+let LIVE_READY = false;
+
+/** ساخت/تعمیر جدول — idempotent؛ بارها قابل فراخوانی است */
+async function liveEnsure(env) {
+  if (!env || !env.DB) return false;
+  try {
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS conns (
+      conn_id TEXT PRIMARY KEY,
+      uuid TEXT NOT NULL,
+      ip TEXT NOT NULL,
+      last_ts INTEGER NOT NULL
+    )`).run();
+    await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_conns_user ON conns(uuid, ip)').run();
+    LIVE_READY = true;
+    return true;
+  } catch (e) { connErr('D1-schema', e); return false; }
+}
+
+/** حذفِ اتصال‌های مرده (بدون heartbeat برای CONN_TTL) */
+async function liveSweep(env, uuid) {
+  if (!env || !env.DB) return;
+  const cut = Date.now() - CONN_TTL;
+  try {
+    if (uuid) await env.DB.prepare('DELETE FROM conns WHERE uuid = ? AND last_ts < ?').bind(uuid, cut).run();
+    else await env.DB.prepare('DELETE FROM conns WHERE last_ts < ?').bind(cut).run();
+  } catch (e) { connErr('D1-sweep', e); }
+}
+
+/** آی‌پی‌های زنده‌ی یک کاربر به ترتیبِ قدیمی‌ترین — برای رتبه‌بندی در رقابت */
+async function liveIpsOrdered(env, uuid) {
+  const out = [];
+  if (!env || !env.DB) return out;
+  try {
+    const r = await env.DB.prepare('SELECT ip, MIN(last_ts) AS t FROM conns WHERE uuid = ? GROUP BY ip ORDER BY t ASC, ip ASC').bind(uuid).all();
+    for (const row of ((r && r.results) || [])) out.push(String(row.ip));
+  } catch (e) { connErr('D1-ips-ordered', e); }
+  return out;
+}
+
+/** IPهای زنده‌ی یک کاربر → Map<ip, تعداد اتصال> */
+async function liveIps(env, uuid) {
+  const out = new Map();
+  if (!env || !env.DB) return out;
+  try {
+    const r = await env.DB.prepare('SELECT ip, COUNT(*) AS n FROM conns WHERE uuid = ? GROUP BY ip').bind(uuid).all();
+    for (const row of ((r && r.results) || [])) out.set(String(row.ip), Number(row.n) || 0);
+  } catch (e) { connErr('D1-ips', e); }
+  return out;
+}
+
+/** پذیرش/رد روی D1 — تصمیم با همان admitDecision بقیهٔ بک‌اندها */
+async function d1Acquire(env, uuid, ip, limit, id, now) {
+  if (!(await liveEnsure(env))) return null;
+  await liveSweep(env, uuid);
+  const ips = await liveIps(env, uuid);
+  const dec = admitDecision(ips, ip, limit);
+  if (!dec.ok) return { ok: false, ips: ips.size, conns: ips.get(ip) || 0, limit, enforced: true, storage: 'd1', reason: dec.reason, id };
+  try {
+    await env.DB.prepare('INSERT OR REPLACE INTO conns (conn_id, uuid, ip, last_ts) VALUES (?, ?, ?, ?)')
+      .bind(id, uuid, ip, now).run();
+  } catch (e) {
+    /* درج نشد → محدودیت خاموش نمی‌شود: با همان عددِ خوانده‌شده ادامه می‌دهیم
+       و خطا را در کارت سلامت نشان می‌دهیم */
+    connErr('D1-insert', e);
+    return { ok: true, ips: ips.size + (ips.has(ip) ? 0 : 1), conns: (ips.get(ip) || 0) + 1, limit, enforced: limit > 0, storage: 'd1', reason: dec.reason, id };
+  }
+  /* بستنِ پنجرهٔ رقابت: اگر چند آی‌پیِ جدید هم‌زمان رسیده باشند، بعد از درج
+     دوباره می‌شماریم. تصمیم با «رتبه بر اساس زمانِ ورود» است: قدیمی‌ترین‌ها
+     تا سقف می‌مانند و مازاد ردیفِ خود را پس می‌گیرد. نتیجه: همیشه دقیقاً به
+     اندازهٔ سقف آی‌پی پذیرفته می‌شود و محدودیت نه سخت‌گیرانه می‌شود و نه دور زده. */
+  const after = await liveIps(env, uuid);
+  if (limit > 0 && after.size > limit && dec.reason === 'new-ip') {
+    const order = await liveIpsOrdered(env, uuid);
+    const rank = order.indexOf(ip);
+    if (rank < 0 || rank >= limit) {
+      try { await env.DB.prepare('DELETE FROM conns WHERE conn_id = ?').bind(id).run(); }
+      catch (e) { connErr('D1-rollback', e); }
+      const back = await liveIps(env, uuid);
+      return { ok: false, ips: back.size, conns: back.get(ip) || 0, limit, enforced: true, storage: 'd1', reason: 'ip-limit', id };
+    }
+  }
+  return { ok: true, ips: after.size, conns: after.get(ip) || 0, limit, enforced: limit > 0, storage: 'd1', reason: dec.reason, id };
+}
+
+/** آزادسازی — فقط همین conn_id */
+async function d1Release(env, connId) {
+  if (!env || !env.DB || !connId) return;
+  try { await env.DB.prepare('DELETE FROM conns WHERE conn_id = ?').bind(connId).run(); }
+  catch (e) { connErr('D1-release', e); }
+}
+
+/** heartbeat — اگر ردیف نباشد (پاک‌سازی/ری‌استارت دیتابیس) دوباره درج می‌شود */
+async function d1Touch(env, uuid, ip, connId) {
+  if (!env || !env.DB || !connId) return;
+  const now = Date.now();
+  try {
+    const r = await env.DB.prepare('UPDATE conns SET last_ts = ? WHERE conn_id = ?').bind(now, connId).run();
+    const changed = Number((r && r.meta && r.meta.changes) || (r && r.changes) || 0);
+    if (!changed) {
+      await env.DB.prepare('INSERT OR REPLACE INTO conns (conn_id, uuid, ip, last_ts) VALUES (?, ?, ?, ?)')
+        .bind(connId, uuid, ip, now).run();
+    }
+  } catch (e) { connErr('D1-touch', e); }
+}
+
+/** آینهٔ حافظه برای نمایشِ فوری (مرجعِ تصمیم در حالت d1 خودِ D1 است) */
+function mirrorAdd(uuid, ip, connId, now) {
+  if (!uuid || !ip || !connId) return;
+  const um = userMapOf(uuid, true);
+  let m = um.get(ip);
+  if (!m) { m = new Map(); um.set(ip, m); }
+  m.set(connId, now);
+}
+
 /**
  * ثبت یک اتصال برای (کاربر، IP) و اعمالِ سقفِ همزمانی.
  * برمی‌گرداند: { ok, ips, conns, limit, enforced, reason, storage }
@@ -483,7 +612,22 @@ async function connAcquire(env, uuid, ip, limit, connId) {
     }
   }
 
-  /* ── ۲) حافظه: سریع، بدون نیاز به بایندینگ (فقط همین isolate) ── */
+  /* ── ۲) D1 — مرجعِ مشترک در استقرارهایی که فقط پایگاه‌داده دارند ── */
+  if (backend === 'd1' && env && env.DB) {
+    try {
+      const r = await d1Acquire(env, uuid, ip, limit, id, now);
+      if (r) {
+        if (r.ok) mirrorAdd(uuid, ip, id, now); else { CONN_DENIES++; mirrorSet(uuid, ip, id, now, false); }
+        return r;
+      }
+      connErr('D1', 'جدول conns در دسترس نیست');
+    } catch (e) {
+      /* خطای D1 هرگز محدودیت را خاموش نمی‌کند — گزارش می‌شود و با حافظه ادامه می‌یابد */
+      connErr('D1', e);
+    }
+  }
+
+  /* ── ۳) حافظه: سریع، بدون نیاز به بایندینگ (فقط همین isolate) ── */
   const um = userMapOf(uuid, true);
   const ipsMem = pruneUser(um, now);
   const dec = admitDecision(ipsMem, ip, limit);
@@ -496,7 +640,7 @@ async function connAcquire(env, uuid, ip, limit, connId) {
   im.set(id, now);
   let ips = um.size;
 
-  /* ── ۳) KV (اختیاری): شمارشِ مشترک بین isolateها ── */
+  /* ── ۴) KV (اختیاری): شمارشِ مشترک بین isolateها ── */
   if (backend === 'kv' && env && env.KV) {
     try {
       const list = await env.KV.list({ prefix: 'c:' + uuid + ':' });
@@ -533,6 +677,11 @@ async function connRelease(env, uuid, ip, connId) {
     try { await limiterRpc(env, '/release', { uuid, ip, connId }); }
     catch (e) { connErr('DO', e); }
   }
+  /* پاک‌سازی روی D1 هر وقت پایگاه‌داده‌ای بایند باشد — حتی اگر مرجعِ تصمیم
+     دیگری باشد، ردیفِ مرده روی پایگاه‌داده نماند */
+  if (env && env.DB && connId) {
+    try { await d1Release(env, connId); } catch (e) { connErr('D1', e); }
+  }
   const um = CONNS.get(uuid);
   let left = 0;
   if (um) {
@@ -563,6 +712,10 @@ async function sessionTouch(env, uuid, ip, connId) {
     catch (e) { connErr('DO', e); }
     return;
   }
+  if (env && env.DB) {
+    try { await d1Touch(env, uuid, ip, connId); } catch (e) { connErr('D1', e); }
+    return;
+  }
   if (env && env.KV) {
     try { await env.KV.put(KV_C(uuid, ip, connId), String(now), { expirationTtl: Math.ceil(CONN_TTL / 1000) }); }
     catch (e) { connErr('KV', e); }
@@ -585,6 +738,16 @@ async function sessionsOf(env, uuid) {
       for (const s of ((r && r.sessions) || [])) out.set(s.ip, s);
       return [...out.values()].sort((a, b) => (b.conns || 0) - (a.conns || 0));
     } catch (e) { connErr('DO', e); }
+  }
+  /* D1 — مرجعِ مشترک: همان چیزی که پایگاه‌داده می‌بیند حقیقت است */
+  if (env && env.DB) {
+    try {
+      await liveEnsure(env);
+      await liveSweep(env, uuid);
+      const r = await env.DB.prepare('SELECT ip, COUNT(*) AS n, MAX(last_ts) AS t FROM conns WHERE uuid = ? GROUP BY ip').bind(uuid).all();
+      for (const row of ((r && r.results) || [])) push(String(row.ip), Number(row.n) || 0, Number(row.t) || 0);
+      return [...out.values()].sort((a, b) => (b.conns || 0) - (a.conns || 0));
+    } catch (e) { connErr('D1-list', e); }
   }
   const um = CONNS.get(uuid);
   if (um) {
@@ -2432,10 +2595,29 @@ async function apiHandler(req, env, url, ctx) {
         catch (e) { chk('جدول sessions (ستون conns)', false, 'ستون conns نیست یا جدول خراب است — محدودیت اتصال کار نمی‌کند: ' + String((e && e.message) || e)); }
       }
 
+      /* ۲٫۵) جدول اتصال‌های زنده — همان چیزی که محدودیت روی آن حساب می‌کند */
+      if (env.DB) {
+        try {
+          await liveEnsure(env);
+          await liveSweep(env, null);
+          const r = await env.DB.prepare('SELECT COUNT(*) AS n, COUNT(DISTINCT uuid) AS u, COUNT(DISTINCT ip) AS i FROM conns').all();
+          const row = (r && r.results && r.results[0]) || {};
+          out.live = { rows: Number(row.n) || 0, users: Number(row.u) || 0, ips: Number(row.i) || 0 };
+          chk('جدول اتصال‌های زنده (conns)', true,
+            fa(out.live.rows) + ' اتصالِ زنده • ' + fa(out.live.ips) + ' آی‌پی • ' + fa(out.live.users) + ' کاربر ✓');
+        } catch (e) { chk('جدول اتصال‌های زنده (conns)', false, 'جدول پیدا نشد یا خطا دارد — محدودیت اعمال نمی‌شود: ' + String((e && e.message) || e)); }
+      }
+
       /* ۳) تست زنده‌ی افزایش مصرف — واقعاً می‌نویسیم و بازمی‌خوانیم */
       try {
         const probe = '__health_probe__';
-        if (kind === 'd1') await env.DB.prepare('DELETE FROM usage WHERE uuid = ?').bind(probe).run();
+        /* جدول‌ها ممکن است هنوز ساخته نشده باشند (استقرار تازه) — اول می‌سازیم،
+           بعد پاک‌سازی را در بلوکِ خودش انجام می‌دهیم تا یک نصبِ تازه به‌اشتباه
+           «خراب» گزارش نشود */
+        if (kind === 'd1') {
+          await usageEnsure(env);
+          try { await env.DB.prepare('DELETE FROM usage WHERE uuid = ?').bind(probe).run(); } catch (e) {}
+        }
         const wrote = await usageDelta(env, probe, 1234, 4321, 1);
         const back = await usageFresh(env, probe);
         await usageReset(env, probe);
@@ -2486,10 +2668,11 @@ async function apiHandler(req, env, url, ctx) {
           'IP اول: ' + yn(s2a, true) + ' • IP دوم: ' + yn(s2b, true) +
           ' • IP سوم: ' + yn(s2c, false) + ' • بعد از آزادسازی: ' + yn(s2d, true));
         /* بک‌اندِ محدودیت — باید صریح باشد: حافظه بین isolateها مشترک نیست */
-        chk('مرجعِ شمارشِ محدودیت اتصال', lim === 'do',
+        chk('مرجعِ شمارشِ محدودیت اتصال', lim === 'do' || lim === 'd1',
           lim === 'do' ? 'Durable Object — یک نمونه‌ی سراسری؛ شمارش بین همه‌ی isolateها دقیق ✓'
-            : lim === 'kv' ? 'KV بایند شده — شمارش بین isolateها مشترک است اما با تأخیر (تقریبی). برای دقت کامل شیء LIMITER را ببندید.'
-            : 'هیچ مرجعِ مشترکی نیست (نه LIMITER نه KV): هر isolate حافظه‌ی خودش را می‌شمارد، پس اتصالِ سوم در isolate دیگر از صفر شمرده می‌شود و محدودیت عملاً اعمال نمی‌شود. یک Durable Object با نام LIMITER (یا دست‌کم KV با نام KV) ببندید.'
+            : lim === 'd1' ? 'D1 — همه‌ی isolateها یک پایگاه‌داده را می‌بینند، پس شمارش سراسری و دقیق ✓ (جدول conns)'
+            : lim === 'kv' ? 'KV بایند شده — شمارش بین isolateها مشترک است اما با تأخیر (تقریبی). برای دقت کامل یک پایگاه D1 با نام DB ببندید.'
+            : 'هیچ مرجعِ مشترکی نیست (نه D1، نه KV، نه LIMITER): هر isolate حافظه‌ی خودش را می‌شمارد، پس اتصالِ اضافه در isolate دیگر از صفر شمرده می‌شود و محدودیت عملاً اعمال نمی‌شود. در Settings → Variables یک پایگاه D1 با نام DB ببندید.'
         );
         chk('آمارِ محدودیت اتصال', true,
           fa(CONN_ACQUIRES) + ' درخواست پذیرش • ' + fa(CONN_DENIES) + ' رد شده' +
@@ -2509,6 +2692,21 @@ async function apiHandler(req, env, url, ctx) {
       chk('محدودیت اتصال (فقط IP)', gLimit > 0 || withLimit > 0,
         (gLimit > 0 ? 'پیش‌فرض سراسری: ' + fa(gLimit) + ' IP همزمان برای هر کاربر • ' : 'پیش‌فرض سراسری: نامحدود • ') +
         fa(withLimit) + ' کاربر سقف اختصاصی دارد' + (gLimit > 0 || withLimit > 0 ? ' ✓' : ' — عملاً هیچ محدودیتی اعمال نمی‌شود'));
+      /* تشخیص برای استقرار واقعی: چه چیزی بایند است، آی‌پیِ درخواست‌کننده چیست،
+         و سقفی که ورکر برای هر کاربر واقعاً می‌خواند (تا ناهماهنگیِ کلیدِ تنظیمات
+         دیده شود). */
+      out.diag = {
+        bound: { DB: !!env.DB, KV: !!env.KV, LIMITER: !!env.LIMITER },
+        storage: kind, limiter: lim, limiterLabel: LIM_LABEL[lim] || lim,
+        callerIp: ipOf(req),
+        defaultLimit: gLimit,
+        perUser: st.users.map((u) => ({ name: u.name, uuid: u.uuid, limit: Number(u.ipLimit) || gLimit || 0 })),
+        connErr: CONN_LAST_ERR || null, usageErr: USAGE_LAST_ERR || null,
+        acquires: CONN_ACQUIRES, denies: CONN_DENIES
+      };
+      chk('سقف مؤثری که ورکر برای هر کاربر می‌خواند', true,
+        (out.diag.perUser.length ? out.diag.perUser.map((x) => x.name + ': ' + fa(x.limit)).join(' • ') : 'کاربری تعریف نشده') +
+        ' • آی‌پیِ شما: ' + out.diag.callerIp);
       /* جریان افزایش */
       const now = Date.now();
       const fresh = (rows || []).filter((r) => r.last_seen && now - r.last_seen < 3600000).length;
