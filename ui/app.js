@@ -1345,7 +1345,18 @@
         const r = await api('POST', '/api/action', { act: 'usage-health' });
         free(t);
         const o = $('#usageHealthOut');
+        /* مرجعِ شمارشِ محدودیت اتصال — باید صریح باشد تا عدد گمراه‌کننده نباشد */
+        const lim = r.limiter || 'mem';
+        const limBadge = lim === 'do'
+          ? '<span class="badge ok">' + icon('fa-server') + ' مرجع محدودیت: Durable Object — سراسری و دقیق ✓</span>'
+          : lim === 'kv'
+            ? '<span class="badge warn">' + icon('fa-database') + ' مرجع محدودیت: KV — مشترک اما تقریبی</span>'
+            : '<span class="badge bad">' + icon('fa-triangle-exclamation') + ' مرجع محدودیت: حافظه — فقط همین isolate؛ بین isolateها تضمین نمی‌شود</span>';
         if (o) o.innerHTML =
+          '<div style="margin-bottom:10px">' + limBadge + '</div>' +
+          (lim !== 'do'
+            ? '<div class="hint" style="margin-bottom:10px">برای محدودیتِ واقعاً سراسری باید پروژه را با <span class="mono">wrangler deploy</span> منتشر کنید تا Durable Object با نام <span class="mono">LIMITER</span> ساخته شود (در داشبورد کلاودفلر قابل ساخت نیست). بدون آن، هر isolate شمارنده‌ی خودش را دارد و اتصالِ سوم در isolate دیگر از صفر شمرده می‌شود و مجاز می‌ماند.</div>'
+            : '') +
           (r.checks || []).map((c) => '<div class="kv"><span>' + icon(c.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' ' + esc(c.name) + '</span><b class="mono" style="color:' + (c.ok ? 'var(--ok)' : 'var(--bad)') + '">' + esc(c.note || '') + '</b></div>').join('') +
           '<div class="hint" style="margin-top:12px"><b>مصرف ذخیره‌شده‌ی هر کاربر:</b></div>' +
           '<div style="margin-top:8px;max-height:260px;overflow:auto" class="tbl-wrap"><table>' +

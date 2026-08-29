@@ -14,16 +14,49 @@ name = "panel"
 main = "worker.js"
 compatibility_date = "2026-01-15"
 
-# ── D1 (required) ────────────────────────────────────────────
-# Without this binding the worker silently falls back to memory:
-# users reset on cold start and the concurrent-connection limit
-# is disabled (sessionAdmit returns early when env.DB is absent).
+# ── Connection limiter: Durable Object (REQUIRED for a working IP limit) ────
+# A Worker runs in many isolates; each isolate has its own memory. An in-memory
+# counter therefore only counts that one isolate, so the 3rd connection lands in
+# a fresh isolate, is counted from zero, and is allowed -> the limit never bites.
+# A Durable Object is a single global instance shared by every isolate, so the
+# concurrent-connection-per-IP limit is enforced worker-wide.
+# Deploy with wrangler (NOT by pasting code into the dashboard) to get it:
+#     npx wrangler deploy
+[[durable_objects.bindings]]
+name       = "LIMITER"
+class_name = "ConnLimiter"
+
+# Required the first time a Durable Object class is added.
+[[migrations]]
+tag      = "v1"
+new_classes = ["ConnLimiter"]
+
+# Optional: keep the limiter warm / inspect it. Without a Durable Object the
+# worker falls back to KV (shared, approximate) and then to per-isolate memory
+# (no guarantee at all). The panel's "usage health" card names the active one.
+
+# ── Storage: D1 (best) or KV (acceptable) ────────────────────
+# The worker now works with either binding, but accuracy differs:
+#   D1  → atomic increment; exact usage and exact connection limits
+#   KV  → usage counters persisted, approximate under heavy concurrency
+#   none→ in-memory only; usage and limits reset on every cold start
+# The panel's "usage health" card tells you which one is active.
 #
+# ── D1 (recommended) ─────────────────────────────────────────
 # Get both values with:   npx wrangler d1 list
+# Create a database with: npx wrangler d1 create panel-db
 [[d1_databases]]
 binding       = "DB"
 database_name = "REPLACE_WITH_DB_NAME"
 database_id   = "REPLACE_WITH_DB_ID"
+
+# ── KV (fallback if you don't want D1) ───────────────────────
+# Create: npx wrangler kv:namespace create PANEL_KV
+# Then uncomment the block below (and remove/keep the D1 block —
+# D1 wins when both are bound).
+# [[kv_namespaces]]
+# binding      = "KV"
+# id           = "REPLACE_WITH_KV_NAMESPACE_ID"
 
 # ── Secrets (never put these in this file) ───────────────────
 #   npx wrangler secret put MASTER_KEY

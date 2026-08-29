@@ -366,6 +366,38 @@ let CONN_ACQUIRES = 0;
 const connKeyOf = (uuid, ip) => String(uuid) + '|' + String(ip);
 const KV_C = (uuid, ip, id) => 'c:' + uuid + ':' + ip + ':' + id;
 
+/* ═══ انتخابِ بک‌اندِ محدودیت (علتِ شماره‌ی یکِ «محدودیت کار نمی‌کند») ═══
+   یک ورکر روی صدها isolate اجرا می‌شود و هر isolate حافظه‌ی خودش را دارد؛
+   پس یک Map در حافظه فقط «همین isolate» را می‌شمرد و اتصالِ سوم که به
+   isolate دیگری می‌افتد، از صفر شمرده می‌شود → محدودیت عملاً بی‌اثر.
+   برای شمارشِ واقعاً سراسری باید یک مرجعِ مشترک وجود داشته باشد:
+     do  → Durable Object: یک نمونه‌ی جهانی برای کل ورکر — دقیق و همگام
+     kv  → KV: مشترک بین isolateها، اما eventually-consistent (تقریبی)
+     mem → فقط حافظه‌ی همین isolate: هیچ تضمینی بین isolateها نمی‌دهد
+   پنل همیشه می‌گوید کدام بک‌اند فعال است تا عددِ نمایش‌داده‌شده گمراه‌کننده
+   نباشد. */
+function limiterBackend(env) {
+  if (env && env.LIMITER) return 'do';
+  if (env && env.KV) return 'kv';
+  return 'mem';
+}
+const LIM_LABEL = {
+  do: 'Durable Object — سراسری و دقیق',
+  kv: 'KV — مشترک اما تقریبی',
+  mem: 'حافظه — فقط همین isolate (محدودیت بین isolateها تضمین نمی‌شود)'
+};
+
+/** فراخوانیِ شیءِ محدودیت — یک نمونه برای کل ورکر (idFromName ثابت) */
+async function limiterRpc(env, path, body) {
+  const stub = env.LIMITER.get(env.LIMITER.idFromName('global'));
+  const r = await stub.fetch('https://limiter' + path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body || {})
+  });
+  return await r.json();
+}
+
 /** حذفِ ورودی‌های مرده از نگاشتِ اتصال‌های یک IP */
 function connPrune(m, now) {
   if (!m) return 0;
@@ -398,8 +430,25 @@ async function connAcquire(env, uuid, ip, limit, connId) {
   const id = connId || randTok(10);
   const now = Date.now();
   CONN_ACQUIRES++;
+  const backend = limiterBackend(env);
 
-  /* ── ۱) حافظه: مرجعِ اصلی تصمیم (بدون وابستگی به هیچ بایندینگی) ── */
+  /* ── ۱) Durable Object — مرجعِ جهانی؛ تصمیم را همین‌جا می‌گیریم ── */
+  if (backend === 'do') {
+    try {
+      const r = await limiterRpc(env, '/acquire', { uuid, ip, connId: id, limit, now });
+      /* حافظه‌ی محلی فقط آینه است برای نمایشِ فوری در پنل */
+      let m0 = CONNS.get(connKeyOf(uuid, ip));
+      if (!m0) { m0 = new Map(); CONNS.set(connKeyOf(uuid, ip), m0); }
+      if (r && r.ok) m0.set(id, now);
+      else { connPrune(m0, now); CONN_DENIES++; }
+      return Object.assign({}, r, { storage: 'do' });
+    } catch (e) {
+      /* خطای DO هرگز محدودیت را خاموش نمی‌کند — گزارش می‌شود و با حافظه ادامه می‌یابد */
+      CONN_LAST_ERR = 'DO: ' + String((e && e.message) || e);
+    }
+  }
+
+  /* ── ۲) حافظه: سریع، بدون نیاز به بایندینگ (فقط همین isolate) ── */
   let m = CONNS.get(connKeyOf(uuid, ip));
   if (!m) { m = new Map(); CONNS.set(connKeyOf(uuid, ip), m); }
   const memBefore = connPrune(m, now);
@@ -410,9 +459,9 @@ async function connAcquire(env, uuid, ip, limit, connId) {
   m.set(id, now);
   const memAfter = m.size;
 
-  /* ── ۲) KV (اختیاری): شمارشِ مشترک بین isolateها ── */
+  /* ── ۳) KV (اختیاری): شمارشِ مشترک بین isolateها ── */
   let conns = memAfter;
-  if (env && env.KV) {
+  if (backend === 'kv' && env && env.KV) {
     try {
       const prefix = 'c:' + uuid + ':' + ip + ':';
       const list = await env.KV.list({ prefix });
@@ -436,12 +485,17 @@ async function connAcquire(env, uuid, ip, limit, connId) {
       CONN_LAST_ERR = 'KV: ' + String((e && e.message) || e);
     }
   }
-  return { ok: true, conns, limit, enforced: limit > 0, id, storage: backendOf(env) };
+  return { ok: true, conns, limit, enforced: limit > 0, id, storage: backend };
 }
 
 /** کاهش شمارنده — فقط همین connId؛ اگر نگاشت خالی شد حذف می‌شود */
 async function connRelease(env, uuid, ip, connId) {
   if (!uuid || !ip) return 0;
+  const backend = limiterBackend(env);
+  if (backend === 'do') {
+    try { await limiterRpc(env, '/release', { uuid, ip, connId }); }
+    catch (e) { CONN_LAST_ERR = 'DO: ' + String((e && e.message) || e); }
+  }
   const k = connKeyOf(uuid, ip);
   const m = CONNS.get(k);
   let left = 0;
@@ -454,7 +508,7 @@ async function connRelease(env, uuid, ip, connId) {
     left = m.size;
     if (!left) CONNS.delete(k);
   }
-  if (env && env.KV && connId) {
+  if (backend === 'kv' && env && env.KV && connId) {
     try { await env.KV.delete(KV_C(uuid, ip, connId)); }
     catch (e) { CONN_LAST_ERR = 'KV: ' + String((e && e.message) || e); }
   }
@@ -467,6 +521,11 @@ async function sessionTouch(env, uuid, ip, connId) {
   const now = Date.now();
   const m = CONNS.get(connKeyOf(uuid, ip));
   if (m && m.has(connId)) m.set(connId, now);
+  if (env && env.LIMITER) {
+    try { await limiterRpc(env, '/touch', { uuid, ip, connId, now }); }
+    catch (e) { CONN_LAST_ERR = 'DO: ' + String((e && e.message) || e); }
+    return;
+  }
   if (env && env.KV) {
     try { await env.KV.put(KV_C(uuid, ip, connId), String(now), { expirationTtl: Math.ceil(CONN_TTL / 1000) }); }
     catch (e) { CONN_LAST_ERR = 'KV: ' + String((e && e.message) || e); }
@@ -477,6 +536,14 @@ async function sessionTouch(env, uuid, ip, connId) {
 async function sessionsOf(env, uuid) {
   const now = Date.now();
   const out = new Map();
+  /* مرجعِ جهانی: هرچه Durable Object می‌بیند همان حقیقت است */
+  if (env && env.LIMITER) {
+    try {
+      const r = await limiterRpc(env, '/list', { uuid });
+      for (const s of ((r && r.sessions) || [])) out.set(s.ip, s);
+      return [...out.values()].sort((a, b) => (b.conns || 0) - (a.conns || 0));
+    } catch (e) { CONN_LAST_ERR = 'DO: ' + String((e && e.message) || e); }
+  }
   const push = (ip, conns, last) => {
     const cur = out.get(ip);
     if (cur) { cur.conns = Math.max(cur.conns, conns); cur.last_active = Math.max(cur.last_active || 0, last || 0); }
@@ -2302,7 +2369,8 @@ async function apiHandler(req, env, url, ctx) {
          خوانا؟، ستون conns وجود دارد؟، افزایش واقعاً ثبت می‌شود؟،
          محدودیت IP واقعاً اتصال سوم را رد می‌کند؟، مصرف هر کاربر چقدر است؟ */
       const kind = backendOf(env);
-      const out = { ok: true, storage: kind, db: { bound: !!env.DB, kv: !!env.KV, storage: kind }, checks: [], users: [] };
+      const lim = limiterBackend(env);
+      const out = { ok: true, storage: kind, limiter: lim, limiterLabel: LIM_LABEL[lim] || lim, db: { bound: !!env.DB, kv: !!env.KV, do: !!env.LIMITER, storage: kind }, checks: [], users: [] };
       const chk = (name, ok, note) => { out.checks.push({ name, ok: !!ok, note: String(note || '') }); if (!ok) out.ok = false; };
 
       /* ۱) بایندینگ ذخیره‌سازی — علتِ شماره‌ی یکِ «شمارش کار نمی‌کند» */
@@ -2352,10 +2420,19 @@ async function apiHandler(req, env, url, ctx) {
         await connRelease(env, pu, ipA, id(5));
         await connRelease(env, pu, ipB, id(4));
         chk('تست زنده‌ی محدودیت IP', a1.ok && a2.ok && !a3.ok && b1.ok && a4.ok,
-          'سقف ۲ برای هر IP روی «' + kind + '» • اتصال ۱: ' + (a1.ok ? 'مجاز' : 'رد') +
+          'سقف ۲ برای هر IP روی «' + lim + '» • اتصال ۱: ' + (a1.ok ? 'مجاز' : 'رد') +
           ' • ۲: ' + (a2.ok ? 'مجاز' : 'رد') + ' • ۳: ' + (a3.ok ? 'مجاز ✗' : 'رد ✓') +
           ' • IP دیگر: ' + (b1.ok ? 'مجاز ✓' : 'رد ✗') +
           ' • بعد از آزادسازی: ' + (a4.ok ? 'مجاز ✓' : 'رد ✗'));
+        /* بک‌اندِ محدودیت — باید صریح باشد: حافظه بین isolateها مشترک نیست */
+        chk('مرجعِ شمارشِ محدودیت اتصال', lim === 'do',
+          lim === 'do' ? 'Durable Object — یک نمونه‌ی سراسری؛ شمارش بین همه‌ی isolateها دقیق ✓'
+            : lim === 'kv' ? 'KV بایند شده — شمارش بین isolateها مشترک است اما با تأخیر (تقریبی). برای دقت کامل شیء LIMITER را ببندید.'
+            : 'هیچ مرجعِ مشترکی نیست (نه LIMITER نه KV): هر isolate حافظه‌ی خودش را می‌شمارد، پس اتصالِ سوم در isolate دیگر از صفر شمرده می‌شود و محدودیت عملاً اعمال نمی‌شود. یک Durable Object با نام LIMITER (یا دست‌کم KV با نام KV) ببندید.'
+        );
+        chk('آمارِ محدودیت اتصال', true,
+          fa(CONN_ACQUIRES) + ' درخواست پذیرش • ' + fa(CONN_DENIES) + ' رد شده' +
+          (CONN_LAST_ERR ? ' • آخرین خطا: ' + CONN_LAST_ERR : ' • بدون خطا ✓'));
         chk('شمارنده‌ی محدودیت در دسترس است', !CONN_LAST_ERR || kind === 'kv',
           CONN_LAST_ERR ? ('آخرین خطا: ' + CONN_LAST_ERR + ' — محدودیت روی حافظه ادامه دارد') : 'بدون خطا ✓');
       } catch (e) { chk('تست زنده‌ی محدودیت IP', false, 'خطا: ' + String((e && e.message) || e)); }
@@ -3228,7 +3305,99 @@ function secHeaders(s, noCsp) {
   return h;
 }
 
-/* ════════════════════════════ ورودی ════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Durable Object: شمارنده‌ی سراسریِ اتصال‌ها (محدودیت همزمان بر اساس IP)
+   ───────────────────────────────────────────────────────────────────────────
+   چرا؟ هر ورکر روی isolateهای متعدد اجرا می‌شود و حافظه‌ی آن‌ها مشترک نیست؛
+   یک Map در حافظه نمی‌تواند اتصال‌های کل ورکر را بشمارد. این شیء دقیقاً یک
+   نمونه برای کل ورکر است (idFromName('global'))، پس شمارش آن سراسری است:
+   اتصالِ سومِ یک IP، در هر isolate ای که بیفتد، رد می‌شود.
+
+   ساختار: "uuid|ip" -> Map<connId, lastTs>
+   • acquire: تعدادِ زنده را می‌شمرد؛ اگر به سقف رسیده باشد رد می‌کند
+   • release : فقط همان connId را حذف می‌کند (هرگز سهمیه‌ی دیگری را کم نمی‌کند)
+   • touch   : heartbeat — اتصالِ زنده با سکوتِ طولانی پاک نشود
+   • منقضی‌شده‌ها (بدون heartbeat برای CONN_TTL) هنگام شمارش نادیده گرفته می‌شوند
+   ═══════════════════════════════════════════════════════════════════════════ */
+export class ConnLimiter {
+  constructor(state) {
+    this.state = state;
+    /* حافظه‌ی داخلِ شیء — بین فراخوانی‌ها زنده می‌ماند (تنها یک نمونه وجود دارد) */
+    this.conns = new Map();          // "uuid|ip" -> Map<connId, ts>
+  }
+
+  /** حذفِ ورودی‌های مرده؛ تعدادِ زنده‌ی یک کلید را برمی‌گرداند */
+  prune(key, now) {
+    const m = this.conns.get(key);
+    if (!m) return 0;
+    m.forEach((ts, id) => { if (!ts || now - ts > CONN_TTL) m.delete(id); });
+    if (!m.size) this.conns.delete(key);
+    return m.size;
+  }
+
+  async fetch(req) {
+    const url = new URL(req.url);
+    let b = {};
+    try { b = await req.json(); } catch (e) { b = {}; }
+    const now = Number(b.now) || Date.now();
+    const key = String(b.uuid) + '|' + String(b.ip);
+    const limit = Number(b.limit) || 0;
+    const j = (o) => new Response(JSON.stringify(o), { headers: { 'content-type': 'application/json' } });
+
+    if (url.pathname === '/acquire') {
+      if (!b.uuid || !b.ip) return j({ ok: true, conns: 0, limit, enforced: false, reason: 'missing-identity' });
+      let m = this.conns.get(key);
+      if (!m) { m = new Map(); this.conns.set(key, m); }
+      const live = this.prune(key, now);
+      if (limit > 0 && live >= limit) return j({ ok: false, conns: live, limit, enforced: true, storage: 'do', reason: 'limit' });
+      /* prune ممکن است کلید را (در صورت خالی شدن) حذف کرده باشد — دوباره ثبت می‌شود */
+      this.conns.set(key, m);
+      m.set(String(b.connId), now);
+      return j({ ok: true, conns: m.size, limit, enforced: limit > 0, id: String(b.connId), storage: 'do' });
+    }
+
+    if (url.pathname === '/release') {
+      const m = this.conns.get(key);
+      let left = 0;
+      if (m) {
+        if (b.connId) m.delete(String(b.connId));
+        else { const f = m.keys().next(); if (!f.done) m.delete(f.value); }
+        left = m.size;
+        if (!left) this.conns.delete(key);
+      }
+      return j({ ok: true, left });
+    }
+
+    if (url.pathname === '/touch') {
+      const m = this.conns.get(key);
+      if (m && b.connId && m.has(String(b.connId))) m.set(String(b.connId), now);
+      return j({ ok: true });
+    }
+
+    if (url.pathname === '/list') {
+      const out = new Map();
+      this.conns.forEach((m, k) => {
+        if (!String(k).startsWith(String(b.uuid) + '|')) return;
+        const n = this.prune(k, now);
+        if (n <= 0) return;
+        let last = 0;
+        m.forEach((ts) => { if (ts > last) last = ts; });
+        const ip = String(k).split('|')[1];
+        const cur = out.get(ip);
+        if (cur) { cur.conns = Math.max(cur.conns, n); cur.last_active = Math.max(cur.last_active || 0, last); }
+        else out.set(ip, { ip, conns: n, last_active: last });
+      });
+      const sessions = [...out.values()].sort((a, c) => (c.conns || 0) - (a.conns || 0));
+      return j({ ok: true, sessions });
+    }
+
+    if (url.pathname === '/reset') { this.conns.clear(); return j({ ok: true }); }
+
+    return j({ ok: false, error: 'unknown-path' });
+  }
+}
+
+/* ════════════════════════════ ورودی ════════════════ */
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
