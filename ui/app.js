@@ -385,7 +385,7 @@
         { p: 'auth.pathRotate', l: 'چرخش خودکار مسیر', t: 'sw' },
         { p: 'auth.panic', l: 'Panic mode', t: 'sw', bad: 1 },
         { p: 'sec.killSwitch', l: 'Kill Switch', t: 'sw', bad: 1 },
-        { p: 'sec.ipConnLimit', l: 'سقف اتصال همزمان — هر IP (پیش‌فرض سراسری)', t: 'num', h: '۰ = نامحدود • فقط بر اساس IP واقعی کلاینت. مقدار هر کاربر (در کارت کاربر) بر این اولویت دارد. محدودیت دستگاهی حذف شده است' },
+        { p: 'sec.ipConnLimit', l: 'سقف IP همزمان هر کاربر (پیش‌فرض سراسری)', t: 'num', h: '۰ = نامحدود • بیشینه‌ی تعداد IPهایی که همزمان می‌توانند با یک حساب وصل شوند (مدل Nova-Proxy). مقدار هر کاربر بر این اولویت دارد' },
         { p: 'sec.speedTestUrl', l: 'نشانی فایل تست ترافیک', t: 'text', h: 'پیش‌فرض: speed.cloudflare.com/__down • باید یک نشانی «خارجی» باشد (ورکر نمی‌تواند خودش را صدا بزند)' },
         { p: 'sec.cors', l: 'هدرهای CORS', t: 'sw' },
         { p: 'sec.csp', l: 'Security headers (CSP/XFO/nosniff)', t: 'sw' },
@@ -422,7 +422,7 @@
     { p: 'dailyQuotaMB', l: 'سهمیه روزانه (MB)', t: 'num' },
     { p: 'expiryDays', l: 'انقضا (روز از امروز) — ۰ = نامحدود', t: 'num' },
     /* ⚠️ محدودیت دستگاهی (deviceLimit) کاملاً حذف شد — فقط IP واقعی کلاینت */
-    { p: 'ipLimit', l: 'محدودیت اتصال همزمان — هر IP', t: 'num', h: '۰ = پیش‌فرض سراسری • بیشینه‌ی اتصال همزمانِ «یک IP» برای این کاربر' },
+    { p: 'ipLimit', l: 'سقف IP همزمان', t: 'num', h: '۰ = پیش‌فرض سراسری • بیشینه‌ی تعداد IPهای همزمان این کاربر (اتصال‌های بیشتر از همان IP مجاز است)' },
     { p: 'maxConfigs', l: 'سقف کانفیگ', t: 'num' },
     { p: 'speedLimit', l: 'Speed limit (Mbps)', t: 'num' },
     { p: 'mode', l: 'حالت اختصاصی', t: 'sel', o: ['inherit', 'alpha', 'beta', 'both'], lbls: { inherit: 'از تنظیمات عمومی', alpha: 'Alpha — VLESS', beta: 'Beta — Trojan', both: 'Both' } },
@@ -1345,7 +1345,18 @@
         const r = await api('POST', '/api/action', { act: 'usage-health' });
         free(t);
         const o = $('#usageHealthOut');
+        /* مرجعِ شمارشِ محدودیت اتصال — باید صریح باشد تا عدد گمراه‌کننده نباشد */
+        const lim = r.limiter || 'mem';
+        const limBadge = lim === 'do'
+          ? '<span class="badge ok">' + icon('fa-server') + ' مرجع محدودیت: Durable Object — سراسری و دقیق ✓</span>'
+          : lim === 'kv'
+            ? '<span class="badge warn">' + icon('fa-database') + ' مرجع محدودیت: KV — مشترک اما تقریبی</span>'
+            : '<span class="badge bad">' + icon('fa-triangle-exclamation') + ' مرجع محدودیت: حافظه — فقط همین isolate؛ بین isolateها تضمین نمی‌شود</span>';
         if (o) o.innerHTML =
+          '<div style="margin-bottom:10px">' + limBadge + '</div>' +
+          (lim !== 'do'
+            ? '<div class="hint" style="margin-bottom:10px">برای محدودیتِ واقعاً سراسری باید پروژه را با <span class="mono">wrangler deploy</span> منتشر کنید تا Durable Object با نام <span class="mono">LIMITER</span> ساخته شود (در داشبورد کلاودفلر قابل ساخت نیست). بدون آن، هر isolate شمارنده‌ی خودش را دارد و اتصالِ سوم در isolate دیگر از صفر شمرده می‌شود و مجاز می‌ماند.</div>'
+            : '') +
           (r.checks || []).map((c) => '<div class="kv"><span>' + icon(c.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' ' + esc(c.name) + '</span><b class="mono" style="color:' + (c.ok ? 'var(--ok)' : 'var(--bad)') + '">' + esc(c.note || '') + '</b></div>').join('') +
           '<div class="hint" style="margin-top:12px"><b>مصرف ذخیره‌شده‌ی هر کاربر:</b></div>' +
           '<div style="margin-top:8px;max-height:260px;overflow:auto" class="tbl-wrap"><table>' +
@@ -1747,7 +1758,7 @@
         { p: 'dailyQuotaMB', l: 'سهمیه روزانه (MB)', t: 'num', h: '۰ = بدون سقف' },
         { p: 'expiryDays', l: 'انقضا (روز)', t: 'num', h: '۰ = نامحدود' },
         /* محدودیت دستگاهی حذف شد — فقط IP واقعی کلاینت شمرده می‌شود */
-        { p: 'ipLimit', l: 'محدودیت اتصال همزمان — هر IP', t: 'num', h: '۰ = پیش‌فرض سراسری' },
+        { p: 'ipLimit', l: 'سقف IP همزمان', t: 'num', h: '۰ = پیش‌فرض سراسری • بیشینه‌ی IPهای همزمان' },
         { p: 'maxConfigs', l: 'سقف کانفیگ', t: 'num', h: '۰ = پیش‌فرض' },
         { p: 'speedLimit', l: 'سقف سرعت (Mbps)', t: 'num', h: '۰ = نامحدود' },
       ], 'three') +
@@ -1790,8 +1801,8 @@
           (s.conns > 1 ? '<span class="badge warn">' + fa(s.conns) + ' اتصال</span>' : '') +
           '<span class="badge ac" style="margin-inline-start:auto">فعال</span></div>').join('') +
         '</div>' +
-        '<div class="hint" style="margin-top:7px">سقف هر IP: ' + fa(u.ipLimit || S.d.settings.sec.ipConnLimit || 0) + ' اتصال همزمان' +
-        (u.ipLimit || S.d.settings.sec.ipConnLimit ? ' ✓' : ' (بدون سقف — محدودیت فقط بر اساس IP است)') + '</div>' +
+        '<div class="hint" style="margin-top:7px">سقف IP همزمان: ' + fa(u.ipLimit || S.d.settings.sec.ipConnLimit || 0) + ' IP' +
+        (u.ipLimit || S.d.settings.sec.ipConnLimit ? ' ✓' : ' (بدون سقف — تعداد IP نامحدود است)') + '</div>' +
         '</div></div>' : '') +
       '</div>' +
       '<footer>' +
