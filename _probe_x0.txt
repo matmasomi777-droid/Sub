@@ -1,0 +1,80 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  پنل مدیریت کانفیگ — Cloudflare Worker (تک‌فایل)
+ *  نسخه 2.0.0 • UI از گیت‌هاب خوانده می‌شود (fragment enhancement / FR)
+ * ───────────────────────────────────────────────────────────────────────────
+ *  نصب: داشبورد کلاودفلر → Workers & Pages → Create Worker → Edit code →
+ *        کل این فایل را جایگذاری کنید → Deploy
+ *  رمز پیش‌فرض: simorgh   (متغیر MASTER_KEY قابل تنظیم)
+ *  بایندینگ اختیاری: KV  → برای ذخیره‌ی پایدار
+ *
+ *  مسیرها:
+ *    /                       پنل (UI از گیت‌هاب)
+ *    /<loginPath>            پنل (مسیر مخفی)
+ *    /sub/<uuid>[?format=]   اشتراک: base64|raw|clash|meta|singbox|v2ray
+ *    /status/<name>          صفحه‌ی وضعیت کاربر
+ *    /dns-query?name=&type=  DoH proxy برای کلاینت‌ها
+ *    /health                 سلامت ورکر
+ *    /api/login              ورود (JWT + 2FA + rate limit)
+ *    /api/state              وضعیت کامل (نیاز به Bearer)
+ *    /api/settings           PUT ذخیره‌ی تنظیمات
+ *    /api/users              POST ساخت/ویرایش/حذف کاربر
+ *    /api/keys /api/panels   مدیریت کلیدها و پنل‌های لینک‌شده
+ *    /api/action             عملیات‌ها (آپدیت، پنیک، چرخش مسیر، …)
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+import { connect } from 'cloudflare:sockets';
+
+const VERSION = '2.0.0';
+const BUILD = '2026.02.14';
+const BOOT = Date.now();
+/* ذخیره‌سازی فقط با D1 — KV حذف شد */
+let UI = { html: null, ts: 0 }; // کش UI
+const RATE = new Map();         // rate limiting
+
+/* ════════════════════════════ پیش‌فرض‌ها ════════════════════════════ */
+const DEF = () => ({
+  settings: {
+    panel: { name: 'پنل مدیریت', url: '' },
+    /* بایندینگ D1: env.DB */
+    mode: 'both',
+    multiSplit: true,
+    protocols: { vless: true, trojan: true, ss: false, vmess: false },
+    trojanHash: 'sha224',
+    transport: 'ws', path: '/sg', grpcService: 'simorgh', xhttpMode: 'auto',
+    tfo: true, randomJunk: true, mux: false, earlyData: false, ports: '443, 2053, 2083, 2087, 2096, 8443',
+    tls: true, fingerprint: 'randomized', sni: '', host: '', alpn: 'http/1.1', allowInsecure: false,
+    ech: { enabled: false, mode: 'doh' },
+    fragment: { enabled: true, mode: 'shadowrocket', length: '40-60', interval: '10-15' },
+    fr: { enabled: true, repo: 'matmasomi777-droid/Sub', branch: 'main', files: ['ui/index.html', 'ui/style.css', 'ui/app.js'] },
+    cleanIPs: ['104.17.152.10#فرانکفورت', '172.64.32.7#آمستردام', '188.114.97.3#لندن', '104.21.5.88#استانبول'],
+    perIsp: true, ispPools: ['MCI=104.17.1.1,104.17.1.2', 'Irancell=172.64.32.7,172.64.32.8', 'Rightel=188.114.97.3', 'Shatel=104.21.5.88'], ipRotation: true, nodeLimit: 12,
+    proxyIPs: ['cdn-all.xn--b6gac.eu.org', 'cdn.xn--b6gac.eu.org'], failover: true, failoverTimeout: 3000,
+    backupRelay: '', customRelay: '', upstream: [],
+    doh: { url: 'https://cloudflare-dns.com/dns-query' }, dohProxy: true, resolveFirst: true,
+    nat64: { prefix: '2a01:4f8:c2c:123::1', fromUrl: false, url: '' }, raceDial: 3,
+    geoip: { enabled: true, api: 'https://ipapi.co/{ip}/json/' },
+    tg: {
+      enabled: false, token: '', chatId: '', adminId: '', lang: 'fa', silent: false, multiPanel: true,
+      loginAlert: true, autoDisableAlert: true, usageFromCF: true,
+      notify: { user: true, quota: true, expiry: true, err: false, daily: true },
+    },
+    cf: { accountId: '', apiToken: '', zoneId: '', domain: '', usageApi: true },
+    linked: { enabled: false, hubUrl: '', apiKey: '', propagateConfig: true, propagateUpdate: true, loginSignal: true },
+    upd: { auto: true, repo: 'user/simorgh', channel: 'stable', interval: 60, healthCheck: true, rollback: true },
+    auth: { totp: false, totpSecret: '', sessionMin: 15, loginRate: '5/10m', path: 'panel', pathRotate: false, disguise: true, maintenanceHost: 'nginx', decoyUrl: '', panic: false, password: 'simorgh' },
+    sec: { cors: true, csp: true, killSwitch: false },
+    sub: {
+      path: 'sub', userAgent: '', fakeConfigs: true, nodeLimit: 12, converter: '', telegramChannel: '@simorgh_channel',
+      /* آیدی تلگرامی که در صفحه‌ی کاربر و لینک ساب نمایش داده می‌شود */
+      telegramSupport: '@simorgh_channel', telegramBuy: '',
+      countryGroups: true, namePrefix: 'پنل', rules: ['GEOIP,IR,DIRECT', 'DOMAIN-SUFFIX,ir,DIRECT', 'GEOSITE,category-ads-all,REJECT'],
+      blockAdult: false, blockAds: true, blockQuic: true, bypassIR: true, doh: 'https://cloudflare-dns.com/dns-query',
+      /* ── کانفیگ‌های فیک (اطلاعاتی) — کاملاً قابل تنظیم ── */
+      fakes: [
+        { id: 'usage',    name: '📊 {usage}',        enabled: true,  proto: 'vless',  pin: true,  pos: 1 },
+        { id: 'remaining',name: '🟢 {remaining}',    enabled: true,  proto: 'vless',  pin: true,  pos: 2 },
+        { id: 'expiry',   name: '📅 {expiry}',       enabled: true,  proto: 'vless',  pin: true,  pos: 3 },
+        { id: 'channel',  name: '📢 {channel}',      enabled: true,  proto: 'trojan', pin: true,  pos: 4 },
+        { id: 'panel',    name: '⚙️ {panel} v{ver}', enabled: false, proto: 'trojan', pin: tru
