@@ -1,0 +1,29 @@
+e,  pos: 5 },
+        { id: 'custom1',  name: '',                  enabled: false, proto: 'vless',  pin: false, pos: 6 },
+        { id: 'custom2',  name: '',                  enabled: false, proto: 'trojan', pin: false, pos: 7 },
+        { id: 'custom3',  name: '',                  enabled: false, proto: 'vless',  pin: false, pos: 8 },
+      ],
+    },
+  },
+  users: [],
+  logs: [],
+  keys: [],
+  panels: [],
+  updateLog: [],
+  lastCheck: 0,
+  uiLoaded: 0,
+  stats: {
+    requests: 0, connections: 0,
+    daily: Array.from({ length: 24 }, (_, i) => 0.2 + Math.abs(Math.sin(i / 3)) * 0.6),
+    monthly: Array.from({ length: 30 }, (_, i) => 0.3 + Math.abs(Math.sin(i / 4)) * 0.5),
+    yearly: Array.from({ length: 12 }, (_, i) => 0.35 + Math.abs(Math.cos(i / 2)) * 0.45),
+    reqSeries: Array.from({ length: 24 }, () => Math.random() * 0.6 + 0.2),
+    trafficSeries: Array.from({ length: 24 }, (_, i) => 0.3 + Math.abs(Math.sin(i / 3.2)) * 0.5),
+  },
+});
+
+/* ════════════════════════════ ابزارها ════════════════════════════ */
+const J = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' };
+const json = (d, s = 200, h = {}) => new Response(JSON.stringify(d, null, 2), { status: s, headers: { ...J, ...h } });
+const txt = (b, h = {}, s = 200) => new Response(b, { status: s, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', ...h } });
+const enc = new TextEncod
