@@ -221,13 +221,20 @@ async function usageInit(env, st) {
       reqs INTEGER NOT NULL DEFAULT 0,
       last_seen INTEGER
     )`).run();
-    /* جدول نشست‌ها — برای محدودیت IP و اتصال همزمان */
+    /* جدول نشست‌ها — برای محدودیت IP و اتصال همزمان
+       ⚠️ ستون conns الزامی است — بدون آن همه‌ی کوئری‌های شمارنده خطا می‌خورند
+       و محدودیت بی‌صدا غیرفعال می‌شود */
     await env.DB.prepare(`CREATE TABLE IF NOT EXISTS sessions (
       uuid TEXT NOT NULL,
       ip TEXT NOT NULL,
+      conns INTEGER NOT NULL DEFAULT 1,
       last_active INTEGER NOT NULL,
       PRIMARY KEY (uuid, ip)
     )`).run();
+    /* مهاجرت: نصب‌های قدیمی که جدول بدون ستون conns دارند */
+    try {
+      await env.DB.prepare('ALTER TABLE sessions ADD COLUMN conns INTEGER NOT NULL DEFAULT 1').run();
+    } catch (e) { /* ستون از قبل هست */ }
     /* ایندکس برای پاک‌سازی سریع */
     await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_sessions_active ON sessions(last_active)').run();
     /* مهاجرت یک‌باره: مقادیر blob قدیمی را به جدول منتقل کن */
@@ -513,6 +520,8 @@ function rateOk(key, max, winMs) {
   return rec.n <= max;
 }
 const ipOf = (r) => r.headers.get('cf-connecting-ip') || r.headers.get('x-forwarded-for') || '0.0.0.0';
+/* تبدیل رقم به فارسی — در apiHandler استفاده می‌شود */
+const fa = (v) => String(v).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
 
 /* ════════════════════════════ تولید کانفیگ ════════════════════════════ */
 /* ═══════════ فرمت URI مطابق BPB — سازگار با دسکتاپ و موبایل ═══════════
@@ -840,7 +849,7 @@ function v2rayJson(list, u, s, url) {
   return JSON.stringify({
     log: { loglevel: 'warning' },
     inbounds: [{ port: 10808, listen: '127.0.0.1', protocol: 'socks', settings: { udp: true } }],
-    outbounds: list.map((c) => ({
+    outbounds: list.map((c, i) => ({
       tag: c.kind + '-' + c.port, ...(c.kind === 'trojan' ? { protocol: 'trojan', settings: { servers: [{ address: c.entry.ip, port: c.port, password: u.secret }] } } : { protocol: c.kind === 'vmess' ? 'vmess' : 'vless', settings: { vnext: [{ address: c.entry.ip, port: c.port, users: [{ id: u.uuid, encryption: 'none', security: 'auto', level: 0 }] }] } }),
       streamSettings: { network: s.transport, security: s.tls ? 'tls' : 'none', ...(s.tls ? { tlsSettings: { serverName: s.sni || host, allowInsecure: !!s.allowInsecure, fingerprint: s.fingerprint } } : {}), ...(s.transport === 'ws' ? { wsSettings: { path: plainPath(s, i, u.uuid), headers: { Host: host } } } : {}), ...(s.transport === 'grpc' ? { grpcSettings: { serviceName: s.grpcService } } : {}) },
     })).concat([{ tag: 'direct', protocol: 'freedom' }, { tag: 'block', protocol: 'blackhole' }]),
@@ -1973,6 +1982,42 @@ async function apiHandler(req, env, url) {
       await save(env, st);
       return json({ ok: true, current: cur, latest, newer, msg: a === 'update-check' ? (newer ? 'نسخه‌ی جدید موجود است: ' + latest : 'در آخرین نسخه هستید') : a === 'update-deploy' ? 'استقرار انجام شد' : 'بازگشت انجام شد' });
     }
+    if (a === 'usage-health') {
+      /* ═══ سلامت شمارش مصرف (volume counting health check) ═══
+         بررسی می‌کند: جدول usage خوانا؟، جدول sessions ستون conns دارد؟،
+         مصرف هر کاربر چقدر ثبت شده؟، آخرین write چه زمانی بوده؟،
+         جریان افزایش (last_seen) تازه است؟ */
+      const out = { ok: true, db: { bound: !!env.DB, storage: env.DB ? 'd1' : 'memory' }, checks: [], users: [] };
+      const chk = (name, ok, note) => { out.checks.push({ name, ok: !!ok, note: String(note || '') }); if (!ok) out.ok = false; };
+      if (!env.DB) {
+        chk('اتصال D1', false, 'بایندینگ env.DB وجود ندارد — مصرف فقط در حافظه است و با ری‌استارت از بین می‌رود');
+        return json(out);
+      }
+      /* جدول usage */
+      let rows = null;
+      try { const r = await env.DB.prepare('SELECT uuid, up, down, reqs, last_seen FROM usage').all(); rows = r.results || []; chk('جدول usage', true, fa(rows.length) + ' ردیف'); }
+      catch (e) { chk('جدول usage', false, 'خوانده نشد: ' + String((e && e.message) || e)); }
+      /* جدول sessions + ستون conns */
+      try { const r = await env.DB.prepare('SELECT conns FROM sessions LIMIT 1').all(); chk('جدول sessions (ستون conns)', true, 'محدودیت اتصال همزمان فعال است'); }
+      catch (e) { chk('جدول sessions (ستون conns)', false, 'ستون conns نیست یا جدول خراب است — محدودیت اتصال کار نمی‌کند: ' + String((e && e.message) || e)); }
+      /* آخرین نوشتن blob وضعیت */
+      chk('آخرین ذخیره‌ی وضعیت (D1)', !!LAST_WRITE, LAST_WRITE ? Math.floor((Date.now() - LAST_WRITE) / 1000) + ' ثانیه پیش • ' + fa(WRITE_COUNT.n || 0) + ' نوشتن امروز' : 'هنوز نوشته نشده');
+      /* جریان افزایش */
+      const now = Date.now();
+      const fresh = (rows || []).filter((r) => r.last_seen && now - r.last_seen < 3600000).length;
+      chk('جریان ثبت مصرف', !rows || rows.length === 0 || fresh > 0, rows && rows.length ? fa(fresh) + ' کاربر در یک ساعت اخیر مصرف ثبت شده' : 'هنوز مصرفی ثبت نشده (طبیعی است اگر اتصالی نبوده)');
+      /* هر کاربر */
+      for (const u of st.users) {
+        const r = (rows || []).find((x) => x.uuid === u.uuid);
+        out.users.push({
+          name: u.name, uuid: u.uuid,
+          up: r ? r.up : 0, down: r ? r.down : 0, reqs: r ? r.reqs : 0,
+          lastSeen: r ? r.last_seen : null,
+          recording: !!(r && (r.up > 0 || r.down > 0 || r.reqs > 0)),
+        });
+      }
+      return json(out);
+    }
     return json({ error: 'unknown action' }, 400);
   }
 
@@ -2160,6 +2205,16 @@ async function session(ws, early, st, env, ctx, clientIp) {
   let dnsWriter = null;
   const ip = clientIp || '0.0.0.0';
   let connAcquired = false;
+  /* تمدید heartbeat — هر ۳۰ ثانیه حداکثر یک‌بار؛ بدون این، ردیف نشست
+     بعد از ۹۰ ثانیه توسط sweep پاک می‌شد و شمارش اتصال خراب می‌شد */
+  let lastTouch = 0;
+  const touch = () => {
+    if (!connAcquired || !ctx || !ctx.waitUntil) return;
+    const now = Date.now();
+    if (now - lastTouch < 30000) return;
+    lastTouch = now;
+    ctx.waitUntil(sessionTouch(env, user && user.uuid, ip).catch(() => {}));
+  };
 
   /* ═══ مصرف فقط در حافظه جمع می‌شود ═══
      روی موبایل، هر کوئری D1 در مسیر پیام اختلال شدید ایجاد می‌کند.
@@ -2223,11 +2278,7 @@ async function session(ws, early, st, env, ctx, clientIp) {
       const full = new Uint8Array(hb.length + buf.length);
       full.set(hb); full.set(buf, hb.length);
       down += full.length; pendDown += full.length;      // downstream
-      /* upstream: درخواست HTTP که کلاینت فرستاد */
-      if (info.payload) {
-        const uLen = info.payload.byteLength || info.payload.length || 0;
-        if (uLen) { up += uLen; pendUp += uLen; }
-      }
+      /* upstream: درخواست HTTP که کلاینت فرستاد — در dial() یک‌بار شمرده می‌شود */
       maybeFlush();
       ws.send(full);
       return true;
@@ -2254,6 +2305,7 @@ async function session(ws, early, st, env, ctx, clientIp) {
           hasData = true;
           down += vLen; pendDown += vLen;
           maybeFlush();
+          touch();
           if (ws.readyState !== 1) break;
           if (header && header.length) {
             const merged = new Uint8Array(header.length + vLen);
@@ -2323,23 +2375,27 @@ async function session(ws, early, st, env, ctx, clientIp) {
     if (info.cmd === 2) { await finish(); return; }
     if (!info.addr || !info.port) return finish();
 
-    /* محدودیت اتصال — در پس‌زمینه، بدون مسدود کردن تونل */
+    /* محدودیت اتصال — قبل از برقراری تونل بررسی می‌شود.
+       ⚠️ باگ قبلی: acquire در پس‌زمینه (waitUntil) بود؛ یعنی
+       ۱) تونل قبل از تصمیم admission برقرار می‌شد و داده رد و بدل می‌شد،
+       ۲) اگر WS زود بسته می‌شد، release ممکن بود قبل از increment اجرا شود
+          و شمارنده‌ی اتصالِ دیگری را کم کند. */
     const deviceLimit = Number(user.deviceLimit) || 0;
     const ipLimit = Number(user.ipLimit) || 0;
     if (deviceLimit > 0 || ipLimit > 0) {
-      connAcquired = true;
-      if (ctx && ctx.waitUntil) {
-        ctx.waitUntil(connAcquire(env, user.uuid, ip, deviceLimit, ipLimit)
-          .then((adm) => {
-            if (!adm.ok) {
-              connAcquired = false;
-              try { ws.close(1013, 'connection limit reached'); } catch (e) {}
-            }
-          }).catch(() => {}));
+      const adm = await connAcquire(env, user.uuid, ip, deviceLimit, ipLimit);
+      if (!adm.ok) {
+        try { ws.close(1013, 'connection limit reached'); } catch (e) {}
+        await finish();
+        return;
       }
+      connAcquired = true;
     }
 
     const respHeader = info.isTrojan ? new Uint8Array(0) : new Uint8Array([info.version || 0, 0]);
+    /* شمارش آپلود بسته‌ی اول — فقط همین‌جا، تا retry دوباره‌شماری نکند */
+    const plLen = info.payload ? (info.payload.byteLength || info.payload.length || 0) : 0;
+    if (plLen) { up += plLen; pendUp += plLen; }
     const s = st.settings;
     const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
@@ -2538,6 +2594,7 @@ async function session(ws, early, st, env, ctx, clientIp) {
 
     /* بسته‌های بعدی → مستقیم به سوکت TCP */
     if (!sock) return;
+    touch();
     try {
       const w = sock.writable.getWriter();
       up += buf.byteLength; pendUp += buf.byteLength;

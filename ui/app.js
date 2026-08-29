@@ -612,7 +612,10 @@
       u.map((x) => { const q = (x.quotaGB || 0) * 1073741824, p = q ? (x.up + x.down) / q * 100 : 0; return '<tr><td class="cell-main">' + esc(x.name) + '</td><td class="mono">' + bytes(x.up) + '</td><td class="mono">' + bytes(x.down) + '</td><td class="mono"><b>' + bytes(x.up + x.down) + '</b></td>' +
         '<td><div style="display:flex;align-items:center;gap:8px"><div class="bar ' + (p > 90 ? 'bad' : p > 70 ? 'warn' : '') + '" style="max-width:110px"><i style="width:' + p + '%"></i></div><span class="mono" style="font-size:10px">' + (q ? fa(p.toFixed(0)) + '٪' : '∞') + '</span></div></td>' +
         '<td class="mono">' + fa(x.totalReq || 0) + '</td></tr>'; }).join('') +
-      '</tbody></table></div></div></div>';
+      '</tbody></table></div></div></div>' +
+      '<div class="card" style="margin-top:12px"><header><span class="ic ' + (S.d.storage === 'd1' ? '' : 'bad') + '">' + icon('fa-heart-pulse') + '</span><div><h3>سلامت شمارش مصرف</h3><p>بررسی اینکه شمارنده‌ی حجم (usage) درست کار می‌کند</p></div>' +
+      '<div class="acts"><button class="btn sm p" data-act="usage-health">' + icon('fa-stethoscope') + ' بررسی سلامت</button></div></header>' +
+      '<div class="bd"><div id="usageHealthOut"><div class="empty">با یک کلیک، جدول مصرف، جریان ثبت (last_seen)، آخرین نوشتن D1 و مصرف ذخیره‌شده‌ی هر کاربر بررسی می‌شود.</div></div></div></div>';
   }
 
   function updateView() {
@@ -1274,6 +1277,21 @@
       else if (a === 'panel-sync') { busy(t, 'همگام‌سازی'); await api('POST', '/api/panels', { id, op: 'sync' }); free(t); toast('همگام شد'); await refresh(); }
       else if (a === 'domain-check') { busy(t, 'بررسی'); const r = await api('POST', '/api/action', { act: 'domain-health' }); free(t); const o = $('#domainOut'); if (o) o.innerHTML = (r.checks || []).map((c) => '<div class="kv"><span>' + icon(c.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' ' + esc(c.name) + '</span><b class="mono" style="color:' + (c.ok ? 'var(--ok)' : 'var(--bad)') + '">' + esc(c.note || '') + '</b></div>').join(''); }
       else if (a === 'tg-test') { busy(t, 'ارسال'); const r = await api('POST', '/api/action', { act: 'tg-test' }); free(t); toast(r.ok ? 'پیام تست ارسال شد' : 'ارسال نشد — توکن/چت‌آیدی را چک کنید', r.ok ? 'ok' : 'err'); }
+      else if (a === 'usage-health') {
+        busy(t, 'بررسی');
+        const r = await api('POST', '/api/action', { act: 'usage-health' });
+        free(t);
+        const o = $('#usageHealthOut');
+        if (o) o.innerHTML =
+          (r.checks || []).map((c) => '<div class="kv"><span>' + icon(c.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' ' + esc(c.name) + '</span><b class="mono" style="color:' + (c.ok ? 'var(--ok)' : 'var(--bad)') + '">' + esc(c.note || '') + '</b></div>').join('') +
+          '<div class="hint" style="margin-top:12px"><b>مصرف ذخیره‌شده‌ی هر کاربر:</b></div>' +
+          '<div style="margin-top:8px;max-height:260px;overflow:auto" class="tbl-wrap"><table>' +
+          '<thead><tr><th>کاربر</th><th>آپلود</th><th>دانلود</th><th>درخواست</th><th>آخرین ثبت</th><th>وضعیت</th></tr></thead><tbody>' +
+          (r.users || []).map((x) => '<tr><td class="cell-main">' + esc(x.name) + '</td><td class="mono">' + bytes(x.up || 0) + '</td><td class="mono">' + bytes(x.down || 0) + '</td><td class="mono">' + fa(x.reqs || 0) + '</td><td class="hint">' + ago(x.lastSeen) + '</td>' +
+            '<td><span class="badge ' + (x.recording ? 'ok' : 'warn') + '">' + (x.recording ? 'در حال ثبت ✓' : 'مصرفی ثبت نشده') + '</span></td></tr>').join('') +
+          '</tbody></table></div>' +
+          '<div class="hint" style="margin-top:10px">اگر «در حال ثبت ✓» می‌بینید یعنی افزایش مصرف برای آن کاربر جریان دارد. «مصرفی ثبت نشده» فقط برای کاربرانی که وصل نبوده‌اند طبیعی است.</div>';
+      }
       else if (a === 'decoy-test') {
         busy(t, 'در حال تست');
         const r = await api('POST', '/api/action', { act: 'decoy-test' });
