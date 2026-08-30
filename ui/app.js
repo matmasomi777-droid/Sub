@@ -386,6 +386,7 @@
         { p: 'auth.panic', l: 'Panic mode', t: 'sw', bad: 1 },
         { p: 'sec.killSwitch', l: 'Kill Switch', t: 'sw', bad: 1 },
         { p: 'sec.ipConnLimit', l: 'سقف IP همزمان هر کاربر (پیش‌فرض سراسری)', t: 'num', h: '۰ = نامحدود • بیشینه‌ی تعداد IPهایی که همزمان می‌توانند با یک حساب وصل شوند (مدل Nova-Proxy). مقدار هر کاربر بر این اولویت دارد' },
+        { p: 'sec.connTtlSec', l: 'زمان آزاد شدن آی‌پی بعد از قطع شدن (ثانیه)', t: 'num', h: 'پیش‌فرض ۴۵ • مجاز ۱۵ تا ۶۰۰ • هر اتصال هر یک‌سومِ این مدت ضربان می‌فرستد؛ آی‌پی‌ای که نیمی از این مدت بی‌ضربان بماند، با اولین درخواستِ آی‌پیِ جدید فوراً جایگزین می‌شود. کمتر = عوض کردن اینترنت سریع‌تر آزاد می‌شود' },
         { p: 'sec.speedTestUrl', l: 'نشانی فایل تست ترافیک', t: 'text', h: 'پیش‌فرض: speed.cloudflare.com/__down • باید یک نشانی «خارجی» باشد (ورکر نمی‌تواند خودش را صدا بزند)' },
         { p: 'sec.cors', l: 'هدرهای CORS', t: 'sw' },
         { p: 'sec.csp', l: 'Security headers (CSP/XFO/nosniff)', t: 'sw' },
@@ -1376,7 +1377,9 @@
           /* ═══ اتصال‌های زنده — اگر چیزی گیر کرده باشد اینجا دیده می‌شود ═══ */
           '<div class="hint" style="margin-top:12px"><b>اتصال‌های زنده (مبنای محدودیت آی‌پی):</b> ' +
           esc(String(((r.diag || {}).ttlSec || 60))) + ' ثانیه بدون ضربان = آزاد شدن خودکار • ضربان هر ' +
-          esc(String(((r.diag || {}).hbSec || 20))) + ' ثانیه • مرجع: ' +
+          esc(String(((r.diag || {}).hbSec || 20))) + ' ثانیه • بعد از ' +
+          esc(String(((r.diag || {}).idleAfterSec || 30))) + ' ثانیه بی‌ضربانی، آی‌پیِ جدید فوراً جای آن را می‌گیرد (' +
+          esc(fa(((r.diag || {}).evicts || 0))) + ' مورد تاکنون) • مرجع: ' +
           esc({ do: 'شیءِ ماندگار (LIMITER)', d1: 'جدول conns در D1', kv: 'KV', mem: 'حافظهٔ این isolate' }[(r.diag || {}).liveSource] || ((r.diag || {}).liveSource || '—')) +
           (((r.live || {}).oldestSec) ? ' • قدیمی‌ترین ردیف: ' + esc(fa((r.live || {}).oldestSec)) + ' ثانیه' : '') + '</div>' +
           (((r.live || {}).stale)
@@ -1387,7 +1390,9 @@
               '<thead><tr><th>کاربر</th><th>آی‌پی</th><th>سن</th><th>وضعیت</th></tr></thead><tbody>' +
               r.liveRows.map((x) => '<tr><td class="cell-main">' + esc(x.name || x.uuid) + '</td><td class="mono">' + esc(x.ip) + '</td>' +
                 '<td class="mono">' + (x.stale || x.ageSec === null ? 'نامعتبر' : fa(x.ageSec) + ' ثانیه') + '</td>' +
-                '<td><span class="badge ' + (x.stale ? 'bad' : 'ok') + '">' + (x.stale ? 'خراب — پاک می‌شود' : 'زنده') + '</span></td></tr>').join('') +
+                '<td><span class="badge ' + (x.stale ? 'bad' : (x.idle ? 'warn' : 'ok')) + '">' +
+                (x.stale ? 'خراب — پاک می‌شود' : (x.idle ? 'بی‌ضربان — با اولین آی‌پیِ جدید جایگزین می‌شود' : 'زنده')) +
+                '</span></td></tr>').join('') +
               '</tbody></table></div>'
             : '<div class="hint" style="margin-top:6px">هیچ اتصالِ زنده‌ای ثبت نشده — هیچ آی‌پی‌ای قفل نیست.</div>') +
           '<div class="hint" style="margin-top:12px"><b>مصرف ذخیره‌شده‌ی هر کاربر:</b></div>' +
