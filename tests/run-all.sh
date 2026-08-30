@@ -1,1 +1,30 @@
-IyEvYmluL3NoCiMg4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQCiMgIExvY2FsIHZlcmlmaWNhdGlvbiBzdWl0ZSBmb3Igd29ya2VyLmpzIOKAlCBubyBDbG91ZGZsYXJlIGFjY291bnQgbmVlZGVkLgojCiMgICAgc2ggdGVzdHMvcnVuLWFsbC5zaAojCiMgIEhvdyBpdCB3b3JrczogYnVpbGQubWpzIGNvcGllcyAuLi93b3JrZXIuanMgaW50byB0ZXN0cy93b3JrZXIudGVzdC5tanMsCiMgIHN3YXBzIHRoZSBgY2xvdWRmbGFyZTpzb2NrZXRzYCBpbXBvcnQgZm9yIGEgc3R1YiBhbmQgcmUtZXhwb3J0cyB0aGUgaW50ZXJuYWwKIyAgZnVuY3Rpb25zIHVuZGVyIHRlc3QuIFRoZSBEMSBiaW5kaW5nIGlzIGEgcmVhbCBTUUxpdGUgZGF0YWJhc2UKIyAgKG5vZGU6c3FsaXRlKSwgc28gVVBTRVJUL3N3ZWVwIHNlbWFudGljcyBtYXRjaCBwcm9kdWN0aW9uOyBLViBhbmQgdGhlCiMgIER1cmFibGUgT2JqZWN0IGxpbWl0ZXIgYXJlIHNtYWxsIGluLXByb2Nlc3MgZmFrZXMuCiMgIFJlcXVpcmVzIE5vZGUgPj0gMjIuNSAobm9kZTpzcWxpdGUpLgojIOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkOKVkApzZXQgLXUKY2QgIiQoZGlybmFtZSAiJDAiKSIgfHwgZXhpdCAxClJPT1Q9IiQoY2QgLi4gJiYgcHdkKSIKCm5vZGUgYnVpbGQubWpzICIkUk9PVC93b3JrZXIuanMiID4vZGV2L251bGwgfHwgZXhpdCAxCgpmYWlsPTAKZm9yIHQgaW4gdDEtY291bnRpbmcgdDItZTJlIHQzLWlwbGltaXQgdDQtYXBpIHQ2LWQxLXR1bm5lbCB0Ny10cmFmZmljLWFwaSB0OC1oZWFsdGgtZGlhZyB0OS1sZWFrIHQxMC10dW5uZWwtbGVhayB0MTEtdHRsLWV2aWN0IHQxMi11aS1zZWN1cml0eSB0MTMtZGlzZ3Vpc2UgdDE0LXYzLWJhY2tlbmQgdDE1LWV4aXQtcmFkYXIgdDE2LXYzLXVpIHQxNy12My11aS1zdGFnZTQgdDE4LXYzLXJldmlzaW9uOyBkbwogIHByaW50ZiAnXG7ilZDilZDilZDilZDilZDilZDilZDilZAgJXMg4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQXG4nICIkdCIKICBvdXQ9JChub2RlICIkdC5tanMiIDI+JjEgfCBncmVwIC12IEV4cGVyaW1lbnRhbFdhcm5pbmcgfCBncmVwIC12ICd0cmFjZS13YXJuaW5ncycpCiAgcHJpbnRmICclc1xuJyAiJG91dCIKICBwcmludGYgJyVzXG4nICIkb3V0IiB8IGdyZXAgLXEgJ0ZBSUwnICYmIGZhaWw9JCgoZmFpbCArIDEpKQpkb25lCgpwcmludGYgJ1xu4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQ4pWQXG4nCmlmIFsgIiRmYWlsIiAtZXEgMCBdOyB0aGVuIGVjaG8gJ0FMTCBTVUlURVMgUEFTU0VEJzsgZWxzZSBlY2hvICIkZmFpbCBTVUlURShTKSBGQUlMRUQiOyBmaQpleGl0ICIkZmFpbCIK
+#!/bin/sh
+# ═══════════════════════════════════════════════════════════════════════════
+#  Local verification suite for worker.js — no Cloudflare account needed.
+#
+#    sh tests/run-all.sh
+#
+#  How it works: build.mjs copies ../worker.js into tests/worker.test.mjs,
+#  swaps the `cloudflare:sockets` import for a stub and re-exports the internal
+#  functions under test. The D1 binding is a real SQLite database
+#  (node:sqlite), so UPSERT/sweep semantics match production; KV and the
+#  Durable Object limiter are small in-process fakes.
+#  Requires Node >= 22.5 (node:sqlite).
+# ═══════════════════════════════════════════════════════════════════════════
+set -u
+cd "$(dirname "$0")" || exit 1
+ROOT="$(cd .. && pwd)"
+
+node build.mjs "$ROOT/worker.js" >/dev/null || exit 1
+
+fail=0
+for t in t1-counting t2-e2e t3-iplimit t4-api t6-d1-tunnel t7-traffic-api t8-health-diag t9-leak t10-tunnel-leak t11-ttl-evict t12-ui-security t13-disguise t14-v3-backend t15-exit-radar t16-v3-ui t17-v3-ui-stage4 t18-v3-revision; do
+  printf '\n════════ %s ════════\n' "$t"
+  out=$(node "$t.mjs" 2>&1 | grep -v ExperimentalWarning | grep -v 'trace-warnings')
+  printf '%s\n' "$out"
+  printf '%s\n' "$out" | grep -q 'FAIL' && fail=$((fail + 1))
+done
+
+printf '\n════════════════════════════════\n'
+if [ "$fail" -eq 0 ]; then echo 'ALL SUITES PASSED'; else echo "$fail SUITE(S) FAILED"; fi
+exit "$fail"
