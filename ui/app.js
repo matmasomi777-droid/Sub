@@ -1376,7 +1376,12 @@
           /* ═══ اتصال‌های زنده — اگر چیزی گیر کرده باشد اینجا دیده می‌شود ═══ */
           '<div class="hint" style="margin-top:12px"><b>اتصال‌های زنده (مبنای محدودیت آی‌پی):</b> ' +
           esc(String(((r.diag || {}).ttlSec || 60))) + ' ثانیه بدون ضربان = آزاد شدن خودکار • ضربان هر ' +
-          esc(String(((r.diag || {}).hbSec || 20))) + ' ثانیه</div>' +
+          esc(String(((r.diag || {}).hbSec || 20))) + ' ثانیه • مرجع: ' +
+          esc({ do: 'شیءِ ماندگار (LIMITER)', d1: 'جدول conns در D1', kv: 'KV', mem: 'حافظهٔ این isolate' }[(r.diag || {}).liveSource] || ((r.diag || {}).liveSource || '—')) +
+          (((r.live || {}).oldestSec) ? ' • قدیمی‌ترین ردیف: ' + esc(fa((r.live || {}).oldestSec)) + ' ثانیه' : '') + '</div>' +
+          (((r.live || {}).stale)
+            ? '<div class="hint" style="margin-top:6px;color:var(--bad)">' + esc(fa((r.live || {}).stale)) + ' ردیف زمانِ معتبر ندارد و در اولین پاک‌سازی حذف می‌شود.</div>'
+            : '') +
           ((r.liveRows && r.liveRows.length)
             ? '<div style="margin-top:8px;max-height:220px;overflow:auto" class="tbl-wrap"><table>' +
               '<thead><tr><th>کاربر</th><th>آی‌پی</th><th>سن</th><th>وضعیت</th></tr></thead><tbody>' +
