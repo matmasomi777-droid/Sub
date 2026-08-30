@@ -12,11 +12,11 @@ src = src.replace(/import\s*\{[^}]*\}\s*from\s*['"]cloudflare:sockets['"];?/,
   "import { connect } from './cf-sockets.mjs';");
 
 src += `\nexport { vlessHeader, usageInit, usageDelta, usageReset, usageRead, usageOf, usageFresh,
-  connAcquire, connRelease, sessionTouch, sessionsOf,
+  connAcquire, connRelease, connRefresh, sessionTouch, sessionsOf,
   liveEnsure, liveSweep, liveIps, liveIpsOrdered, d1Acquire, d1Release, d1Touch,
   connReset, liveRowsOf, limiterRpc, limiterBackend, admitDecision, backendOf,
-  liveIpsAged, d1EvictIdle, connTtlMs, connHbMs, connApplySettings,
-  dayKey, load, save, seed, DEF, flushDB, CONN_TTL, CONN_HB, CONN_EVICTS };\n`;
+  liveIpsAged, d1EvictIdle,
+  dayKey, load, save, seed, DEF, flushDB, CONN_TTL, CONN_ACTIVITY_MS, CONN_EVICTS };\n`;
 
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, src);

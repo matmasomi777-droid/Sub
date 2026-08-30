@@ -66,11 +66,9 @@ const DEF = () => ({
     auth: { totp: false, totpSecret: '', sessionMin: 15, loginRate: '5/10m', path: 'panel', pathRotate: false, disguise: true, maintenanceHost: 'nginx', decoyUrl: '', panic: false, password: 'simorgh' },
     /* ipConnLimit: پیش‌فرضِ سراسریِ «حداکثر اتصال همزمانِ هر IP» —
        فقط وقتی کاربر ipLimit خودش را ندارد (۰) استفاده می‌شود */
-    /* connTtlSec: مدت‌زمانی که یک آی‌پیِ بدون ضربان همچنان «زنده» شمرده می‌شود.
-       بعد از گذشتِ نیمی از این مدت بدون ضربان، آی‌پی در اولین درخواستِ آی‌پیِ
-       جدید بیرون رانده می‌شود؛ پس هرچه کمتر، عوض کردنِ اینترنت سریع‌تر آزاد
-       می‌شود (پیش‌فرض ۴۵ ثانیه، مجاز ۱۵ تا ۶۰۰). */
-    sec: { cors: true, csp: true, killSwitch: false, ipConnLimit: 0, connTtlSec: 45, speedTestUrl: '' },
+    /* آزادسازیِ آی‌پی دیگر تنظیم‌پذیر نیست: آنی هنگام قطع شدن، و حداکثر ۳ ثانیه
+       برای قطعیِ ناگهانی (CONN_TTL در کد ثابت است). */
+    sec: { cors: true, csp: true, killSwitch: false, ipConnLimit: 0, speedTestUrl: '' },
     sub: {
       path: 'sub', userAgent: '', fakeConfigs: true, nodeLimit: 12, converter: '', telegramChannel: '@simorgh_channel',
       /* آیدی تلگرامی که در صفحه‌ی کاربر و لینک ساب نمایش داده می‌شود */
@@ -360,36 +358,23 @@ async function usageInit(env, st) {
      • هیچ خطایی بلعیده نمی‌شود: CONN_LAST_ERR در کارت سلامت نمایش داده می‌شود
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ⚠️ اعدادِ قبلی (۵ دقیقه / ۲ دقیقه) باعث می‌شد یک اتصالِ قطع‌شده تا دقیقه‌ها
-   جایِ یک آی‌پی را اشغال نگه دارد و کاربر حس کند «اولین آی‌پی برای همیشه
-   ذخیره شده». حالا: ضربان هر ۲۰ ثانیه، و ردیفی که ۶۰ ثانیه ضربان نداشته باشد
-   مرده حساب می‌شود و خودبه‌خود آزاد می‌شود. */
-const CONN_TTL = 60000;               // ۶۰ ثانیه — پیش‌فرض وقتی تنظیمی نباشد
-const CONN_HB = 20000;                // تمدید هر ۲۰ ثانیه — پیش‌فرض
+/* ⚠️ پنجره‌ی «کهنگیِ اتصال» ثابت است و دیگر هیچ تنظیمی ندارد (قبلاً یک گزینه‌ی
+   ثانیه‌ای در بخش امنیتِ پنل بود که کاربر گزارش داد اشتباهاً به جای ثانیه،
+   «دقیقه» برداشت می‌شود؛ آزادسازی حالا آنی است و آن گزینه حذف شده).
+   منطقِ جدید:
+     • آزادسازی همان لحظه‌ی قطع شدنِ اتصال انجام می‌شود (بستن، خطا، لغو،
+       انصراف، خطای اتصال، مسیر UDP) — این حالتِ «آنی» است؛
+     • اگر ردیفی به هر دلیل (kill شدنِ isolate، قطعِ ناگهانیِ موبایل) آزاد
+       نشود، نهایتاً ۳ ثانیه بعد هنگامِ پذیرشِ بعدی پاک‌سازی می‌شود؛
+     • یک اتصالِ در حالِ انتقالِ واقعی با تمدیدِ مبتنی بر فعالیت (حداکثر یک
+       نوشتن در ثانیه) زنده می‌ماند، پس هیچ‌وقت اشتباهاً بیرون رانده نمی‌شود. */
+const CONN_TTL = 3000;                // ۳ ثانیه — سقفِ سخت برای قطعیِ ناگهانی
+const CONN_ACTIVITY_MS = 1000;        // تمدیدِ مبتنی بر فعالیت: حداکثر ۱ نوشتن/ثانیه
 const CONNS = new Map();              // uuid -> Map<ip, Map<connId, lastTs>>
 let CONN_LAST_ERR = null;             // آخرین خطا — در کارت سلامت نمایش داده می‌شود
 let CONN_DENIES = 0;                  // تعداد رد شدن‌ها (اثباتِ فعال بودن محدودیت)
 let CONN_ACQUIRES = 0;
-let CONN_EVICTS = 0;                  // تعداد بیرون‌راندنِ آی‌پی‌های بی‌ضربان
-
-/* ═══ مدتِ زنده‌ماندنِ یک اتصال — قابل تنظیم از پنل ═══
-   کاربر گزارش داد که «زمانِ عوض شدنِ آی‌پی زیاد است»؛ با ثابت بودنِ این عدد
-   در کد، اگر ردیفی به هر دلیل (kill شدنِ isolate، قطعِ ناگهانیِ موبایل، خطای
-   شبکه) آزاد نشود، آی‌پی تا پایانِ این مدت قفل می‌ماند. حالا مقدار از تنظیمات
-   خوانده می‌شود (پیش‌فرض ۴۵ ثانیه، مجاز ۱۵ تا ۶۰۰) و ضربانِ حیات یک‌سومِ آن
-   است تا یک آی‌پیِ واقعاً زنده هیچ‌وقت اشتباهاً بیرون رانده نشود. */
-let CONN_TTL_SEC = 45;                // مقدارِ مؤثر — با تنظیماتِ پنل به‌روز می‌شود
-const CONN_TTL_MIN = 15, CONN_TTL_MAX = 600;
-function connTtlMs() {
-  const v = Number(CONN_TTL_SEC) || 0;
-  return (v ? Math.min(CONN_TTL_MAX, Math.max(CONN_TTL_MIN, v)) * 1000 : CONN_TTL);
-}
-function connHbMs() { return Math.max(5000, Math.round(connTtlMs() / 3)); }
-/** به‌روزرسانی از تنظیمات — session() صدا می‌زند */
-function connApplySettings(sec) {
-  const v = Number(sec && sec.connTtlSec) || 0;
-  if (v) CONN_TTL_SEC = Math.min(CONN_TTL_MAX, Math.max(CONN_TTL_MIN, v));
-}
+let CONN_EVICTS = 0;                  // تعداد بیرون‌راندنِ آی‌پی‌های کهنه
 
 const KV_C = (uuid, ip, id) => 'c:' + uuid + ':' + ip + ':' + id;
 const connErr = (tag, e) => { CONN_LAST_ERR = tag + ': ' + String((e && e.message) || e); };
@@ -443,7 +428,7 @@ async function limiterRpc(env, path, body) {
    نگه‌داری:  uuid -> { ip -> { connId -> lastTs } }
    • یک IP تا وقتی «زنده» است که دست‌کم یک اتصالِ فعال داشته باشد؛
    • هر اتصال شناسه‌ی یکتا دارد، پس آزادسازی فقط سهمیه‌ی خودش را کم می‌کند؛
-   • ورودی‌های بی‌heartbeat بعد از CONN_TTL خودبه‌خود پاک می‌شوند؛
+   • ورودی‌های کهنه (بدون هیچ فعالیتی برای CONN_TTL) خودبه‌خود پاک می‌شوند؛
    • سقفِ ۰ یا خالی = نامحدود.
    ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -457,7 +442,7 @@ function userMapOf(uuid, create) {
 /** حذفِ ورودی‌های مرده؛ می‌گرداند: Map<ip, تعداد اتصال‌های زنده> */
 function pruneUser(um, now, ttl) {
   if (!um) return new Map();
-  const T = Number(ttl) || connTtlMs();
+  const T = Number(ttl) || CONN_TTL;
   um.forEach((m, ip) => {
     if (!m || !(m instanceof Map)) { um.delete(ip); return; }
     m.forEach((ts, id) => { if (!ts || now - ts > T) m.delete(id); });
@@ -518,7 +503,7 @@ async function liveEnsure(env) {
   } catch (e) { connErr('D1-schema', e); return false; }
 }
 
-/** حذفِ اتصال‌های مرده (بدون heartbeat برای CONN_TTL)
+/** حذفِ اتصال‌های کهنه (بدون هیچ فعالیتی برای CONN_TTL)
     ⚠️ نوعِ ستون هم بررسی می‌شود: در پایگاه‌داده‌های قدیمی ممکن است last_ts به‌جای
     عددِ میلی‌ثانیه، رشته (مثل ISO) یا مقدارِ ثانیه‌ای باشد. مقایسه‌یِ ساده‌ی
     «last_ts < cut» چنین ردیف‌هایی را هرگز پاک نمی‌کند (در SQLite هر رشته از هر
@@ -528,7 +513,7 @@ async function liveEnsure(env) {
       • ردیف‌های بی‌uuid هم پاک می‌شوند تا چیزی برای همیشه نماند. */
 async function liveSweep(env, uuid) {
   if (!env || !env.DB) return;
-  const cut = Date.now() - connTtlMs();
+  const cut = Date.now() - CONN_TTL;
   try {
     await env.DB.prepare(`DELETE FROM conns
       WHERE typeof(last_ts) <> 'integer' OR last_ts IS NULL OR last_ts < ?`).bind(cut).run();
@@ -539,7 +524,7 @@ async function liveSweep(env, uuid) {
   } catch (e) { connErr('D1-sweep', e); }
 }
 
-/** سنِ آخرین ضربانِ هر آی‌پی (ثانیه) — برای بیرون راندنِ آی‌پی‌های واقعاً رفته */
+/** سنِ آخرین فعالیتِ هر آی‌پی (ثانیه) — برای بیرون راندنِ آی‌پی‌های واقعاً رفته */
 async function liveIpsAged(env, uuid) {
   const out = [];
   if (!env || !env.DB) return out;
@@ -554,15 +539,15 @@ async function liveIpsAged(env, uuid) {
   return out;
 }
 
-/** بیرون راندنِ آی‌پی‌های بی‌ضربان — راهِ خروج وقتی قطع شدن ثبت نشده است.
+/** بیرون راندنِ آی‌پی‌های کهنه — راهِ خروج وقتی قطع شدن ثبت نشده است.
     اگر آزادسازی به هر دلیل (kill شدنِ isolate، قطعِ ناگهانیِ موبایل، خطای
-    شبکه) اجرا نشده باشد، ردیف تا پایانِ TTL قفل می‌ماند. اینجا هر آی‌پی‌ای که
-    بیش از نیمی از TTL ضربان نداشته، «رفته» فرض و حذف می‌شود تا آی‌پیِ جدید
-    فوراً جای آن را بگیرد — نه بعد از پایانِ کاملِ TTL. */
+    شبکه) اجرا نشده باشد، ردیف قفل می‌ماند. اینجا هر آی‌پی‌ای که به اندازه‌ی
+    CONN_TTL هیچ فعالیتی نداشته، «رفته» فرض و حذف می‌شود تا آی‌پیِ جدید
+    جای آن را بگیرد. (پاک‌سازیِ هنگامِ پذیرش معمولاً زودتر این کار را کرده؛
+    این مسیر فقط شبکه‌ی ایمنیِ دوم است.) */
 async function d1EvictIdle(env, uuid, need) {
   if (!env || !env.DB || !uuid) return 0;
-  const half = connTtlMs() / 2;
-  const cut = Date.now() - half;
+  const cut = Date.now() - CONN_TTL;
   let removed = 0;
   try {
     const aged = await liveIpsAged(env, uuid);
@@ -607,7 +592,7 @@ async function d1Acquire(env, uuid, ip, limit, id, now) {
   let ips = await liveIps(env, uuid);
   let dec = admitDecision(ips, ip, limit);
   /* رد شدن به‌خاطر پر بودنِ سقف؟ اول آی‌پی‌های واقعاً رفته را بیرون بران
-     (نیمی از TTL بی‌ضربان مانده باشند) و دوباره تصمیم بگیر — این همان چیزی
+     (به اندازه‌ی CONN_TTL فعالیت نداشته باشند) و دوباره تصمیم بگیر — این همان چیزی
      است که «عوض کردنِ اینترنت» را فوری می‌کند. */
   if (!dec.ok) {
     const evicted = await d1EvictIdle(env, uuid, Math.max(1, ips.size - limit + 1));
@@ -746,7 +731,7 @@ async function connAcquire(env, uuid, ip, limit, connId) {
         CONN_DENIES++;
         return { ok: false, ips: Math.max(ipsMem.size, kvIps.size), conns: kvIps.get(ip) || 0, limit, enforced: true, storage: 'kv', reason: dec2.reason };
       }
-      await env.KV.put(KV_C(uuid, ip, id), String(now), { expirationTtl: Math.ceil(connTtlMs() / 1000) });
+      await env.KV.put(KV_C(uuid, ip, id), String(now), { expirationTtl: Math.ceil(CONN_TTL / 1000) });
       ips = Math.max(ips, kvIps.size + (kvIps.has(ip) ? 0 : 1));
     } catch (e) {
       /* خطای KV هرگز باعث نمی‌شود محدودیت خاموش شود — فقط گزارش می‌شود */
@@ -848,7 +833,7 @@ async function connReset(env, uuid) {
     دروغ نگوید (اگر شیءِ ماندگار بایند باشد، جدولِ D1 خالی است). */
 async function liveRowsOf(env) {
   const nowMs = Date.now();
-  const idleCut = connTtlMs() / 2;      /* بی‌ضربان‌تر از این = آماده‌ی بیرون‌راندن */
+  const idleCut = CONN_TTL;             /* کهنه‌تر از این = آماده‌ی بیرون‌راندن */
   const asRow = (uuid, ip, connId, ts) => ({
     uuid: String(uuid || ''), ip: String(ip || ''), connId: String(connId || ''),
     ageSec: (typeof ts === 'number' && isFinite(ts)) ? Math.max(0, Math.floor((nowMs - ts) / 1000)) : null,
@@ -889,7 +874,7 @@ async function liveRowsOf(env) {
   return out;
 }
 
-/** تمدید heartbeat — اتصال‌های زنده اما کم‌ترافیک پاک نشوند */
+/** تمدیدِ ردیفِ موجود — اتصالی که ترافیک دارد توسط پاک‌سازی برداشته نشود */
 async function sessionTouch(env, uuid, ip, connId) {
   if (!uuid || !ip || !connId) return;
   const now = Date.now();
@@ -905,9 +890,52 @@ async function sessionTouch(env, uuid, ip, connId) {
     return;
   }
   if (env && env.KV) {
-    try { await env.KV.put(KV_C(uuid, ip, connId), String(now), { expirationTtl: Math.ceil(connTtlMs() / 1000) }); }
+    try { await env.KV.put(KV_C(uuid, ip, connId), String(now), { expirationTtl: Math.ceil(CONN_TTL / 1000) }); }
     catch (e) { connErr('KV', e); }
   }
+}
+
+/**
+ * تمدیدِ مبتنی بر فعالیت — جایگزینِ ضربانِ دوره‌ای (heartbeat).
+ * چرا؟ ضربانِ دوره‌ای یعنی یک نوشتن در D1 برای هر اتصال در هر بازه؛ با پنجره‌ی
+ * ۳ ثانیه این هزینه غیرقابل‌قبول است و تازه یک ضربانِ در صف می‌توانست ردیفِ
+ * آزادشده را دوباره زنده کند. اینجا فقط وقتی بایتی واقعاً جریان دارد تمدید
+ * می‌کنیم (حداکثر یک بار در ثانیه برای هر اتصال).
+ *
+ * اگر ردیف ناپدید شده باشد (اتصال بی‌ترافیک مانده و پاک‌سازی آن را برده)،
+ * دوباره از همان مسیرِ عادیِ پذیرش رد می‌شویم:
+ *   • پذیرفته شد → ردیف برمی‌گردد و اتصال ادامه می‌یابد؛
+ *   • رد شد        → برمی‌گرداند { ok:false } و فراخوان اتصال را می‌بندد.
+ *
+ * ⚠️ پارامترِ alive: تابعی که می‌گوید اتصال هنوز باز است یا نه. یک تمدیدِ در
+ * صف می‌تواند بعد از بسته شدنِ اتصال اجرا شود؛ بدون این بررسی، ردیفِ تازه
+ * آزادشده دوباره درج می‌شد (همان «آی‌پی برای همیشه قفل شده»). اگر اتصال دیگر
+ * زنده نباشد هیچ درجی انجام نمی‌شود و { ok:false, reason:'released' }
+ * برمی‌گردد.
+ * برمی‌گرداند: { ok, reason, storage } یا null (بک‌اندی نبود / خطا)
+ */
+async function connRefresh(env, uuid, ip, connId, limit, alive) {
+  if (!uuid || !ip || !connId) return null;
+  const stillAlive = () => !alive || alive();
+  /* ۱) D1 — مرجعِ استقرارِ واقعی: اول بررسی می‌کنیم ردیف هست یا نه */
+  if (env && env.DB) {
+    try {
+      if (!(await liveEnsure(env))) return null;
+      const row = await env.DB.prepare('SELECT 1 AS x FROM conns WHERE conn_id = ?').bind(connId).first();
+      if (row) {
+        /* فقط تمدید — هرگز درج؛ sessionTouch خودش نمی‌تواند ردیفی بسازد */
+        await sessionTouch(env, uuid, ip, connId);
+        return { ok: true, reason: 'refreshed', storage: 'd1' };
+      }
+      if (!stillAlive()) return { ok: false, reason: 'released', storage: 'd1' };
+      /* ردیف پاک شده → تصمیمِ عادیِ پذیرش (ممکن است رد کند) */
+      return await d1Acquire(env, uuid, ip, Number(limit) || 0, connId, Date.now());
+    } catch (e) { connErr('D1-refresh', e); return null; }
+  }
+  /* ۲) بقیهٔ بک‌اندها — همان تمدیدِ قدیمی، بدون هیچ درجی */
+  if (!stillAlive()) return { ok: false, reason: 'released' };
+  await sessionTouch(env, uuid, ip, connId);
+  return { ok: true, reason: 'refreshed' };
 }
 
 /** IPهای فعال یک کاربر با تعداد اتصال — برای نمایش در پنل */
@@ -2373,9 +2401,6 @@ async function statusPage(env, name, url) {
 async function apiHandler(req, env, url, ctx) {
   const st = seed(await load(env));
   const s = st.settings, route = url.pathname.replace(/^\/api\/?/, ''), m = req.method.toUpperCase();
-  /* مدتِ زنده‌ماندنِ اتصال از تنظیماتِ پنل — قبل از هر عملیاتِ محدودیت/سلامت،
-     تا isolateهایی که هیچ تونلی نساخته‌اند هم مقدارِ درست را ببینند. */
-  try { connApplySettings(s && s.sec); } catch (e) {}
 
   if (route === 'login' && m === 'POST') {
     const ip = ipOf(req);
@@ -2912,13 +2937,12 @@ async function apiHandler(req, env, url, ctx) {
         );
         chk('آمارِ محدودیت اتصال', true,
           fa(CONN_ACQUIRES) + ' درخواست پذیرش • ' + fa(CONN_DENIES) + ' رد شده • ' +
-          fa(CONN_EVICTS) + ' آی‌پیِ بی‌ضربان بیرون رانده شد' +
+          fa(CONN_EVICTS) + ' آی‌پیِ کهنه بیرون رانده شد' +
           (CONN_LAST_ERR ? ' • آخرین خطا: ' + CONN_LAST_ERR : ' • بدون خطا ✓'));
-      chk('زمانِ آزاد شدنِ آی‌پی بعد از قطع شدن', true,
-          'هر اتصال هر ' + fa(Math.floor(connHbMs() / 1000)) + ' ثانیه ضربان می‌فرستد؛ ' +
-          'آی‌پی‌ای که ' + fa(Math.floor(connTtlMs() / 2000)) + ' ثانیه بی‌ضربان بماند در اولین ' +
-          'درخواستِ آی‌پیِ جدید بیرون رانده می‌شود، و بعد از ' + fa(Math.floor(connTtlMs() / 1000)) +
-          ' ثانیه خودبه‌خود هم حذف می‌شود (قابل تنظیم در تنظیمات → امنیت)');
+      chk('آزادسازی آی‌پی', true,
+          'آنی هنگام قطع شدن؛ حداکثر ' + fa(Math.floor(CONN_TTL / 1000)) +
+          ' ثانیه برای قطعیِ ناگهانی • اتصالی که واقعاً ترافیک دارد با هر بایت تمدید می‌شود ' +
+          '(حداکثر یک بار در ثانیه) و هرگز بیرون رانده نمی‌شود');
         chk('شمارنده‌ی محدودیت در دسترس است', !CONN_LAST_ERR || kind === 'kv',
           CONN_LAST_ERR ? ('آخرین خطا: ' + CONN_LAST_ERR + ' — محدودیت روی حافظه ادامه دارد') : 'بدون خطا ✓');
       } catch (e) { chk('تست زنده‌ی محدودیت IP', false, 'خطا: ' + String((e && e.message) || e)); }
@@ -2945,8 +2969,7 @@ async function apiHandler(req, env, url, ctx) {
         perUser: st.users.map((u) => ({ name: u.name, uuid: u.uuid, limit: Number(u.ipLimit) || gLimit || 0 })),
         connErr: CONN_LAST_ERR || null, usageErr: USAGE_LAST_ERR || null,
         acquires: CONN_ACQUIRES, denies: CONN_DENIES,
-        ttlSec: Math.floor(connTtlMs() / 1000), hbSec: Math.floor(connHbMs() / 1000),
-        idleAfterSec: Math.floor(connTtlMs() / 2000), evicts: CONN_EVICTS,
+        releaseSec: Math.floor(CONN_TTL / 1000), evicts: CONN_EVICTS,
         liveSource: lim, live: out.live
       };
       chk('سقف مؤثری که ورکر برای هر کاربر می‌خواند', true,
@@ -3245,8 +3268,6 @@ function clientIpOf(request) {
 async function session(ws, early, st, env, ctx, clientIp, boot, selfHost) {
   /* ⚠️ state از caller می‌آید — بدون await اضافی که پیام‌های اولیه را گم می‌کند */
   const state = st;
-  /* مدتِ زنده‌ماندنِ اتصال از تنظیماتِ پنل — قبل از هر تصمیمِ محدودیت */
-  try { connApplySettings(state && state.settings && state.settings.sec); } catch (e) {}
 
   /* ⚠️ بافر پیام‌های زودرس: پایپ‌لاینِ ReadableStream بعد از await ساخته می‌شود،
      ولی کلاینت ممکن است هدر VLESS را بلافاصله بعد از ۱۰۱ بفرستد (مخصوصاً
@@ -3269,20 +3290,35 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost) {
   let connAcquired = false, connReleased = false;
   /* شناسه‌ی یکتای همین کانکشن — آزادسازی فقط سهمیه‌ی خودش را کم می‌کند */
   const connId = randTok(10);
-  /* تمدید heartbeat — ردیف نشستِ یک اتصالِ زنده نباید توسط sweep پاک شود */
-  let lastTouch = 0;
-  const touch = () => {
-    if (!connAcquired || connReleased || !ctx || !ctx.waitUntil) return;
+  /* ═══ تمدیدِ مبتنی بر فعالیت (جایگزینِ ضربانِ دوره‌ای) ═══
+     ضربانِ دوره‌ای حذف شده است: (۱) با پنجره‌ی ۳ ثانیه یعنی یک نوشتن در D1 برای
+     هر اتصال در هر ۳ ثانیه — حتی برای اتصال‌های کاملاً بی‌ترافیک؛ (۲) یک
+     ضربان که در صف مانده باشد بعد از آزادسازی اجرا می‌شد و ردیفِ مرده را
+     زنده می‌کرد. حالا فقط وقتی بایتی واقعاً جریان دارد تمدید می‌کنیم و آن هم
+     حداکثر یک بار در ثانیه (CONN_ACTIVITY_MS). */
+  let lastActivity = 0;
+  const noteActivity = () => {
+    if (closed || !connAcquired || connReleased || !user || !ctx || !ctx.waitUntil) return;
     const now = Date.now();
-    if (now - lastTouch < connHbMs()) return;
-    lastTouch = now;
-    ctx.waitUntil(sessionTouch(env, user && user.uuid, ip, connId).catch(() => {}));
+    if (now - lastActivity < CONN_ACTIVITY_MS) return;
+    lastActivity = now;
+    const u = user, lim = Number(u.ipLimit) || Number(s.sec.ipConnLimit) || 0;
+    /* این تابع بعد از هر await هم بررسی می‌شود: اگر در همین فاصله اتصال بسته
+       شده باشد، هیچ ردیفی دوباره درج نمی‌شود (ضدِ زنده‌شدنِ ردیفِ آزادشده). */
+    const stillOpen = () => !closed && !connReleased && connAcquired;
+    ctx.waitUntil((async () => {
+      if (!stillOpen()) return;
+      try {
+        const r = await connRefresh(env, u.uuid, ip, connId, lim, stillOpen);
+        /* ردیف این اتصال پاک شده بود و سقف جایِ دوباره دادن ندارد → بستنِ مؤدبانه.
+           reason==='released' یعنی اتصال خودش تمام شده — finish() قبلاً اجرا شده. */
+        if (r && r.ok === false && r.reason !== 'released') {
+          try { ws.close(1013, 'connection limit reached'); } catch (e) {}
+          await finish();
+        }
+      } catch (e) {}
+    })());
   };
-  /* heartbeat دوره‌ای — حتی وقتی ترافیکی رد و بدل نمی‌شود (مرورگر idle) */
-  let hbTimer = null;
-  if (typeof setInterval === 'function') {
-    hbTimer = setInterval(() => { try { if (!closed) touch(); } catch (e) {} }, connHbMs());
-  }
 
   /* ═══ مصرف ابتدا در حافظه جمع می‌شود ═══
      روی موبایل، هر کوئری D1 در مسیر پیام اختلال ایجاد می‌کند؛
@@ -3296,9 +3332,14 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost) {
   let lastFlush = Date.now();
   let flushing = false;
 
-  /** ثبت دوره‌ای در پس‌زمینه — هر ۱۰ ثانیه یا ۵۱۲KB (هر کدام زودتر برسد) */
+  /** ثبت دوره‌ای در پس‌زمینه — هر ۱۰ ثانیه یا ۵۱۲KB (هر کدام زودتر برسد)
+      ⚠️ این تابع در تمام مسیرهای شمارشِ بایت (بالا/پایین‌دست) صدا زده می‌شود،
+      پس تمدیدِ مبتنی بر فعالیت هم همین‌جا انجام می‌شود: هر بار که بایتی جریان
+      پیدا کند، ردیفِ همین اتصال تمدید می‌شود (درونnoteActivity خودش به یک بار
+      در ثانیه محدود شده است). */
   const maybeFlush = (force) => {
     if (!user || !ctx || !ctx.waitUntil) return;
+    noteActivity();
     if (flushing) return;
     const total = pendUp + pendDown;
     if (!force && total < FLUSH_BYTES && Date.now() - lastFlush < FLUSH_MS) return;
@@ -3322,7 +3363,6 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost) {
   const finish = async () => {
     if (closed) return;
     closed = true;
-    if (hbTimer !== null) { try { clearInterval(hbTimer); } catch (e) {} hbTimer = null; }
     try { if (ws.readyState === 1 || ws.readyState === 2) ws.close(); } catch (e) {}
     try { sock && sock.close(); } catch (e) {}
     /* ثبت مصرفِ باقیمانده + آزاد کردن سهمیه — کاملاً در پس‌زمینه */
@@ -3385,7 +3425,6 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost) {
           hasData = true;
           down += vLen; pendDown += vLen;
           maybeFlush();
-          touch();
           if (ws.readyState !== 1) break;
           if (header && header.length) {
             const merged = new Uint8Array(header.length + vLen);
@@ -3688,7 +3727,6 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost) {
 
     /* بسته‌های بعدی → مستقیم به سوکت TCP */
     if (!sock) return;
-    touch();
     try {
       const w = sock.writable.getWriter();
       up += buf.byteLength; pendUp += buf.byteLength;
@@ -3826,8 +3864,8 @@ function secHeaders(s, noCsp) {
    ساختار: "uuid|ip" -> Map<connId, lastTs>
    • acquire: تعدادِ زنده را می‌شمرد؛ اگر به سقف رسیده باشد رد می‌کند
    • release : فقط همان connId را حذف می‌کند (هرگز سهمیه‌ی دیگری را کم نمی‌کند)
-   • touch   : heartbeat — اتصالِ زنده با سکوتِ طولانی پاک نشود
-   • منقضی‌شده‌ها (بدون heartbeat برای CONN_TTL) هنگام شمارش نادیده گرفته می‌شوند
+   • touch   : تمدید — فقط ردیفِ موجود را به‌روز می‌کند، هرگز درج نمی‌کند
+   • کهنه‌ها (بدون فعالیت برای CONN_TTL) هنگام شمارش نادیده گرفته می‌شوند
    ═══════════════════════════════════════════════════════════════════════════ */
 export class ConnLimiter {
   constructor(state) {
@@ -3843,7 +3881,7 @@ export class ConnLimiter {
     if (!um) return out;
     um.forEach((m, ip) => {
       if (!m || !(m instanceof Map)) { um.delete(ip); return; }
-      m.forEach((ts, id) => { if (!ts || now - ts > connTtlMs()) m.delete(id); });
+      m.forEach((ts, id) => { if (!ts || now - ts > CONN_TTL) m.delete(id); });
       if (!m.size) um.delete(ip);
     });
     um.forEach((m, ip) => { if (m && m.size) out.set(ip, m.size); });

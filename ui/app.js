@@ -77,9 +77,8 @@
       (r.checks || []).map((c) => '<div class="kv"><span>' + icon(c.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' ' + esc(c.name) + '</span><b class="mono" style="color:' + (c.ok ? 'var(--ok)' : 'var(--bad)') + '">' + esc(c.note || '') + '</b></div>').join('') +
       /* ═══ اتصال‌های زنده — اگر چیزی گیر کرده باشد اینجا دیده می‌شود ═══ */
       '<div class="hint" style="margin-top:12px"><b>اتصال‌های زنده (مبنای محدودیت آی‌پی):</b> ' +
-      esc(String(((r.diag || {}).ttlSec || 60))) + ' ثانیه بدون ضربان = آزاد شدن خودکار • ضربان هر ' +
-      esc(String(((r.diag || {}).hbSec || 20))) + ' ثانیه • بعد از ' +
-      esc(String(((r.diag || {}).idleAfterSec || 30))) + ' ثانیه بی‌ضربانی، آی‌پیِ جدید فوراً جای آن را می‌گیرد (' +
+      'آزادسازی آی‌پی: آنی هنگام قطع شدن؛ حداکثر ' + esc(fa(((r.diag || {}).releaseSec || 3))) +
+      ' ثانیه برای قطعیِ ناگهانی (' +
       esc(fa(((r.diag || {}).evicts || 0))) + ' مورد تاکنون) • مرجع: ' +
       esc({ do: 'شیءِ ماندگار (LIMITER)', d1: 'جدول conns در D1', kv: 'KV', mem: 'حافظهٔ این isolate' }[(r.diag || {}).liveSource] || ((r.diag || {}).liveSource || '—')) +
       (((r.live || {}).oldestSec) ? ' • قدیمی‌ترین ردیف: ' + esc(fa((r.live || {}).oldestSec)) + ' ثانیه' : '') + '</div>' +
@@ -92,7 +91,7 @@
           r.liveRows.map((x) => '<tr><td class="cell-main">' + esc(x.name || x.uuid) + '</td><td class="mono">' + esc(x.ip) + '</td>' +
             '<td class="mono">' + (x.stale || x.ageSec === null ? 'نامعتبر' : fa(x.ageSec) + ' ثانیه') + '</td>' +
             '<td><span class="badge ' + (x.stale ? 'bad' : (x.idle ? 'warn' : 'ok')) + '">' +
-            (x.stale ? 'خراب — پاک می‌شود' : (x.idle ? 'بی‌ضربان — با اولین آی‌پیِ جدید جایگزین می‌شود' : 'زنده')) +
+            (x.stale ? 'خراب — پاک می‌شود' : (x.idle ? 'بدون فعالیت — با اولین آی‌پیِ جدید جایگزین می‌شود' : 'زنده')) +
             '</span></td></tr>').join('') +
           '</tbody></table></div>'
         : '<div class="hint" style="margin-top:6px">هیچ اتصالِ زنده‌ای ثبت نشده — هیچ آی‌پی‌ای قفل نیست.</div>') +
@@ -470,7 +469,6 @@
         { p: 'auth.panic', l: 'Panic mode', t: 'sw', bad: 1 },
         { p: 'sec.killSwitch', l: 'Kill Switch', t: 'sw', bad: 1 },
         { p: 'sec.ipConnLimit', l: 'سقف IP همزمان هر کاربر (پیش‌فرض سراسری)', t: 'num', h: '۰ = نامحدود • بیشینه‌ی تعداد IPهایی که همزمان می‌توانند با یک حساب وصل شوند (مدل Nova-Proxy). مقدار هر کاربر بر این اولویت دارد' },
-        { p: 'sec.connTtlSec', l: 'زمان آزاد شدن آی‌پی بعد از قطع شدن (ثانیه)', t: 'num', h: 'پیش‌فرض ۴۵ • مجاز ۱۵ تا ۶۰۰ • هر اتصال هر یک‌سومِ این مدت ضربان می‌فرستد؛ آی‌پی‌ای که نیمی از این مدت بی‌ضربان بماند، با اولین درخواستِ آی‌پیِ جدید فوراً جایگزین می‌شود. کمتر = عوض کردن اینترنت سریع‌تر آزاد می‌شود' },
         { p: 'sec.speedTestUrl', l: 'نشانی فایل تست ترافیک', t: 'text', h: 'پیش‌فرض: speed.cloudflare.com/__down • باید یک نشانی «خارجی» باشد (ورکر نمی‌تواند خودش را صدا بزند)' },
         { p: 'sec.cors', l: 'هدرهای CORS', t: 'sw' },
         { p: 'sec.csp', l: 'Security headers (CSP/XFO/nosniff)', t: 'sw' },
@@ -885,8 +883,10 @@
 
   /* ═══════════════════════════════════════════════════════════════
      نمای امنیت — محدودیت اتصال (فقط آی‌پی) + تنظیمات امنیتی
-     گروه‌های اسکیمای security (شامل sec.ipConnLimit و sec.connTtlSec)
-     اینجا بالاخره رندر می‌شوند؛ قبلاً هیچ مسیری به آن‌ها نداشتیم. */
+     گروه‌های اسکیمای security (از جمله sec.ipConnLimit)
+     اینجا بالاخره رندر می‌شوند؛ قبلاً هیچ مسیری به آن‌ها نداشتیم.
+     ⚠️ «زمان آزاد شدن آی‌پی» از این بخش حذف شده: آزادسازی آنی است و برای
+     قطعیِ ناگهانی سقفِ سختِ ۳ ثانیه در خودِ ورکر ثابت است (قابل تنظیم نیست). */
   function securityView() {
     const s = S.d.settings;
     const store = S.d.storage || 'mem';
@@ -895,19 +895,17 @@
         : store === 'kv' ? '<span class="badge warn">' + icon('fa-database') + ' مرجع محدودیت: KV — مشترک اما تقریبی</span>'
           : store === 'do' ? '<span class="badge ok">' + icon('fa-server') + ' مرجع محدودیت: Durable Object — سراسری و دقیق ✓</span>'
             : '<span class="badge bad">' + icon('fa-triangle-exclamation') + ' مرجع محدودیت: حافظه — فقط همین isolate؛ بین isolateها تضمین نمی‌شود</span>';
-    const ttl = Number(s.sec.connTtlSec) || 45;
-    const hb = Math.max(5, Math.round(ttl / 3));
-    const idle = Math.round(ttl / 2);
-    return '<div class="page-head"><div><h1>امنیت و محدودیت اتصال</h1><p>سقف آی‌پی همزمان، زمان آزاد شدن آی‌پی و تنظیمات امنیتی</p></div></div>' +
+    return '<div class="page-head"><div><h1>امنیت و محدودیت اتصال</h1><p>سقف آی‌پی همزمان، آزادسازیِ آنی و تنظیمات امنیتی</p></div></div>' +
       '<div class="card" style="margin-bottom:12px"><header><span class="ic">' + icon('fa-shield-halved') + '</span>' +
       '<div><h3>محدودیت اتصال (فقط بر اساس آی‌پی)</h3><p>مدل Nova-Proxy — سقف برابر تعداد آی‌پی‌های همزمانِ هر کاربر</p></div>' +
       '<div class="acts">' + saveBtn('save-security') + '</div></header><div class="bd">' +
       '<div style="margin-bottom:10px">' + storeBadge + '</div>' +
-      '<div class="hint" style="margin-bottom:12px">هم‌اکنون: زمان آزاد شدنِ آی‌پی <b>' + fa(ttl) + '</b> ثانیه • ضربان هر <b>' + fa(hb) + '</b> ثانیه • ' +
-      'بعد از <b>' + fa(idle) + '</b> ثانیه بی‌ضربانی، آی‌پیِ جدید فوراً جای آن را می‌گیرد • سقف سراسری: <b>' + fa(Number(s.sec.ipConnLimit) || 0) + '</b> (۰ = نامحدود)</div>' +
+      '<div class="hint" style="margin-bottom:12px">آزادسازی آی‌پی: <b>آنی</b> هنگام قطع شدن؛ حداکثر <b>۳</b> ثانیه برای قطعیِ ناگهانی • ' +
+      'سقف سراسری: <b>' + fa(Number(s.sec.ipConnLimit) || 0) + '</b> (۰ = نامحدود)</div>' +
       SCHEMA.security.map((g) => acc(g.t, g.icon || 'fa-gear', g.f, s, g.two ? 'two' : 'two')).join('') +
-      '<div class="hint" style="margin-top:12px">زمانِ آزادسازی بین ۱۵ تا ۶۰۰ ثانیه است. کمتر یعنی عوض کردن اینترنت زودتر آزاد می‌شود، ' +
-      'اما اگر خیلی کم باشد ممکن است یک اتصالِ واقعاً زنده هنگام جابه‌جاییِ isolate اشتباهاً آزاد شود. پیشنهاد: ۳۰ تا ۶۰ ثانیه.</div>' +
+      '<div class="hint" style="margin-top:12px">زمانِ آزادسازی دیگر قابل تنظیم نیست: ردیفِ اتصال همان لحظه‌ی قطع شدن (بستن، خطا، ' +
+      'انصراف، لغو) پاک می‌شود و اگر قطعی ناگهانی باشد نهایتاً ۳ ثانیه بعد در اولین درخواستِ جدید جایگزین می‌شود. ' +
+      'اتصالی که واقعاً ترافیک دارد با هر بایت تمدید می‌شود (حداکثر یک بار در ثانیه)، پس هیچ‌وقت اشتباهاً آزاد نمی‌شود.</div>' +
       '</div></div>' +
       secExtra();
   }
