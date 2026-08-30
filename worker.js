@@ -52,6 +52,59 @@ const DEF = () => ({
     perIsp: true, ispPools: ['MCI=104.17.1.1,104.17.1.2', 'Irancell=172.64.32.7,172.64.32.8', 'Rightel=188.114.97.3', 'Shatel=104.21.5.88'], ipRotation: true, nodeLimit: 12,
     proxyIPs: ['cdn-all.xn--b6gac.eu.org', 'cdn.xn--b6gac.eu.org'], failover: true, failoverTimeout: 3000,
     backupRelay: '', customRelay: '', upstream: [],
+
+    /* ═══════════ سرورهای خروجی VLESS (exit / outbound) ═══════════
+       ترافیکِ کاربر می‌تواند به‌جای رفتنِ مستقیم به مقصد، از یکی از این
+       سرورها عبور کند تا «آی‌پی خروجی» همان سرور باشد.
+       پیش‌فرضِ سراسری اینجا است؛ هر کانفیگ (کاربر) می‌تواند جداگانه
+       انتخاب کند: پیروی از سراسری / یکی از سرورها / مستقیمِ بدون واسطه. */
+    exits: {
+      /* کلیدِ اصلی: آیا خروجی‌ها در مسیر تونل به کار می‌روند؟
+         با خاموش کردنش، فهرستِ سرورها دست‌نخورده می‌ماند اما تونل مستقیم می‌رود. */
+      enabled: true,
+      defaultMode: 'direct',     /* 'direct' = بدون واسطه • 'exit' = از سرور خروجی */
+      defaultExit: '',           /* شناسه‌ی سرور، وقتی defaultMode === 'exit' */
+      /* هر سرور: { id, name, label, address, port, uuid, flow, security,
+                    transport, path, serviceName, sni, host, enabled, params }
+         params جایِ پارامترهای تازه‌ای است که در آینده اضافه می‌شوند. */
+      servers: [],
+    },
+
+    /* ═══════════ رادار — اسکنرِ آی‌پی تمیز (به سبکِ نوا) ═══════════
+       بازه‌ها همان محدوده‌های شناخته‌شده‌ی کلاودفلر هستند (الگو از نوا).
+       count/probes/concurrency/timeoutMs/keep قابل تنظیم‌اند؛
+       concurrency به ۶ محدود می‌شود (سقفِ اتصالِ هم‌زمانِ ورکرز). */
+    radar: {
+      ranges: [
+        { prefix: '104.16.', from: 0, to: 255 },
+        { prefix: '104.17.', from: 0, to: 255 },
+        { prefix: '104.18.', from: 0, to: 255 },
+        { prefix: '104.19.', from: 0, to: 255 },
+        { prefix: '104.20.', from: 0, to: 255 },
+        { prefix: '104.21.', from: 0, to: 255 },
+        { prefix: '104.22.', from: 0, to: 255 },
+        { prefix: '104.24.', from: 0, to: 255 },
+        { prefix: '104.25.', from: 0, to: 255 },
+        { prefix: '104.26.', from: 0, to: 255 },
+        { prefix: '104.27.', from: 0, to: 255 },
+        { prefix: '162.159.', from: 0, to: 255 },
+        { prefix: '172.64.', from: 0, to: 255 },
+        { prefix: '172.66.', from: 0, to: 255 },
+        { prefix: '172.67.', from: 0, to: 255 },
+        { prefix: '188.114.', from: 96, to: 111 },
+        { prefix: '141.101.', from: 64, to: 127 },
+      ],
+      cidrs: [],                                                 /* مثل '104.16.0.0/13' */
+      pools: [],                                                 /* آی‌پی‌های کاندیدای صریح */
+      ports: [443, 2053, 2083, 2087, 2096, 8443],
+      count: 24,           /* تعداد آی‌پیِ کاندیدا */
+      probes: 2,           /* تعداد تلاش برای هر آی‌پی (برای جیتر و افت) */
+      concurrency: 6,      /* سقفِ اتصالِ هم‌زمان — محدودیتِ ورکرز: ۶ */
+      timeoutMs: 2000,     /* زمان انتظارِ هر تلاش */
+      keep: 8,             /* تعدادِ نتیجه‌ی نهایی */
+      tls: true,           /* اندازه‌گیری با TLS هم انجام شود */
+      exitId: '',          /* اسکن از مسیرِ یکی از سرورهای خروجی (اختیاری) */
+    },
     doh: { url: 'https://cloudflare-dns.com/dns-query' }, dohProxy: true, resolveFirst: true,
     nat64: { prefix: '2a01:4f8:c2c:123::1', fromUrl: false, url: '' }, raceDial: 3,
     geoip: { enabled: true, api: 'https://ipapi.co/{ip}/json/' },
@@ -73,7 +126,11 @@ const DEF = () => ({
       path: 'sub', userAgent: '', fakeConfigs: true, nodeLimit: 12, converter: '', telegramChannel: '@simorgh_channel',
       /* آیدی تلگرامی که در صفحه‌ی کاربر و لینک ساب نمایش داده می‌شود */
       telegramSupport: '@simorgh_channel', telegramBuy: '',
-      countryGroups: true, namePrefix: 'پنل', rules: ['GEOIP,IR,DIRECT', 'DOMAIN-SUFFIX,ir,DIRECT', 'GEOSITE,category-ads-all,REJECT'],
+      countryGroups: true, namePrefix: 'پنل',
+      /* الگوی نام کاملاً سفارشی — خالی یعنی از nameStrategy (الگوی آماده) استفاده شود.
+         توکن‌ها: {prefix} {user} {proto} {port} {ip} {node} {index} {mark} */
+      namePattern: '',
+      rules: ['GEOIP,IR,DIRECT', 'DOMAIN-SUFFIX,ir,DIRECT', 'GEOSITE,category-ads-all,REJECT'],
       blockAdult: false, blockAds: true, blockQuic: true, bypassIR: true, doh: 'https://cloudflare-dns.com/dns-query',
       /* ── کانفیگ‌های فیک (اطلاعاتی) — کاملاً قابل تنظیم ── */
       fakes: [
@@ -658,19 +715,385 @@ function mirrorAdd(uuid, ip, connId, now) {
   m.set(connId, now);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   جزئیاتِ اتصال — جدولِ جداگانه (conn_meta) برای نمایش در پنل
+   ───────────────────────────────────────────────────────────────────────────
+   چرا جدولِ جدا و نه ستونِ تازه روی conns؟
+     • جدولِ conns مسیرِ حساسِ محدودساز است؛ هر تغییرِ ساختاری در آن ریسکِ
+       «اتصال رد شد» را برای استقرارهای فعلی دارد. ALTER TABLE روی یک جدولِ
+       زنده‌ای که INSERT/DELETE‌اش مستقیماً تعیین می‌کند کاربر وصل شود یا نه،
+       ارزشِ یک پرچمِ کشور را ندارد.
+     • conn_meta فقط خوانده می‌شود، فقط برای نمایش. اگر اصلاً ساخته نشود یا
+       خراب شود، محدودساز و تونل دقیقاً مثل قبل کار می‌کنند و پنل به‌سادگی
+       ستون‌های جزئیات را خالی نشان می‌دهد.
+   نوشته‌شده در D1 (تنها بک‌اندِ واقعیِ استقرار)؛ نبودِ آن هرگز خطا نمی‌سازد.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const META_TTL_STALE = 24 * 3600 * 1000;   /* ردیف‌های یتیم بعد از یک روز پاک می‌شوند */
+let META_READY = null;                     /* null = هنوز probe نشده */
+
+/* ── ستون‌های تازه‌ی conn_meta (افزوده‌شده با migration) ──
+   up/down   = حجمِ ارسالی/دریافتیِ همین نشست (بایت)
+   transport = نوعِ انتقالی که نشست با آن برقرار شده (ws / grpc / …)
+   ستون‌ها با ALTER TABLE اضافه می‌شوند تا پایگاه‌داده‌های از پیش مستقرشده
+   بدون از دست رفتنِ داده ارتقا یابند. */
+const META_COLS = [['up', 'INTEGER'], ['down', 'INTEGER'], ['transport', 'TEXT']];
+
+/** migrationِ خودکار — فقط ستون‌های مفقود را اضافه می‌کند (idempotent) */
+async function metaMigrate(env) {
+  let have = null;
+  try {
+    const r = await env.DB.prepare('PRAGMA table_info(conn_meta)').all();
+    have = new Set(((r && r.results) || []).map((x) => String(x.name)));
+  } catch (e) { have = null; }             /* PRAGMA در دسترس نیست → ALTERِ کور */
+  for (const [col, type] of META_COLS) {
+    if (have && have.has(col)) continue;
+    try { await env.DB.prepare(`ALTER TABLE conn_meta ADD COLUMN "${col}" ${type}`).run(); }
+    catch (e) { /* ستون از قبل وجود دارد */ }
+  }
+}
+
+async function metaEnsure(env) {
+  if (META_READY !== null) return META_READY;
+  if (!env || !env.DB) { META_READY = false; return false; }
+  try {
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS conn_meta (
+      conn_id TEXT PRIMARY KEY,
+      cc TEXT,
+      since INTEGER,
+      ua TEXT
+    )`).run();
+    await metaMigrate(env);
+    META_READY = true;
+  } catch (e) { META_READY = false; }
+  return META_READY;
+}
+
+/** ثبتِ جزئیات — هرگز نباید مسیرِ اتصال را بشکند */
+async function metaPut(env, connId, info) {
+  if (!connId) return;
+  if (!(await metaEnsure(env))) return;
+  const cc = (info && info.cc) ? String(info.cc).toUpperCase().slice(0, 2) : null;
+  const ua = (info && info.ua) ? String(info.ua).slice(0, 60) : null;
+  const tr = (info && info.transport) ? String(info.transport).slice(0, 16) : null;
+  try {
+    await env.DB.prepare('INSERT OR REPLACE INTO conn_meta (conn_id, cc, since, ua, transport) VALUES (?, ?, ?, ?, ?)')
+      .bind(connId, cc, Date.now(), ua, tr).run();
+  } catch (e) { /* نمایش نباید اتصال را ببندد */ }
+}
+
+/**
+ * جمع‌زدنِ حجمِ نشست — از همان نقاطی صدا زده می‌شود که مصرفِ کاربر در D1 نوشته
+ * می‌شود (maybeFlush / finish)؛ پس هیچ تایمر یا ضربانی اضافه نمی‌شود و عددِ
+ * نمایش‌داده‌شده با مصرفِ واقعی از یک منبع می‌آید.
+ * conn_meta فقط نمایشی است — خطای آن هرگز اتصال را نمی‌بندد.
+ */
+async function metaBytes(env, connId, dUp, dDown) {
+  if (!connId) return;
+  const u = Math.max(0, Math.floor(Number(dUp) || 0));
+  const d = Math.max(0, Math.floor(Number(dDown) || 0));
+  if (!u && !d) return;
+  if (!(await metaEnsure(env))) return;
+  try {
+    await env.DB.prepare(
+      `INSERT INTO conn_meta (conn_id, up, down) VALUES (?, ?, ?)
+       ON CONFLICT(conn_id) DO UPDATE SET
+         up = COALESCE(up, 0) + excluded.up,
+         down = COALESCE(down, 0) + excluded.down`
+    ).bind(connId, u, d).run();
+  } catch (e) { /* همان بالا */ }
+}
+
+async function metaDel(env, connId) {
+  if (!connId) return;
+  if (!(await metaEnsure(env))) return;
+  try { await env.DB.prepare('DELETE FROM conn_meta WHERE conn_id = ?').bind(connId).run(); }
+  catch (e) { /* همان بالا */ }
+}
+
+/** پاک‌سازیِ ردیف‌های یتیم (اتصالی که مدت‌ها پیش بسته شده) */
+async function metaSweep(env) {
+  if (!(await metaEnsure(env))) return;
+  const cut = Date.now() - META_TTL_STALE;
+  try {
+    await env.DB.prepare('DELETE FROM conn_meta WHERE since IS NULL OR since < ? OR conn_id NOT IN (SELECT conn_id FROM conns)')
+      .bind(cut).run();
+  } catch (e) { /* اختیاری */ }
+}
+
+/** شکلِ یکسانِ ردیفِ زنده — همه‌ی بک‌اندها به این قالب نگاشت می‌شوند */
+function liveRow(uuid, ip, connId, last, cc, since, ua, up, down, transport) {
+  const num = (v) => (typeof v === 'number' && isFinite(v)) ? v : null;
+  return {
+    uuid: String(uuid || ''), ip: String(ip || ''), connId: String(connId || ''),
+    last: num(last), since: num(since),
+    cc: cc ? String(cc).toUpperCase() : '',
+    ua: ua ? String(ua) : '',
+    up: Math.max(0, Math.floor(num(up) || 0)),
+    down: Math.max(0, Math.floor(num(down) || 0)),
+    transport: transport ? String(transport) : '',
+  };
+}
+
+/**
+ * تنها منبعِ «چه کسی الآن وصل است» — هم برای نمایش، هم برای تصمیمِ محدودساز.
+ *
+ * ⚠️ این تابع عمداً تنها نقطه‌ی خواندن است. اگر پنل از یک نگاشتِ جداگانه
+ * می‌خواند، گزارش با واقعیت یکی نمی‌شد: محدودساز یک چیز می‌دید و جدولِ نمایش
+ * چیزِ دیگر. ترتیبِ انتخابِ مرجع دقیقاً همان ترتیبِ limiterBackend است:
+ *   Durable Object → D1 → KV → حافظهٔ همین isolate
+ * ستون‌های جزئیات (کشور، زمانِ شروع، حجم، نوعِ انتقال) از conn_meta می‌آیند؛
+ * نبودِ آن‌ها فقط یعنی خروجیِ ساده‌تر، هرگز خطا.
+ */
+async function liveRowsDetailed(env) {
+  const now = Date.now();
+  const rows = [];
+  if (env && env.LIMITER) {
+    try {
+      const r = await limiterRpc(env, '/dump', { now });
+      for (const x of ((r && r.rows) || [])) rows.push(liveRow(x.uuid, x.ip, x.conn_id, x.last_ts));
+    } catch (e) { connErr('DO-dump', e); }
+  } else if (env && env.DB) {
+    try {
+      if (!(await liveEnsure(env))) throw new Error('table');
+      await liveSweep(env, null);
+      let r = null;
+      if (await metaEnsure(env)) {
+        try {
+          r = await env.DB.prepare(`SELECT c.uuid AS uuid, c.ip AS ip, c.conn_id AS conn_id,
+            c.last_ts AS last_ts, m.cc AS cc, m.since AS since, m.ua AS ua,
+            m.up AS up, m.down AS down, m.transport AS transport
+            FROM conns c LEFT JOIN conn_meta m ON m.conn_id = c.conn_id
+            ORDER BY c.last_ts ASC LIMIT 500`).all();
+        } catch (e) { r = null; }          /* conn_meta ناهمخوان — بدون جزئیات ادامه می‌دهیم */
+      }
+      if (!r) {
+        r = await env.DB.prepare('SELECT uuid, ip, conn_id, last_ts FROM conns ORDER BY last_ts ASC LIMIT 500').all();
+      }
+      for (const x of ((r && r.results) || [])) {
+        rows.push(liveRow(x.uuid, x.ip, x.conn_id, x.last_ts, x.cc, x.since, x.ua, x.up, x.down, x.transport));
+      }
+    } catch (e) { connErr('D1-live-view', e); }
+  } else if (env && env.KV) {
+    try {
+      const list = await env.KV.list({ prefix: 'c:' });
+      for (const k of ((list && list.keys) || [])) {
+        const p = String(k.name).split(':');
+        if (p.length < 4) continue;
+        rows.push(liveRow(p[1], p[2], p[3], now));
+      }
+    } catch (e) { connErr('KV-live-view', e); }
+  } else {
+    CONNS.forEach((um, uuid) => {
+      if (!um) return;
+      um.forEach((m, ip) => {
+        if (!m) return;
+        m.forEach((ts, id) => rows.push(liveRow(uuid, ip, id, ts)));
+      });
+    });
+  }
+  return rows;
+}
+
+/**
+ * نمای سراسریِ «چه کسی هم‌اکنون وصل است» — برای بخش اتصال‌های پنل.
+ * خروجی هم کاربر را دارد (نام، سقف، چند آی‌پی) و هم جزئیاتِ هر آی‌پی
+ * (تعداد اتصال، آخرین فعالیت، مدت اتصال، کشور، کلاینت).
+ */
+async function liveView(env, st) {
+  const now = Date.now();
+  const lim = limiterBackend(env);
+  const globalLimit = Number((st.settings.sec && st.settings.sec.ipConnLimit) || 0);
+
+  /* ۱) گردآوریِ ردیف‌ها — از همان مرجعی که محدودساز تصمیم می‌گیرد */
+  const rows = await liveRowsDetailed(env);
+
+  /* ۲) گروه‌بندی: کاربر → آی‌پی → اتصال‌ها */
+  const perUser = new Map();
+  for (const r of rows) {
+    if (!r.uuid) continue;
+    let u = perUser.get(r.uuid);
+    if (!u) { u = { uuid: r.uuid, ips: new Map(), conns: 0 }; perUser.set(r.uuid, u); }
+    u.conns++;
+    let e = u.ips.get(r.ip);
+    if (!e) {
+      e = { ip: r.ip, conns: 0, last: null, since: null, cc: r.cc || '', uas: new Set(), up: 0, down: 0, transports: new Set() };
+      u.ips.set(r.ip, e);
+    }
+    e.conns++;
+    e.up += r.up; e.down += r.down;
+    if (r.last !== null && (e.last === null || r.last > e.last)) e.last = r.last;
+    if (r.since !== null && (e.since === null || r.since < e.since)) e.since = r.since;
+    if (r.cc && !e.cc) e.cc = r.cc;
+    if (r.ua) e.uas.add(r.ua);
+    if (r.transport) e.transports.add(r.transport);
+  }
+
+  /* ۳) خروجی — کاربرانِ تعریف‌شده اول (حتی اگر الآن آفلاین باشند) */
+  const known = new Set();
+  const users = [];
+  const push = (u, live) => {
+    const limit = Number(u.ipLimit) || globalLimit || 0;
+    const ips = [...live.ips.values()].map((e) => ({
+      ip: e.ip,
+      conns: e.conns,
+      lastSec: e.last === null ? null : Math.max(0, Math.round((now - e.last) / 1000)),
+      sinceSec: e.since === null ? null : Math.max(0, Math.round((now - e.since) / 1000)),
+      cc: e.cc || '',
+      ua: [...e.uas][0] || '',
+      up: e.up, down: e.down,
+      transport: [...e.transports][0] || '',
+      idle: e.last === null || (now - e.last) > CONN_TTL,
+    })).sort((a, b) => (b.conns - a.conns) || String(a.ip).localeCompare(String(b.ip)));
+    users.push({
+      id: u.id || '', name: u.name || '', uuid: String(u.uuid || ''),
+      enabled: u.enabled !== false,
+      note: u.note || '',
+      limit,
+      ipCount: ips.length,
+      connCount: ips.reduce((a, x) => a + x.conns, 0),
+      over: limit > 0 && ips.length > limit,
+      lastSeen: u.lastSeen || null,
+      ips,
+    });
+    known.add(String(u.uuid));
+  };
+
+  for (const u of (st.users || [])) {
+    const live = perUser.get(String(u.uuid));
+    push(u, live || { ips: new Map(), conns: 0 });
+  }
+  /* کاربری که در لیست نیست (حذف شده ولی ردیف مانده) — برای پاک‌سازی نمایش داده می‌شود */
+  perUser.forEach((live, uuid) => {
+    if (known.has(uuid)) return;
+    push({ uuid, name: 'ناشناس (' + uuid.slice(0, 8) + ')', enabled: false }, live);
+  });
+
+  const online = users.filter((u) => u.ipCount > 0);
+  return {
+    ok: true,
+    ts: now,
+    storage: backendOf(env),
+    limiter: lim,
+    limiterLabel: LIM_LABEL[lim] || lim,
+    ttlMs: CONN_TTL,
+    meta: !!META_READY,
+    globalLimit,
+    summary: {
+      users: users.length,
+      onlineUsers: online.length,
+      distinctIps: online.reduce((a, u) => a + u.ipCount, 0),
+      activeConns: online.reduce((a, u) => a + u.connCount, 0),
+      overLimit: online.filter((u) => u.over).length,
+    },
+    users: users.sort((a, b) => (b.ipCount - a.ipCount) || (b.connCount - a.connCount)),
+  };
+}
+
+/** نامِ مرجعِ فعال با همان واژگانی که پنل نشان می‌دهد */
+const SOURCE_NAME = { do: 'durable-object', d1: 'd1', kv: 'kv', mem: 'memory' };
+const sourceName = (env) => SOURCE_NAME[limiterBackend(env)] || 'memory';
+
+/**
+ * فهرستِ تختِ نشست‌های زنده با جزئیاتِ کامل — قراردادِ GET /api/connections.
+ *
+ * هر ردیف از همان مرجعی می‌آید که محدودساز روی آن تصمیم می‌گیرد
+ * (liveRowsDetailed)، پس عددِ این فهرست با عددی که باعثِ رد شدنِ اتصال
+ * می‌شود یکی است. «مدت اتصال» از زمانِ ثبتِ نشست (since) تا همین لحظه است و
+ * «آخرین فعالیت» همان last_ts است که بر اساسِ فعالیت تمدید می‌شود — نه ضربان.
+ */
+async function liveSessions(env, st) {
+  const now = Date.now();
+  const rows = await liveRowsDetailed(env);
+  const byUuid = new Map();
+  for (const u of (st.users || [])) byUuid.set(String(u.uuid), u);
+
+  const sessions = rows.map((r) => {
+    const u = byUuid.get(r.uuid);
+    return {
+      connId: r.connId,
+      uuid: r.uuid,
+      /* شناسه/نام کانفیگ (یوزر) — اگر کاربر حذف شده باشد نام خالی می‌ماند */
+      user: u ? (u.name || '') : '',
+      userId: u ? (u.id || '') : '',
+      known: !!u,
+      ip: r.ip,
+      cc: r.cc,
+      /* زمانِ شروعِ اتصال — اگر conn_meta در دسترس نباشد null است */
+      startedAt: r.since,
+      durationSec: r.since === null ? null : Math.max(0, Math.round((now - r.since) / 1000)),
+      /* حجمِ ارسالی/دریافتیِ همین نشست (بایت) */
+      up: r.up,
+      down: r.down,
+      /* نوعِ انتقال — در صورت نبود، از تنظیماتِ فعلی پنل خوانده می‌شود */
+      transport: r.transport || ((st.settings && st.settings.transport) || ''),
+      lastActivityAt: r.last,
+      idleSec: r.last === null ? null : Math.max(0, Math.round((now - r.last) / 1000)),
+      idle: r.last === null || (now - r.last) > CONN_TTL,
+      ua: r.ua,
+    };
+  }).sort((a, b) => (b.lastActivityAt || 0) - (a.lastActivityAt || 0));
+
+  const users = new Set(), ips = new Set();
+  for (const s of sessions) { if (s.uuid) users.add(s.uuid); if (s.ip) ips.add(s.ip); }
+
+  return {
+    ok: true,
+    ts: now,
+    /* مرجعِ فعلی — همان جایی که سقفِ آی‌پی روی آن حساب می‌شود */
+    source: sourceName(env),
+    sourceLabel: LIM_LABEL[limiterBackend(env)] || sourceName(env),
+    storage: backendOf(env),
+    ttlMs: CONN_TTL,
+    meta: !!META_READY,
+    summary: {
+      users: users.size,          /* کاربرانِ متمایزِ متصل */
+      ips: ips.size,              /* آی‌پی‌های متمایز */
+      connections: sessions.length, /* مجموعِ اتصال‌ها */
+    },
+    sessions,
+  };
+}
+
 /**
  * ثبت یک اتصال برای (کاربر، IP) و اعمالِ سقفِ همزمانی.
  * برمی‌گرداند: { ok, ips, conns, limit, enforced, reason, storage }
  *   ips   = تعداد IPهای همزمانِ این کاربر
  *   conns = تعداد اتصال‌های همین IP
+ *
+ * ⚠️ این تابع حتی وقتی limit صفر است (نامحدود) هم ردیف را ثبت می‌کند: ثبت و
+ * اعمال دو تصمیمِ جدا هستند. limit>0 فقط «رد کردن» را فعال می‌کند؛ نبودِ آن
+ * نباید یعنی هیچ‌کس دیده نشود — بخشِ «اتصال‌ها»ی پنل دقیقاً به همین ردیف‌ها
+ * نگاه می‌کند.
+ * info (اختیاری) = { cc, ua } — جزئیاتی که فقط برای نمایش ذخیره می‌شوند.
  */
-async function connAcquire(env, uuid, ip, limit, connId) {
+async function connAcquire(env, uuid, ip, limit, connId, info) {
+  const r = await connAcquireInner(env, uuid, ip, limit, connId);
+  /* جزئیاتِ نمایش — فقط وقتی اتصال پذیرفته شده؛ شکستِ آن هرگز تصمیم را عوض نمی‌کند */
+  if (r && r.ok && info) {
+    try { await metaPut(env, r.id || connId, info); } catch (e) { /* نمایش نباید اتصال را ببندد */ }
+  }
+  return r;
+}
+
+async function connAcquireInner(env, uuid, ip, limit, connId) {
   limit = Number(limit) || 0;
   if (!uuid || !ip) return { ok: true, ips: 0, conns: 0, limit, enforced: false, reason: 'missing-identity' };
   const id = connId || randTok(10);
   const now = Date.now();
   CONN_ACQUIRES++;
   const backend = limiterBackend(env);
+
+  /* ── ۰) فهرستِ سیاه — قبل از هر تصمیمِ دیگری ──
+     آی‌پیِ مسدودشده نه سهمیه می‌گیرد و نه به لایه‌ی بعد می‌رسد؛ این بررسی
+     جلوی همه‌ی بک‌اندها است تا «مسدود شد» در هر استقراری یک معنا بدهد. */
+  try {
+    const ban = await banCheck(env, ip, uuid);
+    if (ban) {
+      CONN_DENIES++;
+      return { ok: false, ips: 0, conns: 0, limit, enforced: true, banned: true, ban, reason: 'ip-banned', storage: backendOf(env) };
+    }
+  } catch (e) { connErr('ban', e); }   /* خطای فهرستِ سیاه هرگز پذیرش را باز نمی‌کند */
 
   /* ── ۱) Durable Object — مرجعِ جهانی؛ تصمیم را همین‌جا می‌گیریم ── */
   if (backend === 'do') {
@@ -749,6 +1172,8 @@ async function connRelease(env, uuid, ip, connId) {
      اگر user یا ip لحظه‌ای در دسترس نبود، ردیف برای همیشه در جدول می‌ماند. */
   if (env && env.DB && connId) {
     try { await d1Release(env, connId); } catch (e) { connErr('D1', e); }
+    /* جزئیاتِ نمایش هم با همان کلید پاک می‌شود */
+    try { await metaDel(env, connId); } catch (e) { /* همان بالا */ }
   }
   /* ⚠️ آزادسازی در بقیهٔ بک‌اندها هم نباید به داشتنِ uuid/ip وابسته باشد:
      شناسه‌ی اتصال برای حذف کافی است. قبلاً اگر user یا ip لحظه‌ای در دسترس
@@ -776,6 +1201,238 @@ async function connRelease(env, uuid, ip, connId) {
     if (!um.size) CONNS.delete(uuid);
   }
   return left;
+}
+
+/** قطعِ دستی از پنل — یک اتصالِ مشخص یا همه‌ی اتصال‌های یک آی‌پی.
+    از همان مسیرِ آزادسازیِ عادی می‌رود، پس آی‌پی بلافاصله آزاد می‌شود. */
+async function connKick(env, uuid, ip, connId) {
+  const u = uuid ? String(uuid) : '';
+  const i = ip ? String(ip) : '';
+  const ids = [];
+  if (connId) ids.push(String(connId));
+  else if (u || i) {
+    /* شناسه‌ها از همان نمایِ زنده خوانده می‌شوند — مستقل از بک‌اند.
+       فقط آی‌پی هم کافی است (مسدودسازی باید همه‌ی نشست‌های آن آی‌پی را ببندد) */
+    for (const r of (await liveRowsOf(env))) {
+      if (u && r.uuid !== u) continue;
+      if (i && r.ip !== i) continue;
+      ids.push(r.connId);
+    }
+  }
+  let n = 0;
+  for (const id of ids) {
+    if (!id) continue;
+    try { await connRelease(env, u, i, id); n++; } catch (e) { connErr('kick', e); }
+  }
+  if (env && env.DB) { try { await metaSweep(env); } catch (e) {} }
+  return { ok: true, kicked: n, ids };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   فهرستِ سیاهِ آی‌پی (مسدودسازیِ دائم و زمان‌دار)
+   ───────────────────────────────────────────────────────────────────────────
+   همان زنجیره‌ی ذخیره‌سازیِ بقیه‌ی پروژه (D1 → KV → حافظه) و نه یک نگاشتِ
+   جداگانه، وگرنه «مسدود شده» در یک لایه بود و «رد شد» در لایه‌ای دیگر.
+     • D1   : جدولِ ip_bans — ماندگار و سراسری (استقرارِ واقعی)
+     • KV   : کلیدِ b:<ip> با expirationTtl — ماندگار، تقریبی
+     • حافظه: فقط همین isolate — بدون تضمین، اما همیشه در دسترس
+   منقضی‌شده‌ها هنگامِ خواندن نادیده گرفته می‌شوند و بعداً پاک می‌شوند؛
+   هیچ تایمر یا ضربانی برای این کار راه نمی‌افتد.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const KV_BAN = (ip) => 'b:' + ip;
+const BANS = new Map();                  /* آی‌پی -> { until, reason, uuid, createdAt } (حافظه) */
+const BAN_CACHE_MS = 3000;               /* تازه‌ترین فهرست — فقط برای مسیرِ داغِ پذیرش */
+let BAN_CACHE = { at: 0, list: [] };
+let BAN_READY = null;
+
+async function banEnsure(env) {
+  if (BAN_READY !== null) return BAN_READY;
+  if (!env || !env.DB) { BAN_READY = false; return false; }
+  try {
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS ip_bans (
+      ip TEXT PRIMARY KEY,
+      uuid TEXT,
+      until INTEGER,
+      reason TEXT,
+      created_at INTEGER,
+      created_by TEXT
+    )`).run();
+    BAN_READY = true;
+  } catch (e) { BAN_READY = false; }
+  return BAN_READY;
+}
+
+/** خواندنِ تازه — فهرستِ سیاهِ نمایش‌داده‌شده همیشه همین است (بدون کش) */
+async function banList(env) {
+  const now = Date.now();
+  const out = [];
+  const push = (ip, uuid, until, reason, createdAt, createdBy) => {
+    out.push({
+      ip: String(ip), uuid: uuid ? String(uuid) : '',
+      until: until ? Number(until) : 0,
+      permanent: !until,
+      /* منقضی‌شده هنوز در فهرست دیده می‌شود تا کاربر بفهمد چرا آزاد شده */
+      expired: !!until && Number(until) <= now,
+      remainingSec: until ? Math.max(0, Math.round((Number(until) - now) / 1000)) : null,
+      reason: reason ? String(reason) : '',
+      createdAt: createdAt ? Number(createdAt) : null,
+      createdBy: createdBy ? String(createdBy) : '',
+    });
+  };
+  if (env && env.DB) {
+    try {
+      if (await banEnsure(env)) {
+        const r = await env.DB.prepare('SELECT ip, uuid, until, reason, created_at, created_by FROM ip_bans ORDER BY created_at DESC LIMIT 500').all();
+        for (const x of ((r && r.results) || [])) push(x.ip, x.uuid, x.until, x.reason, x.created_at, x.created_by);
+      }
+    } catch (e) { connErr('D1-ban-list', e); }
+  }
+  if (env && env.KV) {
+    try {
+      const list = await env.KV.list({ prefix: 'b:' });
+      for (const k of ((list && list.keys) || [])) {
+        const ip = String(k.name).slice(2);
+        if (out.some((x) => x.ip === ip)) continue;
+        const v = await kvGetJson(env, k.name);
+        if (!v) continue;
+        push(ip, v.uuid, v.until, v.reason, v.createdAt, v.createdBy);
+      }
+    } catch (e) { connErr('KV-ban-list', e); }
+  }
+  BANS.forEach((v, ip) => {
+    if (out.some((x) => x.ip === ip)) return;
+    push(ip, v.uuid, v.until, v.reason, v.createdAt, v.createdBy);
+  });
+  return { ok: true, ts: now, source: banSource(env), bans: out.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)) };
+}
+
+/** کدام لایه فهرستِ سیاه را نگه می‌دارد */
+function banSource(env) {
+  if (env && env.DB) return 'd1';
+  if (env && env.KV) return 'kv';
+  return 'memory';
+}
+
+/**
+ * افزودن/به‌روزرسانیِ یک مسدودی.
+ * hours: عددِ ساعت (مثل ۱ یا ۲۴) یا ۰/خالی برای مسدودیِ دائم.
+ */
+async function banAdd(env, ip, opt) {
+  const o = opt || {};
+  const clean = String(ip || '').trim();
+  if (!clean) return { ok: false, error: 'آی‌پی مشخص نشده است' };
+  const hours = Number(o.hours) || 0;
+  const until = hours > 0 ? Date.now() + Math.round(hours * 3600 * 1000) : 0;
+  const rec = {
+    until,
+    uuid: o.uuid ? String(o.uuid).trim() : '',
+    reason: o.reason ? String(o.reason).slice(0, 200) : '',
+    createdAt: Date.now(),
+    createdBy: o.createdBy ? String(o.createdBy).slice(0, 64) : '',
+  };
+  const wrote = [];
+
+  if (env && env.DB) {
+    try {
+      if (await banEnsure(env)) {
+        await env.DB.prepare(
+          `INSERT INTO ip_bans (ip, uuid, until, reason, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(ip) DO UPDATE SET
+             uuid = excluded.uuid, until = excluded.until, reason = excluded.reason,
+             created_at = excluded.created_at, created_by = excluded.created_by`
+        ).bind(clean, rec.uuid || null, until || null, rec.reason || null, rec.createdAt, rec.createdBy || null).run();
+        wrote.push('d1');
+      }
+    } catch (e) { connErr('D1-ban-add', e); }
+  }
+  if (env && env.KV) {
+    try {
+      const ttl = until ? Math.max(60, Math.ceil((until - Date.now()) / 1000)) : undefined;
+      const val = JSON.stringify(rec);
+      if (ttl) await env.KV.put(KV_BAN(clean), val, { expirationTtl: ttl });
+      else await env.KV.put(KV_BAN(clean), val);
+      wrote.push('kv');
+    } catch (e) { connErr('KV-ban-add', e); }
+  }
+  BANS.set(clean, rec);                   /* حافظه — همیشه، تا همین isolate هم رد کند */
+  BAN_CACHE.at = 0;                       /* بی‌اعتبار کردنِ کشِ مسیرِ پذیرش */
+  return {
+    ok: true, ip: clean, until, permanent: !until, hours,
+    expiresAt: until || null, wrote, source: banSource(env),
+  };
+}
+
+/** رفعِ مسدودی — روی همه‌ی لایه‌ها (ماندن در یکی یعنی هنوز رد می‌شود) */
+async function banRemove(env, ip) {
+  const clean = String(ip || '').trim();
+  if (!clean) return { ok: false, error: 'آی‌پی مشخص نشده است' };
+  let removed = false;
+  if (env && env.DB) {
+    try {
+      if (await banEnsure(env)) {
+        const r = await env.DB.prepare('DELETE FROM ip_bans WHERE ip = ?').bind(clean).run();
+        if (r && r.meta && Number(r.meta.changes) > 0) removed = true;
+      }
+    } catch (e) { connErr('D1-ban-del', e); }
+  }
+  if (env && env.KV) {
+    try { await env.KV.delete(KV_BAN(clean)); removed = true; } catch (e) { connErr('KV-ban-del', e); }
+  }
+  if (BANS.delete(clean)) removed = true;
+  BAN_CACHE.at = 0;
+  return { ok: true, ip: clean, removed, source: banSource(env) };
+}
+
+/**
+ * آیا این آی‌پی مسدود است؟ — مسیرِ داغ (هر پذیرش و هر تمدید)
+ * برای اینکه هر تمدیدِ مبتنی بر فعالیت یک کوئری اضافه به D1 نزند، فهرست حداکثر
+ * BAN_CACHE_MS ثانیه کش می‌شود؛ افزودن/برداشتنِ مسدودی کش را باطل می‌کند.
+ * کش فقط «مسدود نیست» را تا ۳ ثانیه دیر می‌بیند و هرگز یک آی‌پیِ مسدود را آزاد
+ * نمی‌گذارد ماندن بیش از حد مجاز — و تازه‌ترین فهرست برای نمایش همیشه تازه است.
+ */
+async function banCheck(env, ip, uuid) {
+  const clean = String(ip || '').trim();
+  if (!clean) return null;
+  const now = Date.now();
+  if (!BAN_CACHE.at || now - BAN_CACHE.at > BAN_CACHE_MS) {
+    let list = [];
+    if (env && env.DB) {
+      try {
+        if (await banEnsure(env)) {
+          const r = await env.DB.prepare('SELECT ip, uuid, until, reason FROM ip_bans').all();
+          list = (r && r.results) || [];
+        }
+      } catch (e) { connErr('D1-ban-read', e); }
+    } else if (env && env.KV) {
+      try {
+        const l = await env.KV.list({ prefix: 'b:' });
+        for (const k of ((l && l.keys) || [])) {
+          const v = await kvGetJson(env, k.name);
+          if (v) list.push({ ip: String(k.name).slice(2), uuid: v.uuid, until: v.until, reason: v.reason });
+        }
+      } catch (e) { connErr('KV-ban-read', e); }
+    }
+    BANS.forEach((v, k) => { if (!list.some((x) => String(x.ip) === k)) list.push({ ip: k, uuid: v.uuid, until: v.until, reason: v.reason }); });
+    BAN_CACHE = { at: now, list };
+  }
+  for (const b of BAN_CACHE.list) {
+    if (String(b.ip) !== clean) continue;
+    if (b.until && Number(b.until) <= now) continue;          /* منقضی شده */
+    if (b.uuid && uuid && String(b.uuid) !== String(uuid)) continue;  /* مربوط به کاربرِ دیگری است */
+    return { banned: true, reason: b.reason || '', until: Number(b.until) || 0, permanent: !b.until };
+  }
+  return null;
+}
+
+/** پاک‌سازیِ مسدودی‌های منقضی‌شده — هنگامِ نمایش صدا زده می‌شود، بدون تایمر */
+async function banSweep(env) {
+  const now = Date.now();
+  if (env && env.DB) {
+    try { if (await banEnsure(env)) await env.DB.prepare('DELETE FROM ip_bans WHERE until IS NOT NULL AND until <= ?').bind(now).run(); }
+    catch (e) { /* اختیاری */ }
+  }
+  BANS.forEach((v, ip) => { if (v && v.until && v.until <= now) BANS.delete(ip); });
 }
 
 /** پاک‌سازیِ کاملِ «اتصال‌های زنده» — روی هر سه بک‌اند.
@@ -825,6 +1482,8 @@ async function connReset(env, uuid) {
     if (u) { const um = CONNS.get(u); if (um) { um.forEach((m) => { removed.mem += m.size; }); CONNS.delete(u); } }
     else { CONNS.forEach((um) => um.forEach((m) => { removed.mem += m.size; })); CONNS.clear(); }
   } catch (e) {}
+  /* ۵) جزئیاتِ نمایش — ردیف‌های بی‌صاحب پاک می‌شوند (یتیم‌ها هرگز نمایش داده نمی‌شدند) */
+  try { await metaSweep(env); } catch (e) {}
   removed.total = removed.d1 + removed.do + removed.kv + removed.mem;
   return removed;
 }
@@ -870,7 +1529,19 @@ async function liveRowsOf(env) {
         cursor = list && !list.list_complete ? list.cursor : undefined;
       } while (cursor && ++guard < 50);
     } catch (e) { connErr('KV-live-rows', e); }
+    return out;
   }
+  /* حافظهٔ همین isolate — مرجعِ استقرارِ بدونِ هیچ بایندینگی.
+     ⚠️ این شاخه قبلاً وجود نداشت: در استقرارِ بدونِ DB/KV/LIMITER خروجی همیشه
+     خالی بود، پس «قطعِ موقت» (connKick) هیچ اتصالی پیدا نمی‌کرد در حالی که
+     نمای زنده همان اتصال‌ها را نشان می‌داد. */
+  CONNS.forEach((um, uuid) => {
+    if (!um) return;
+    um.forEach((m, ip) => {
+      if (!m) return;
+      m.forEach((ts, id) => out.push(asRow(uuid, ip, id, ts)));
+    });
+  });
   return out;
 }
 
@@ -917,6 +1588,16 @@ async function sessionTouch(env, uuid, ip, connId) {
 async function connRefresh(env, uuid, ip, connId, limit, alive) {
   if (!uuid || !ip || !connId) return null;
   const stillAlive = () => !alive || alive();
+
+  /* ۰) مسدودیِ تازه — اتصالی که همین حالا از پنل مسدود شده باید بسته شود،
+     نه اینکه تا پایانِ TTL سر جایش بماند. چون تمدید بر اساسِ فعالیت است،
+     این بررسی همان لحظه‌ای اثر می‌کند که اتصال بعدی‌اش بایتی رد کند —
+     و به هیچ تایمری احتیاج ندارد. برگرداندنِ ok:false تونل را مؤدبانه می‌بندد. */
+  try {
+    const ban = await banCheck(env, ip, uuid);
+    if (ban) return { ok: false, banned: true, ban, reason: 'ip-banned', storage: backendOf(env) };
+  } catch (e) { connErr('ban-refresh', e); }
+
   /* ۱) D1 — مرجعِ استقرارِ واقعی: اول بررسی می‌کنیم ردیف هست یا نه */
   if (env && env.DB) {
     try {
@@ -1244,6 +1925,43 @@ function normalize(st) {
   if (typeof s.ports === 'string') s.ports = s.ports.split(/[,\s]+/).map(Number).filter((x) => x > 0);
   if (!Array.isArray(s.ports) || !s.ports.length) s.ports = [443];
   ['cleanIPs', 'proxyIPs', 'upstream', 'ispPools'].forEach((k) => { if (typeof s[k] === 'string') s[k] = s[k].split('\n').map((x) => x.trim()).filter(Boolean); });
+
+  /* ── سرورهای خروجی (exit) ──
+     همیشه آرایه‌ای معتبر از سرورهای قِسم‌داده‌شده؛ اگر پیش‌فرضِ سراسری به
+     سروری اشاره کند که دیگر وجود ندارد، به «مستقیم» برمی‌گردیم تا مسیرِ
+     تونل هیچ‌وقت منتظرِ یک شناسه‌ی یتیم نماند. */
+  if (!s.exits || typeof s.exits !== 'object') s.exits = { enabled: true, defaultMode: 'direct', defaultExit: '', servers: [] };
+  s.exits.enabled = s.exits.enabled !== false;
+  if (!Array.isArray(s.exits.servers)) s.exits.servers = [];
+  s.exits.servers = s.exits.servers.filter(Boolean).map((x) => normalizeExit(x, x.id));
+  s.exits.defaultExit = String(s.exits.defaultExit || '');
+  if (s.exits.defaultMode !== 'exit') s.exits.defaultMode = 'direct';
+  if (s.exits.defaultExit && !s.exits.servers.some((x) => x.id === s.exits.defaultExit)) {
+    s.exits.defaultExit = '';
+    s.exits.defaultMode = 'direct';
+  }
+  if (s.exits.defaultMode === 'exit' && !s.exits.defaultExit) s.exits.defaultMode = 'direct';
+
+  /* ── رادار (اسکنرِ آی‌پی تمیز) ── */
+  if (!s.radar || typeof s.radar !== 'object') s.radar = {};
+  const RD = DEF().settings.radar;
+  ['ports', 'pools', 'cidrs'].forEach((k) => {
+    if (typeof s.radar[k] === 'string') s.radar[k] = s.radar[k].split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+    if (!Array.isArray(s.radar[k])) s.radar[k] = k === 'ports' ? RD.ports.slice() : [];
+  });
+  s.radar.ports = s.radar.ports.map(Number).filter((p) => p > 0 && p < 65536);
+  if (!s.radar.ports.length) s.radar.ports = RD.ports.slice();
+  if (!Array.isArray(s.radar.ranges) || !s.radar.ranges.length) s.radar.ranges = RD.ranges.map((r) => ({ ...r }));
+  s.radar.ranges = s.radar.ranges
+    .filter((r) => r && r.prefix)
+    .map((r) => ({ prefix: String(r.prefix), from: Math.max(0, Math.min(255, Number(r.from) || 0)), to: Math.max(0, Math.min(255, Number(r.to) === undefined ? 255 : Number(r.to))) }));
+  s.radar.count = Math.max(1, Math.min(MAX_RADAR_COUNT, Math.round(Number(s.radar.count) || RD.count)));
+  s.radar.probes = Math.max(1, Math.min(5, Math.round(Number(s.radar.probes) || RD.probes)));
+  s.radar.concurrency = Math.max(1, Math.min(MAX_RADAR_CONCURRENCY, Math.round(Number(s.radar.concurrency) || RD.concurrency)));
+  s.radar.timeoutMs = Math.max(200, Math.min(30000, Math.round(Number(s.radar.timeoutMs) || RD.timeoutMs)));
+  s.radar.keep = Math.max(1, Math.min(50, Math.round(Number(s.radar.keep) || RD.keep)));
+  s.radar.tls = s.radar.tls !== false;
+  s.radar.exitId = String(s.radar.exitId || '');
   if (s.sub && typeof s.sub.rules === 'string') s.sub.rules = s.sub.rules.split('\n').map((x) => x.trim()).filter(Boolean);
   if (s.fr && typeof s.fr.files === 'string') s.fr.files = s.fr.files.split('\n').map((x) => x.trim()).filter(Boolean);
 
@@ -1276,6 +1994,70 @@ function normalize(st) {
 
   return st;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   پشتیبان‌گیری و بازیابیِ تنظیمات — اعتبارسنجی
+   ───────────────────────────────────────────────────────────────────────────
+   فهرستِ فیلدهای مجاز از خودِ DEF() ساخته می‌شود، نه یک فهرستِ دستی:
+   هر کلیدِ جدیدی که به تنظیمات اضافه شود خودبه‌خود در پشتیبان پذیرفته می‌شود و
+   هر کلیدی که در DEF نیست (اشتباهِ تایپی، خروجیِ نسخه‌ی دیگر، فایلِ دستکاری‌شده)
+   پیش از هر نوشتنی رد می‌شود — تا چیزی نیمه‌کاره ذخیره نشود.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const BACKUP_ROOT_KEYS = ['settings', 'users', 'keys', 'panels', 'logs', 'stats', 'updateLog', 'lastCheck', 'uiLoaded'];
+const BACKUP_ARRAY_KEYS = ['users', 'keys', 'panels', 'logs'];
+const SETTING_KEYS = Object.keys(DEF().settings);
+
+/** اعتبارسنجی — برمی‌گرداند { ok, errors }؛ هیچ چیزی تغییر نمی‌دهد */
+function validateBackup(data) {
+  const errors = [];
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return { ok: false, errors: ['فایل انتخاب‌شده یک شیء JSON معتبر نیست (باید آبجکت باشد، نه آرایه یا مقدارِ ساده)'] };
+  }
+  for (const k of Object.keys(data)) {
+    if (!BACKUP_ROOT_KEYS.includes(k)) errors.push('بخشِ ناشناخته: «' + k + '»');
+  }
+  if (!data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings)) {
+    errors.push('بخشِ «settings» وجود ندارد یا یک شیء نیست — این فایل پشتیبانِ این پنل نیست');
+  } else {
+    for (const k of Object.keys(data.settings)) {
+      if (!SETTING_KEYS.includes(k)) errors.push('تنظیمِ ناشناخته: «' + k + '»');
+    }
+  }
+  for (const k of BACKUP_ARRAY_KEYS) {
+    if (data[k] === undefined) continue;
+    if (!Array.isArray(data[k])) { errors.push('بخشِ «' + k + '» باید یک آرایه باشد'); continue; }
+    data[k].forEach((x, i) => {
+      if (!x || typeof x !== 'object' || Array.isArray(x)) errors.push('بخشِ «' + k + '» موردِ ' + fa(i + 1) + ' یک شیء معتبر نیست');
+    });
+  }
+  if (data.stats !== undefined && (typeof data.stats !== 'object' || Array.isArray(data.stats))) {
+    errors.push('بخشِ «stats» باید یک شیء باشد');
+  }
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, errors: [] };
+}
+
+/**
+ * اِعمالِ پشتیبان — فقط بعد از اعتبارسنجیِ کامل صدا زده می‌شود، پس هیچ نسخه‌ی
+ * نیمه‌کاره‌ای از تنظیمات نوشته نمی‌شود.
+ *   mode='merge'   → ادغام در وضعیتِ فعلی (تنظیمات کلیدبه‌کلید)
+ *   mode='replace' → جایگزینیِ کامل؛ زیرِ آن پیش‌فرض‌های DEF پر می‌شوند
+ */
+function applyBackup(st, data, mode) {
+  if (mode === 'replace') {
+    const next = DEF();
+    next.settings = merge(next.settings, data.settings || {});
+    for (const k of BACKUP_ROOT_KEYS) {
+      if (k === 'settings') continue;
+      if (data[k] !== undefined) next[k] = data[k];
+    }
+    return seed(normalize(next));
+  }
+  merge(st, data);
+  return seed(normalize(st));
+}
+
 function addLog(st, level, actor, action, detail = '') { st.logs = st.logs || []; st.logs.unshift({ id: randTok(8), ts: Date.now(), level, actor, action, detail }); st.logs = st.logs.slice(0, 50); }
 function seed(st) {
   if (!st.users.length) st.users = [{ id: randTok(6), name: 'admin', uuid: crypto.randomUUID(), secret: randTok(12), enabled: true, note: 'کاربر اصلی', quotaGB: 0, dailyQuotaMB: 0, expiryAt: null, deviceLimit: 3, ipLimit: 0, maxConfigs: 0, speedLimit: 0, mode: 'inherit', ports: '', cleanIPs: [], proxyIPs: [], nodes: [], nat64: '', panelUrl: '', blockAdult: false, blockAds: true, fakes: [], fakeMode: 'inherit', up: 0, down: 0, totalReq: 0, lastSeen: null, createdAt: Date.now() }];
@@ -1339,11 +2121,11 @@ function bpbUri(kind, u, s, entry, port, i, host) {
 
   if (kind === 'vless') {
     const q = `encryption=none&security=${sec}&sni=${sni}&fp=${fp}&type=ws&host=${host}&path=${encPath}&allowInsecure=${inc}`;
-    return `vless://${u.uuid}@${entry.ip}:${port}?${q}#${encodeURIComponent(label(s, entry, port, '', u))}`;
+    return `vless://${u.uuid}@${entry.ip}:${port}?${q}#${encodeURIComponent(label(s, entry, port, '', u, i))}`;
   }
   if (kind === 'trojan') {
     const q = `security=${sec}&sni=${sni}&fp=${fp}&type=ws&host=${host}&path=${encPath}&allowInsecure=${inc}`;
-    return `trojan://${u.secret}@${entry.ip}:${port}?${q}#${encodeURIComponent(label(s, entry, port, 'β', u))}`;
+    return `trojan://${u.secret}@${entry.ip}:${port}?${q}#${encodeURIComponent(label(s, entry, port, 'β', u, i))}`;
   }
   return '';
 }
@@ -1442,19 +2224,90 @@ function protoList(s, u) {
   if (!l.length) l.push('vless');
   return l;
 }
-/** نام‌گذاری کانفیگ — پشتیبانی از استراتژی اختصاصی کاربر */
-function label(s, e, port, extra, u) {
+/* ═══════════════════════════════════════════════════════════════════════════
+   نام‌گذاری کانفیگ — الگوهای آماده + الگوی کاملاً سفارشی
+   ───────────────────────────────────────────────────────────────────────────
+   محدودیتِ قبلی: فقط ۵ استراتژیِ از پیش نوشته‌شده و هیچ راهی برای ترکیبِ دلخواه.
+   مدلِ جدید: هر نام یک «الگو» است — رشته‌ای از متنِ آزاد و توکن‌های {name}.
+   الگوهای آماده فقط میان‌برند؛ الگوی سفارشیِ کاربر هر چه باشد همان اعمال می‌شود.
+   فهرستِ الگوها بین ورکر و پنل یکی است (در فایلِ رابط هم تکرار شده) تا پیش‌نمایش
+   دقیقاً همان چیزی را نشان بدهد که در ساب تولید می‌شود.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* توکن‌های قابل استفاده — پیش‌نمایشِ هرکدام در پنل نشان داده می‌شود */
+const NAME_TOKENS = [
+  { k: 'prefix', l: 'پیشوند', ex: 'پنل' },
+  { k: 'user', l: 'نام کاربر', ex: 'علی' },
+  { k: 'proto', l: 'پروتکل', ex: 'VLESS' },
+  { k: 'port', l: 'پورت', ex: '443' },
+  { k: 'ip', l: 'آی‌پی نود', ex: '104.17.152.10' },
+  { k: 'node', l: 'نام نود', ex: 'فرانکفورت' },
+  { k: 'index', l: 'شماره', ex: '1' },
+  { k: 'mark', l: 'نشان', ex: 'β' },
+];
+
+/* الگوهای آماده — v همان مقداری است که در nameStrategy ذخیره می‌شود */
+const NAME_PRESETS = [
+  { v: 'default', l: 'پیش‌فرض', p: '{prefix} | {node} | :{port} | {mark}' },
+  { v: 'minimal', l: 'کوتاه', p: '{node}:{port}' },
+  { v: 'user-port', l: 'کاربر-پورت', p: '{user}:{port}' },
+  { v: 'type-user-port', l: 'پروتکل-کاربر-پورت', p: '{proto}-{user}-:{port}' },
+  { v: 'host-port-user', l: 'نود-پورت-کاربر', p: '{node}-:{port}-{user}' },
+  { v: 'user-node-port', l: 'کاربر-نود-پورت', p: '{user} | {node} :{port}' },
+  { v: 'proto-node', l: 'پروتکل و نود', p: '{proto} • {node}' },
+  { v: 'indexed', l: 'شماره‌دار', p: '{index} • {node}:{port}' },
+  { v: 'ip', l: 'فقط آی‌پی', p: '{ip}' },
+];
+
+const protoName = (extra) => extra === 'β' ? 'Trojan' : extra === 'SS' ? 'SS' : extra === 'VMess' ? 'VMess' : 'VLESS';
+
+/**
+ * رندرِ الگو: توکن‌ها جایگزین می‌شوند و جداکننده‌ی کنارِ توکنِ خالی هم می‌رود.
+ * بدون این پاک‌سازی، «{prefix} | {node}» با prefix خالی می‌شد « | فرانکفورت».
+ */
+function renderName(pattern, vars) {
+  let out = String(pattern || '');
+  /* توکن همراه با جداکننده‌های مجاورش جایگزین می‌شود: اگر مقدار خالی بود،
+     فقط یکی از دو جداکننده می‌ماند تا «{prefix} | {node}» با prefix خالی
+     به « | فرانکفورت» تبدیل نشود. */
+  out = out.replace(/([\s|Â·\-ââ]*)\{(\w+)\}([\s|Â·\-ââ]*)/g,
+    (m, pre, k, post) => {
+      const v = vars[k];
+      if (v === undefined || v === null || v === '') return (pre && post) ? ' ' : (pre || post);
+      return pre + String(v) + post;
+    });
+  out = out.replace(/\{(\w+)\}/g, '');                       /* توکنِ ناشناس */
+  out = out.replace(/[ \t]*[|Â·][ \t]*([|Â·][ \t]*)+/g, ' | ');
+  out = out.replace(/[ \t]{2,}/g, ' ');
+  out = out.replace(/^[\s|Â·\-ââ]+/, '');
+  out = out.replace(/[\s|Â·\-ââ]+$/, '');
+  return out.trim();
+}
+/** نام‌گذاری کانفیگ — الگوی سفارشی مقدم بر استراتژی است */
+function label(s, e, port, extra, u, i) {
   const prefix = (u && u.namePrefix) ? u.namePrefix : (s.sub.namePrefix || '');
+  const vars = {
+    prefix,
+    user: (u && u.name) || '',
+    proto: protoName(extra),
+    port: String(port),
+    ip: (e && e.ip) || '',
+    node: (e && e.name) || ((e && e.ip) || ''),
+    index: (i === undefined || i === null || !isFinite(Number(i))) ? '' : String(Number(i) + 1),
+    mark: extra || '',
+  };
+
+  /* ۱) الگوی کاملاً سفارشی — اولویت دارد و به هیچ فهرستی محدود نیست */
+  const custom = (u && u.namePattern) ? u.namePattern : (s.sub.namePattern || '');
+  if (String(custom).trim()) return renderName(custom, vars) || renderName('{node}:{port}', vars);
+
+  /* ۲) استراتژی‌های آماده (سازگار با مقادیرِ ذخیره‌شده‌ی قبلی) */
   const strategy = (u && u.nameStrategy && u.nameStrategy !== 'inherit') ? u.nameStrategy : (s.sub.nameStrategy || 'default');
+  const preset = NAME_PRESETS.find((x) => x.v === strategy);
+  if (preset) return renderName(preset.p, vars) || renderName('{node}:{port}', vars);
 
-  /* استراتژی‌های مختلف */
-  if (strategy === 'user-port') return [u ? u.name : prefix, ':' + port].filter(Boolean).join('');
-  if (strategy === 'type-user-port') return [(extra === 'β' ? 'Trojan' : 'VLESS'), u ? u.name : '', ':' + port].filter(Boolean).join('-');
-  if (strategy === 'host-port-user') return [e.name, ':' + port, u ? u.name : ''].filter(Boolean).join('-');
-  if (strategy === 'ip') return e.ip || e.name;
-
-  /* پیش‌فرض */
-  return [prefix, e.name, ':' + port, extra].filter(Boolean).join(' | ');
+  /* ۳) ناشناس → همان رفتارِ قدیمیِ پیش‌فرض */
+  return renderName('{prefix} | {node} | :{port} | {mark}', vars);
 }
 
 async function uri(kind, u, s, entry, port, i, host) {
@@ -1462,9 +2315,9 @@ async function uri(kind, u, s, entry, port, i, host) {
   if (kind === 'vless' || kind === 'trojan') return bpbUri(kind, u, s, entry, port, i, host);
 
   const g = tranportQ(s, i, host, u.uuid);
-  if (kind === 'ss') return `ss://${b64('2022-blake3-aes-128-gcm:' + u.secret)}@${entry.ip}:${port}/?plugin=obfs-local%3Bobfs%3Dwebsocket%3Bobfs-host%3D${encodeURIComponent(host)}%3Bobfs-path%3D${encodeURIComponent(g.path || '/')}#${encodeURIComponent(label(s, entry, port, 'SS', u))}`;
+  if (kind === 'ss') return `ss://${b64('2022-blake3-aes-128-gcm:' + u.secret)}@${entry.ip}:${port}/?plugin=obfs-local%3Bobfs%3Dwebsocket%3Bobfs-host%3D${encodeURIComponent(host)}%3Bobfs-path%3D${encodeURIComponent(g.path || '/')}#${encodeURIComponent(label(s, entry, port, 'SS', u, i))}`;
   if (kind === 'vmess') {
-    const o = { v: '2', ps: label(s, entry, port, 'VMess', u), add: entry.ip, port: String(port), id: u.uuid, aid: '0', scy: 'auto', net: s.transport === 'ws' ? 'ws' : s.transport, type: 'none', host, path: g.path || g.serviceName || '/', tls: s.tls ? 'tls' : '', sni: s.sni || host, fp: s.fingerprint };
+    const o = { v: '2', ps: label(s, entry, port, 'VMess', u, i), add: entry.ip, port: String(port), id: u.uuid, aid: '0', scy: 'auto', net: s.transport === 'ws' ? 'ws' : s.transport, type: 'none', host, path: g.path || g.serviceName || '/', tls: s.tls ? 'tls' : '', sni: s.sni || host, fp: s.fingerprint };
     return 'vmess://' + b64(JSON.stringify(o));
   }
   return '';
@@ -2036,384 +2889,81 @@ Commercial support is available at <a href="https://nginx.com/">nginx.com</a>.</
 const notFoundPage = () => new Response(DECOY_STATIC, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' } });
 
 /* ═══════════════ صفحه‌ی کاربر — داشبورد و اشتراک در یک صفحه ═══════════════ */
-const USER_PAGE = `<!DOCTYPE html>
-<html lang="fa" dir="rtl" id="html-root">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title id="page-title">__PANEL_NAME__</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+/* ═══════════════════════════════════════════════════════════════════════════
+   صفحه‌ی کاربر — نسخه‌ی پشتیبان (فقط وقتی ui/user.html از گیت‌هاب نرسد)
+   ───────────────────────────────────────────────────────────────────────────
+   ⚠️ تا قبل از این، یک کپیِ کامل از ui/user.html اینجا درون‌ریخت شده بود.
+   دو نسخه از یک صفحه یعنی دو مسیرِ نگه‌داری، و در عمل یکی عقب می‌ماند:
+   نسخه‌ی زنده (گیت‌هاب) Placeholderهای __PANEL_NAME__ و __EXPIRY_FA__ را
+   نداشت، پس عنوانِ مرورگر همان __PANEL_NAME__ خام را نشان می‌داد و تاریخِ
+   انقضای فارسی اصلاً چاپ نمی‌شد. تکرار حذف شد: مرجع یکی است (ui/user.html)
+   و این فقط یک صفحه‌ی ساده برای وقتی است که آن فایل در دسترس نباشد.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const USER_PAGE = `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>__PANEL_NAME__ — __USER_NAME__</title>
 <style>
-@import url('https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/vazirmatn-font-face.css');
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
-*{box-sizing:border-box;margin:0;padding:0;font-family:'Vazirmatn',sans-serif;-webkit-tap-highlight-color:transparent}
-:root{--bg:#090C11;--bg-grid:rgba(255,255,255,.035);--surface:#12161F;--surface-alt:#171C27;--text:#EDEFF3;--text-muted:#838DA0;--border:rgba(255,255,255,.07);--accent:#2DD4BF;--accent-rgb:45,212,191;--accent-2:#4C8DFF;--accent-2-rgb:76,141,255;--alert:#F0655F;--alert-rgb:240,101,95;--warn:#F4A94A;--warn-rgb:244,169,74;--nav-bg:#0C0F15;--hero-1:#101A28;--hero-2:#05070B;--hero-alert-1:#2A1214;--hero-alert-2:#0B0505;--ring-track:rgba(255,255,255,.06);--shadow:rgba(0,0,0,.4);--box-shadow-light:0 4px 12px rgba(0,0,0,.15)}
-body.light-mode{--bg:#EEF1F6;--bg-grid:rgba(16,21,32,.05);--surface:#FFF;--surface-alt:#F4F6FA;--text:#10141C;--text-muted:#6B7484;--border:rgba(16,21,32,.08);--accent:#0EA394;--accent-rgb:14,163,148;--accent-2:#2D6CDF;--accent-2-rgb:45,108,223;--alert:#DC4C43;--alert-rgb:220,76,67;--warn:#DB8A2A;--warn-rgb:219,138,42;--nav-bg:#FFF;--hero-1:#FFF;--hero-2:#EAF6F4;--hero-alert-1:#FDEBEA;--hero-alert-2:#F7CFCB;--ring-track:rgba(16,21,32,.09);--shadow:rgba(16,21,32,.08);--box-shadow-light:0 6px 18px rgba(0,0,0,.12)}
-body{background-color:var(--bg);background-image:radial-gradient(var(--bg-grid) 1px,transparent 1px);background-size:18px 18px;color:var(--text);padding:28px 24px 110px;width:100%;margin:0 auto;transition:background-color .35s,color .35s;position:relative;min-height:100%}
-html[dir="ltr"] body{direction:ltr}
-.en-font{font-family:'JetBrains Mono','Segoe UI',monospace!important;letter-spacing:.2px}
-.app-screen{display:none}.app-screen.active-screen{display:block}
-.header{margin-bottom:24px;display:flex;justify-content:space-between;align-items:center;width:100%;max-width:1180px;margin-left:auto;margin-right:auto}
-.profile-container{display:flex;align-items:center;flex:1;min-width:0}
-html[dir="rtl"] .profile-img-wrapper{margin-left:12px}html[dir="ltr"] .profile-img-wrapper{margin-right:12px}
-.profile-img-wrapper{position:relative;width:54px;height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0}
-.profile-img{width:46px;height:46px;border-radius:50%;background:var(--surface-alt);border:2.5px solid var(--border);display:flex;align-items:center;justify-content:center;transition:border-color .35s}
-.profile-img.online{border-color:var(--accent)}
-.default-avatar-svg{width:24px;height:24px;fill:var(--text-muted);display:block;border-radius:50%}
-.online-status-text{font-size:9px;font-weight:700;color:var(--accent);margin-top:2px;letter-spacing:.3px}
-.online-status-text.offline{color:var(--text-muted)}
-.online-dot{position:absolute;bottom:2px;width:11px;height:11px;background:#555;border-radius:50%;border:2px solid var(--bg);z-index:3;transition:background-color .3s}
-.online-dot.online{background:var(--accent)}
-html[dir="rtl"] .online-dot{left:2px}html[dir="ltr"] .online-dot{right:2px}
-.user-info{display:flex;align-items:center;margin-top:4px;min-width:0}
-.user-name{font-size:16px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}
-html[dir="rtl"] .user-name{flex-direction:row-reverse}
-.greeting-text{white-space:nowrap}
-.username-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px}
-.username-text.online{color:var(--accent)}
-.wave-icon-wrapper{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;transform-origin:bottom center;animation:wave 3.5s ease-in-out infinite;flex-shrink:0}
-.wave-icon-wrapper svg{width:100%;height:100%}
-@keyframes wave{0%{transform:rotate(0) scale(1)}15%{transform:rotate(10deg) scale(1.01)}30%{transform:rotate(-6deg) scale(1.02)}45%{transform:rotate(8deg) scale(1.01)}60%{transform:rotate(-4deg) scale(1)}75%{transform:rotate(4deg) scale(1)}100%{transform:rotate(0) scale(1)}}
-.header-icons{display:flex;gap:10px;align-items:center;flex-shrink:0}
-.lang-container{position:relative}
-.header-icon{height:42px;padding:0 14px;display:flex;align-items:center;justify-content:center;background:var(--surface);border:1px solid var(--border);border-radius:14px;cursor:pointer;transition:border-color .25s;gap:6px}
-.header-icon:hover{border-color:rgba(var(--accent-rgb),.4)}
-.header-icon i{font-size:16px;color:var(--text-muted)}
-.lang-btn{font-size:13px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px}
-.lang-dropdown-menu{position:absolute;top:50px;background:var(--surface);border:1px solid var(--border);border-radius:12px;min-width:110px;box-shadow:0 10px 25px var(--shadow);z-index:1000;display:none}
-html[dir="rtl"] .lang-dropdown-menu{left:0}html[dir="ltr"] .lang-dropdown-menu{right:0}
-.lang-dropdown-menu.show{display:block}
-.lang-dropdown-item{padding:10px 14px;font-size:13px;color:var(--text-muted);cursor:pointer;transition:background .2s}
-.lang-dropdown-item:hover{background:rgba(var(--accent-rgb),.12);color:var(--text)}
-.subscription-card{border:1px solid rgba(var(--accent-rgb),.15);border-radius:22px;padding:28px 32px;margin-bottom:16px;position:relative;display:flex;justify-content:space-between;align-items:center;background:linear-gradient(150deg,var(--hero-1) 0%,var(--hero-2) 100%);box-shadow:inset 0 0 24px rgba(var(--accent-rgb),.06),var(--box-shadow-light);overflow:hidden;transition:background .4s,box-shadow .4s,border-color .4s;min-height:180px}
-.subscription-card::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-size:16px 16px;pointer-events:none}
-.subscription-card.disconnected{background:linear-gradient(150deg,var(--hero-alert-1) 0%,var(--hero-alert-2) 100%);box-shadow:inset 0 0 24px rgba(var(--alert-rgb),.1),var(--box-shadow-light);border-color:rgba(var(--alert-rgb),.18)}
-.status-right{display:flex;flex-direction:column;position:relative;z-index:1}
-.active-badge{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px}
-.status-dot-green{width:16px;height:16px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;animation:pulseG 2s infinite}
-.status-dot-green i{font-size:9px;color:#06110F}
-.subscription-card.disconnected .status-dot-green{background:var(--alert);animation:pulseR 1.5s infinite}
-.subscription-card.disconnected .status-dot-green i{color:#2A0B09}
-@keyframes pulseG{0%{box-shadow:0 0 0 0 rgba(var(--accent-rgb),.5)}70%{box-shadow:0 0 0 8px rgba(var(--accent-rgb),0)}100%{box-shadow:0 0 0 0 rgba(var(--accent-rgb),0)}}
-@keyframes pulseR{0%{box-shadow:0 0 0 0 rgba(var(--alert-rgb),.6)}70%{box-shadow:0 0 10px rgba(var(--alert-rgb),0)}100%{box-shadow:0 0 0 0 rgba(var(--alert-rgb),0)}}
-.days-left{font-size:42px;font-weight:700;margin-bottom:4px;font-family:'JetBrains Mono',monospace}
-.days-left span{color:var(--accent);font-size:18px;font-weight:600;font-family:'Vazirmatn',sans-serif;margin-left:6px}
-.subscription-card.disconnected .days-left span{color:var(--alert)}
-.expire-date{font-size:12px;font-weight:600;color:var(--text-muted)}
-.progress-circle{position:relative;width:132px;height:132px;border-radius:50%;background:conic-gradient(var(--accent) 0% 100%,var(--ring-track) 100% 100%);display:flex;align-items:center;justify-content:center;z-index:1;transition:background .5s cubic-bezier(.4,0,.2,1)}
-.progress-circle::after{content:'';position:absolute;width:108px;height:108px;background:var(--hero-2);border-radius:50%;transition:background-color .3s}
-.radar-sweep{position:absolute;inset:0;border-radius:50%;animation:radar 3.2s linear infinite;pointer-events:none}
-.radar-sweep::before{content:'';position:absolute;top:1px;left:50%;width:5px;height:5px;margin-left:-2.5px;border-radius:50%;background:#fff;box-shadow:0 0 8px 2px rgba(var(--accent-rgb),.9)}
-@keyframes radar{to{transform:rotate(360deg)}}
-.subscription-card.disconnected .radar-sweep{animation-play-state:paused;opacity:.3}
-.subscription-card.disconnected .radar-sweep::before{box-shadow:0 0 8px 2px rgba(var(--alert-rgb),.9)}
-.subscription-card.disconnected .progress-circle::after{background:var(--hero-alert-2)}
-.progress-text{position:relative;z-index:2;text-align:center}
-.progress-text .percent{font-size:22px;font-weight:700;color:var(--text);font-family:'JetBrains Mono',monospace}
-.progress-text .label{font-size:10px;color:var(--text-muted);display:block;margin-top:2px}
-body.light-mode .subscription-card::before{background-image:linear-gradient(rgba(16,21,32,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(16,21,32,.03) 1px,transparent 1px)}
-body.light-mode .subscription-card.disconnected{border-color:rgba(var(--alert-rgb),.4)}
-body.light-mode .progress-circle::after{background:var(--hero-2)}
-body.light-mode .radar-sweep::before{background:var(--text)}
-#screen-dashboard,#screen-download-apps{width:100%;max-width:1180px;margin-left:auto;margin-right:auto}
-.stats-card{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:18px 10px;margin-bottom:16px;display:flex;justify-content:space-between;box-shadow:var(--box-shadow-light)}
-.stat-item{flex:1;display:flex;flex-direction:column;align-items:center}
-.stat-header-row{display:flex;align-items:center;gap:6px;margin-bottom:12px;flex-direction:row-reverse}
-html[dir="ltr"] .stat-header-row{flex-direction:row}
-.stat-icon-wrapper{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--surface-alt);border:1px solid var(--border)}
-.stat-title{font-size:11px;color:var(--text-muted)}
-.stat-value{font-size:14px;font-weight:700;color:var(--text);font-family:'JetBrains Mono',monospace}
-.stat-value.purple-value{color:var(--accent)}
-.stat-divider{height:40px;width:1px;background:var(--border);align-self:center}
-.promo-card{background:linear-gradient(135deg,rgba(var(--accent-rgb),.15),rgba(var(--accent-rgb),.05));border:1px solid rgba(var(--accent-rgb),.25);border-radius:18px;padding:18px 16px;margin-bottom:16px;display:flex;flex-direction:column;align-items:center;gap:14px;box-shadow:var(--box-shadow-light);text-align:center}
-.promo-card .promo-text{font-size:16px;font-weight:500;color:var(--text);line-height:1.8}
-.promo-card .promo-text span{color:var(--accent);font-weight:700}
-.promo-buttons{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
-.promo-btn{display:flex;align-items:center;gap:8px;padding:8px 18px;border-radius:12px;font-size:13px;font-weight:700;text-decoration:none;transition:all .25s;background:var(--surface);border:1px solid var(--border);color:var(--text);box-shadow:var(--box-shadow-light)}
-.promo-btn:hover{transform:scale(1.03);border-color:rgba(var(--accent-rgb),.4)}
-.promo-btn i{font-size:18px}.promo-btn.telegram i{color:#0088cc}
-.details-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px}
-.detail-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px 12px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;min-height:72px;box-shadow:var(--box-shadow-light)}
-.detail-card .label{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:4px}
-.detail-card .value{font-size:16px;font-weight:700;color:var(--text);font-family:'JetBrains Mono',monospace}
-.detail-card .value.accent-value{color:var(--accent)}
-.section-title{font-size:13px;font-weight:700;color:var(--text-muted);margin-bottom:12px;text-align:right;text-transform:uppercase;letter-spacing:.4px}
-html[dir="ltr"] .section-title{text-align:left}
-.actions-grid{display:flex;gap:12px;margin-bottom:12px}
-.action-cell{flex:1}
-.action-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px 10px;text-align:center;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:10px;height:100%;transition:transform .2s,border-color .2s;box-shadow:var(--box-shadow-light)}
-.action-card:active{transform:scale(.96)}
-.action-card:hover{border-color:rgba(var(--accent-rgb),.3)}
-.action-card i{font-size:20px}
-.action-card.renew i{color:var(--warn)}.action-card.link i{color:var(--accent)}.action-card.qr i{color:var(--accent-2)}.action-card.config i{color:var(--accent)}
-.action-label{font-size:12px;color:var(--text);font-weight:600;line-height:1.3}
-.action-dropdown-container{width:100%;margin-bottom:24px;display:none}
-.action-dropdown-container.show{display:block}
-.action-dropdown-menu{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:10px;box-shadow:0 10px 25px var(--shadow);display:flex;flex-direction:column;gap:8px;min-height:60px;align-items:center;justify-content:center;color:var(--text-muted);font-size:13px}
-.ip-row-item{background:var(--surface-alt);border:1px solid var(--border);border-radius:12px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;width:100%}
-.ip-details-left{display:flex;align-items:center;gap:12px}
-html[dir="rtl"] .ip-details-left{flex-direction:row-reverse}
-.action-mini-flag{width:24px;height:24px;border-radius:50%;background-size:cover;background-position:center;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text-muted);flex-shrink:0}
-.ip-meta-block{display:flex;flex-direction:column;gap:4px;min-width:0}
-.ip-address-text{font-size:13px;font-weight:bold;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ip-protocol-badge-box{display:inline-flex;gap:3px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:10px;text-transform:uppercase;font-weight:500;line-height:1.4}
-.proto-part-1{color:var(--warn)}.proto-part-2{color:var(--accent-2)}.proto-part-3{color:var(--accent)}
-.ip-copy-btn{background:rgba(var(--accent-rgb),.12);border:1px solid rgba(var(--accent-rgb),.25);color:var(--accent);padding:6px 12px;border-radius:10px;font-size:11px;font-weight:bold;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .2s;flex-shrink:0}
-.ip-copy-btn:hover{background:var(--accent);color:#06110F}
-.copy-all-btn{background:rgba(var(--accent-rgb),.15);border:1px solid rgba(var(--accent-rgb),.3);color:var(--text);padding:8px 14px;border-radius:12px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;width:100%;transition:all .25s;margin-bottom:8px}
-.copy-all-btn:hover{background:var(--accent);color:#06110F}
-.download-os-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;background:var(--surface);padding:6px;border-radius:16px;margin-bottom:24px;text-align:center;border:1px solid var(--border);box-shadow:var(--box-shadow-light)}
-.os-tab-btn{background:transparent;border:none;color:var(--text-muted);padding:10px 4px;font-size:12px;font-weight:bold;border-radius:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .25s}
-.os-tab-btn.active-tab{background:var(--accent);color:#06110F;box-shadow:0 4px 12px rgba(var(--accent-rgb),.3)}
-.client-card-item{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;box-shadow:var(--box-shadow-light)}
-.client-info-side{display:flex;align-items:center;gap:12px}
-html[dir="ltr"] .client-info-side{flex-direction:row-reverse;text-align:left}
-.client-icon-box{width:44px;height:44px;background:var(--surface-alt);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--text-muted)}
-.client-title-text{font-size:14px;font-weight:700;color:var(--text)}
-.client-subtitle-text{font-size:11px;color:var(--text-muted);margin-top:2px}
-.client-download-btn{background:rgba(var(--accent-rgb),.15);color:var(--accent);padding:8px 18px;border-radius:12px;font-size:12px;font-weight:700;text-decoration:none;transition:all .2s;flex-shrink:0}
-.client-download-btn:hover{background:var(--accent);color:#06110F}
-.config-qr-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;z-index:9999;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);opacity:0;pointer-events:none;transition:opacity .3s}
-.config-qr-overlay.show{opacity:1;pointer-events:auto}
-.config-qr-box{background:var(--surface);border:1px solid var(--border);border-radius:22px;padding:24px;max-width:320px;width:100%;text-align:center;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.4);transform:scale(.9);transition:transform .3s cubic-bezier(.34,1.56,.64,1)}
-.config-qr-overlay.show .config-qr-box{transform:scale(1)}
-.config-qr-close{position:absolute;top:14px;left:14px;width:30px;height:30px;border-radius:50%;border:none;background:var(--surface-alt);color:var(--text-muted);font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer}
-.config-qr-close:hover{background:rgba(var(--alert-rgb),.15);color:var(--alert)}
-.config-qr-remark{font-size:14px;font-weight:700;color:var(--text);margin:6px 0 18px;word-break:break-word}
-.config-qr-img-wrap{background:#fff;border-radius:16px;padding:16px;display:flex;align-items:center;justify-content:center}
-.config-qr-img-wrap img{width:220px;height:220px;display:block}
-.bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:calc(100% - 48px);max-width:1180px;background:var(--nav-bg);border:1px solid var(--border);border-bottom:0;border-radius:18px 18px 0 0;padding:12px 16px;display:flex;z-index:100}
-.nav-item-cell{flex:1;display:flex;justify-content:center}
-.nav-item{color:var(--text-muted);font-size:11px;cursor:pointer;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px;width:100%;padding:8px 0}
-.nav-item i{font-size:18px}
-.nav-item.active{background:rgba(var(--accent-rgb),.12);border:1px solid rgba(var(--accent-rgb),.25);border-radius:16px;color:var(--accent)}
-@media (max-width:768px){body{padding:16px 12px 96px}#screen-dashboard{display:block}.subscription-card{padding:20px 18px;min-height:0}.progress-circle{width:92px;height:92px}.progress-circle::after{width:74px;height:74px}.days-left{font-size:30px}.details-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.action-card{padding:15px 2px}.action-label{font-size:10px}.bottom-nav{width:calc(100% - 24px)}.header{max-width:100%}}
-@media (min-width:769px){#screen-dashboard{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(300px,.9fr);gap:16px;align-items:start}#screen-dashboard>.subscription-card{grid-column:1/-1}#screen-dashboard>.stats-card{grid-column:1;margin-bottom:0}#screen-dashboard>.promo-card{grid-column:2;margin-bottom:0;height:100%}#screen-dashboard>.details-grid,#screen-dashboard>.actions-grid,#screen-dashboard>.action-dropdown-container{grid-column:1/-1}}
-@media (max-width:360px){body{padding-left:8px;padding-right:8px}.progress-circle{width:82px;height:82px}.progress-circle::after{width:66px;height:66px}.days-left{font-size:26px}}
-</style>
-</head>
-<body>
-<svg style="position:absolute;width:0;height:0"><defs><linearGradient id="waveGrad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#5EEAD4"/><stop offset="50%" stop-color="#2DD4BF"/><stop offset="100%" stop-color="#0F9E90"/></linearGradient></defs></svg>
-
-<div class="header">
-  <div class="profile-container">
-    <div class="profile-img-wrapper">
-      <div class="profile-img" id="profile-img">
-        <svg class="default-avatar-svg" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-      </div>
-      <div class="online-dot" id="online-status-dot"></div>
-      <span class="online-status-text" id="online-status-text">آفلاین</span>
-    </div>
-    <div class="user-info"><div class="user-name" id="user-name"></div></div>
-  </div>
-  <div class="header-icons">
-    <div class="lang-container">
-      <div class="header-icon" id="lang-toggle-btn"><span class="lang-btn"><i class="fa-solid fa-globe"></i> <span id="lang-text">FA</span></span></div>
-      <div class="lang-dropdown-menu" id="lang-dropdown">
-        <div class="lang-dropdown-item" onclick="selectLanguage('fa')">فارسی</div>
-        <div class="lang-dropdown-item" onclick="selectLanguage('en')">English</div>
-        <div class="lang-dropdown-item" onclick="selectLanguage('tr')">Türkçe</div>
-        <div class="lang-dropdown-item" onclick="selectLanguage('ar')">العربية</div>
-      </div>
-    </div>
-    <div class="header-icon" id="theme-toggle"><i class="fa-solid fa-moon" id="theme-icon"></i></div>
-  </div>
-</div>
-
-<div id="screen-dashboard" class="app-screen active-screen">
-  <div class="subscription-card" id="main-sub-card">
-    <div class="status-right">
-      <div class="active-badge"><span class="status-dot-green"><i class="fa-solid fa-check" id="status-icon-mark"></i></span><span id="badge-text">فعال</span></div>
-      <div class="days-left en-font" id="live-days-count">0 <span id="days-label">روز</span></div>
-      <div class="expire-date" id="expire-date">--</div>
-    </div>
-    <div class="status-left">
-      <div class="progress-circle" id="sub-progress-circle">
-        <div class="radar-sweep"></div>
-        <div class="progress-text"><span class="percent en-font" id="live-percent-display">0%</span><span class="label" id="remaining-label">باقی‌مانده</span></div>
-      </div>
-    </div>
-  </div>
-
-  <div class="stats-card">
-    <div class="stat-item"><div class="stat-header-row"><div class="stat-icon-wrapper"><i class="fa-solid fa-database" style="color:#4C8DFF"></i></div><div class="stat-title" id="title-limit">حجم کلی</div></div><div class="stat-value purple-value en-font" id="stat-limit">0 GB</div></div>
-    <div class="stat-divider"></div>
-    <div class="stat-item"><div class="stat-header-row"><div class="stat-icon-wrapper"><i class="fa-solid fa-chart-pie" style="color:#2DD4BF"></i></div><div class="stat-title" id="title-total">مصرف کل</div></div><div class="stat-value en-font" id="stat-total-val">0 GB</div></div>
-    <div class="stat-divider"></div>
-    <div class="stat-item"><div class="stat-header-row"><div class="stat-icon-wrapper"><i class="fa-solid fa-calendar-day" style="color:#4C8DFF"></i></div><div class="stat-title" id="title-download">مصرف روزانه</div></div><div class="stat-value en-font" id="stat-dl-val">0 GB</div></div>
-  </div>
-
-  <div class="promo-card">
-    <div class="promo-text">آیا نیاز به <span>خرید</span> یا <span>تمدید ساب</span> دارید؟<br>با پشتیبانی تماس بگیرید.</div>
-    <div class="promo-buttons"><a href="__TG_CHANNEL__" target="_blank" class="promo-btn telegram"><i class="fa-brands fa-telegram"></i> <span id="promo-tg-label">تلگرام</span></a></div>
-  </div>
-
-  <div class="details-grid">
-    <div class="detail-card"><span class="label" id="detail-total-label">مصرف کل</span><span class="value" id="detail-total-value">0 GB</span></div>
-    <div class="detail-card"><span class="label" id="detail-remaining-label">باقی‌مانده</span><span class="value accent-value" id="detail-remaining-value">100%</span></div>
-    <div class="detail-card"><span class="label" id="detail-remaining-volume-label">حجم باقی‌مانده</span><span class="value" id="detail-remaining-volume">نامحدود</span></div>
-    <div class="detail-card"><span class="label" id="detail-last-connect-label">IP اتصال</span><span class="value" id="detail-last-connect-value">--</span></div>
-  </div>
-
-  <div class="actions-grid">
-    <div class="action-cell"><div class="action-card renew" onclick="window.open('__TG_CHANNEL__','_blank')"><i class="fa-solid fa-battery-three-quarters"></i><div class="action-label" id="action-renew">تمدید ساب</div></div></div>
-    <div class="action-cell"><div class="action-card link" id="btn-copy-sub"><i class="fa-solid fa-link"></i><div class="action-label" id="action-copy">کپی لینک ساب</div></div></div>
-    <div class="action-cell"><div class="action-card qr" id="btn-toggle-qr"><i class="fa-solid fa-qrcode"></i><div class="action-label" id="action-qr">QR Code</div></div></div>
-    <div class="action-cell"><div class="action-card config" id="btn-toggle-config"><i class="fa-solid fa-cloud-arrow-down"></i><div class="action-label" id="action-config">کپی کانفیگ</div></div></div>
-  </div>
-
-  <div class="action-dropdown-container" id="dropdown-qr-container"><div class="action-dropdown-menu" id="list-qr-ips"><span>در حال دریافت…</span></div></div>
-  <div class="action-dropdown-container" id="dropdown-config-container"><div class="action-dropdown-menu" id="list-config-ips"><span>در حال دریافت…</span></div></div>
-</div>
-
-<div id="screen-download-apps" class="app-screen">
-  <div class="section-title" id="download-screen-title">دانلود برنامه ها</div>
-  <div class="download-os-tabs">
-    <div class="os-tab-btn active-tab" id="os-tab-android" onclick="switchDownloadTab('android')"><i class="fa-brands fa-android"></i> <span id="lbl-tab-android">اندروید</span></div>
-    <div class="os-tab-btn" id="os-tab-ios" onclick="switchDownloadTab('ios')"><i class="fa-brands fa-apple"></i> <span id="lbl-tab-ios">آیفون / آیپد</span></div>
-    <div class="os-tab-btn" id="os-tab-desktop" onclick="switchDownloadTab('desktop')"><i class="fa-solid fa-desktop"></i> <span id="lbl-tab-desktop">ویندوز / مک</span></div>
-  </div>
-  <div class="client-card-item"><a href="#" id="btn-dl-client1" target="_blank" class="client-download-btn">دانلود</a><div class="client-info-side"><div><div class="client-title-text" id="title-client1">v2rayNG</div><div class="client-subtitle-text" id="sub-client1">کلاینت رسمی</div></div><div class="client-icon-box"><i class="fa-solid fa-paper-plane"></i></div></div></div>
-  <div class="client-card-item"><a href="#" id="btn-dl-client2" target="_blank" class="client-download-btn">دانلود</a><div class="client-info-side"><div><div class="client-title-text" id="title-client2">Hiddify</div><div class="client-subtitle-text" id="sub-client2">کلاینت رسمی</div></div><div class="client-icon-box"><i class="fa-solid fa-shield-halved"></i></div></div></div>
-  <div class="client-card-item"><a href="#" id="btn-dl-client3" target="_blank" class="client-download-btn">دانلود</a><div class="client-info-side"><div><div class="client-title-text" id="title-client3">sing-box</div><div class="client-subtitle-text" id="sub-client3">کلاینت رسمی</div></div><div class="client-icon-box"><i class="fa-solid fa-box-open"></i></div></div></div>
-  <div class="client-card-item" id="client-card-4"><a href="#" id="btn-dl-client4" target="_blank" class="client-download-btn">دانلود</a><div class="client-info-side"><div><div class="client-title-text" id="title-client4">V2Box</div><div class="client-subtitle-text" id="sub-client4">کلاینت رسمی</div></div><div class="client-icon-box"><i class="fa-solid fa-cube"></i></div></div></div>
-</div>
-
-<div class="config-qr-overlay" id="configQrOverlay" onclick="if(event.target===this)closeConfigQrModal()">
-  <div class="config-qr-box">
-    <button class="config-qr-close" onclick="closeConfigQrModal()"><i class="fa-solid fa-xmark"></i></button>
-    <div class="config-qr-remark en-font" id="configQrRemark"></div>
-    <div class="config-qr-img-wrap"><img id="configQrImage" src="" alt="QR"></div>
-  </div>
-</div>
-
-<div class="bottom-nav">
-  <div class="nav-item-cell"><div class="nav-item active" id="nav-dashboard" onclick="navigateToScreen('dashboard')"><i class="fa-solid fa-house"></i><span id="nav-dashboard-label">داشبورد</span></div></div>
-  <div class="nav-item-cell"><div class="nav-item" id="nav-download" onclick="navigateToScreen('download')"><i class="fa-solid fa-download"></i><span id="nav-download-label">دانلود برنامه</span></div></div>
-</div>
-
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Vazirmatn,system-ui,"Segoe UI",sans-serif;background:#070b12;color:#e8eef9;min-height:100vh;display:grid;place-items:center;padding:16px;line-height:1.9}
+main{width:100%;max-width:440px;background:rgba(19,26,39,.78);border:1px solid rgba(120,145,190,.18);border-radius:20px;padding:22px}
+h1{font-size:17px;font-weight:700}
+.sub{color:#8d9cb6;font-size:12.5px;margin-top:2px}
+.badge{display:inline-block;margin:12px 0 4px;padding:4px 12px;border-radius:999px;font-size:11.5px;font-weight:700}
+body[data-s="active"] .badge{background:rgba(46,230,168,.14);color:#2ee6a8}
+body[data-s="paused"] .badge,body[data-s="expired"] .badge{background:rgba(248,105,127,.14);color:#f8697f}
+body[data-s="limit"] .badge,body[data-s="dailyLimit"] .badge{background:rgba(251,191,36,.14);color:#fbbf24}
+.row{display:flex;justify-content:space-between;font-size:12.5px;color:#8d9cb6;margin-top:10px}
+.row b{color:#e8eef9;font-family:ui-monospace,monospace;font-size:12px}
+.bar{height:7px;background:rgba(141,156,182,.18);border-radius:9px;overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,#2ee6a8,#61a8ff);width:0}
+.exp{font-size:12px;color:#8d9cb6;margin-top:12px}
+label{display:block;font-size:11px;color:#8d9cb6;margin:14px 0 5px}
+.in{display:flex;gap:6px}
+input{flex:1;background:rgba(7,11,18,.7);border:1px solid rgba(120,145,190,.2);border-radius:10px;color:#e8eef9;padding:8px 10px;font-family:ui-monospace,monospace;font-size:10.5px;direction:ltr;text-align:left}
+button{background:#2ee6a8;border:0;color:#04120c;border-radius:10px;padding:8px 13px;font-weight:700;font-size:11.5px;cursor:pointer;font-family:inherit}
+button.ghost{background:transparent;border:1px solid rgba(120,145,190,.25);color:#8d9cb6}
+.btns{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
+.btns a{flex:1;text-align:center;text-decoration:none;border:1px solid rgba(120,145,190,.25);color:#8d9cb6;border-radius:12px;padding:9px;font-size:12px}
+.note{font-size:11px;color:#5d6b83;margin-top:14px;text-align:center}
+</style></head>
+<body data-s="__STATUS_CODE__"><main>
+<h1>__PANEL_NAME__</h1><div class="sub">__USER_NAME__</div>
+<span class="badge" id="bd">—</span>
+<div class="row"><span>مصرف کل</span><b><span id="tu">0</span> از <span id="tl">∞</span> GB</b></div>
+<div class="bar"><i id="bu"></i></div>
+<div class="row"><span>مصرف روزانه</span><b><span id="du">0</span> از <span id="dl">∞</span> GB</b></div>
+<div class="bar"><i id="db"></i></div>
+<div class="exp" id="ex"></div>
+<label>لینک اشتراک</label>
+<div class="in"><input id="s1" value="__SYNC_NORMAL__" readonly><button onclick="cp('s1',this)">کپی</button></div>
+<label>لینک رمزنگاری‌شده (base64)</label>
+<div class="in"><input id="s2" value="__SYNC_NORMAL_BASE64__" readonly><button onclick="cp('s2',this)">کپی</button></div>
+<label>لیست خام</label>
+<div class="in"><input id="s3" value="__SYNC_RAW__" readonly><button onclick="cp('s3',this)">کپی</button></div>
+<div class="btns"><a href="__TG_CHANNEL__" target="_blank">پشتیبانی</a><a href="__TG_BUY__" target="_blank">خرید اشتراک</a></div>
+<div class="note">نسخه‌ی ساده — رابطِ کامل از مخزن بارگیری نشد</div>
+</main>
 <script>
-var panelData={username:"__USER_NAME__",userId:"__USER_ID__",statusCode:"__STATUS_CODE__",expiryDateText:"__EXPIRY_DATE__",expiryFa:"__EXPIRY_FA__",totalUsedGB:parseFloat("__TOTAL_GB__"),totalLimitGB:parseFloat("__LIMIT_TOTAL_GB__"),dailyUsedGB:parseFloat("__DAILY_GB__"),dailyLimitGB:parseFloat("__LIMIT_DAILY_GB__"),subUrl:"__SYNC_NORMAL__",subUrlBase64:"__SYNC_NORMAL_BASE64__",rawUrl:"__SYNC_RAW__"};
-var currentLang='fa',isServerConnected=panelData.statusCode==='active';
-var D={username:panelData.username,statusCode:panelData.statusCode,expiryDateText:panelData.expiryDateText,expiryFa:panelData.expiryFa,
- totalUsedGB:isNaN(panelData.totalUsedGB)?0:panelData.totalUsedGB,totalLimitGB:isNaN(panelData.totalLimitGB)?0:panelData.totalLimitGB,
- dailyUsedGB:isNaN(panelData.dailyUsedGB)?0:panelData.dailyUsedGB,dailyLimitGB:isNaN(panelData.dailyLimitGB)?0:panelData.dailyLimitGB,
- subUrl:panelData.subUrl,links:[],clientIp:null};
-function decB64(s){try{var b=atob(s.replace(/-/g,'+').replace(/_/g,'/'));var u=Uint8Array.from(b,function(c){return c.charCodeAt(0)});return new TextDecoder('utf-8').decode(u);}catch(e){return s;}}
-function loadConfigs(){if(!panelData.rawUrl)return;fetch(panelData.rawUrl,{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error(r.status);return r.text();}).then(function(t){t=t.trim();var lines;try{lines=decB64(t).split('\\n');}catch(e){lines=t.split('\\n');}D.links=lines.map(function(l){return l.trim();}).filter(Boolean);renderActionMenus();}).catch(function(e){console.error(e);var q=document.getElementById('list-qr-ips'),c=document.getElementById('list-config-ips');if(q)q.innerHTML='<span>خطا در دریافت کانفیگ‌ها</span>';if(c)c.innerHTML='<span>خطا در دریافت کانفیگ‌ها</span>';});}
-function loadIp(){fetch('https://api.ipify.org?format=json').then(function(r){return r.json();}).then(function(d){D.clientIp=d.ip;renderPanelData();}).catch(function(){D.clientIp=null;renderPanelData();});}
-var APPS={android:{c1:{name:"v2rayNG",url:"https://play.google.com/store/apps/details?id=com.v2ray.ang"},c2:{name:"Hiddify",url:"https://play.google.com/store/apps/details?id=fg.hiddify.com"},c3:{name:"sing-box",url:"https://play.google.com/store/apps/details?id=io.nekohasekai.sfa"},c4:{name:"V2Box",url:"https://play.google.com/store/search?q=V2Box%20V2ray%20Client&c=apps"}},ios:{c1:{name:"FoXray",url:"https://apps.apple.com/us/app/foxray/id6448898375"},c2:{name:"Hiddify",url:"https://apps.apple.com/us/app/hiddify-next/id6473611382"},c3:{name:"sing-box",url:"https://apps.apple.com/us/app/sing-box/id6443657551"},c4:{name:"V2Box",url:"https://apps.apple.com/us/app/v2box-v2ray-client/id6446814690"}},desktop:{c1:{name:"v2rayN",url:"https://github.com/2dust/v2rayN/releases"},c2:{name:"Hiddify",url:"https://apps.microsoft.com/detail/hiddify"},c3:{name:"NekoRay",url:"https://github.com/MatsuriDayo/nekoray/releases"}}};
-var WAVE='<div class="wave-icon-wrapper"><svg viewBox="0 0 24 24"><path d="M7 23h7.5c2.2 0 4-1.8 4-4v-7.5c0-.8-.7-1.5-1.5-1.5s-1.5.7-1.5 1.5V11h-.5V4.5c0-.8-.7-1.5-1.5-1.5S12 3.7 12 4.5V11h-.5V2.5c0-.8-.7-1.5-1.5-1.5S8.5 1.7 8.5 2.5V11h-.5V5.5c0-.8-.7-1.5-1.5-1.5S5 4.7 5 5.5v10.3c-.6-.7-1.5-1.1-2.4-.9-.9.2-1.5 1.1-1.4 2 .2 1.9 2 4.2 3.8 5.4C5.7 22.7 6.3 23 7 23z" fill="url(#waveGrad)"/></svg></div>';
-var L={fa:{dir:"rtl",greet:"سلام ",badgeActive:"فعال",badgePaused:"متوقف",badgeExpired:"منقضی",badgeLimit:"اتمام حجم",badgeDailyLimit:"اتمام حجم روزانه",daysUnit:"روز",remainingLabel:"باقی‌مانده",titleLimit:"حجم کلی",titleTotal:"مصرف کل",titleDownload:"مصرف روزانه",detailTotal:"مصرف کل",detailRemaining:"باقی‌مانده",detailRemainingVolume:"حجم باقی‌مانده",detailLastConnect:"IP اتصال",actionRenew:"تمدید ساب",actionCopy:"کپی لینک ساب",actionCopied:"کپی شد!",actionQr:"QR Code",actionConfig:"کپی کانفیگ",copyAllBtn:"کپی همه کانفیگ‌ها",dlScreenTitle:"دانلود برنامه ها",dlSubtitle:"کلاینت رسمی",btnDl:"دانلود",tabAndroid:"اندروید",tabIos:"آیفون / آیپد",tabDesktop:"ویندوز / مک",expiredText:"منقضی",unlimitedText:"نامحدود",emptyConfigs:"خالی",copyBtnText:"کپی",showQrBtn:"نمایش QR",unknown:"--",onlineText:"آنلاین",offlineText:"آفلاین",promoTg:"تلگرام",navDash:"داشبورد",navDl:"دانلود برنامه"},
-en:{dir:"ltr",greet:"Hello ",badgeActive:"Active",badgePaused:"Paused",badgeExpired:"Expired",badgeLimit:"Limit Exceeded",badgeDailyLimit:"Daily Limit",daysUnit:"Days",remainingLabel:"Remaining",titleLimit:"Total Limit",titleTotal:"Total Usage",titleDownload:"Daily Usage",detailTotal:"Total Usage",detailRemaining:"Remaining",detailRemainingVolume:"Remaining Volume",detailLastConnect:"Connection IP",actionRenew:"Renew",actionCopy:"Copy Sub Link",actionCopied:"Copied!",actionQr:"QR Code",actionConfig:"Copy Config",copyAllBtn:"Copy All Configs",dlScreenTitle:"Download Clients",dlSubtitle:"Official Client",btnDl:"Get App",tabAndroid:"Android",tabIos:"iPhone / iPad",tabDesktop:"Win / Mac",expiredText:"Expired",unlimitedText:"Unlimited",emptyConfigs:"Empty",copyBtnText:"Copy",showQrBtn:"Show QR",unknown:"--",onlineText:"Online",offlineText:"Offline",promoTg:"Telegram",navDash:"Dashboard",navDl:"Apps"},
-tr:{dir:"ltr",greet:"Merhaba ",badgeActive:"Aktif",badgePaused:"Duraklatıldı",badgeExpired:"Süresi Doldu",badgeLimit:"Kota Doldu",badgeDailyLimit:"Günlük Kota",daysUnit:"Gün",remainingLabel:"Kalan",titleLimit:"Toplam Kota",titleTotal:"Toplam",titleDownload:"Günlük",detailTotal:"Toplam",detailRemaining:"Kalan",detailRemainingVolume:"Kalan Hacim",detailLastConnect:"Bağlantı IP",actionRenew:"Yenile",actionCopy:"Sub Linki Kopyala",actionCopied:"Kopyalandı!",actionQr:"QR Kodu",actionConfig:"Konfig Kopyala",copyAllBtn:"Tümünü Kopyala",dlScreenTitle:"Uygulamaları İndir",dlSubtitle:"Resmi İstemci",btnDl:"İndir",tabAndroid:"Android",tabIos:"iPhone / iPad",tabDesktop:"Win / Mac",expiredText:"Süresi Doldu",unlimitedText:"Sınırsız",emptyConfigs:"Boş",copyBtnText:"Kopyala",showQrBtn:"QR Göster",unknown:"--",onlineText:"Çevrimiçi",offlineText:"Çevrimdışı",promoTg:"Telegram",navDash:"Panel",navDl:"Uygulama"},
-ar:{dir:"rtl",greet:"أهلاً ",badgeActive:"نشط",badgePaused:"متوقف",badgeExpired:"منتهي",badgeLimit:"تجاوز الحد",badgeDailyLimit:"الحد اليومي",daysUnit:"يوم",remainingLabel:"المتبقي",titleLimit:"الحجم الكلي",titleTotal:"الإجمالي",titleDownload:"يومي",detailTotal:"الإجمالي",detailRemaining:"المتبقي",detailRemainingVolume:"الحجم المتبقي",detailLastConnect:"عنوان IP",actionRenew:"تجديد",actionCopy:"نسخ الرابط",actionCopied:"تم النسخ!",actionQr:"رمز QR",actionConfig:"نسخ التكوين",copyAllBtn:"نسخ الكل",dlScreenTitle:"تحميل التطبيقات",dlSubtitle:"عميل رسمي",btnDl:"تحميل",tabAndroid:"أندرويد",tabIos:"آيفون / آيباد",tabDesktop:"ويندوز / ماك",expiredText:"منتهي",unlimitedText:"غير محدود",emptyConfigs:"خالي",copyBtnText:"نسخ",showQrBtn:"عرض QR",unknown:"--",onlineText:"متصل",offlineText:"غير متصل",promoTg:"تيليجرام",navDash:"الرئيسية",navDl:"التطبيق"}};
-function t(k){return (L[currentLang]||L.fa)[k]||k;}
-function isUnlim(v){return v>=9999||v<=0;}
-function daysLeftFrom(text){if(!text||!text.trim())return null;var p=new Date(text);if(isNaN(p.getTime()))return undefined;var now=new Date();return Math.round((new Date(p.getFullYear(),p.getMonth(),p.getDate())-new Date(now.getFullYear(),now.getMonth(),now.getDate()))/86400000);}
-function ringColor(code,pct){if(code!=='active')return 'var(--alert)';return pct>=50?'var(--accent)':pct>=20?'var(--warn)':'var(--alert)';}
-function overrideText(code){if(code==='expired')return t('expiredText');if(code==='paused')return t('badgePaused');if(code==='limit')return t('badgeLimit');if(code==='dailyLimit')return t('badgeDailyLimit');return null;}
-function set(id,v){var e=document.getElementById(id);if(e)e.innerText=v;}
-function renderPanelData(){
- var un=document.getElementById('user-name');
- un.innerHTML=WAVE+'<span class="greeting-text">'+t('greet')+'</span><span class="username-text'+(isServerConnected?' online':'')+'">'+D.username+'</span>';
- var ov=overrideText(D.statusCode),exp=document.getElementById('expire-date');
- exp.innerText=D.expiryFa||t('unlimitedText');
- var dc=document.getElementById('live-days-count');
- if(ov)dc.innerHTML='<span style="font-size:22px;color:var(--alert)">'+ov+'</span>';
- else{var dl=daysLeftFrom(D.expiryDateText);
-  if(dl===null)dc.innerHTML='<span style="font-size:22px">'+t('unlimitedText')+'</span>';
-  else if(dl===undefined)dc.innerHTML='<span style="font-size:18px">'+esc(D.expiryDateText)+'</span>';
-  else if(dl<0)dc.innerHTML='<span style="font-size:22px;color:var(--alert)">'+t('expiredText')+'</span>';
-  else dc.innerHTML=dl+' <span>'+t('daysUnit')+'</span>';}
- var unlim=isUnlim(D.totalLimitGB);
- set('stat-limit',unlim?t('unlimitedText'):D.totalLimitGB+' GB');
- set('stat-total-val',D.totalUsedGB+' GB');set('stat-dl-val',D.dailyUsedGB+' GB');
- set('detail-total-value',D.totalUsedGB+' GB');
- var rem=100,left=D.totalLimitGB-D.totalUsedGB;
- if(!unlim){rem=Math.max(0,Math.min(100,Math.round(100-(D.totalUsedGB/D.totalLimitGB)*100)));}
- set('detail-remaining-value',rem+'%');
- set('detail-remaining-volume',unlim?t('unlimitedText'):(left>0?left.toFixed(2)+' GB':'0 GB'));
- set('detail-last-connect-value',D.clientIp||t('unknown'));
- var pe=document.getElementById('live-percent-display');
- pe.textContent=unlim?'∞':rem+'%';
- pe.style.color=D.statusCode==='active'?'':'var(--alert)';
- var rp=unlim?100:rem;
- document.getElementById('sub-progress-circle').style.background='conic-gradient('+ringColor(D.statusCode,rem)+' 0% '+rp+'%, var(--ring-track) '+rp+'% 100%)';
- updateStatusUI();
-}
-function esc(s){return String(s||'').replace(/[&<>]/g,function(c){return c==='<'?'&lt;':c==='>'?'&gt;':'&amp;';});}
-function updateOnlineStatus(){var d=document.getElementById('online-status-dot'),s=document.getElementById('online-status-text');
- if(isServerConnected){d.classList.add('online');s.innerText=t('onlineText');s.classList.remove('offline');document.getElementById('profile-img').classList.add('online');}
- else{d.classList.remove('online');s.innerText=t('offlineText');s.classList.add('offline');document.getElementById('profile-img').classList.remove('online');}}
-function updateStatusUI(){var card=document.getElementById('main-sub-card'),map={active:[t('badgeActive'),'fa-solid fa-check',false],paused:[t('badgePaused'),'fa-solid fa-pause',true],expired:[t('badgeExpired'),'fa-solid fa-xmark',true],limit:[t('badgeLimit'),'fa-solid fa-triangle-exclamation',true],dailyLimit:[t('badgeDailyLimit'),'fa-solid fa-triangle-exclamation',true]};
- var s=map[D.statusCode]||map.active;card.classList.toggle('disconnected',s[2]);set('badge-text',s[0]);document.getElementById('status-icon-mark').className=s[1];}
-function parseLink(l){var r={protocol:'unknown',remark:'',host:'',port:'',link:l};try{var m=l.match(/^([a-zA-Z0-9]+):\\/\\//);if(!m)return r;r.protocol=m[1].toLowerCase();
- if(r.protocol==='vmess'){var j=JSON.parse(decB64(l.replace(/^vmess:\\/\\//,'')));r.remark=j.ps||'';r.host=j.add||'';r.port=j.port||'';}
- else{var u=new URL(l);r.remark=decodeURIComponent((u.hash||'').replace(/^#/,''));r.host=u.hostname||'';r.port=u.port||'';}}catch(e){}return r;}
-function protoParts(l){var p=parseLink(l);try{if(p.protocol==='vmess'){var j=JSON.parse(decB64(l.replace(/^vmess:\\/\\//,'')));return [p.protocol,j.net||'tcp',j.tls==='tls'?'tls':'none'];}
- if(p.protocol==='vless'||p.protocol==='trojan'){var u=new URL(l);return [p.protocol,u.searchParams.get('type')||'tcp',u.searchParams.get('security')||'none'];}
- if(p.protocol==='ss'){var d=atob(l.replace(/^ss:\\/\\//,'').split('#')[0]);return ['ss',d.split(':')[0]];}}catch(e){}return [p.protocol];}
-function badge(parts){return parts.map(function(x,i){var c=parts.length>=3?['proto-part-1','proto-part-2','proto-part-3'][i]:parts.length===2?['proto-part-1','proto-part-2'][i]:'proto-part-1';return '<span class="'+c+'">'+esc(x)+'</span>';}).join('<span style="color:rgba(255,255,255,.35);margin:0 1px">+</span>');}
-function countryOf(p){var rem=(p.remark||p.host||'').trim();var noflag=rem.replace(/[\\u{1F1E0}-\\u{1F1FF}]/gu,'').trim();var parts=noflag.split(/[-–—|]/).map(function(x){return x.trim();}).filter(Boolean);
- var name=parts[0]||noflag||p.host||'Unknown';var code='';var fm=rem.match(/[\\u{1F1E0}-\\u{1F1FF}]{2}/u);
- if(fm){var cp=[...fm[0]];code=String.fromCodePoint(cp[0].codePointAt(0)-0x1F1E6+0x61,cp[1].codePointAt(0)-0x1F1E6+0x61);}
- if(!code&&name){var M={germany:'de',frankfurt:'de',netherlands:'nl',amsterdam:'nl',france:'fr',paris:'fr',uk:'gb',britain:'gb',london:'gb',unitedstates:'us',usa:'us',newyork:'us',turkey:'tr',istanbul:'tr',dubai:'ae',uae:'ae',singapore:'sg',japan:'jp',sweden:'se',stockholm:'se',finland:'fi',canada:'ca',iran:'ir',tehran:'ir'};
-  var k=name.toLowerCase().replace(/[^a-z]/g,'');code=M[k]||'';}
- return {name:name,code:code};}
-function flagHtml(c){if(c.code)return '<div class="action-mini-flag" style="background-image:url(https://flagcdn.com/w80/'+c.code+'.png)"></div>';
- return '<div class="action-mini-flag"><i class="fa-solid fa-globe"></i></div>';}
-function showConfigQrModal(link,remark){document.getElementById('configQrRemark').textContent=remark||'';
- document.getElementById('configQrImage').src='https://api.qrserver.com/v1/create-qr-code/?size=300x300&data='+encodeURIComponent(link);
- document.getElementById('configQrOverlay').classList.add('show');}
-function closeConfigQrModal(){document.getElementById('configQrOverlay').classList.remove('show');}
-function renderActionMenus(){
- var qr=document.getElementById('list-qr-ips'),cfg=document.getElementById('list-config-ips'),links=D.links||[];
- qr.innerHTML='';cfg.innerHTML='';
- if(!links.length){qr.innerHTML='<span>'+t('emptyConfigs')+'</span>';cfg.innerHTML='<span>'+t('emptyConfigs')+'</span>';return;}
- var all=document.createElement('button');all.className='copy-all-btn';
- all.innerHTML='<i class="fa-solid fa-copy"></i> '+t('copyAllBtn');
- all.addEventListener('click',function(){var b=this;navigator.clipboard.writeText(links.join('\\n')).then(function(){b.innerHTML='<i class="fa-solid fa-check"></i> '+t('actionCopied');b.style.background='#22C55E';setTimeout(function(){b.innerHTML='<i class="fa-solid fa-copy"></i> '+t('copyAllBtn');b.style.background='';},2000);});});
- cfg.appendChild(all);
- links.forEach(function(raw){
-  var p=parseLink(raw),c=countryOf(p),row=document.createElement('div');row.className='ip-row-item';
-  row.innerHTML='<div class="ip-details-left">'+flagHtml(c)+'<div class="ip-meta-block"><div class="ip-address-text en-font">'+esc(p.remark||p.host)+'</div><div><span class="ip-protocol-badge-box en-font">'+badge(protoParts(raw))+'</span></div></div></div>';
-  var btn=document.createElement('button');btn.className='ip-copy-btn';
-  btn.innerHTML='<i class="fa-solid fa-qrcode"></i> '+t('showQrBtn');
-  btn.addEventListener('click',function(){showConfigQrModal(raw,p.remark||p.host);});
-  var r2=row.cloneNode(true);var b2=document.createElement('button');b2.className='ip-copy-btn';
-  b2.innerHTML='<i class="fa-solid fa-copy"></i> '+t('copyBtnText');
-  b2.addEventListener('click',function(){var x=this;navigator.clipboard.writeText(raw).then(function(){x.innerHTML='<i class="fa-solid fa-check"></i> '+t('actionCopied');x.style.background='#22C55E';x.style.color='#fff';setTimeout(function(){x.innerHTML='<i class="fa-solid fa-copy"></i> '+t('copyBtnText');x.style.background='';x.style.color='';},2000);});});
-  row.appendChild(btn);r2.appendChild(b2);qr.appendChild(row);cfg.appendChild(r2);
- });
-}
-function selectLanguage(lang){currentLang=lang;var d=L[lang]||L.fa;
- set('lang-text',lang.toUpperCase());document.getElementById('html-root').setAttribute('dir',d.dir);
- set('remaining-label',t('remainingLabel'));set('title-limit',t('titleLimit'));set('title-total',t('titleTotal'));set('title-download',t('titleDownload'));
- set('detail-total-label',t('detailTotal'));set('detail-remaining-label',t('detailRemaining'));set('detail-remaining-volume-label',t('detailRemainingVolume'));set('detail-last-connect-label',t('detailLastConnect'));
- set('action-renew',t('actionRenew'));set('action-copy',t('actionCopy'));set('action-qr',t('actionQr'));set('action-config',t('actionConfig'));
- set('download-screen-title',t('dlScreenTitle'));set('lbl-tab-android',t('tabAndroid'));set('lbl-tab-ios',t('tabIos'));set('lbl-tab-desktop',t('tabDesktop'));
- set('nav-dashboard-label',t('navDash'));set('nav-download-label',t('navDl'));set('promo-tg-label',t('promoTg'));
- document.getElementById('page-title').textContent=D.username;
- renderPanelData();updateOnlineStatus();renderActionMenus();}
-document.getElementById('btn-copy-sub').addEventListener('click',function(e){e.stopPropagation();var lab=document.getElementById('action-copy');
- navigator.clipboard.writeText(D.subUrl||location.href).then(function(){lab.innerText=t('actionCopied');lab.style.color='#22C55E';setTimeout(function(){lab.innerText=t('actionCopy');lab.style.color='';},2000);});});
-document.getElementById('btn-toggle-qr').addEventListener('click',function(e){e.stopPropagation();document.getElementById('dropdown-config-container').classList.remove('show');document.getElementById('dropdown-qr-container').classList.toggle('show');});
-document.getElementById('btn-toggle-config').addEventListener('click',function(e){e.stopPropagation();document.getElementById('dropdown-qr-container').classList.remove('show');document.getElementById('dropdown-config-container').classList.toggle('show');});
-function navigateToScreen(s){document.querySelectorAll('.app-screen').forEach(function(x){x.classList.remove('active-screen');});
- document.querySelectorAll('.nav-item').forEach(function(x){x.classList.remove('active');});
- if(s==='dashboard'){document.getElementById('screen-dashboard').classList.add('active-screen');document.getElementById('nav-dashboard').classList.add('active');}
- else{document.getElementById('screen-download-apps').classList.add('active-screen');document.getElementById('nav-download').classList.add('active');switchDownloadTab('android');}}
-function switchDownloadTab(os){document.querySelectorAll('.os-tab-btn').forEach(function(b){b.classList.remove('active-tab');});
- document.getElementById('os-tab-'+os).classList.add('active-tab');var d=APPS[os];
- for(var i=1;i<=4;i++){var card=document.getElementById('client-card-'+i);if(!d['c'+i]){if(card)card.style.display='none';continue;}
-  if(card)card.style.display='';set('title-client'+i,d['c'+i].name);set('sub-client'+i,t('dlSubtitle'));
-  document.getElementById('btn-dl-client'+i).href=d['c'+i].url;}
- document.querySelectorAll('.client-download-btn').forEach(function(b){b.innerText=t('btnDl');});}
-document.addEventListener('DOMContentLoaded',function(){selectLanguage(currentLang);loadConfigs();loadIp();});
-document.getElementById('lang-toggle-btn').addEventListener('click',function(e){e.stopPropagation();document.getElementById('lang-dropdown').classList.toggle('show');});
-document.addEventListener('click',function(){document.getElementById('lang-dropdown').classList.remove('show');document.getElementById('dropdown-qr-container').classList.remove('show');document.getElementById('dropdown-config-container').classList.remove('show');});
-document.getElementById('theme-toggle').addEventListener('click',function(){document.body.classList.toggle('light-mode');
- document.getElementById('theme-icon').className=document.body.classList.contains('light-mode')?'fa-solid fa-sun':'fa-solid fa-moon';});
+var T=parseFloat("__TOTAL_GB__")||0, TL=parseFloat("__LIMIT_TOTAL_GB__")||0,
+    D=parseFloat("__DAILY_GB__")||0, DL=parseFloat("__LIMIT_DAILY_GB__")||0;
+function f(x){return (Math.round(x*100)/100).toString();}
+document.getElementById("tu").textContent=f(T);
+document.getElementById("du").textContent=f(D);
+if(TL>0&&TL<9999){document.getElementById("tl").textContent=f(TL);document.getElementById("bu").style.width=Math.min(100,T/TL*100)+"%";}
+else{var b=document.getElementById("bu");b.style.width="100%";b.style.background="rgba(141,156,182,.35)";}
+if(DL>0&&DL<9999){document.getElementById("dl").textContent=f(DL);document.getElementById("db").style.width=Math.min(100,D/DL*100)+"%";}
+else{var b2=document.getElementById("db");b2.style.width="100%";b2.style.background="rgba(141,156,182,.35)";}
+var ex=("__EXPIRY_FA__"||"").trim(); if(ex){document.getElementById("ex").textContent=ex;}
+var S=document.body.getAttribute("data-s")||"active", M={
+  active:["فعال","#2ee6a8"], paused:["غیرفعال","#f8697f"], expired:["منقضی شده","#f8697f"],
+  limit:["سهمیه تمام شده","#fbbf24"], dailyLimit:["سهمیه روزانه تمام شده","#fbbf24"]};
+var m=M[S]||M.active, bd=document.getElementById("bd");
+bd.textContent=m[0]; bd.style.background="transparent"; bd.style.color=m[1];
+bd.style.border="1px solid "+m[1]+"55";
+function cp(id,btn){var el=document.getElementById(id);el.select();el.setSelectionRange(0,99999);
+  var ok=false;try{ok=document.execCommand("copy");}catch(e){}
+  if(!ok&&navigator.clipboard){navigator.clipboard.writeText(el.value);ok=true;}
+  var t=btn.textContent;btn.textContent=ok?"شد":"خطا";setTimeout(function(){btn.textContent=t;},1200);}
 </script>
 </body></html>`;
 
@@ -2599,6 +3149,364 @@ async function apiHandler(req, env, url, ctx) {
     await save(env, st); return json({ ok: true, up: u.up, down: u.down });
   }
 
+  /* ═══════════════════════════════════════════════════════════════════════
+     اتصال‌های زنده • قطعِ موقت • مسدودسازیِ آی‌پی
+     ───────────────────────────────────────────────────────────────────────
+     همه‌ی این مسیرها از همان مرجعی می‌خوانند که محدودساز روی آن تصمیم
+     می‌گیرد (liveRowsDetailed)، پس عددِ گزارش با واقعیتِ رد شدن یکی است.
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  if (route === 'connections' && m === 'GET') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    return json(await liveSessions(env, st));
+  }
+
+  if (route === 'connections/kick' && m === 'POST') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const b = await req.json().catch(() => ({}));
+    const uuid = String((b && b.uuid) || '').trim();
+    const ip = String((b && b.ip) || '').trim();
+    const connId = String((b && b.connId) || '').trim();
+    if (!uuid && !connId) return json({ error: 'کاربر یا شناسه‌ی اتصال مشخص نشده است' }, 400);
+    const r = await connKick(env, uuid, ip, connId);
+    addLog(st, 'warn', 'core', 'قطع موقت اتصال',
+      [uuid.slice(0, 8), ip].filter(Boolean).join(' • ') + ' • ' + fa(r.kicked) + ' مورد');
+    await save(env, st);
+    return json({
+      ...r,
+      msg: r.kicked
+        ? fa(r.kicked) + ' اتصال قطع شد — سهمیه آزاد است و کاربر می‌تواند دوباره وصل شود'
+        : 'هیچ اتصالِ زنده‌ای با این نشانی پیدا نشد (احتمالاً خودبه‌خود آزاد شده است)',
+    });
+  }
+
+  /* مسدودسازی — دائم (hours=0) یا زمان‌دار (مثل ۱ یا ۲۴ ساعت).
+     بلافاصله بعد از ثبت، نشست‌های در جریانِ همان آی‌پی هم بسته می‌شوند؛
+     اثرِ آن بر اتصال‌های بعدی در connAcquire و بر اتصالِ فعلی در connRefresh
+     (تمدیدِ مبتنی بر فعالیت) اعمال می‌شود — بدون هیچ تایمری. */
+  if (route === 'connections/ban' && m === 'POST') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const b = await req.json().catch(() => ({}));
+    const ip = String((b && b.ip) || '').trim();
+    if (!ip) return json({ error: 'آی‌پی برای مسدود کردن مشخص نشده است' }, 400);
+
+    const raw = (b && b.hours !== undefined && b.hours !== null && b.hours !== '') ? b.hours : 0;
+    const hours = Number(raw);
+    if (!isFinite(hours) || hours < 0) {
+      return json({ error: 'مدتِ مسدودسازی باید عددِ ساعت (مثل ۱ یا ۲۴) یا ۰ برای مسدودیِ دائم باشد' }, 400);
+    }
+    const res = await banAdd(env, ip, {
+      uuid: (b && b.uuid) ? String(b.uuid).trim() : '',
+      hours: Math.round(hours * 100) / 100,
+      reason: (b && b.reason) ? String(b.reason) : '',
+      createdBy: ipOf(req),
+    });
+    if (!res.ok) return json({ error: res.error }, 400);
+
+    /* نشست‌های فعلیِ این آی‌پی را هم می‌بندیم — «مسدود شد» نباید تا قطع شدنِ
+       خودشان صبر کند */
+    const kicked = await connKick(env, '', ip, '');
+    addLog(st, 'warn', 'core', res.permanent ? 'مسدودسازیِ دائم آی‌پی' : 'مسدودسازیِ موقت آی‌پی',
+      ip + (res.permanent ? ' • دائم' : ' • ' + fa(res.hours) + ' ساعت') + ' • ' + fa(kicked.kicked) + ' اتصال بسته شد');
+    await save(env, st);
+    return json({
+      ...res,
+      kicked: kicked.kicked,
+      msg: res.permanent
+        ? 'آی‌پی ' + ip + ' برای همیشه مسدود شد'
+        : 'آی‌پی ' + ip + ' تا ' + fa(res.hours) + ' ساعت دیگر مسدود شد',
+    });
+  }
+
+  if (route === 'connections/unban' && m === 'POST') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const b = await req.json().catch(() => ({}));
+    const ip = String((b && b.ip) || '').trim();
+    if (!ip) return json({ error: 'آی‌پی برای رفعِ مسدودی مشخص نشده است' }, 400);
+    const res = await banRemove(env, ip);
+    addLog(st, 'success', 'core', 'رفع مسدودی آی‌پی', ip);
+    await save(env, st);
+    return json({
+      ...res,
+      msg: res.removed
+        ? 'مسدودیِ آی‌پی ' + ip + ' برداشته شد — حالا می‌تواند دوباره وصل شود'
+        : 'این آی‌پی در فهرستِ سیاه نبود',
+    });
+  }
+
+  if (route === 'connections/bans' && m === 'GET') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    /* منقضی‌شده‌ها اول پاک می‌شوند تا فهرست فقط مسدودی‌های جاری را نشان بدهد */
+    await banSweep(env);
+    return json(await banList(env));
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     سرورهای خروجی VLESS (exit / outbound)
+     ─────────────────────────────────────────────────────────────────────────
+     فهرست/افزودن/ویرایش/حذف، تستِ اتصالِ هر سرور، و تعیینِ پیش‌فرضِ سراسری.
+     انتخاب برای هر کانفیگ (کاربر) همین‌جا و با op: 'select' انجام می‌شود.
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  if (route === 'exits' && m === 'GET') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const ex = exitsOf(st);
+    return json({
+      ok: true,
+      enabled: ex.enabled !== false,
+      defaultMode: ex.defaultMode,
+      defaultExit: ex.defaultExit,
+      /* پیش‌فرضِ مؤثر — همان چیزی که مسیر تونل استفاده می‌کند */
+      effective: (() => { const r = resolveExit(st, null); return { mode: r.mode, id: r.id, name: r.name }; })(),
+      servers: ex.servers.map((x) => ({ ...x })),
+      stats: { ...EXIT_STATS, lastError: EXIT_LAST_ERR || null },
+      /* انتخابِ هر کانفیگ — برای نمایشِ وضعیت در پنل */
+      perConfig: st.users.map((u) => {
+        const r = resolveExit(st, u);
+        return { id: u.id, name: u.name, mode: u.exitMode || 'inherit', exitId: u.exitId || '', effectiveMode: r.mode, effectiveId: r.id };
+      }),
+    });
+  }
+
+  if (route === 'exits' && m === 'POST') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const b = await req.json().catch(() => ({}));
+    const op = String((b && b.op) || 'add').toLowerCase();
+    const ex = exitsOf(st);
+
+    if (op === 'add') {
+      const srv = normalizeExit(b.server || b, '');
+      const issues = exitIssues(srv);
+      if (issues.length) return json({ ok: false, error: issues[0], issues }, 400);
+      if (ex.servers.some((x) => x.address === srv.address && x.port === srv.port && x.uuid === srv.uuid)) {
+        return json({ ok: false, error: 'این سرور خروجی قبلاً افزوده شده است' }, 409);
+      }
+      ex.servers.push(srv);
+      addLog(st, 'success', 'core', 'افزودن سرور خروجی', srv.name + ' • ' + srv.address + ':' + srv.port);
+      await save(env, st);
+      return json({
+        ok: true, op, server: srv, servers: ex.servers,
+        msg: 'سرور خروجی «' + srv.name + '» افزوده شد — برای استفاده آن را به‌عنوانِ پیش‌فرضِ سراسری انتخاب کنید یا روی یک کانفیگ ببندید',
+      }, 201);
+    }
+
+    if (op === 'update') {
+      const id = String((b && b.id) || (b.server && b.server.id) || '').trim();
+      const i = ex.servers.findIndex((x) => x.id === id);
+      if (i < 0) return json({ ok: false, error: 'سرور خروجی با این شناسه پیدا نشد' }, 404);
+      const patch = (b && b.server) ? b.server : b;
+      /* ادغامِ عمیق با سرورِ فعلی — پارامترهای ناشناخته هم در params می‌مانند */
+      const merged = { ...ex.servers[i], ...patch, id, params: { ...(ex.servers[i].params || {}), ...((patch && patch.params) || {}) } };
+      const srv = normalizeExit(merged, id);
+      const issues = exitIssues(srv);
+      if (issues.length) return json({ ok: false, error: issues[0], issues }, 400);
+      ex.servers[i] = srv;
+      addLog(st, 'info', 'core', 'ویرایش سرور خروجی', srv.name);
+      await save(env, st);
+      return json({ ok: true, op, server: srv, servers: ex.servers, msg: 'سرور خروجی «' + srv.name + '» به‌روزرسانی شد' });
+    }
+
+    if (op === 'delete') {
+      const id = String((b && b.id) || '').trim();
+      const before = ex.servers.length;
+      ex.servers = ex.servers.filter((x) => x.id !== id);
+      if (ex.servers.length === before) return json({ ok: false, error: 'سرور خروجی با این شناسه پیدا نشد' }, 404);
+      if (ex.defaultExit === id) { ex.defaultExit = ''; ex.defaultMode = 'direct'; }
+      st.users.forEach((u) => { if (u.exitId === id) { u.exitId = ''; u.exitMode = 'direct'; } });
+      addLog(st, 'warn', 'core', 'حذف سرور خروجی', id);
+      await save(env, st);
+      return json({ ok: true, op, servers: ex.servers, msg: 'سرور خروجی حذف شد — کانفیگ‌هایی که به آن وابسته بودند مستقیم شدند' });
+    }
+
+    /* انتخاب برای هر کانفیگ: پیش‌فرضِ سراسری / یکی از سرورها / مستقیم */
+    if (op === 'select') {
+      const uuid = String((b && b.uuid) || '').trim();
+      const u = st.users.find((x) => x.uuid === uuid || x.id === uuid);
+      if (!u) return json({ ok: false, error: 'کانفیگی با این شناسه پیدا نشد' }, 404);
+      const mode = String((b && b.mode) || 'inherit').toLowerCase();
+      if (!['inherit', 'direct', 'exit'].includes(mode)) {
+        return json({ ok: false, error: 'حالت باید یکی از این‌ها باشد: inherit (پیروی از پیش‌فرضِ سراسری)، direct (مستقیم)، exit (یکی از سرورها)' }, 400);
+      }
+      if (mode === 'exit') {
+        const srv = exitById(st, b.exitId);
+        if (!srv) return json({ ok: false, error: 'سرور خروجی انتخاب‌شده پیدا نشد' }, 404);
+        u.exitMode = 'exit'; u.exitId = srv.id;
+      } else if (mode === 'direct') { u.exitMode = 'direct'; u.exitId = ''; }
+      else { u.exitMode = 'inherit'; u.exitId = ''; }
+      const r = resolveExit(st, u);
+      addLog(st, 'info', 'core', 'تغییر خروجیِ کانفیگ', u.name + ' • ' + r.name);
+      await save(env, st);
+      return json({
+        ok: true, op, uuid: u.uuid, mode: u.exitMode, exitId: u.exitId,
+        effective: { mode: r.mode, id: r.id, name: r.name },
+        msg: 'خروجیِ کانفیگِ «' + u.name + '» برابر با ' + r.name + ' شد',
+      });
+    }
+
+    return json({ ok: false, error: 'عملیات نامعتبر — مجاز: add، update، delete، select' }, 400);
+  }
+
+  /* پیش‌فرضِ سراسری: 'direct' (بدون واسطه) یا شناسه‌ی یکی از سرورها */
+  if (route === 'exits/default' && m === 'POST') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const b = await req.json().catch(() => ({}));
+    const ex = exitsOf(st);
+    const mode = String((b && b.mode) || 'exit').toLowerCase();
+    if (mode === 'direct') {
+      ex.defaultMode = 'direct'; ex.defaultExit = '';
+      addLog(st, 'info', 'core', 'پیش‌فرضِ سراسریِ خروجی', 'مستقیم (بدون واسطه)');
+      await save(env, st);
+      return json({ ok: true, defaultMode: 'direct', defaultExit: '', msg: 'خروجیِ پیش‌فرضِ سراسری برابر با «مستقیم (بدون واسطه)» شد' });
+    }
+    const srv = exitById(st, (b && b.exitId !== undefined) ? b.exitId : b.id);
+    if (!srv) return json({ ok: false, error: 'سرور خروجی با این شناسه پیدا نشد' }, 404);
+    ex.defaultMode = 'exit'; ex.defaultExit = srv.id;
+    addLog(st, 'info', 'core', 'پیش‌فرضِ سراسریِ خروجی', srv.name);
+    await save(env, st);
+    return json({
+      ok: true, defaultMode: 'exit', defaultExit: srv.id, server: srv,
+      msg: 'خروجیِ پیش‌فرضِ سراسری برابر با «' + srv.name + '» شد — کانفیگ‌هایی که روی «پیروی از سراسری» هستند از این به بعد از آن عبور می‌کنند',
+    });
+  }
+
+  /* تستِ اتصالِ یک سرور خروجی — گزارشِ موفق/ناموفق و زمانِ پاسخ واقعی.
+     اگر id داده نشود، سرور از خودِ درخواست (بدون ذخیره شدن) تست می‌شود. */
+  if (route === 'exits/test' && m === 'POST') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const b = await req.json().catch(() => ({}));
+    const id = String((b && b.id) || '').trim();
+    const srv = id ? exitById(st, id) : normalizeExit(b.server || b, '');
+    if (!srv) return json({ ok: false, error: 'سرور خروجی با این شناسه پیدا نشد' }, 404);
+    const r = await testExit(srv, b);
+    addLog(st, r.ok ? 'success' : 'warn', 'core', 'تست سرور خروجی',
+      srv.name + ' • ' + (r.ok ? fa(r.ms) + ' میلی‌ثانیه' : (r.error || 'ناموفق')));
+    await save(env, st);
+    return json({
+      ok: true, id: srv.id, name: srv.name,
+      reachable: r.ok, ms: r.ms, transport: r.transport, security: r.security,
+      error: r.error,
+      msg: r.ok
+        ? 'اتصال به «' + srv.name + '» برقرار شد — زمان پاسخ ' + fa(r.ms) + ' میلی‌ثانیه'
+        : 'اتصال به «' + srv.name + '» برقرار نشد: ' + (r.error || 'علت نامشخص'),
+    });
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     رادار — اسکنرِ آی‌پی تمیز (ایده از نوا، اندازه‌گیریِ واقعی در ورکر)
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  if (route === 'radar/config' && m === 'GET') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const cfg = radarConfig(st, {});
+    return json({
+      ok: true, config: cfg,
+      maxConcurrency: MAX_RADAR_CONCURRENCY, maxCount: MAX_RADAR_COUNT,
+      exits: (exitsOf(st).servers || []).map((x) => ({ id: x.id, name: x.name })),
+      msg: 'سقفِ اتصالِ هم‌زمان ' + fa(MAX_RADAR_CONCURRENCY) + ' است (محدودیتِ سوکتِ ورکرز)',
+    });
+  }
+
+  if (route === 'radar/scan' && m === 'POST') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const b = await req.json().catch(() => ({}));
+    const r = await radarScan(st, b);
+    if (!r.ok) return json(r, 400);
+    addLog(st, 'info', 'core', 'اسکن رادار',
+      fa(r.tested) + ' آی‌پی • ' + fa(r.alive) + ' سالم • ' + fa(r.scanMs) + ' میلی‌ثانیه • ' + r.via);
+    await save(env, st);
+    return json(r);
+  }
+
+  /* اعمالِ آی‌پیِ پیشنهادی روی یک کانفیگ (با uuid) یا روی همه‌ی کانفیگ‌ها (all) */
+  if (route === 'radar/apply' && m === 'POST') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const b = await req.json().catch(() => ({}));
+    const ips = (b && b.ips !== undefined) ? b.ips : (b && b.ip ? [b.ip] : []);
+    const all = !!(b && b.all);
+    const uuid = String((b && b.uuid) || '').trim();
+    if (!all && !uuid) return json({ ok: false, error: 'شناسه‌ی کانفیگ (uuid) را بدهید یا all را true بگذارید تا روی همه اعمال شود' }, 400);
+    const uuids = all ? st.users.map((u) => u.uuid) : [uuid];
+    const r = applyCleanIps(st, ips, uuids);
+    if (!r.ok) return json(r, 400);
+    addLog(st, 'success', 'core', 'اعمال آی‌پی تمیز',
+      fa(r.ips.length) + ' آی‌پی • ' + fa(r.updated) + ' کانفیگ' + (r.ips[0] ? ' • ' + r.ips[0] : ''));
+    await save(env, st);
+    return json({
+      ...r,
+      msg: fa(r.ips.length) + ' آی‌پیِ تمیز روی ' + fa(r.updated) + ' کانفیگ اعمال شد — کاربران باید اشتراک‌شان را دوباره بگیرند',
+    });
+  }
+
+  /* ═══════════════ تغییرِ رمز عبور پنل ═══════════════
+     رمز با همان الگویِ فعلیِ پروژه نگه داشته می‌شود (تنظیمات → auth.password،
+     یا متغیرِ محیطی MASTER_KEY اگر بایند شده باشد). تأییدِ رمزِ فعلی اجباری
+     است؛ بدون آن هیچ تغییری نوشته نمی‌شود. */
+  if (route === 'password' && m === 'POST') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const b = await req.json().catch(() => ({}));
+    const current = String((b && b.current) || '');
+    const next = String((b && (b.newPassword !== undefined ? b.newPassword : b['new'])) || '');
+    if (!current) return json({ error: 'رمز عبور فعلی را وارد کنید' }, 400);
+    if (current !== masterKey(st, env)) return json({ error: 'رمز عبور فعلی نادرست است' }, 403);
+    if (!next || next.length < 5) return json({ error: 'رمز جدید باید دست‌کم ۵ حرف باشد' }, 400);
+    if (next === current) return json({ error: 'رمز جدید باید با رمز فعلی فرق داشته باشد' }, 400);
+    /* وقتی MASTER_KEY بایند شده باشد، همیشه بر تنظیمات غلبه می‌کند — نوشتن در
+       تنظیمات بی‌اثر است و کاربر فکر می‌کند رمز عوض شده */
+    if (env && env.MASTER_KEY) {
+      return json({ error: 'رمز عبور از متغیر محیطی MASTER_KEY خوانده می‌شود؛ برای تغییرِ آن باید خودِ این متغیر را در تنظیماتِ ورکر عوض کنید' }, 409);
+    }
+    s.auth.password = next;
+    addLog(st, 'warn', 'auth', 'رمز عبور پنل تغییر کرد', 'از ' + ipOf(req));
+    await save(env, st);
+    /* نشستِ فعلی با رمزِ قبلی امضا شده — بعد از تغییر نامعتبر است */
+    return json({
+      ok: true, relogin: true,
+      msg: 'رمز عبور تغییر کرد — لطفاً دوباره وارد شوید',
+    });
+  }
+
+  /* ═══════════════ پشتیبان‌گیری و بازیابی ═══════════════ */
+  if (route === 'backup' && m === 'GET') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    return json({
+      ok: true, kind: 'sub-panel-backup', version: VERSION, build: BUILD,
+      exportedAt: Date.now(), storage: backendOf(env), source: sourceName(env),
+      data: {
+        settings: st.settings, users: st.users, keys: st.keys, panels: st.panels,
+        logs: st.logs, stats: st.stats, updateLog: st.updateLog,
+        lastCheck: st.lastCheck, uiLoaded: st.uiLoaded,
+      },
+    }, 200, { 'content-disposition': 'attachment; filename="panel-backup.json"' });
+  }
+
+  if (route === 'restore' && m === 'POST') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const b = await req.json().catch(() => ({}));
+    /* هم { data: {...} } را می‌پذیریم و هم خودِ فایلِ پشتیبان را */
+    const data = (b && b.data !== undefined) ? b.data : b;
+    const mode = String((b && b.mode) || 'merge').toLowerCase() === 'replace' ? 'replace' : 'merge';
+
+    const v = validateBackup(data);
+    if (!v.ok) {
+      /* هیچ چیزی نوشته نمی‌شود — فایلِ نامعتبر نباید تنظیمات را نیمه‌کاره کند */
+      return json({
+        ok: false, mode,
+        error: 'فایل پشتیبان نامعتبر است و هیچ تغییری اعمال نشد (' + fa(v.errors.length) + ' مورد)',
+        errors: v.errors,
+      }, 400);
+    }
+    const next = applyBackup(st, data, mode);
+    addLog(next, 'warn', 'system', 'بازیابی از پشتیبان',
+      (mode === 'replace' ? 'جایگزینی کامل' : 'ادغام') + ' • ' + fa((data.users || []).length) + ' کاربر');
+    await save(env, next);
+    return json({
+      ok: true, mode,
+      users: (next.users || []).length,
+      msg: mode === 'replace'
+        ? 'تنظیمات با فایل پشتیبان جایگزین شد'
+        : 'فایل پشتیبان در تنظیماتِ فعلی ادغام شد',
+    });
+  }
   if (route === 'keys') {
     if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
     if (m === 'POST') { if (st.keys.length >= 10) return json({ error: 'حداکثر ۱۰ کلید' }, 400); const k = { id: randTok(5), name: 'key-' + (st.keys.length + 1), key: 'sk_' + randTok(24), ro: st.keys.length % 2 === 1 }; st.keys.push(k); addLog(st, 'success', 'auth', 'کلید API ساخته شد', k.name); await save(env, st); return json({ ok: true, keys: st.keys }, 201); }
@@ -2651,7 +3559,25 @@ async function apiHandler(req, env, url, ctx) {
       addLog(fresh, 'warn', 'system', 'ریست کارخانه‌ای', '');
       return json({ ok: true });
     }
-    if (a === 'restore') { if (b.data && b.data.settings) { merge(st, b.data); await save(env, st); addLog(st, 'warn', 'system', 'بازیابی از پشتیبان', ''); return json({ ok: true }); } return json({ error: 'bad backup' }, 400); }
+    /* ⚠️ بازیابی از همان اعتبارسنجیِ /api/restore می‌گذرد. قبلاً هر JSONی که
+       کلیدِ settings داشت بی‌چون‌وچرا ادغام می‌شد و یک فایلِ اشتباهی می‌توانست
+       تنظیمات را نیمه‌کاره و بی‌صدا خراب کند. */
+    if (a === 'restore') {
+      const data = (b && b.data !== undefined) ? b.data : b;
+      const mode = String((b && b.mode) || 'merge').toLowerCase() === 'replace' ? 'replace' : 'merge';
+      const v = validateBackup(data);
+      if (!v.ok) {
+        return json({
+          ok: false, mode,
+          error: 'فایل پشتیبان نامعتبر است و هیچ تغییری اعمال نشد (' + fa(v.errors.length) + ' مورد)',
+          errors: v.errors,
+        }, 400);
+      }
+      const next = applyBackup(st, data, mode);
+      addLog(next, 'warn', 'system', 'بازیابی از پشتیبان', mode === 'replace' ? 'جایگزینی کامل' : 'ادغام');
+      await save(env, next);
+      return json({ ok: true, mode, users: (next.users || []).length });
+    }
     if (a === 'domain-health') {
       const dom = s.cf.domain || url.hostname;
       const checks = [];
@@ -2917,6 +3843,28 @@ async function apiHandler(req, env, url, ctx) {
       });
     }
 
+    /* ═══ نمای زنده‌ی اتصال‌ها — «چه کسی، از کدام آی‌پی، چند اتصال» ═══
+       ثبتِ ردیف از اِعمالِ سقف جداست: حتی با سقفِ صفر (نامحدود) هم اتصال‌ها
+       ثبت می‌شوند تا این بخش واقعاً چیزی نشان بدهد. */
+    if (a === 'live') return json(await liveView(env, st));
+
+    /* ═══ قطعِ دستیِ یک آی‌پی/اتصال از پنل ═══ */
+    if (a === 'conn-kick') {
+      const uuid = String((b && b.uuid) || '').trim();
+      const ip = String((b && b.ip) || '').trim();
+      const connId = String((b && b.connId) || '').trim();
+      if (!uuid && !connId) return json({ error: 'کاربر یا شناسه‌ی اتصال مشخص نشده' }, 400);
+      const r = await connKick(env, uuid, ip, connId);
+      addLog(st, 'warn', 'core', 'قطع دستی اتصال', [uuid.slice(0, 8), ip].filter(Boolean).join(' • ') + ' • ' + fa(r.kicked) + ' مورد');
+      await save(env, st);
+      return json({
+        ...r,
+        msg: r.kicked
+          ? fa(r.kicked) + ' اتصال قطع شد — آن آی‌پی همین حالا آزاد است'
+          : 'هیچ اتصالِ زنده‌ای با این نشانی پیدا نشد (احتمالاً خودبه‌خود آزاد شده)'
+      });
+    }
+
     if (a === 'usage-health') {
       /* ═══ سلامت شمارش مصرف (volume counting health check) ═══
          بررسی می‌کند: کدام بایندینگ ذخیره‌سازی در دسترس است؟، جدول usage
@@ -3171,7 +4119,12 @@ async function apiHandler(req, env, url, ctx) {
     return json({ error: 'unknown action' }, 400);
   }
 
-  return json({ error: 'not found', routes: ['/api/login', '/api/health', '/api/state', '/api/settings', '/api/users', '/api/keys', '/api/panels', '/api/action'] }, 404);
+  return json({
+    error: 'not found',
+    routes: ['/api/login', '/api/health', '/api/state', '/api/settings', '/api/users', '/api/keys', '/api/panels', '/api/action',
+      '/api/connections', '/api/connections/kick', '/api/connections/ban', '/api/connections/unban', '/api/connections/bans',
+      '/api/password', '/api/backup', '/api/restore'],
+  }, 404);
 }
 async function tgSend(s, text) {
   if (!s.tg.enabled || !s.tg.token) return false;
@@ -3323,6 +4276,690 @@ function parseTrojan(buf) {
   return { pass, cmd: cmd === 3 ? 2 : 1, port, addr, payload: buf.slice(i) };
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   سرورهای خروجی VLESS (exit / outbound) — مرحله‌ی ۲
+   ───────────────────────────────────────────────────────────────────────────
+   این بلوک، «اتصال‌دهنده‌ی بالادست» است: بعد از این‌که هدر VLESS/Trojan پارس
+   شد و پیش از connect() به مقصد، صدا زده می‌شود. خروجیِ آن شیئی هم‌شکل با
+   سوکتِ کلاودفلر ({ readable, writable, close }) است — به همین دلیل بقیه‌ی
+   مسیرِ تونل (پایپ، شمارشِ مصرف، محدودساز) هیچ تغییری نمی‌کند.
+   تنها نقطه‌ی ورود به مسیر تونل در dial() است؛ هیچ تایمر ضربان‌قلبی ندارد.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const EXIT_SECURITIES = ['none', 'tls', 'reality'];
+const EXIT_TRANSPORTS = ['raw', 'ws', 'grpc'];
+/* سقفِ اتصال‌های هم‌زمان — محدودیتِ خودِ ورکرز (۶ سوکتِ باز در هر فراخوان) */
+const MAX_RADAR_CONCURRENCY = 6;
+const MAX_RADAR_COUNT = 200;
+
+/* آخرین خطا و آمار — فقط برای گزارش؛ هیچ تایمری راه نمی‌افتد */
+let EXIT_LAST_ERR = '';
+const EXIT_STATS = { tunnels: 0, fallbacks: 0, lastMs: 0, lastAt: 0 };
+const exitNote = (msg) => { EXIT_LAST_ERR = String(msg).slice(0, 300); EXIT_STATS.lastAt = Date.now(); };
+
+const toU8 = (d) => {
+  if (!d) return new Uint8Array(0);
+  if (d instanceof Uint8Array) return d;
+  if (d instanceof ArrayBuffer) return new Uint8Array(d);
+  if (ArrayBuffer.isView(d)) return new Uint8Array(d.buffer, d.byteOffset, d.byteLength);
+  if (typeof d === 'string') return new TextEncoder().encode(d);
+  return new Uint8Array(0);
+};
+
+const EXIT_FIELDS = ['name', 'label', 'address', 'port', 'uuid', 'flow', 'security', 'transport',
+  'path', 'serviceName', 'sni', 'host', 'enabled'];
+
+/**
+ * قِسم‌دادنِ یک سرور خروجی.
+ * ⚠️ هر کلیدی که امروز نمی‌شناسیم (پارامترهای تازه در آینده) دور ریخته نمی‌شود:
+ * در params نگه داشته می‌شود تا با ذخیره/بازیابی از بین نرود.
+ */
+function normalizeExit(raw, keepId) {
+  const o = (raw && typeof raw === 'object') ? raw : {};
+  const id = String((keepId !== undefined && keepId !== null && keepId !== '') ? keepId : (o.id || '')).trim()
+    || ('ex-' + randTok(6));
+  let security = String(o.security || 'tls').toLowerCase();
+  if (!EXIT_SECURITIES.includes(security)) security = 'tls';
+  let transport = String(o.transport || 'ws').toLowerCase();
+  if (!EXIT_TRANSPORTS.includes(transport)) transport = 'ws';
+  const params = (o.params && typeof o.params === 'object' && !Array.isArray(o.params)) ? { ...o.params } : {};
+  Object.keys(o).forEach((k) => {
+    /* addr/server نام‌های جایگزینِ address هستند، نه پارامترِ تازه */
+    if (EXIT_FIELDS.includes(k) || k === 'id' || k === 'params' || k === 'addr' || k === 'server') return;
+    params[k] = o[k];
+  });
+  const port = Math.max(1, Math.min(65535, Math.round(Number(o.port) || 443)));
+  return {
+    id,
+    name: String(o.name || '').trim() || ('خروجی ' + id.slice(-4)),
+    label: String(o.label || o.name || '').trim(),
+    address: String(o.address || o.addr || o.server || '').trim(),
+    port,
+    uuid: String(o.uuid || '').trim(),
+    flow: String(o.flow || '').trim(),
+    security,
+    transport,
+    path: String(o.path || '/').trim() || '/',
+    serviceName: String(o.serviceName || '').trim(),
+    sni: String(o.sni || '').trim(),
+    host: String(o.host || '').trim(),
+    enabled: o.enabled !== false,
+    params,
+  };
+}
+
+/** خطاهای یک سرور خروجی — متن‌ها فارسی‌اند چون مستقیم به کاربر نشان داده می‌شوند */
+function exitIssues(x) {
+  const e = [];
+  if (!x.address) e.push('آدرسِ سرور خروجی مشخص نشده است');
+  if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(x.uuid)) {
+    e.push('یو‌یو‌آی‌دی معتبر نیست (باید ساختارِ استانداردِ ۸-۴-۴-۴-۱۲ داشته باشد)');
+  }
+  if (!/^[a-z0-9.\-[\]:]+$/i.test(x.address)) e.push('آدرسِ سرور خروجی نویسه‌ی غیرمجاز دارد');
+  if (x.transport === 'ws' && !x.path) e.push('برای انتقالِ ws باید مسیر (path) مشخص شود');
+  if (x.transport === 'grpc' && !x.serviceName) e.push('برای انتقالِ grpc باید نام سرویس (serviceName) مشخص شود');
+  return e;
+}
+
+/** فهرستِ سرورهای خروجی — همیشه آرایه‌ای معتبر برمی‌گرداند */
+function exitsOf(st) {
+  const s = st.settings;
+  if (!s.exits || typeof s.exits !== 'object') {
+    s.exits = { enabled: true, defaultMode: 'direct', defaultExit: '', servers: [] };
+  }
+  if (!Array.isArray(s.exits.servers)) s.exits.servers = [];
+  return s.exits;
+}
+
+const exitById = (st, id) => (exitsOf(st).servers || []).find((x) => x && x.id === String(id || '').trim()) || null;
+
+/**
+ * خروجیِ مؤثر برای یک کانفیگ (کاربر).
+ * انتخابِ هر کانفیگ بر پیش‌فرضِ سراسری مقدم است:
+ *   u.exitMode = 'inherit' (یا خالی) → پیش‌فرضِ سراسری
+ *   u.exitMode = 'direct'            → مستقیمِ بدون واسطه
+ *   u.exitMode = 'exit'              → سرورِ u.exitId
+ */
+function resolveExit(st, u) {
+  const ex = exitsOf(st);
+  const DIRECT = { mode: 'direct', id: '', name: 'مستقیم (بدون واسطه)', server: null };
+  const perConfig = u && u.exitMode && u.exitMode !== 'inherit';
+  const mode = perConfig ? String(u.exitMode) : (ex.defaultMode === 'exit' ? 'exit' : 'direct');
+  if (mode !== 'exit') return DIRECT;
+  const id = perConfig ? String(u.exitId || '') : String(ex.defaultExit || '');
+  const srv = id ? (ex.servers || []).find((x) => x && x.id === id && x.enabled !== false) : null;
+  if (!srv) {
+    return { mode: 'direct', id: '', name: 'مستقیم (بدون واسطه)', server: null, reason: id ? 'سرور خروجی انتخاب‌شده یافت نشد' : 'هیچ سرور خروجی‌ای انتخاب نشده است' };
+  }
+  return { mode: 'exit', id: srv.id, name: srv.name, server: srv };
+}
+
+/**
+ * آیا مسیر تونل اجازه دارد از سرور خروجی استفاده کند؟
+ * exits.enabled === false یعنی «خروجی‌ها تعریف‌اند اما در مسیر به کار نمی‌روند»
+ * — بدون این‌که فهرستِ سرورها پاک شود.
+ * ⚠️ وقتی خروجی به کار می‌رود و خطا می‌دهد، همیشه به مسیر مستقیم برمی‌گردیم
+ * (در dial()) تا اتصالِ کاربر به‌خاطر خرابیِ سرور خروجی قطع نشود.
+ */
+function exitRoutingEnabled(st) {
+  const ex = (st && st.settings && st.settings.exits) || {};
+  return ex.enabled !== false;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   هندشیکِ سمت‌کلاینتِ VLESS
+   فرمت: [نسخه][۱۶ بایت UUID][طولِ addons][addons][فرمان][پورت ۲ بایتی]
+         [atyp][آدرس][بارِ اولیه]
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** تبدیلِ متنِ IPv6 به ۱۶ بایت — با پشتیبانی از فشردگیِ :: و ::ffff:a.b.c.d */
+function ipv6ToBytes(addr) {
+  let t = String(addr || '').trim().replace(/^\[/, '').replace(/\]$/, '');
+  const tail4 = t.match(/(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (tail4) {
+    const p = tail4.slice(1).map(Number);
+    if (p.some((n) => n > 255)) return null;
+    const head = t.slice(0, tail4.index).replace(/:$/, '');
+    t = head + ':' + (((p[0] << 8) | p[1]).toString(16)) + ':' + (((p[2] << 8) | p[3]).toString(16));
+  }
+  const compact = t.indexOf('::') >= 0;
+  let head = [], tail = [];
+  if (compact) { const [a, b] = t.split('::'); head = a ? a.split(':') : []; tail = b ? b.split(':') : []; }
+  else { head = t.split(':'); }
+  const groups = compact
+    ? [...head, ...Array(Math.max(0, 8 - head.length - tail.length)).fill('0'), ...tail]
+    : head;
+  if (groups.length !== 8) return null;
+  const out = new Uint8Array(16);
+  for (let i = 0; i < 8; i++) {
+    if (!/^[0-9a-fA-F]{1,4}$/.test(groups[i] || '')) return null;
+    const v = parseInt(groups[i], 16);
+    out[i * 2] = (v >> 8) & 255;
+    out[i * 2 + 1] = v & 255;
+  }
+  return out;
+}
+
+/** addons فقط وقتی flow تنظیم شده باشد (XTLS-Vision): [نوع=۱][طول][رشته] */
+function vlessAddons(flow) {
+  if (!flow) return new Uint8Array(0);
+  const f = new TextEncoder().encode(String(flow));
+  const out = new Uint8Array(2 + f.length);
+  out[0] = 1;
+  out[1] = Math.min(255, f.length);
+  out.set(f.subarray(0, out[1]), 2);
+  return out;
+}
+
+/** بایت‌های درخواستِ VLESS که سرور خروجی انتظار دارد */
+function vlessRequestHeader(srv, addr, port, payload) {
+  const hex = String(srv.uuid || '').replace(/-/g, '');
+  const uuidBytes = new Uint8Array(16);
+  for (let i = 0; i < 16; i++) {
+    const p = hex.substr(i * 2, 2);
+    uuidBytes[i] = p.length === 2 ? (parseInt(p, 16) || 0) : 0;
+  }
+  const addons = vlessAddons(srv.flow);
+
+  let atyp = 2, addrBytes;
+  const v4 = String(addr).match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  const v6 = v4 ? null : ipv6ToBytes(addr);
+  if (v4 && v4.slice(1).every((n) => Number(n) <= 255)) {
+    atyp = 1;
+    addrBytes = new Uint8Array(v4.slice(1).map(Number));
+  } else if (v6) {
+    atyp = 3;
+    addrBytes = v6;
+  } else {
+    const d = new TextEncoder().encode(String(addr));
+    addrBytes = new Uint8Array(1 + d.length);
+    addrBytes[0] = Math.min(255, d.length);
+    addrBytes.set(d.subarray(0, addrBytes[0]), 1);
+  }
+
+  const pl = toU8(payload);
+  const p2 = Math.max(0, Math.min(65535, Math.round(Number(port) || 0)));
+  const out = new Uint8Array(1 + 16 + 1 + addons.length + 1 + 2 + 1 + addrBytes.length + pl.length);
+  let i = 0;
+  out[i++] = 0;                                   /* نسخه */
+  out.set(uuidBytes, i); i += 16;                 /* بایت‌های UUID */
+  out[i++] = addons.length;                       /* طولِ addons */
+  out.set(addons, i); i += addons.length;
+  out[i++] = 1;                                   /* فرمان = TCP */
+  out[i++] = (p2 >> 8) & 255; out[i++] = p2 & 255; /* پورت */
+  out[i++] = atyp;                                /* نوعِ آدرس */
+  out.set(addrBytes, i); i += addrBytes.length;   /* مقدارِ آدرس */
+  out.set(pl, i);                                 /* سپس بارِ اولیه */
+  return out;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   کدکِ WebSocketِ کلاینت (RFC 6455) — فقط آنچه برای انتقالِ ws لازم است
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* RFC 6455 کلیدِ ارتقا را base64 می‌خواهد — این رمزنگاریِ داده نیست،
+   الزامِ خودِ پروتکل است. */
+const wsSecKey = () => {
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  return btoa(String.fromCharCode(...b));
+};
+
+/** قابِ کلاینت: FIN + opcode، طول، ماسکِ ۴ بایتی، سپس بارِ ماسک‌شده */
+function wsFrame(payload, opcode) {
+  const p = toU8(payload);
+  const op = opcode === undefined ? 2 : opcode;         /* پیش‌فرض: دودویی */
+  const mask = new Uint8Array(4);
+  crypto.getRandomValues(mask);
+  let head;
+  if (p.length < 126) {
+    head = new Uint8Array(2);
+    head[1] = 0x80 | p.length;
+  } else if (p.length < 65536) {
+    head = new Uint8Array(4);
+    head[1] = 0x80 | 126;
+    head[2] = (p.length >> 8) & 255; head[3] = p.length & 255;
+  } else {
+    head = new Uint8Array(10);
+    head[1] = 0x80 | 127;
+    new DataView(head.buffer).setBigUint64(2, BigInt(p.length));
+  }
+  head[0] = 0x80 | op;
+  const out = new Uint8Array(head.length + 4 + p.length);
+  out.set(head, 0);
+  out.set(mask, head.length);
+  const off = head.length + 4;
+  for (let i = 0; i < p.length; i++) out[off + i] = p[i] ^ mask[i & 3];
+  return out;
+}
+
+/** جداسازِ قاب‌های سرور: فقط بارِ قاب‌های دودویی را بیرون می‌دهد (بدون هدر) */
+function makeWsUnwrap(initial) {
+  let buf = initial && initial.length ? toU8(initial) : new Uint8Array(0);
+  return {
+    feed(chunk) {
+      const c = toU8(chunk);
+      if (c.length) {
+        const n = new Uint8Array(buf.length + c.length);
+        n.set(buf); n.set(c, buf.length);
+        buf = n;
+      }
+      const out = [];
+      let closed = false;
+      for (;;) {
+        if (buf.length < 2) break;
+        const b0 = buf[0], b1 = buf[1];
+        const masked = (b1 & 0x80) !== 0;
+        let len = b1 & 0x7f, off = 2;
+        if (len === 126) {
+          if (buf.length < 4) break;
+          len = (buf[2] << 8) | buf[3]; off = 4;
+        } else if (len === 127) {
+          if (buf.length < 10) break;
+          const hi = new DataView(buf.buffer, buf.byteOffset + 2, 4).getUint32(0);
+          const lo = new DataView(buf.buffer, buf.byteOffset + 6, 4).getUint32(0);
+          len = hi * 4294967296 + lo;
+          if (!isFinite(len) || len < 0 || len > 67108864) throw new Error('قابِ وب‌سوکتِ غیرعادی از سرور خروجی');
+          off = 10;
+        }
+        let mask = null;
+        if (masked) { if (buf.length < off + 4) break; mask = buf.slice(off, off + 4); off += 4; }
+        if (buf.length < off + len) break;
+        const data = buf.slice(off, off + len);
+        if (mask) for (let i = 0; i < data.length; i++) data[i] ^= mask[i & 3];
+        const op = b0 & 0x0f;
+        buf = buf.slice(off + len);
+        if (op === 0x2 || op === 0x0) out.push(data);       /* دودویی / ادامه */
+        else if (op === 0x8) { closed = true; break; }       /* بستن */
+        /* ping/pong/متن نادیده گرفته می‌شوند */
+      }
+      return { frames: out, closed };
+    },
+  };
+}
+
+const CRLFCRLF = [13, 10, 13, 10];
+function indexOfSeq(buf, seq) {
+  outer:
+  for (let i = 0; i + seq.length <= buf.length; i++) {
+    for (let k = 0; k < seq.length; k++) if (buf[i + k] !== seq[k]) continue outer;
+    return i;
+  }
+  return -1;
+}
+
+/** خواندنِ سرِ HTTP تا \r\n\r\n — باقی‌مانده (که می‌تواند اولین قاب باشد) برگردانده می‌شود */
+async function readHttpHead(sock, timeout) {
+  const reader = sock.readable.getReader();
+  let acc = new Uint8Array(0);
+  let timer = null;
+  try {
+    for (;;) {
+      const r = await Promise.race([
+        reader.read(),
+        new Promise((_, rj) => { timer = setTimeout(() => rj(new Error('زمان انتظار برای پاسخِ ارتقا تمام شد')), timeout); }),
+      ]);
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (r.done) throw new Error('سرور خروجی پیش از پاسخ، اتصال را بست');
+      const v = toU8(r.value);
+      const n = new Uint8Array(acc.length + v.length);
+      n.set(acc); n.set(v, acc.length); acc = n;
+      const idx = indexOfSeq(acc, CRLFCRLF);
+      if (idx >= 0) return { head: acc.slice(0, idx + 4), rest: acc.slice(idx + 4) };
+      if (acc.length > 16384) throw new Error('سرور خروجی پاسخِ معتبرِ HTTP نداد');
+    }
+  } finally {
+    if (timer) clearTimeout(timer);
+    try { reader.releaseLock(); } catch (e) {}
+  }
+}
+
+/**
+ * اتصال‌دهنده‌ی بالادست — تنها تابعی که به جای مقصد، به سرور خروجی وصل می‌شود.
+ *
+ * @returns {{readable: ReadableStream, writable: WritableStream, close: Function,
+ *            transport: string, security: string}}
+ *   شیئی هم‌شکل با سوکتِ کلاودفلر، تا بقیه‌ی مسیرِ تونل بدون تغییر بماند.
+ * @throws در صورت هر خطا (نرسیدن به سرور، شکستِ هندشیک، انتقالِ پشتیبانی‌نشده)
+ */
+async function openExitSocket(srv, info, opt) {
+  const timeout = Math.max(500, Number((opt && opt.timeoutMs) || 8000));
+  if (srv.transport === 'grpc') {
+    /* gRPC روی HTTP/2 نیازمندِ کدکِ HPACK است — اینجا پیاده نشده، پس صریحاً
+       خطا می‌دهیم تا مسیر مستقیم جایگزین شود (اتصالِ کاربر قطع نمی‌شود). */
+    throw new Error('انتقالِ grpc برای سرور خروجی پشتیبانی نمی‌شود (فقط raw و ws)');
+  }
+  const security = srv.security || 'tls';
+  const socketOpts = { secureTransport: security === 'none' ? 'off' : 'on' };
+  const sock = connect({ hostname: srv.address, port: srv.port }, socketOpts);
+
+  /* باز شدنِ واقعیِ سوکت — همان چیزی است که تأخیر را معنا می‌کند */
+  if (sock && sock.opened) {
+    let timer = null;
+    try {
+      await Promise.race([
+        sock.opened,
+        new Promise((_, rj) => { timer = setTimeout(() => rj(new Error('زمان انتظار برای اتصال به سرور خروجی تمام شد')), timeout); }),
+      ]);
+    } finally { if (timer) clearTimeout(timer); }
+  }
+
+  const header = vlessRequestHeader(srv, info.addr, info.port, info.payload);
+
+  /* ── انتقالِ raw: هندشیک بلافاصله روی همان TCP نوشته می‌شود ── */
+  if (srv.transport === 'raw') {
+    const w = sock.writable.getWriter();
+    try { await w.write(header); } finally { w.releaseLock(); }
+    return {
+      readable: sock.readable,
+      writable: sock.writable,
+      close: () => { try { sock.close(); } catch (e) {} },
+      transport: 'raw', security,
+    };
+  }
+
+  /* ── انتقالِ ws: ارتقای HTTP، سپس هندشیک داخلِ اولین قابِ دودویی ── */
+  const host = srv.host || srv.address;
+  const path = String(srv.path || '/').startsWith('/') ? srv.path : '/' + srv.path;
+  const req = 'GET ' + path + ' HTTP/1.1\r\n'
+    + 'Host: ' + host + '\r\n'
+    + 'Upgrade: websocket\r\n'
+    + 'Connection: Upgrade\r\n'
+    + 'Sec-WebSocket-Key: ' + wsSecKey() + '\r\n'
+    + 'Sec-WebSocket-Version: 13\r\n'
+    + 'User-Agent: Mozilla/5.0\r\n'
+    + '\r\n';
+  const w = sock.writable.getWriter();
+  try { await w.write(new TextEncoder().encode(req)); } finally { w.releaseLock(); }
+
+  const { head, rest } = await readHttpHead(sock, timeout);
+  const statusLine = new TextDecoder().decode(head).split('\r\n')[0] || '';
+  if (!/ 101 /.test(statusLine)) {
+    try { sock.close(); } catch (e) {}
+    throw new Error('سرور خروجی ارتقا به وب‌سوکت را نپذیرفت (' + statusLine.trim() + ')');
+  }
+  const w2 = sock.writable.getWriter();
+  try { await w2.write(wsFrame(header, 2)); } finally { w2.releaseLock(); }
+
+  const unwrap = makeWsUnwrap(rest);
+  const reader = sock.readable.getReader();
+  const readable = new ReadableStream({
+    async pull(controller) {
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) { try { controller.close(); } catch (e) {} return; }
+          const { frames, closed } = unwrap.feed(value);
+          for (const f of frames) controller.enqueue(f);
+          if (closed) { try { controller.close(); } catch (e) {} return; }
+          if (frames.length) return;
+        }
+      } catch (e) {
+        try { controller.error(e); } catch (e2) {}
+      }
+    },
+    cancel() { try { reader.cancel(); } catch (e) {} },
+  });
+
+  const writer = sock.writable.getWriter();
+  const writable = new WritableStream({
+    async write(chunk) { await writer.write(wsFrame(toU8(chunk), 2)); },
+    async abort() { try { await writer.abort(); } catch (e) {} },
+    async close() { try { await writer.close(); } catch (e) {} },
+  });
+
+  return {
+    readable, writable,
+    close: () => { try { sock.close(); } catch (e) {} },
+    transport: 'ws', security,
+  };
+}
+
+/** تستِ اتصالِ یک سرور خروجی — اندازه‌گیریِ واقعی (وصل شدن + هندشیک) */
+async function testExit(srv, opt) {
+  const issues = exitIssues(srv);
+  if (issues.length) return { ok: false, ms: null, error: issues[0] };
+  const timeoutMs = Math.max(500, Math.min(30000, Number((opt && opt.timeoutMs) || 8000)));
+  const target = {
+    addr: String((opt && opt.addr) || 'www.cloudflare.com'),
+    port: Number((opt && opt.port) || 443),
+    cmd: 1,
+    payload: new Uint8Array(0),
+  };
+  const t0 = Date.now();
+  let out = null;
+  try {
+    out = await openExitSocket(srv, target, { timeoutMs });
+    const ms = Date.now() - t0;
+    EXIT_STATS.lastMs = ms;
+    return { ok: true, ms, transport: srv.transport, security: srv.security, error: null };
+  } catch (e) {
+    return { ok: false, ms: Date.now() - t0, transport: srv.transport, security: srv.security, error: String((e && e.message) || e) };
+  } finally {
+    if (out) { try { out.close(); } catch (e) {} }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   رادار — اسکنرِ آی‌پی تمیز (ایده از نوا: تولیدِ کاندیدا از محدوده‌های
+   شناخته‌شده، نمونه‌برداریِ چندباره، و رتبه‌بندی بر اساس تأخیر/جیتر/افت)
+   تفاوتِ مهم: اینجا اندازه‌گیری در خودِ ورکر و با connect() واقعی انجام
+   می‌شود (TCP و در صورت نیاز TLS)، نه در مرورگر و نه با عددِ ساختگی.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const clampNum = (v, lo, hi, def) => {
+  const n = Number(v);
+  return isFinite(n) ? Math.max(lo, Math.min(hi, Math.round(n))) : def;
+};
+
+/** تنظیماتِ مؤثرِ اسکن: پیش‌فرض‌ها از تنظیماتِ پنل، مقادیرِ درخواست بر آن‌ها غلبه می‌کنند */
+function radarConfig(st, b) {
+  const d = DEF().settings.radar;
+  const r = (st.settings && st.settings.radar) || {};
+  const req = b || {};
+  const ports = (Array.isArray(req.ports) && req.ports.length ? req.ports : (Array.isArray(r.ports) ? r.ports : d.ports))
+    .map(Number).filter((p) => p > 0 && p < 65536);
+  return {
+    ranges: Array.isArray(r.ranges) ? r.ranges : d.ranges,
+    cidrs: Array.isArray(r.cidrs) ? r.cidrs : [],
+    pools: (Array.isArray(req.ips) && req.ips.length ? req.ips : (Array.isArray(r.pools) ? r.pools : [])),
+    ports: ports.length ? ports : d.ports.slice(),
+    count: clampNum(req.count !== undefined ? req.count : r.count, 1, MAX_RADAR_COUNT, d.count),
+    probes: clampNum(req.probes !== undefined ? req.probes : r.probes, 1, 5, d.probes),
+    concurrency: clampNum(req.concurrency !== undefined ? req.concurrency : r.concurrency, 1, MAX_RADAR_CONCURRENCY, d.concurrency),
+    timeoutMs: clampNum(req.timeoutMs !== undefined ? req.timeoutMs : r.timeoutMs, 200, 30000, d.timeoutMs),
+    keep: clampNum(req.keep !== undefined ? req.keep : r.keep, 1, 50, d.keep),
+    tls: req.tls !== undefined ? !!req.tls : (r.tls !== undefined ? !!r.tls : d.tls),
+    exitId: String(req.exitId !== undefined ? req.exitId : (r.exitId || '')).trim(),
+  };
+}
+
+/** بازه‌ی عددیِ یک CIDR — برای تولیدِ کاندیدا */
+function cidrToRange(cidr) {
+  const m = String(cidr || '').trim().match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/);
+  if (!m) return null;
+  const oct = m.slice(1, 5).map(Number);
+  if (oct.some((n) => n > 255)) return null;
+  const bits = Number(m[5]);
+  if (bits < 8 || bits > 32) return null;                     /* کوچک‌تر از /8 بی‌معناست */
+  const base = ((oct[0] << 24) | (oct[1] << 16) | (oct[2] << 8) | oct[3]) >>> 0;
+  const mask = bits === 32 ? 0xffffffff : ((0xffffffff << (32 - bits)) >>> 0);
+  return { start: (base & mask) >>> 0, size: Math.max(1, Math.pow(2, 32 - bits)) };
+}
+
+const ipFromInt = (n) => [((n >>> 24) & 255), ((n >>> 16) & 255), ((n >>> 8) & 255), (n & 255)].join('.');
+
+/** تولیدِ آی‌پی‌های کاندیدا: استخرِ صریح → بازه‌های نوا-مانند → CIDRها */
+function radarCandidates(cfg, count) {
+  const out = [];
+  const seen = new Set();
+  const push = (ip) => {
+    const s = String(ip || '').split('#')[0].trim();
+    if (s && !seen.has(s) && out.length < count) { seen.add(s); out.push(s); }
+  };
+  (cfg.pools || []).forEach(push);
+  const ranges = (cfg.ranges || []).filter((r) => r && r.prefix);
+  const cidrs = (cfg.cidrs || []).map(cidrToRange).filter(Boolean);
+  let guard = 0;
+  while (out.length < count && (ranges.length || cidrs.length) && guard++ < count * 400) {
+    if (cidrs.length && (!ranges.length || Math.random() < 0.5)) {
+      const c = cidrs[Math.floor(Math.random() * cidrs.length)];
+      push(ipFromInt((c.start + Math.floor(Math.random() * c.size)) >>> 0));
+      continue;
+    }
+    const r = ranges[Math.floor(Math.random() * ranges.length)];
+    const from = Math.max(0, Math.min(255, Number(r.from) || 0));
+    const to = Math.max(from, Math.min(255, Number(r.to) || 255));
+    const third = from + Math.floor(Math.random() * (to - from + 1));
+    push(String(r.prefix) + third + '.' + Math.floor(Math.random() * 256));
+  }
+  return out;
+}
+
+/**
+ * اندازه‌گیریِ واقعیِ یک آی‌پی: اتصالِ TCP به ip:port (و TLS در صورت درخواست).
+ * تأخیر = زمانِ باز شدنِ واقعیِ سوکت؛ هیچ عددِ ساختگی‌ای برگردانده نمی‌شود.
+ */
+async function probeIp(ip, port, opt) {
+  const t0 = Date.now();
+  const timeout = Math.max(200, Number((opt && opt.timeoutMs) || 2000));
+  let sock = null, timer = null;
+  try {
+    sock = connect({ hostname: String(ip), port: Number(port) },
+      opt && opt.tls ? { secureTransport: 'on' } : {});
+    if (sock && sock.opened) {
+      await Promise.race([
+        sock.opened,
+        new Promise((_, rj) => { timer = setTimeout(() => rj(new Error('زمان انتظار تمام شد')), timeout); }),
+      ]);
+    }
+    return { ok: true, ms: Date.now() - t0 };
+  } catch (e) {
+    return { ok: false, ms: Date.now() - t0, error: String((e && e.message) || e) };
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (sock) { try { sock.close(); } catch (e) {} }
+  }
+}
+
+/** همان اندازه‌گیری اما از مسیرِ یکی از سرورهای خروجی — نتیجه با آی‌پی خروجیِ واقعی هم‌خوان است */
+async function probeViaExit(srv, ip, port, opt) {
+  const t0 = Date.now();
+  let out = null;
+  try {
+    out = await openExitSocket(srv, { addr: ip, port, cmd: 1, payload: new Uint8Array(0) },
+      { timeoutMs: Math.max(200, Number((opt && opt.timeoutMs) || 2000)) });
+    return { ok: true, ms: Date.now() - t0 };
+  } catch (e) {
+    return { ok: false, ms: Date.now() - t0, error: String((e && e.message) || e) };
+  } finally {
+    if (out) { try { out.close(); } catch (e) {} }
+  }
+}
+
+/** اجرای اسکن با استخری از کارگرها — تعدادِ اتصالِ هم‌زمان محدود به ۶ است */
+async function radarScan(st, b) {
+  const cfg = radarConfig(st, b);
+  const t0 = Date.now();
+  const ips = radarCandidates(cfg, cfg.count);
+  const jobs = [];
+  for (const ip of ips) for (const port of cfg.ports) jobs.push({ ip, port });
+
+  /* اسکن از مسیرِ سرور خروجی (اختیاری) */
+  let viaSrv = null;
+  if (cfg.exitId) {
+    viaSrv = exitById(st, cfg.exitId);
+    if (!viaSrv) {
+      return {
+        ok: false,
+        error: 'سرور خروجی‌ای با این شناسه پیدا نشد — یا شناسه را درست وارد کنید یا آن را خالی بگذارید',
+        exitId: cfg.exitId, config: cfg,
+      };
+    }
+  }
+
+  const results = [];
+  let idx = 0;
+  const worker = async () => {
+    for (;;) {
+      const job = idx < jobs.length ? jobs[idx++] : null;
+      if (!job) return;
+      const samples = [];
+      let lastError = '';
+      for (let i = 0; i < cfg.probes; i++) {
+        const r = viaSrv
+          ? await probeViaExit(viaSrv, job.ip, job.port, { timeoutMs: cfg.timeoutMs })
+          : await probeIp(job.ip, job.port, { timeoutMs: cfg.timeoutMs, tls: cfg.tls });
+        if (r.ok) samples.push(r.ms); else lastError = r.error || '';
+      }
+      const loss = Math.round((1 - samples.length / cfg.probes) * 100);
+      if (!samples.length) {
+        results.push({ ip: job.ip, port: job.port, ok: false, ms: null, jitter: null, loss: 100, score: null, error: lastError || 'پاسخی نیامد' });
+        continue;
+      }
+      const ms = Math.round(samples.reduce((a, x) => a + x, 0) / samples.length);
+      const jitter = samples.length > 1 ? Math.round(Math.max.apply(null, samples) - Math.min.apply(null, samples)) : 0;
+      /* همان منطقِ رتبه‌بندیِ نوا: تأخیر + نیمی از جیتر + جریمه‌ی افت */
+      results.push({ ip: job.ip, port: job.port, ok: true, ms, jitter, loss, score: Math.round(ms + jitter * 0.5 + loss * 20), error: null });
+    }
+  };
+
+  const pool = [];
+  const n = Math.max(1, Math.min(cfg.concurrency, jobs.length || 1));
+  for (let i = 0; i < n; i++) pool.push(worker());
+  await Promise.all(pool);
+
+  /* سالم‌ها از بهترین به بدترین؛ ناسالم‌ها در انتها */
+  results.sort((a, c) => {
+    if (a.ok !== c.ok) return a.ok ? -1 : 1;
+    return (a.score === null ? Infinity : a.score) - (c.score === null ? Infinity : c.score);
+  });
+  const kept = results.slice(0, cfg.keep);
+  return {
+    ok: true,
+    results: kept,
+    best: kept.length && kept[0].ok ? kept[0] : null,
+    scanMs: Date.now() - t0,
+    tested: jobs.length,
+    alive: results.filter((x) => x.ok).length,
+    failed: results.filter((x) => !x.ok).length,
+    via: viaSrv ? 'exit:' + viaSrv.name : 'direct',
+    config: cfg,
+    msg: kept.length
+      ? (kept.filter((x) => x.ok).length
+        ? fa(kept.filter((x) => x.ok).length) + ' آی‌پی سالم پیدا شد — بهترین: ' + kept[0].ip + ' (' + fa(kept[0].ms) + ' میلی‌ثانیه)'
+        : 'هیچ آی‌پی سالمی پیدا نشد — دوباره تلاش کنید')
+      : 'هیچ آی‌پی‌ای برای اسکن پیدا نشد',
+  };
+}
+
+/**
+ * اعمالِ آی‌پی‌های پیشنهادی روی کانفیگ(ها): آدرس/هاستِ کانفیگ عوض می‌شود.
+ * برچسبِ آی‌پی اگر قبلاً برای همان آی‌پی ثبت شده باشد حفظ می‌شود.
+ */
+function applyCleanIps(st, ips, uuids) {
+  const list = (Array.isArray(ips) ? ips : String(ips || '').split(/[,\n]/))
+    .map((x) => String(x).split('#')[0].trim())
+    .filter((x) => /^[0-9]{1,3}(\.[0-9]{1,3}){3}$/.test(x) || /^[a-z0-9.\-]+$/i.test(x));
+  const uniq = [...new Set(list)];
+  if (!uniq.length) return { ok: false, error: 'هیچ آی‌پی معتبری برای اعمال داده نشده است' };
+
+  const targets = st.users.filter((u) => uuids.includes(u.uuid));
+  if (!targets.length) return { ok: false, error: 'هیچ کانفیگی با این مشخصات پیدا نشد' };
+
+  const changed = targets.map((u) => {
+    const old = Array.isArray(u.cleanIPs) ? u.cleanIPs : [];
+    const nameOf = (ip) => {
+      const hit = old.find((e) => String(e).split('#')[0].trim() === ip);
+      if (hit && String(hit).includes('#')) return String(hit).split('#')[1].trim();
+      return geo(ip).name;
+    };
+    u.cleanIPs = uniq.map((ip) => ip + '#' + nameOf(ip));
+    return { uuid: u.uuid, name: u.name, count: u.cleanIPs.length };
+  });
+  return { ok: true, updated: changed.length, ips: uniq, users: changed };
+}
+
 async function tunnelHandler(request, env, st, ctx) {
   const s = st.settings;
   if (s.auth.panic || s.sec.killSwitch) return txt('service unavailable', {}, 503);
@@ -3358,9 +4995,19 @@ async function tunnelHandler(request, env, st, ctx) {
   let selfHost = hostHdr;
   if (!selfHost) { try { selfHost = String(new URL(request.url).hostname || '').toLowerCase(); } catch (e) { selfHost = ''; } }
 
+  /* جزئیاتِ اتصال برای بخش «اتصال‌ها»ی پنل — فقط نمایشی، از request.cf و هدرها.
+     cf.country فقط وقتی در دسترس است که IP Geolocation روی مسیر فعال باشد؛
+     هدر cf-ipcountry مسیرِ جایگزین است. نبودش تنها یعنی ستونِ کشور خالی. */
+  const connMeta = {
+    cc: (request.cf && request.cf.country) || request.headers.get('cf-ipcountry') || '',
+    ua: request.headers.get('user-agent') || '',
+    /* نوعِ انتقال از تنظیمات — همان چیزی که کانفیگِ کلاینت با آن می‌سازد */
+    transport: (st.settings && st.settings.transport) || 'ws',
+  };
+
   /* همه‌ی کارهای سنگین در پس‌زمینه — بدون مسدود کردن handshake */
   session(server, request.headers.get('sec-websocket-protocol') || '', st, env, ctx, clientIp,
-    boot, selfHost)
+    boot, selfHost, connMeta)
     .catch(() => { try { server.close(); } catch (e) {} });
 
   return new Response(null, { status: 101, webSocket: client });
@@ -3377,7 +5024,7 @@ function clientIpOf(request) {
   return 'unknown';
 }
 
-async function session(ws, early, st, env, ctx, clientIp, boot, selfHost) {
+async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMeta) {
   /* ⚠️ state از caller می‌آید — بدون await اضافی که پیام‌های اولیه را گم می‌کند */
   const state = st;
 
@@ -3463,6 +5110,10 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost) {
     ctx.waitUntil(usageDelta(env, u.uuid, dUp, dDown, dReqs)
       .catch(() => {})
       .then(() => { flushing = false; }));
+    /* حجمِ همین نشست — برای ستونِ «ارسال/دریافت» در بخش اتصال‌ها.
+       از همین نقطه‌ی flush می‌آید (نه یک تایمرِ تازه)، پس با مصرفِ کاربر
+       از یک منبع است و خطایش هرگز اتصال را نمی‌بندد. */
+    ctx.waitUntil(metaBytes(env, connId, dUp, dDown).catch(() => {}));
   };
 
   /** آزاد کردنِ تضمین‌شده‌ی سهمیه‌ی اتصال — فقط یک‌بار */
@@ -3482,6 +5133,8 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost) {
     pendUp = 0; pendDown = 0; pendReqs = 0;
     const p = (async () => {
       if (u && (dUp || dDown || dReqs)) { try { await usageDelta(env, u.uuid, dUp, dDown, dReqs); } catch (e) {} }
+      /* حجمِ باقیمانده‌ی همین نشست — قبل از آزادسازی ثبت می‌شود (همان conn_id) */
+      if (dUp || dDown) { try { await metaBytes(env, connId, dUp, dDown); } catch (e) {} }
       await releaseConn();
     })();
     if (ctx && ctx.waitUntil) ctx.waitUntil(p.catch(() => {}));
@@ -3611,19 +5264,21 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost) {
        کاملاً حذف شده: با COUNT(DISTINCT ip) سنجیده می‌شد و چند کلاینت
        پشت یک NAT را یکی می‌دید (و برعکس). */
     const ipLimit = Number(user.ipLimit) || Number(st.settings.sec.ipConnLimit) || 0;
-    if (ipLimit > 0) {
-      const adm = await connAcquire(env, user.uuid, ip, ipLimit, connId);
-      if (!adm.ok) {
-        try { ws.close(1013, 'connection limit reached'); } catch (e) {}
-        /* هیچ ردیفی از این اتصال نباید بماند: پاک‌سازیِ صریح با conn_id.
-           قبلاً چون connAcquired هنوز false بود، releaseConn() کاری نمی‌کرد و
-           اگر ردیفی در مسیرِ رقابت مانده بود تا پایانِ TTL قفل می‌ماند. */
-        try { await connRelease(env, user.uuid, ip, connId); } catch (e) {}
-        await finish();
-        return;
-      }
-      connAcquired = true;
+    /* ⚠️ ثبت همیشه انجام می‌شود — حتی وقتی سقف صفر (نامحدود) است.
+       «ثبت» و «اعمال» دو تصمیمِ جدا هستند: سقفِ بزرگ‌تر از صفر فقط رد کردن را
+       فعال می‌کند. اگر ثبت را به ipLimit>0 گره می‌زدیم، بخشِ «اتصال‌ها»ی پنل
+       در حالتِ نامحدود همیشه خالی می‌ماند و کاربر فکر می‌کند کسی وصل نیست. */
+    const adm = await connAcquire(env, user.uuid, ip, ipLimit, connId, connMeta);
+    if (adm && !adm.ok) {
+      try { ws.close(1013, 'connection limit reached'); } catch (e) {}
+      /* هیچ ردیفی از این اتصال نباید بماند: پاک‌سازیِ صریح با conn_id.
+         قبلاً چون connAcquired هنوز false بود، releaseConn() کاری نمی‌کرد و
+         اگر ردیفی در مسیرِ رقابت مانده بود تا پایانِ TTL قفل می‌ماند. */
+      try { await connRelease(env, user.uuid, ip, connId); } catch (e) {}
+      await finish();
+      return;
     }
+    connAcquired = true;
 
     pendReqs++;
     const respHeader = info.isTrojan ? new Uint8Array(0) : new Uint8Array([info.version || 0, 0]);
@@ -3667,6 +5322,33 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost) {
         remoteToWs(tcpSock, respHeader, null);
       } catch (e) { await finish(); }
     };
+
+    /* ═══ مرحله ۰/۵: خروجی (exit) — تنها نقطه‌ی اتصالِ بالادست به مسیر تونل ═══
+       این بلوک تنها جایی است که منطقِ سرور خروجی وارد مسیر تونل می‌شود. قبلش
+       هدر پارس و احراز هویت شده، و بعدش همان مسیرِ همیشگی است. openExitSocket
+       شیئی هم‌شکل با سوکت برمی‌گرداند، پس پایپ و شمارشِ مصرف تغییر نمی‌کنند.
+       ⚠️ هر خطایی (نرسیدن به سرور، شکستِ هندشیک، انتقالِ پشتیبانی‌نشده) فقط
+       گزارش می‌شود و مسیر مستقیم ادامه می‌دهد — اتصالِ کاربر قطع نمی‌شود. */
+    if (exitRoutingEnabled(st)) {
+      const ex = resolveExit(st, user);
+      if (ex.mode === 'exit' && ex.server) {
+        try {
+          const up = await openExitSocket(ex.server, info);
+          sock = up;
+          EXIT_STATS.tunnels++;
+          EXIT_STATS.lastAt = Date.now();
+          /* retry داده نمی‌شود: مسیرِ خروجی با ProxyIP معنا ندارد */
+          remoteToWs(up, respHeader, null);
+          return;
+        } catch (e) {
+          EXIT_STATS.fallbacks++;
+          exitNote('[' + ex.server.name + '] ' + String((e && e.message) || e));
+          try { console.log('[SG] exit failed, falling back to direct:', EXIT_LAST_ERR); } catch (e2) {}
+          sock = null;
+          /* ادامه به مسیر مستقیم — هیچ استثنایی بالا نمی‌رود */
+        }
+      }
+    }
 
     /* ── مرحله ۱: اتصال مستقیم ── */
     try {

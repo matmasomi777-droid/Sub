@@ -15,8 +15,16 @@ src += `\nexport { vlessHeader, usageInit, usageDelta, usageReset, usageRead, us
   connAcquire, connRelease, connRefresh, sessionTouch, sessionsOf,
   liveEnsure, liveSweep, liveIps, liveIpsOrdered, d1Acquire, d1Release, d1Touch,
   connReset, liveRowsOf, limiterRpc, limiterBackend, admitDecision, backendOf,
-  liveIpsAged, d1EvictIdle,
-  dayKey, load, save, seed, DEF, flushDB, CONN_TTL, CONN_ACTIVITY_MS, CONN_EVICTS };\n`;
+  liveIpsAged, d1EvictIdle, liveView, connKick, connAcquireInner,
+  metaEnsure, metaPut, metaDel, metaSweep, label, renderName, NAME_PRESETS, NAME_TOKENS,
+  liveRowsDetailed, liveSessions, sourceName, metaBytes, metaMigrate, META_COLS,
+  banEnsure, banAdd, banRemove, banList, banCheck, banSweep, banSource,
+  validateBackup, applyBackup, BACKUP_ROOT_KEYS, SETTING_KEYS,
+  dayKey, load, save, seed, DEF, flushDB, CONN_TTL, CONN_ACTIVITY_MS, CONN_EVICTS,
+  EXIT_SECURITIES, EXIT_TRANSPORTS, MAX_RADAR_CONCURRENCY, MAX_RADAR_COUNT, EXIT_STATS, EXIT_LAST_ERR,
+  normalizeExit, exitIssues, exitsOf, exitById, resolveExit, exitRoutingEnabled,
+  ipv6ToBytes, vlessAddons, vlessRequestHeader, wsFrame, makeWsUnwrap, openExitSocket, testExit,
+  radarConfig, cidrToRange, radarCandidates, probeIp, probeViaExit, radarScan, applyCleanIps };\n`;
 
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, src);
