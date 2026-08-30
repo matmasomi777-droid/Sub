@@ -52,28 +52,6 @@
     const bg = $('#connBadge'); if (bg) bg.innerHTML = cnBadgeHtml();
   };
 
-  /* ═══════ رادار — نتیجه‌ی اسکن تا اسکنِ بعدی باقی می‌ماند ═══════
-     دقیقاً همان الگوی گزارشِ «بررسی سلامت» و «تست ترافیک»: نتیجه در state و
-     localStorage نگه داشته می‌شود و در هر بار بازسازیِ صفحه دوباره رندر
-     می‌شود؛ نه رفرش و نه جابه‌جایی بین بخش‌ها و نه عوض کردنِ کاربر آن را
-     پاک نمی‌کند — فقط یک اسکنِ تازه (یا دکمه‌ی پاک‌کردن) جایگزینش می‌کند.
-     چون اسکن برای یک کانفیگ انجام می‌شود، گزارش به تفکیکِ uuid نگه داشته
-     می‌شود تا جابه‌جایی بین کانفیگ‌ها گزارشِ دیگری را نپوشاند. */
-  const RD = { last: {}, cfg: null, opt: null, running: false, err: '', uuid: '' };
-  const RD_KEY = 'sg_radar_last';
-  try {
-    const rawRD = localStorage.getItem(RD_KEY);
-    if (rawRD) { const p = JSON.parse(rawRD); if (p && typeof p === 'object') RD.last = p; }
-  } catch (e) { RD.last = {}; }
-  const radarSave = (uuid, r) => {
-    const rec = Object.assign({}, r, { __ts: Date.now(), __uuid: uuid });
-    RD.last[uuid] = rec; RD.err = '';
-    try { localStorage.setItem(RD_KEY, JSON.stringify(RD.last)); } catch (e) {}
-    return rec;
-  };
-  const radarLast = (uuid) => (uuid && RD.last[uuid]) || null;
-  const radarShow = () => { const o = $('#radarOut'); if (o) o.innerHTML = radarHtml(radarLast(RD.uuid)); };
-
   /* ═══════════════════════════════════════════════════════════════
      مرحله‌ی ۴ — وضعیتِ بخش‌های تازه
      هر سه از همان الگویِ «داده در state» پیروی می‌کنند: نتیجه در حافظه‌ی
@@ -460,19 +438,26 @@
     { l: 'پیش‌فرضِ پنل', p: '{prefix} | {node} | :{port} | {mark}' },
     { l: 'تصادفی', rnd: 1 },
   ];
-  /* همان منطقِ رندرِ الگو در ورکر: توکنِ خالی همراهِ جداکننده‌اش حذف می‌شود تا
-     «{prefix} | {node}» با پیشوندِ خالی به « | فرانکفورت» تبدیل نشود. */
+  /* همان منطقِ رندرِ الگو در ورکر (renderName در worker.js): توکنِ خالی همراهِ
+     جداکننده‌اش حذف می‌شود تا «{prefix} | {node}» با پیشوندِ خالی به
+     « | فرانکفورت» تبدیل نشود.
+     ⚠️ کلاسِ جداکننده‌ها باید دقیقاً با ورکر یکی باشد وگرنه پیش‌نمایشِ اینجا
+     با نامی که ورکر واقعاً می‌سازد فرق می‌کند: فاصله، | خط تیره، · نقطه‌ی
+     میانی، – خط تیره‌ی کوتاه و — خط تیره‌ی بلند — همه با کدبندیِ درستِ utf-8. */
+  const NM_SEP = '[\\s|·\\-–—]';
   const nmRender = (pattern, vars) => {
     let out = String(pattern == null ? '' : pattern);
-    out = out.replace(/([\s|\-]*)\{(\w+)\}([\s|\-]*)/g, (m, pre, k, post) => {
+    out = out.replace(new RegExp('(' + NM_SEP + '*)\\{(\\w+)\\}(' + NM_SEP + '*)', 'g'), (m, pre, k, post) => {
       const v = vars[k];
       if (v === undefined || v === null || v === '') return (pre && post) ? ' ' : (pre || post);
       return pre + String(v) + post;
     });
-    out = out.replace(/\{(\w+)\}/g, '');
-    out = out.replace(/[ \t]*\|[ \t]*(\|[ \t]*)+/g, ' | ');
-    out = out.replace(/[ \t]{2,}/g, ' ');
-    return out.replace(/^[\s|\-]+/, '').replace(/[\s|\-]+$/, '').trim();
+    out = out.replace(/\{(\w+)\}/g, '');                       /* توکنِ ناشناس */
+    out = out.replace(/[ \t]*\|[ \t]*(\|[ \t]*)+/g, ' | ');     /* جداکننده‌ی تکراری → یکی */
+    out = out.replace(/[ \t]{2,}/g, ' ');                       /* فاصله‌ی تکراری → یکی */
+    out = out.replace(new RegExp('^' + NM_SEP + '+'), '');
+    out = out.replace(new RegExp(NM_SEP + '+$'), '');
+    return out.trim();
   };
   /* نودِ نمونه برای پیش‌نمایش — نخستین آی‌پی پاکِ تنظیمات (قالب: ip#نام‌شهر) */
   const nmNode = () => {
@@ -540,71 +525,54 @@
   /* ═══════════════════════════════════════════════════════════════
      مرحله‌ی ۴ — سرورهای خروجی VLESS
      ═══════════════════════════════════════════════════════════════ */
-  const EXIT_SECURITIES = ['none', 'tls', 'reality'];
-  const EXIT_TRANSPORTS = ['raw', 'ws', 'grpc'];
-  const EXIT_FIELDS = [
-    { k: 'name', l: 'نام', ph: 'آلمان — فرانکفورت' },
-    { k: 'label', l: 'برچسب (اختیاری)', ph: 'همان نام اگر خالی باشد' },
-    { k: 'address', l: 'آدرس سرور', ph: 'de1.example.com' },
-    { k: 'port', l: 'پورت', ph: '443' },
-    { k: 'uuid', l: 'UUID', ph: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
-    { k: 'flow', l: 'Flow', ph: 'xtls-rprx-vision' },
-    { k: 'path', l: 'مسیر (path)', ph: '/' },
-    { k: 'serviceName', l: 'نام سرویس gRPC', ph: '' },
-    { k: 'sni', l: 'SNI', ph: '' },
-    { k: 'host', l: 'Host', ph: '' },
-  ];
-  const exitBlank = () => ({ id: '', name: '', label: '', address: '', port: 443, uuid: '', flow: '',
-    security: 'tls', transport: 'ws', path: '/', serviceName: '', sni: '', host: '', enabled: true, params: {} });
-  const exitRead = (s) => ({
-    id: (s && s.id) || '', name: (s && s.name) || '', label: (s && s.label) || '',
-    address: (s && s.address) || '', port: (s && s.port) || 443, uuid: (s && s.uuid) || '',
-    flow: (s && s.flow) || '', security: (s && s.security) || 'tls',
-    transport: (s && s.transport) || 'ws', path: (s && s.path) || '/',
-    serviceName: (s && s.serviceName) || '', sni: (s && s.sni) || '', host: (s && s.host) || '',
-    enabled: !s || s.enabled !== false,
-    params: (s && s.params && typeof s.params === 'object') ? s.params : {},
-  });
+  /* ═══════ فرمِ تک‌فیلدی ═══════
+     افزودن/ویرایشِ سرور خروجی فقط با یک لینکِ vless:// انجام می‌شود: کاربر
+     لینک را می‌چسباند و ورکر خودش آدرس، پورت، یو‌یو‌آی‌دی، امنیت، انتقال،
+     مسیر، SNI و بقیه را از آن می‌خواند. هر کلیدِ ناشناس هم در params می‌نشیند
+     تا چیزی از لینک گم نشود. */
+  /* سریال‌سازیِ معکوس: سرورِ ذخیره‌شده → لینکِ vless://
+     ترتیب و نامِ کلیدها با VLESS_QUERY_MAP در ورکر یکی است، پس لینکی که اینجا
+     ساخته می‌شود همان سروری را می‌سازد که کاربر روی «ویرایش» کلیک کرده بود. */
+  const exitToLink = (s) => {
+    const v = (s && typeof s === 'object') ? s : {};
+    const params = (v.params && typeof v.params === 'object') ? v.params : {};
+    const q = new URLSearchParams();
+    /* encryption جزو فیلدهای خودِ سرور نیست و در params نشسته؛ سر جایش برمی‌گردد */
+    const put = (k, val) => { if (val !== undefined && val !== null && String(val) !== '') q.set(k, String(val)); };
+    put('encryption', params.encryption);
+    put('security', v.security || 'tls');
+    put('sni', v.sni);
+    put('type', v.transport || 'ws');
+    put('host', v.host);
+    put('path', v.path);
+    put('serviceName', v.serviceName);
+    put('flow', v.flow);
+    /* هر پارامترِ ناشناخته‌ای که ورکر نگه داشته (alpn، fp، …) دست‌نخورده برمی‌گردد */
+    Object.keys(params).forEach((k) => { if (k !== 'encryption') put(k, params[k]); });
+    const name = String(v.name || '').trim();
+    return 'vless://' + encodeURIComponent(String(v.uuid || '')) + '@' + String(v.address || '') +
+      ':' + (Number(v.port) || 443) + '?' + q.toString() + (name ? '#' + encodeURIComponent(name) : '');
+  };
+  const exitBlank = () => ({ id: '', link: '' });
+  /* سروری که id دارد از روی خودش لینک می‌شود؛ فرمِ «تازه» همان لینکِ خالی است */
+  const exitRead = (s) => ({ id: (s && s.id) || '', link: (s && s.id) ? exitToLink(s) : ((s && s.link) || '') });
   /* فرم از روی idهای خودش خوانده می‌شود، نه data-p — وگرنه collect() در هنگامِ
      ذخیره‌ی تنظیمات این فیلدها را هم به /api/settings می‌فرستاد. */
   const xf = (k) => { const e = $('#ex_' + k); return e ? String(e.value == null ? '' : e.value).trim() : ''; };
-  const exitFormRead = () => {
-    let params = {};
-    const raw = xf('params');
-    if (raw) {
-      try {
-        const p = JSON.parse(raw);
-        if (p && typeof p === 'object' && !Array.isArray(p)) params = p;
-        else throw new Error('not an object');
-      } catch (e) { throw new Error('پارامترهای آزاد باید یک شیء JSON معتبر باشند — مثل {"key":"value"}'); }
-    }
-    return {
-      id: xf('id'), name: xf('name'), label: xf('label'), address: xf('address'),
-      port: parseInt(xf('port'), 10) || 443, uuid: xf('uuid'), flow: xf('flow'),
-      security: xf('security'), transport: xf('transport'), path: xf('path'),
-      serviceName: xf('serviceName'), sni: xf('sni'), host: xf('host'),
-      enabled: ($('#ex_enabled') ? !!$('#ex_enabled').checked : true),
-      params,
-    };
-  };
+  /* قراردادِ ارسال با ورکر: { op:'add', link } یا { op:'update', id, link } — و بس */
+  const exitFormRead = () => ({ id: xf('id'), link: xf('link') });
   const exitFormHtml = (x) => {
     const v = exitRead(x);
-    const inp = (f) => '<label class="f"><span>' + f.l + '</span><input id="ex_' + f.k + '" value="' +
-      esc(v[f.k] == null ? '' : v[f.k]) + '"' + (f.k === 'uuid' || f.k === 'address' || f.k === 'path' || f.k === 'sni' || f.k === 'host' ? ' class="mono"' : '') +
-      (f.k === 'port' ? ' type="number" min="1" max="65535"' : '') + ' placeholder="' + esc(f.ph) + '"></label>';
     return '<div class="um-sec" style="margin-top:10px">' +
       '<div class="um-sec-h">' + icon(v.id ? 'fa-pen' : 'fa-plus') + '<span>' + (v.id ? 'ویرایشِ سرور خروجی' : 'سرور خروجیِ تازه') + '</span></div>' +
-      '<div class="um-grid two" style="padding:10px 0 0">' +
-      EXIT_FIELDS.map(inp).join('') +
-      '<label class="f"><span>امنیت (security)</span><select id="ex_security">' +
-      EXIT_SECURITIES.map((o) => '<option value="' + o + '"' + (o === v.security ? ' selected' : '') + '>' + o + '</option>').join('') + '</select></label>' +
-      '<label class="f"><span>انتقال (transport)</span><select id="ex_transport">' +
-      EXIT_TRANSPORTS.map((o) => '<option value="' + o + '"' + (o === v.transport ? ' selected' : '') + '>' + o + '</option>').join('') + '</select></label>' +
-      '<label class="f"><span>فعال باشد</span><div class="sw ' + (v.enabled ? 'on' : '') + '" data-sw="ex_enabled"><i></i></div>' +
-      '<input type="checkbox" id="ex_enabled" data-sw-inp="ex_enabled" class="hide"' + (v.enabled ? ' checked' : '') + '></label>' +
-      '<label class="f"><span>پارامترهای آزاد (JSON)</span><textarea id="ex_params" rows="2" class="mono" placeholder=\'{"key":"value"}\'>' +
-      esc(Object.keys(v.params).length ? JSON.stringify(v.params) : '') + '</textarea>' +
-      '<div class="hint" style="margin-top:5px">هر کلیدی که پنل نشناسد در params نگه داشته می‌شود و با ذخیره/بازیابی از بین نمی‌رود.</div></label>' +
+      '<div style="padding:10px 0 0">' +
+      '<label class="f"><span>لینکِ vless://</span><textarea id="ex_link" rows="3" class="mono"' +
+      ' style="direction:ltr;text-align:left"' +
+      ' placeholder="vless://7e2c8d71-0000-4000-8000-000000000000@de1.example.com:443?encryption=none&amp;security=tls&amp;type=ws&amp;path=%2F#آلمان">' +
+      esc(v.link) + '</textarea>' +
+      '<div class="hint" style="margin-top:5px">فقط لینک را اینجا بچسبانید — چیزِ دیگری لازم نیست. ' +
+      'نام از بخشِ بعد از <span class="mono">#</span> خوانده می‌شود و بقیه (آدرس، پورت، یو‌یو‌آی‌دی، امنیت، ' +
+      'انتقال، مسیر، SNI و…) از خودِ لینک.</div></label>' +
       '</div>' +
       '<input type="hidden" id="ex_id" value="' + esc(v.id) + '">' +
       '<div class="btn-row" style="margin-top:10px;gap:6px">' +
@@ -754,7 +722,7 @@
   const NAV = [
     { g: 'اصلی', items: [['dash', 'نمای کلی', 'fa-gauge-high'], ['users', 'کاربران', 'fa-users']] },
     { g: 'شبکه', items: [['conns', 'اتصال‌های زنده', 'fa-activity'], ['monitor', 'آمار مصرف', 'fa-chart-line']] },
-    { g: 'پیکربندی', items: [['config', 'پیکربندی', 'fa-gear'], ['sub', 'اشتراک', 'fa-link'], ['security', 'امنیت', 'fa-shield-halved']] },
+    { g: 'پیکربندی', items: [['config', 'پیکربندی', 'fa-gear'], ['sub', 'لینک ساب', 'fa-link'], ['security', 'امنیت', 'fa-shield-halved']] },
     { g: 'سیستم', items: [['logs', 'لاگ', 'fa-list-check'], ['settings', 'پشتیبان', 'fa-database']] },
   ];
 
@@ -782,7 +750,7 @@
         { p: 'auth.maintenanceHost', l: 'سایت پوششی واقعی', t: 'sel', o: ['nginx', 'ubuntu', 'docker', 'cloudflare', 'python', 'node'], lbls: { nginx: 'nginx.org — صفحه‌ی خوش‌آمدگویی', ubuntu: 'Ubuntu Server — مستندات', docker: 'Docker Docs — مستندات', cloudflare: 'Cloudflare Workers — مستندات', python: 'Python Docs — مستندات', node: 'Node.js Docs — مستندات' } },
         { p: 'auth.decoyUrl', l: 'آدرس سایت پوششی دلخواه', t: 'text', mono: 1, h: 'خالی = یکی از سایت‌های بالا. هر آدرس واقعی دیگری هم می‌شود (واکشیِ زنده؛ اگر در دسترس نباشد صفحه‌ی داخلی جایگزین می‌شود)' },
         { p: 'auth.pathRotate', l: 'چرخش خودکار مسیر', t: 'sw' },
-        { p: 'auth.panic', l: 'Panic mode', t: 'sw', bad: 1, h: 'پنل، اشتراک و صفحه‌ی کاربر هم پشتِ سایت پوششی پنهان می‌شوند. /health و /api باز می‌مانند تا بتوانید آن را دوباره خاموش کنید' },
+        { p: 'auth.panic', l: 'Panic mode', t: 'sw', bad: 1, h: 'پنل و لینک ساب (صفحه‌ی کاربر) هم پشتِ سایت پوششی پنهان می‌شوند. /health و /api باز می‌مانند تا بتوانید آن را دوباره خاموش کنید' },
         { p: 'sec.killSwitch', l: 'Kill Switch', t: 'sw', bad: 1 },
         { p: 'sec.ipConnLimit', l: 'سقف IP همزمان هر کاربر (پیش‌فرض سراسری)', t: 'num', h: '۰ = نامحدود • بیشینه‌ی تعداد IPهایی که همزمان می‌توانند با یک حساب وصل شوند (مدل Nova-Proxy). مقدار هر کاربر بر این اولویت دارد' },
         { p: 'sec.speedTestUrl', l: 'نشانی فایل تست ترافیک', t: 'text', h: 'پیش‌فرض: speed.cloudflare.com/__down • باید یک نشانی «خارجی» باشد (ورکر نمی‌تواند خودش را صدا بزند)' },
@@ -792,8 +760,8 @@
     ],
   };
   const SCHEMA_SUB = [
-    { t: 'تنظیمات اشتراک', icon: 'fa-link', two: 1, f: [
-      { p: 'sub.path', l: 'مسیر ساب', t: 'text', mono: 1, h: 'هم صفحه‌ی کاربر و هم خروجی کلاینت روی همین مسیر است' },
+    { t: 'تنظیمات لینک ساب', icon: 'fa-link', two: 1, f: [
+      { p: 'sub.path', l: 'مسیر ساب', t: 'text', mono: 1, h: 'هم لینک ساب (داشبورد کاربر) و هم خروجی کلاینت روی همین مسیر است' },
       { p: 'sub.userAgent', l: 'فیلتر User-Agent', t: 'text', mono: 1 },
       { p: 'sub.fakeConfigs', l: 'کانفیگ‌های فیک فعال', t: 'sw', h: 'کانفیگ‌های اطلاعاتی در ابتدای لیست ساب کلاینت نمایش داده می‌شوند' },
       { p: 'sub.nodeLimit', l: 'Node limit', t: 'num' },
@@ -923,7 +891,7 @@
             '<div>' + fa(u.totalReq || 0) + ' req</div></td>' +
           '<td><div class="row-btns">' +
           '<button class="btn sm" data-act="user-edit" data-id="' + u.id + '" title="ویرایش">' + icon('fa-pen') + '</button>' +
-          '<button class="btn sm" data-act="user-copy-page" data-id="' + u.id + '" title="کپی لینک صفحه‌ی کاربر (داشبورد + اشتراک)">' + icon('fa-clipboard') + '</button>' +
+          '<button class="btn sm" data-act="user-copy-page" data-id="' + u.id + '" title="کپی لینک ساب">' + icon('fa-clipboard') + '</button>' +
           '<button class="btn sm" data-act="user-reset" data-id="' + u.id + '" title="ریست مصرف">' + icon('fa-rotate-left') + '</button>' +
           '<button class="btn sm ' + (u.enabled ? 'd' : 's') + '" data-act="user-toggle" data-id="' + u.id + '" title="' + (u.enabled ? 'قطع دسترسی' : 'فعال‌سازی') + '">' + icon(u.enabled ? 'fa-ban' : 'fa-circle-check') + '</button>' +
           '<button class="btn sm d" data-act="user-del" data-id="' + u.id + '" title="حذف">' + icon('fa-trash-can') + '</button>' +
@@ -933,161 +901,13 @@
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     رادار — اسکنرِ آی‌پی تمیز
-     اندازه‌گیری واقعی در ورکر انجام می‌شود (اتصالِ TCP/TLS به ip:port)؛
-     اینجا فقط تنظیمات را می‌گیریم، اسکن را صدا می‌زنیم و گزارش را نشان
-     می‌دهیم. هیچ عددی در مرورگر ساخته نمی‌شود.
-     ═══════════════════════════════════════════════════════════════ */
-
-  /* تنظیماتِ مؤثر — پیش‌فرض از /api/radar/config، محدود به سقف‌های همان پاسخ */
-  const rdOpt = () => {
-    const cfg = (RD.cfg && RD.cfg.config) || {};
-    const o = RD.opt || {};
-    const maxC = (RD.cfg && RD.cfg.maxConcurrency) || 6;
-    const maxN = (RD.cfg && RD.cfg.maxCount) || 200;
-    const port = Number(o.port !== undefined ? o.port : (cfg.ports && cfg.ports[0])) || 443;
-    return {
-      count: Math.max(1, Math.min(maxN, Number(o.count !== undefined ? o.count : cfg.count) || 20)),
-      concurrency: Math.max(1, Math.min(maxC, Number(o.concurrency !== undefined ? o.concurrency : cfg.concurrency) || 4)),
-      timeoutMs: Math.max(200, Math.min(30000, Number(o.timeoutMs !== undefined ? o.timeoutMs : cfg.timeoutMs) || 2000)),
-      probes: Math.max(1, Math.min(5, Number(cfg.probes) || 2)),
-      keep: Math.max(1, Math.min(50, Number(cfg.keep) || 10)),
-      port: Math.max(1, Math.min(65535, port)),
-      tls: o.tls !== undefined ? !!o.tls : (cfg.tls !== false),
-      exitId: String(o.exitId !== undefined ? o.exitId : (cfg.exitId || '')),
-      maxCount: maxN, maxConcurrency: maxC,
-    };
-  };
-
-  async function radarCfg() {
-    if (RD.cfg) return RD.cfg;
-    const r = await api('GET', '/api/radar/config');
-    if (r && !r.error && r.config) {
-      RD.cfg = r;
-      if (!RD.opt) {
-        RD.opt = {
-          count: r.config.count, concurrency: r.config.concurrency,
-          timeoutMs: r.config.timeoutMs, port: (r.config.ports && r.config.ports[0]) || 443,
-          tls: r.config.tls !== false, exitId: r.config.exitId || '',
-        };
-      }
-      /* تنظیمات دیرتر از رندرِ اول می‌رسند (پاسخِ شبکه): فقط بلوکِ تنظیمات
-         دوباره نوشته می‌شود تا پیش‌فرض‌ها — به‌ویژه فهرستِ سرورهای خروجی —
-         دیده شوند. کلِ صفحه بازسازی نمی‌شود تا چیزی که کاربر در حال
-         نوشتنِ آن است از بین نرود. */
-      const w = $('#radarCfgWrap');
-      if (w) w.innerHTML = radarSettings();
-    }
-    return RD.cfg;
-  }
-
-  /* ═══════ رندرِ گزارشِ رادار ═══════
-     در هر بار بازسازیِ صفحه از RD.last[uuid] رندر می‌شود، برای همین رفرش،
-     جابه‌جایی بین بخش‌ها و عوض کردنِ کاربر گزارش را پاک نمی‌کند. */
-  function radarHtml(rec) {
-    if (RD.running) {
-      const o = rdOpt();
-      return '<div class="empty">' + icon('fa-spinner fa-spin') + ' در حال اسکن…</div>' +
-        '<div class="hint" style="text-align:center">آی‌پی کاندیدا: ' + fa(o.count) +
-        ' • هم‌زمانی: ' + fa(o.concurrency) + ' • زمان انتظار: ' + fa(o.timeoutMs) + ' میلی‌ثانیه' +
-        (o.exitId ? ' • از مسیر سرور خروجی' : ' • مسیر مستقیم') + '</div>';
-    }
-    if (!rec || !rec.results) {
-      return '<div class="empty">هنوز اسکنی اجرا نشده است — با یک کلیک، آی‌پی‌های کاندیدا اندازه‌گیری می‌شوند.</div>' +
-        (RD.err ? '<div class="hint" style="color:var(--bad)">' + esc(RD.err) + '</div>' : '');
-    }
-    const stamp = rec.__ts ? new Date(rec.__ts).toLocaleString('fa-IR', { hour12: false }) : '';
-    const res = Array.isArray(rec.results) ? rec.results : [];
-    const bestIp = rec.best ? String(rec.best.ip) : '';
-    const alive = res.filter((x) => x.ok).map((x) => x.ip);
-    const head = '<div class="hint" style="margin-bottom:8px">آخرین اسکن: <b>' + (stamp ? fa(stamp) : '—') + '</b>' +
-      ' • <span class="hint">این گزارش تا اسکنِ بعدی باقی می‌ماند.</span>' +
-      '<button class="btn sm ghost" data-act="radar-clear" style="margin-inline-start:8px">' + icon('fa-broom') + ' پاک‌کردن گزارش</button></div>';
-    if (!res.length) {
-      return head + '<div class="empty">هیچ آی‌پی‌ای برای اسکن پیدا نشد.</div>';
-    }
-    const summary = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">' +
-      '<span class="badge ' + (rec.alive ? 'ok' : 'bad') + '">' + icon('fa-circle-check') + ' موفق: ' + fa(rec.alive || 0) + '</span>' +
-      '<span class="badge ' + (rec.failed ? 'bad' : '') + '">' + icon('fa-circle-xmark') + ' ناموفق: ' + fa(rec.failed || 0) + '</span>' +
-      '<span class="badge b2">' + icon('fa-activity') + ' تست‌شده: ' + fa(rec.tested || 0) + '</span>' +
-      '<span class="badge ac">' + icon('fa-gauge-high') + ' زمان کل اسکن: ' + fa(rec.scanMs || 0) + ' میلی‌ثانیه</span>' +
-      '<span class="badge">' + icon('fa-route') + ' مسیر: ' + (rec.via === 'direct' ? 'مستقیم' : esc(String(rec.via || '').replace(/^exit:/, 'خروجی: '))) + '</span>' +
-      '</div>';
-    const table = '<div style="max-height:340px;overflow:auto" class="tbl-wrap"><table>' +
-      '<thead><tr><th>آی‌پی</th><th>پورت</th><th>وضعیت</th><th>تأخیر</th><th>جیتر</th><th>میزان خطا</th><th>امتیاز</th></tr></thead><tbody>' +
-      res.map((x) => {
-        const isBest = bestIp && x.ip === bestIp;
-        return '<tr' + (isBest ? ' style="background:var(--acsoft)"' : '') + '>' +
-          '<td class="mono">' + esc(x.ip) + (isBest ? ' <span class="badge ac">' + icon('fa-ranking-star') + ' بهترین</span>' : '') + '</td>' +
-          '<td class="mono">' + fa(x.port) + '</td>' +
-          '<td>' + (x.ok ? '<span class="badge ok">' + icon('fa-circle-check') + ' سالم</span>'
-                        : '<span class="badge bad">' + icon('fa-circle-xmark') + ' پاسخ نداد</span>') + '</td>' +
-          '<td class="mono">' + (x.ok ? fa(x.ms) + ' ms' : '—') + '</td>' +
-          '<td class="mono">' + (x.ok ? fa(x.jitter || 0) + ' ms' : '—') + '</td>' +
-          '<td class="mono">' + fa(x.loss || 0) + '٪</td>' +
-          '<td class="mono"><b>' + (x.ok ? fa(x.score) : '—') + '</b></td>' +
-          '</tr>';
-      }).join('') +
-      '</tbody></table></div>';
-    const applyRow = alive.length
-      ? '<div class="btn-row" style="margin-top:10px">' +
-        '<button class="btn sm p" data-act="radar-apply" data-uuid="' + esc(rec.__uuid || '') + '">' +
-        icon('fa-check') + ' اعمال روی این کانفیگ (' + fa(Math.min(10, alive.length)) + ' آی‌پی)</button>' +
-        '<button class="btn sm" data-act="radar-apply-all" data-uuid="' + esc(rec.__uuid || '') + '">' +
-        icon('fa-users') + ' اعمال روی همه‌ی کانفیگ‌ها</button></div>' +
-        '<div class="hint" style="margin-top:6px">با اعمال، آی‌پی‌های تمیز جایگزینِ لیستِ Clean IP این کانفیگ می‌شوند و کاربر باید اشتراکش را دوباره بگیرد.</div>'
-      : '<div class="hint" style="margin-top:8px;color:var(--warn)">هیچ آی‌پیِ سالمی پیدا نشد — می‌توانید دوباره اسکن کنید.</div>';
-    return head + summary + table + applyRow +
-      (rec.msg ? '<div class="hint" style="margin-top:8px">' + esc(rec.msg) + '</div>' : '');
-  }
-
-  /* تنظیماتِ اسکن — یک تابعِ جدا تا بعد از رسیدنِ /api/radar/config
-     بتواند بدون بازسازیِ کلِ صفحه دوباره نوشته شود */
-  function radarSettings() {
-    const o = rdOpt();
-    const exits = (RD.cfg && Array.isArray(RD.cfg.exits)) ? RD.cfg.exits : [];
-    const numF = (id, val, max, min, lbl) =>
-      '<label class="f"><span>' + lbl + '</span><input id="' + id + '" type="number" min="' + min + '" max="' + max + '" step="1" value="' + esc(val) + '"></label>';
-    return '<div class="um-grid three">' +
-      numF('rdCount', o.count, o.maxCount, 1, 'تعداد آی‌پی کاندیدا (حداکثر ' + fa(o.maxCount) + ')') +
-      numF('rdConc', o.concurrency, o.maxConcurrency, 1, 'هم‌زمانی (حداکثر ' + fa(o.maxConcurrency) + ')') +
-      numF('rdTimeout', o.timeoutMs, 30000, 200, 'زمان انتظار (میلی‌ثانیه)') +
-      numF('rdPort', o.port, 65535, 1, 'پورت') +
-      '<label class="f"><span>استفاده از TLS</span><div class="sw ' + (o.tls ? 'on' : '') + '" data-sw="rdTls"><i></i></div><input type="checkbox" class="hide" id="rdTls" data-sw-inp="rdTls"' + (o.tls ? ' checked' : '') + '></label>' +
-      '<label class="f"><span>اسکن از مسیرِ سرور خروجی</span><select id="rdExit">' +
-      '<option value=""' + (o.exitId ? '' : ' selected') + '>— مسیر مستقیم —</option>' +
-      exits.map((x) => '<option value="' + esc(x.id) + '"' + (x.id === o.exitId ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') +
-      '</select></label>' +
-      '</div>' +
-      '<div class="hint" style="margin-top:8px">تعدادِ نمونه برای هر آی‌پی: ' + fa(o.probes) +
-      ' • نگه‌داشتنِ ' + fa(o.keep) + ' نتیجه • سقفِ هم‌زمانی ' + fa(o.maxConcurrency) + ' (محدودیتِ سوکتِ ورکرز)' +
-      (RD.cfg && RD.cfg.msg ? ' • ' + esc(RD.cfg.msg) : '') + '</div>' +
-      '<div style="border-top:1px solid var(--bs);margin:14px 0 12px"></div>';
-  }
-
-  /* کارتِ رادار در صفحه‌ی هر کاربر/کانفیگ */
-  function radarCard(u) {
-    const rec = radarLast(u.uuid);
-    RD.uuid = u.uuid;
-    return '<div class="card" style="margin-top:12px"><header><span class="ic b2">' + icon('fa-tower-broadcast') + '</span>' +
-      '<div><h3>رادار — اسکنرِ آی‌پی تمیز</h3>' +
-      '<p>اندازه‌گیریِ واقعیِ تأخیر و جیتر از خودِ ورکر، یا از مسیرِ یکی از سرورهای خروجی</p></div>' +
-      '<div class="acts"><button class="btn sm p" data-act="radar-scan" data-uuid="' + esc(u.uuid) + '">' +
-      icon('fa-bolt') + ' شروع اسکن</button></div></header>' +
-      '<div class="bd">' +
-      '<div id="radarCfgWrap">' + radarSettings() + '</div>' +
-      '<div id="radarOut">' + radarHtml(rec) + '</div>' +
-      '</div></div>';
-  }
-
-  /* ═══════════════════════════════════════════════════════════════
-     نمای اشتراک — بازطراحی‌شده
+     نمای لینک ساب — بازطراحی‌شده
      یک لینک، دو کار: داشبورد کاربر در مرورگر + کانفیگ در کلاینت
      ═══════════════════════════════════════════════════════════════ */
   function subView() {
     const s = S.d.settings, us = S.d.users;
     const u = us.find((x) => x.id === S.sel) || us[0];
-    if (!u) return '<div class="page-head"><div><h1>اشتراک</h1><p>ابتدا یک کاربر بسازید</p></div></div>' +
+    if (!u) return '<div class="page-head"><div><h1>لینک ساب</h1><p>ابتدا یک کاربر بسازید</p></div></div>' +
       '<div class="card"><div class="bd"><div class="empty">هیچ کاربری وجود ندارد — از بخش «کاربران» یکی بسازید</div></div></div>';
 
     const page = location.origin + '/' + s.sub.path + '/' + u.uuid;
@@ -1152,8 +972,8 @@
       '<div id="subOut"><div class="empty">برای دیدن خروجی، «پیش‌نمایش» را بزنید</div></div>' +
       '</div></div>';
 
-    return '<div class="page-head"><div><h1>اشتراک</h1><p>یک لینک برای همه‌ی کلاینت‌ها</p></div></div>' +
-      heroCard() + statusCard() + radarCard(u) + outputCard() + fakeConfigsCard();
+    return '<div class="page-head"><div><h1>لینک ساب</h1><p>یک لینک برای همه‌ی کلاینت‌ها</p></div></div>' +
+      heroCard() + statusCard() + outputCard() + fakeConfigsCard();
   }
 
   /* ═══════════ رندرِ گزارشِ «تست واقعی ترافیک» ═══════════
@@ -1437,7 +1257,7 @@
       '</div></div>' +
       '<div class="card"><header><span class="ic">' + icon('fa-circle-info') + '</span><div><h3>مسیرهای سرویس</h3></div></header><div class="bd">' +
       '<div class="kv"><span>ورود پنل</span><b class="mono">/' + esc(s.auth.path) + '</b></div>' +
-      '<div class="kv"><span>صفحه‌ی کاربر و ساب</span><b class="mono">/' + esc(s.sub.path) + '/&lt;uuid&gt;</b></div>' +
+      '<div class="kv"><span>لینک ساب</span><b class="mono">/' + esc(s.sub.path) + '/&lt;uuid&gt;</b></div>' +
       '<div class="kv"><span>تونل</span><b class="mono">' + esc(s.path) + '</b></div>' +
       '<div class="kv"><span>سلامت</span><b class="mono">/health</b></div>' +
       '<div class="kv"><span>DoH</span><b class="mono">/dns-query</b></div></div></div>' +
@@ -1498,8 +1318,8 @@
       '<div class="kv"><span>' + icon('fa-lock') + ' آدرس پنل</span><b class="mono">' + esc(location.origin + '/' + p) + '</b></div>' +
       '<div class="kv"><span>Disguise</span><b>' + (s.auth.disguise !== false ? 'فعال — ریشه سایت پوششی است' : 'خاموش — ریشه هم پنل است') + '</b></div>' +
       '<div class="kv"><span>سایت پوششی</span><b class="mono">' + esc(s.auth.decoyUrl || (DECOY_LABEL[s.auth.maintenanceHost] || s.auth.maintenanceHost)) + '</b></div>' +
-      (s.auth.panic ? '<div class="kv"><span>Panic</span><b style="color:var(--bad)">فعال — پنل و اشتراک پنهان‌اند؛ فقط /health و /api پاسخ می‌دهند</b></div>' : '') +
-      '<div class="kv"><span>' + icon('fa-users') + ' صفحه‌ی کاربر</span><b class="mono">/' + esc(s.sub.path) + '/&lt;uuid&gt;</b></div>' +
+      (s.auth.panic ? '<div class="kv"><span>Panic</span><b style="color:var(--bad)">فعال — پنل و لینک ساب پنهان‌اند؛ فقط /health و /api پاسخ می‌دهند</b></div>' : '') +
+      '<div class="kv"><span>' + icon('fa-users') + ' لینک ساب</span><b class="mono">/' + esc(s.sub.path) + '/&lt;uuid&gt;</b></div>' +
       '<div class="kv"><span>CSP / XFO / nosniff</span><b>' + (s.sec.csp ? 'فعال' : 'خاموش') + '</b></div>' +
       '<div id="decoyOut" style="margin-top:10px"></div>' +
       '<div class="btn-row" style="margin-top:10px">' +
@@ -1693,7 +1513,7 @@
         /* کلیدهای استتار — الان واقعاً در مسیریابی اثر دارند */
         '<div class="um-grid two" style="padding:8px 0 0">' +
         field({ p: 'auth.disguise', l: 'Disguise mode', t: 'sw', h: 'خاموش = ریشه هم پنل را نشان می‌دهد' }, s.auth.disguise) +
-        field({ p: 'auth.panic', l: 'Panic mode', t: 'sw', bad: 1, h: 'پنل و اشتراک پشتِ سایت پوششی پنهان می‌شوند' }, s.auth.panic) +
+        field({ p: 'auth.panic', l: 'Panic mode', t: 'sw', bad: 1, h: 'پنل و لینک ساب پشتِ سایت پوششی پنهان می‌شوند' }, s.auth.panic) +
         '</div>' +
 
         /* مسیر مخفی */
@@ -1720,7 +1540,7 @@
       return '<div class="acc open"><div class="acc-h" data-acc>' + icon('fa-send') + '<span>تلگرام</span>' +
         '<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>' +
         '<div class="acc-b"><div class="um-grid two" style="padding:11px 12px">' +
-        field({ p: 'sub.telegramSupport', l: 'آیدی پشتیبانی', t: 'text', mono: 1, h: 'مثل @support — در صفحه‌ی کاربر و هدر ساب' }, sup) +
+        field({ p: 'sub.telegramSupport', l: 'آیدی پشتیبانی', t: 'text', mono: 1, h: 'مثل @support — در لینک ساب و هدرِ آن' }, sup) +
         field({ p: 'sub.telegramBuy', l: 'آیدی خرید اشتراک', t: 'text', mono: 1, h: 'مثل @sales — خالی = همان پشتیبانی' }, buy) +
         '</div>' +
 
@@ -1824,9 +1644,6 @@
       (id === 'logs' ? '<span class="cnt">' + fa((d.logs || []).length) + '</span>' : '') + '</button>').join('') + '</div>').join('');
     $('#view').innerHTML = '<div class="fade">' + (VIEWS[S.view] || dashView)() + '</div>';
     if (S.view === 'sub') setTimeout(refreshPreview, 30);
-    /* صفحه‌ی کاربر: تنظیماتِ پیش‌فرضِ رادار از /api/radar/config خوانده می‌شود؛
-       گزارشِ قبلی دست‌نخورده سر جایش می‌ماند و فقط داخل #radarOut رندر می‌شود. */
-    if (S.view === 'sub') radarCfg();
     /* اتصال‌های زنده: داده‌ی قبلی همان لحظه رندر می‌شود و بارخوانی فقط همان
        دو بلوک را به‌روز می‌کند — جدول هیچ وقت خالی نمی‌شود. */
     if (S.view === 'conns') setTimeout(cnLoad, 20);
@@ -2076,56 +1893,6 @@
         free(t);
         toast(r.ok ? (r.msg || 'مسدودی برداشته شد') : (r.error || 'انجام نشد'), r.ok ? 'ok' : 'err');
         await cnLoad();
-      }
-      /* ═══════ رادار ═══════ */
-      else if (a === 'radar-scan') {
-        await radarCfg();
-        const o = rdOpt();
-        /* مقادیر از فیلدها خوانده می‌شوند تا همان چیزی فرستاده شود که دیده می‌شود */
-        const num = (id, dflt) => { const el = $('#' + id); return el && el.value !== '' ? Number(el.value) : dflt; };
-        const body = {
-          count: Math.max(1, Math.min(o.maxCount, num('rdCount', o.count) || o.count)),
-          concurrency: Math.max(1, Math.min(o.maxConcurrency, num('rdConc', o.concurrency) || o.concurrency)),
-          timeoutMs: Math.max(200, Math.min(30000, num('rdTimeout', o.timeoutMs) || o.timeoutMs)),
-          ports: [Math.max(1, Math.min(65535, num('rdPort', o.port) || o.port))],
-          tls: $('#rdTls') ? !!$('#rdTls').checked : o.tls,
-          exitId: $('#rdExit') ? String($('#rdExit').value || '') : o.exitId,
-        };
-        RD.opt = { count: body.count, concurrency: body.concurrency, timeoutMs: body.timeoutMs, port: body.ports[0], tls: body.tls, exitId: body.exitId };
-        RD.running = true;
-        radarShow();
-        busy(t, 'در حال اسکن…');
-        const r = await api('POST', '/api/radar/scan', body);
-        free(t);
-        RD.running = false;
-        if (r.error) { RD.err = String(r.error); radarShow(); toast(r.error, 'err'); return; }
-        if (!r.ok) { RD.err = String(r.error || r.msg || 'اسکن انجام نشد'); radarShow(); toast(RD.err, 'err'); return; }
-        radarSave(t.dataset.uuid || RD.uuid || '', r);
-        radarShow();
-        toast(r.msg || ('اسکن تمام شد — ' + fa(r.tested || 0) + ' آی‌پی تست شد'), r.alive ? 'ok' : 'err');
-      }
-      else if (a === 'radar-apply' || a === 'radar-apply-all') {
-        const uuid = t.dataset.uuid || RD.uuid || '';
-        const rec = radarLast(uuid);
-        const ips = rec && Array.isArray(rec.results)
-          ? rec.results.filter((x) => x.ok).map((x) => x.ip).slice(0, 10)
-          : [];
-        if (!ips.length) { toast('در گزارشِ فعلی هیچ آی‌پیِ سالمی نیست — دوباره اسکن کنید', 'err'); return; }
-        const all = a === 'radar-apply-all';
-        if (!confirm(fa(ips.length) + ' آی‌پیِ تمیز روی ' + (all ? 'همه‌ی کانفیگ‌ها' : 'این کانفیگ') + ' اعمال شود؟\nکاربران باید اشتراک‌شان را دوباره بگیرند.')) return;
-        busy(t, 'اعمال…');
-        const r = await api('POST', '/api/radar/apply', all ? { ips, all: true } : { ips, uuid });
-        free(t);
-        toast(r.ok ? (r.msg || 'آی‌پی‌ها اعمال شد') : (r.error || 'انجام نشد'), r.ok ? 'ok' : 'err');
-        if (r.ok) await refresh();
-      }
-      else if (a === 'radar-clear') {
-        const uuid = RD.uuid || '';
-        delete RD.last[uuid];
-        RD.err = '';
-        try { localStorage.setItem(RD_KEY, JSON.stringify(RD.last)); } catch (e) {}
-        radarShow();
-        toast('گزارشِ رادار پاک شد', 'info');
       }
       else if (a === 'save-config') {
         busy(t, 'ذخیره');
@@ -2515,7 +2282,7 @@
       /* ═════════════════════════════════════════════════════════════
          مرحله‌ی ۴ — سرورهای خروجی VLESS
          ═════════════════════════════════════════════════════════════ */
-      else if (a === 'exit-new') { EX.form = exitBlank(); EX.test = null; exShow(); const nm = $('#ex_name'); if (nm) nm.focus(); }
+      else if (a === 'exit-new') { EX.form = exitBlank(); EX.test = null; exShow(); const nm = $('#ex_link'); if (nm) nm.focus(); }
       else if (a === 'exit-cancel') { EX.form = null; exShow(); }
       else if (a === 'exit-reload') { busy(t, 'بارخوانی'); EX.test = null; await exLoad(); free(t); }
       else if (a === 'exit-edit') {
@@ -2524,11 +2291,11 @@
         EX.test = null; exShow();
       }
       else if (a === 'exit-save') {
-        let body = null;
-        try { body = exitFormRead(); } catch (er) { toast(er.message, 'err'); return; }
-        if (!body.name || !body.address || !body.uuid) { toast('نام، آدرس و UUID باید پر باشند', 'err'); return; }
+        const body = exitFormRead();
+        if (!body.link) { toast('لینکِ vless:// را در فیلد بچسبانید', 'err'); return; }
         busy(t, 'در حال ذخیره');
-        const r = await api('POST', '/api/exits', body.id ? { op: 'update', id: body.id, server: body } : { op: 'add', server: body });
+        /* قراردادِ ورکر: add فقط link می‌گیرد، update هم id را */
+        const r = await api('POST', '/api/exits', body.id ? { op: 'update', id: body.id, link: body.link } : { op: 'add', link: body.link });
         free(t);
         if (r && r.ok) { EX.form = null; await exLoad(); toast(r.msg || 'سرور خروجی ذخیره شد', 'ok'); }
         else toast((r && r.error) || 'ذخیره انجام نشد', 'err');
@@ -2543,17 +2310,14 @@
         else toast((r && r.error) || 'حذف انجام نشد', 'err');
       }
       else if (a === 'exit-test') {
-        EX.testing = id || 'form'; EX.test = null; exShow();
-        /* اگر فرم باز است همان مقادیرِ فرم تست می‌شوند، بی‌آن‌که ذخیره شوند */
-        let body;
-        if (id) body = { id };
-        else {
-          try { body = { server: exitFormRead() }; }
-          catch (er) { EX.testing = ''; exShow(); toast(er.message, 'err'); return; }
-        }
-        const r = await api('POST', '/api/exits/test', body);
+        /* فرم دیگر فیلدی ندارد که بشود بدون ذخیره تستش کرد، پس تست فقط روی
+           یک سرورِ ذخیره‌شده معنا دارد. */
+        if (!id) { toast('سرور را نخست ذخیره کنید، سپس اتصالش را تست کنید', 'err'); return; }
+        const srv = ((EX.data && EX.data.servers) || []).find((x) => x.id === id);
+        EX.testing = id; EX.test = null; exShow();
+        const r = await api('POST', '/api/exits/test', { id });
         EX.testing = '';
-        EX.test = (r && r.name) ? r : { name: ((body.server || {}).name) || '—', reachable: false, error: (r && r.error) || 'تست انجام نشد' };
+        EX.test = (r && r.name) ? r : { name: ((srv && srv.name) || '—'), reachable: false, error: (r && r.error) || 'تست انجام نشد' };
         exShow();
         toast((r && r.msg) || 'تست انجام شد', r && r.reachable ? 'ok' : 'err');
       }
@@ -2574,21 +2338,6 @@
 
   document.addEventListener('change', async (e) => {
     if (e.target.closest('[data-act="sel-user"]')) { S.sel = e.target.value; render(); }
-    /* تنظیماتِ رادار — در حافظه‌ی پنل نگه داشته می‌شوند تا بازسازیِ صفحه
-       (رفرشِ خودکار، ذخیره‌ی تنظیمات) مقادیرِ انتخاب‌شده را از بین نبرد */
-    if (e.target.id === 'rdExit') { RD.opt = Object.assign(rdOpt(), { exitId: String(e.target.value || '') }); }
-    if (e.target.id === 'rdTls') { RD.opt = Object.assign(rdOpt(), { tls: !!e.target.checked }); }
-    if (e.target.id === 'rdCount' || e.target.id === 'rdConc' || e.target.id === 'rdTimeout' || e.target.id === 'rdPort') {
-      const o = rdOpt();
-      const val = Math.max(Number(e.target.min) || 1, Math.min(Number(e.target.max) || 65535, Number(e.target.value) || 0));
-      e.target.value = val;
-      RD.opt = Object.assign(o, {
-        count: e.target.id === 'rdCount' ? val : o.count,
-        concurrency: e.target.id === 'rdConc' ? val : o.concurrency,
-        timeoutMs: e.target.id === 'rdTimeout' ? val : o.timeoutMs,
-        port: e.target.id === 'rdPort' ? val : o.port,
-      });
-    }
     if (e.target.classList.contains('fk-proto')) refreshPreview();
     /* انتخابگرِ فایلِ پشتیبان — مسیرِ کلیک‌کردن، هم‌ارز با رها‌کردن */
     if (e.target.id === 'bkFile') {
@@ -2886,7 +2635,7 @@
       '</div>' +
 
       '<div class="hint" style="margin-bottom:8px">' +
-      (mode === 'inherit' ? 'این کاربر از کانفیگ‌های فیک عمومی پنل استفاده می‌کند (بخش «اشتراک»).' :
+      (mode === 'inherit' ? 'این کاربر از کانفیگ‌های فیک عمومی پنل استفاده می‌کند (بخش «لینک ساب»).' :
        mode === 'custom' ? 'فقط کانفیگ‌های زیر برای این کاربر نمایش داده می‌شوند.' :
        'هیچ کانفیگ فکی برای این کاربر ساخته نمی‌شود.') + '</div>' +
 
