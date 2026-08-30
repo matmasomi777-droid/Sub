@@ -631,6 +631,72 @@
             font-size: 13px;
         }
 
+        /* ===== رادار آی‌پی تمیز ===== */
+        .radar-panel { align-items: stretch; justify-content: flex-start; gap: 10px; text-align: right; }
+        html[dir="ltr"] .radar-panel { text-align: left; }
+        .radar-head { display: flex; flex-direction: column; gap: 2px; padding: 2px 4px; }
+        .radar-title { font-size: 13px; font-weight: 700; color: var(--text); }
+        .radar-hint { font-size: 10px; color: var(--text-muted); }
+        .radar-ports { display: flex; flex-wrap: wrap; gap: 6px; }
+        .radar-port-chip {
+            background: var(--surface-alt);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            border-radius: 999px;
+            padding: 4px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .radar-port-chip.active { background: rgba(var(--accent-rgb), 0.15); border-color: rgba(var(--accent-rgb), 0.4); color: var(--accent); }
+        .radar-start-btn {
+            background: rgba(var(--accent-rgb), 0.15);
+            border: 1px solid rgba(var(--accent-rgb), 0.3);
+            color: var(--text);
+            padding: 8px 14px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        .radar-start-btn:hover { background: var(--accent); color: #06110F; }
+        .radar-start-btn.running { background: rgba(var(--warn-rgb), 0.15); border-color: rgba(var(--warn-rgb), 0.35); color: var(--warn); }
+        .radar-progress-track { width: 100%; height: 6px; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+        .radar-progress-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.2s; }
+        .radar-status { font-size: 11px; color: var(--text-muted); padding: 0 4px; min-height: 14px; }
+        .radar-table-wrap { width: 100%; overflow-x: auto; display: none; }
+        .radar-table-wrap.show { display: block; }
+        .radar-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        .radar-table th { color: var(--text-muted); font-weight: 600; text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+        html[dir="ltr"] .radar-table th { text-align: left; }
+        .radar-table td { color: var(--text); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+        .radar-table tbody tr:last-child td { border-bottom: none; }
+        .radar-table tr.radar-row-best td { background: rgba(var(--accent-rgb), 0.12); color: var(--accent); font-weight: 700; }
+        .radar-port-tag { color: var(--text-muted); font-size: 10px; }
+        .radar-best { display: none; flex-direction: column; gap: 6px; width: 100%; }
+        .radar-best.show { display: flex; }
+        .radar-best-label { font-size: 11px; color: var(--text-muted); padding: 0 4px; }
+        .radar-best-row { display: flex; gap: 6px; align-items: center; width: 100%; }
+        .radar-best-input {
+            flex: 1; min-width: 0;
+            background: var(--surface-alt);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font-size: 10px;
+            padding: 7px 10px;
+            direction: ltr;
+            text-overflow: ellipsis;
+        }
+        .radar-best-input:focus { outline: none; border-color: rgba(var(--accent-rgb), 0.4); }
+        .radar-best-note { font-size: 10px; color: var(--text-muted); padding: 0 4px; }
+
         .ip-row-item {
             background: var(--surface-alt);
             border: 1px solid var(--border);
@@ -1094,6 +1160,12 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                     <div class="action-label" id="action-config">کپی کانفیگ</div>
                 </div>
             </div>
+            <div class="action-cell">
+                <div class="action-card" id="btn-radar">
+                    <i class="fa-solid fa-satellite-dish" style="color: var(--accent-2);"></i>
+                    <div class="action-label" id="action-radar">رادار</div>
+                </div>
+            </div>
         </div>
 
         <div class="action-dropdown-container" id="dropdown-qr-container">
@@ -1105,6 +1177,54 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         <div class="action-dropdown-container" id="dropdown-config-container">
             <div class="action-dropdown-menu" id="list-config-ips">
                 <span style="color:#6c6c8c;" id="config-empty-msg">خالی</span>
+            </div>
+        </div>
+
+        <div class="action-dropdown-container" id="dropdown-radar-container">
+            <div class="action-dropdown-menu radar-panel" id="radar-panel">
+                <div class="radar-head">
+                    <span class="radar-title" id="radar-title">رادار آی‌پی تمیز</span>
+                    <span class="radar-hint" id="radar-hint">کاملاً در مرورگر شما اجرا می‌شود</span>
+                </div>
+                <div class="radar-ports" id="radar-ports">
+                    <span class="radar-port-chip active" data-port="443">443</span>
+                    <span class="radar-port-chip" data-port="8443">8443</span>
+                    <span class="radar-port-chip" data-port="2053">2053</span>
+                    <span class="radar-port-chip" data-port="2083">2083</span>
+                    <span class="radar-port-chip" data-port="2087">2087</span>
+                    <span class="radar-port-chip" data-port="2096">2096</span>
+                </div>
+                <button class="radar-start-btn" id="radar-start-btn">
+                    <i class="fa-solid fa-satellite-dish"></i> <span id="radar-start-label">شروع اسکن</span>
+                </button>
+                <div class="radar-progress-track">
+                    <div class="radar-progress-bar" id="radar-progress-bar"></div>
+                </div>
+                <div class="radar-status" id="radar-status">آماده برای اسکن</div>
+                <div class="radar-table-wrap" id="radar-table-wrap">
+                    <table class="radar-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>IP</th>
+                                <th id="radar-th-ping">تأخیر</th>
+                                <th id="radar-th-jitter">جیتر</th>
+                                <th id="radar-th-loss">لاس٪</th>
+                            </tr>
+                        </thead>
+                        <tbody id="radar-results-body"></tbody>
+                    </table>
+                </div>
+                <div class="radar-best" id="radar-best">
+                    <div class="radar-best-label" id="radar-best-label">کانفیگ بهترین آی‌پی</div>
+                    <div class="radar-best-row">
+                        <input type="text" class="radar-best-input en-font" id="radar-best-link" readonly value="">
+                        <button class="ip-copy-btn" id="radar-copy-btn">
+                            <i class="fa-solid fa-copy"></i> <span id="radar-copy-label">کپی</span>
+                        </button>
+                    </div>
+                    <div class="radar-best-note" id="radar-best-note"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -1307,7 +1427,17 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 expiredText: "منقضی", unlimitedText: "نامحدود", emptyConfigs: "خالی", copyBtnText: "کپی", showQrBtn: "نمایش QR",
                 lastConnectUnknown: "--", onlineText: "آنلاین", offlineText: "آفلاین",
                 promoText: "آیا نیاز به <span>خرید</span> یا <span>تمدید ساب</span> دارید؟<br>با پشتیبانی تماس بگیرید.",
-                promoTelegram: "تلگرام"
+                promoTelegram: "تلگرام",
+                actionRadar: "رادار",
+                radarTitle: "رادار آی‌پی تمیز", radarHint: "کاملاً در مرورگر شما اجرا می‌شود",
+                radarStart: "شروع اسکن", radarStop: "توقف", radarStatusReady: "آماده برای اسکن",
+                radarStatusScan: "در حال اسکن... {done} از {total} - یافت‌شده: {found}",
+                radarStatusDone: "پایان اسکن - {found} آی‌پی سالم یافت شد",
+                radarStatusNoPort: "حداقل یک پورت را انتخاب کنید",
+                radarStatusNoResult: "آی‌پی سالمی یافت نشد",
+                radarStatusNoConfig: "کانفیگ vless در این ساب یافت نشد",
+                radarThPing: "تأخیر", radarThJitter: "جیتر", radarThLoss: "لاس٪",
+                radarBestLabel: "کانفیگ بهترین آی‌پی", radarBestNote: "پورت برتر: {port}"
             },
             en: {
                 dir: "ltr", greet: "Hello ", badgeActive: "Active", badgeInactive: "Inactive",
@@ -1324,7 +1454,17 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 expiredText: "Expired", unlimitedText: "Unlimited", emptyConfigs: "Empty", copyBtnText: "Copy", showQrBtn: "Show QR",
                 lastConnectUnknown: "--", onlineText: "Online", offlineText: "Offline",
                 promoText: "Need to <span>buy</span> or <span>renew</span> your subscription?<br>Contact support.",
-                promoTelegram: "Telegram"
+                promoTelegram: "Telegram",
+                actionRadar: "Radar",
+                radarTitle: "Clean IP Radar", radarHint: "Runs entirely in your browser",
+                radarStart: "Start Scan", radarStop: "Stop", radarStatusReady: "Ready to scan",
+                radarStatusScan: "Scanning... {done} of {total} - found: {found}",
+                radarStatusDone: "Scan finished - {found} healthy IPs found",
+                radarStatusNoPort: "Select at least one port",
+                radarStatusNoResult: "No healthy IP found",
+                radarStatusNoConfig: "No vless config found in this subscription",
+                radarThPing: "Ping", radarThJitter: "Jitter", radarThLoss: "Loss%",
+                radarBestLabel: "Best IP config", radarBestNote: "Winning port: {port}"
             },
             tr: {
                 dir: "ltr", greet: "Merhaba ", badgeActive: "Aktif", badgeInactive: "Pasif",
@@ -1341,7 +1481,17 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 expiredText: "Süresi Doldu", unlimitedText: "Sınırsız", emptyConfigs: "Boş", copyBtnText: "Kopyala", showQrBtn: "QR Göster",
                 lastConnectUnknown: "--", onlineText: "Çevrimiçi", offlineText: "Çevrimdışı",
                 promoText: "Aboneliğinizi <span>satın</span> veya <span>yenile</span> mi gerekiyor?<br>Destek ile iletişime geçin.",
-                promoTelegram: "Telegram"
+                promoTelegram: "Telegram",
+                actionRadar: "Radar",
+                radarTitle: "Temiz IP Radarı", radarHint: "Tamamen tarayıcınızda çalışır",
+                radarStart: "Taramayı Başlat", radarStop: "Durdur", radarStatusReady: "Taramaya hazır",
+                radarStatusScan: "Taranıyor... {done} / {total} - bulunan: {found}",
+                radarStatusDone: "Tarama bitti - {found} sağlıklı IP bulundu",
+                radarStatusNoPort: "En az bir port seçin",
+                radarStatusNoResult: "Sağlıklı IP bulunamadı",
+                radarStatusNoConfig: "Bu abonelikte vless konfigi bulunamadı",
+                radarThPing: "Gecikme", radarThJitter: "Jitter", radarThLoss: "Kayıp%",
+                radarBestLabel: "En iyi IP konfigi", radarBestNote: "Kazanan port: {port}"
             },
             ar: {
                 dir: "rtl", greet: "أهلاً ", badgeActive: "نشط", badgeInactive: "غير نشط",
@@ -1358,7 +1508,17 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 expiredText: "منتهي", unlimitedText: "غير محدود", emptyConfigs: "خالي", copyBtnText: "نسخ", showQrBtn: "عرض QR",
                 lastConnectUnknown: "--", onlineText: "متصل", offlineText: "غير متصل",
                 promoText: "هل تحتاج إلى <span>شراء</span> أو <span>تجديد</span> اشتراكك؟<br>اتصل بالدعم.",
-                promoTelegram: "تيليجرام"
+                promoTelegram: "تيليجرام",
+                actionRadar: "الرادار",
+                radarTitle: "رادار الآي‌بي النظيف", radarHint: "يعمل بالكامل داخل متصفحك",
+                radarStart: "بدء الفحص", radarStop: "إيقاف", radarStatusReady: "جاهز للفحص",
+                radarStatusScan: "جارٍ الفحص... {done} من {total} - تم العثور: {found}",
+                radarStatusDone: "انتهى الفحص - تم العثور على {found} آي‌بي سليم",
+                radarStatusNoPort: "اختر منفذًا واحدًا على الأقل",
+                radarStatusNoResult: "لم يتم العثور على آي‌بي سليم",
+                radarStatusNoConfig: "لا يوجد تكوين vless في هذا الاشتراك",
+                radarThPing: "التأخير", radarThJitter: "التذبذب", radarThLoss: "الفقد٪",
+                radarBestLabel: "تكوين أفضل آي‌بي", radarBestNote: "المنفذ الفائز: {port}"
             }
         };
 
@@ -1839,6 +1999,18 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             document.getElementById("action-copy").innerText = data.actionCopy;
             document.getElementById("action-qr").innerText = data.actionQr;
             document.getElementById("action-config").innerText = data.actionConfig;
+            document.getElementById("action-radar").innerText = data.actionRadar;
+            document.getElementById("radar-title").innerText = data.radarTitle;
+            document.getElementById("radar-hint").innerText = data.radarHint;
+            document.getElementById("radar-th-ping").innerText = data.radarThPing;
+            document.getElementById("radar-th-jitter").innerText = data.radarThJitter;
+            document.getElementById("radar-th-loss").innerText = data.radarThLoss;
+            document.getElementById("radar-best-label").innerText = data.radarBestLabel;
+            document.getElementById("radar-copy-label").innerText = data.copyBtnText;
+            if (!radarRunning) {
+                document.getElementById("radar-start-label").innerText = data.radarStart;
+                document.getElementById("radar-status").innerText = data.radarStatusReady;
+            }
             document.getElementById("download-screen-title").innerText = data.dlScreenTitle;
             document.getElementById("lbl-tab-android").innerText = data.tabAndroid;
             document.getElementById("lbl-tab-ios").innerText = data.tabIos;
@@ -1879,13 +2051,236 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         document.getElementById("btn-toggle-qr").addEventListener("click", function(e) {
             e.stopPropagation();
             document.getElementById("dropdown-config-container").classList.remove("show");
+            document.getElementById("dropdown-radar-container").classList.remove("show");
             document.getElementById("dropdown-qr-container").classList.toggle("show");
         });
 
         document.getElementById("btn-toggle-config").addEventListener("click", function(e) {
             e.stopPropagation();
             document.getElementById("dropdown-qr-container").classList.remove("show");
+            document.getElementById("dropdown-radar-container").classList.remove("show");
             document.getElementById("dropdown-config-container").classList.toggle("show");
+        });
+
+        // ===== رادار آی‌پی تمیز (کاملاً سمت مرورگر) =====
+        const CF_RANGES = [['104.16.', 0, 255], ['104.17.', 0, 255], ['104.18.', 0, 255], ['104.19.', 0, 255], ['104.20.', 0, 255], ['104.21.', 0, 255], ['104.22.', 0, 255], ['104.24.', 0, 255], ['104.25.', 0, 255], ['104.26.', 0, 255], ['104.27.', 0, 255], ['162.159.', 0, 255], ['172.64.', 0, 255], ['172.66.', 0, 255], ['172.67.', 0, 255], ['188.114.', 96, 111], ['141.101.', 64, 127]];
+        const RADAR_PORTS = [443, 8443, 2053, 2083, 2087, 2096];
+        const RADAR_TIMEOUT = 2000;
+        const RADAR_PROBES = 3;
+        const RADAR_CONCURRENCY = 12;
+        const RADAR_IP_COUNT = 140;
+        const RADAR_KEEP = 8;
+
+        let radarRunning = false;
+        let radarCancelRequested = false;
+
+        function randCfIp() {
+            var r = CF_RANGES[Math.floor(Math.random() * CF_RANGES.length)];
+            var c = r[1] + Math.floor(Math.random() * (r[2] - r[1] + 1));
+            return r[0] + c + '.' + Math.floor(Math.random() * 256);
+        }
+
+        // هم onload و هم onerror یعنی «هاست جواب داد»؛ ما دسترسی و تأخیر را می‌سنجیم نه موفقیت تصویر.
+        function pingIp(ip, port, timeout) {
+            return new Promise(function(res) {
+                var t0 = performance.now();
+                var done = false;
+                var img = new Image();
+                function fin(ok) {
+                    if (done) return;
+                    done = true;
+                    img.onerror = img.onload = null;
+                    res(ok ? Math.round(performance.now() - t0) : null);
+                }
+                var timer = setTimeout(function() { fin(false); }, timeout);
+                img.onerror = function() { clearTimeout(timer); fin(true); };
+                img.onload = function() { clearTimeout(timer); fin(true); };
+                img.src = 'https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?' + Math.random();
+            });
+        }
+
+        function radarSelectedPorts() {
+            return Array.from(document.querySelectorAll('#radar-ports .radar-port-chip.active'))
+                .map(function(el) { return parseInt(el.getAttribute('data-port'), 10); });
+        }
+
+        async function radarProbeIp(ip, ports) {
+            for (let i = 0; i < ports.length; i++) {
+                const port = ports[i];
+                const samples = [];
+                for (let p = 0; p < RADAR_PROBES; p++) {
+                    if (radarCancelRequested) return null;
+                    const rtt = await pingIp(ip, port, RADAR_TIMEOUT);
+                    if (rtt !== null) samples.push(rtt);
+                }
+                if (samples.length === 0) continue;
+                const avg = Math.round(samples.reduce(function(a, b) { return a + b; }, 0) / samples.length);
+                const jitter = Math.max.apply(null, samples) - Math.min.apply(null, samples);
+                const loss = Math.round((1 - samples.length / RADAR_PROBES) * 100);
+                return { ip: ip, port: port, avg: avg, jitter: jitter, loss: loss, score: avg + jitter * 0.5 + loss * 20 };
+            }
+            return null;
+        }
+
+        function radarRenderResults(list) {
+            const tbody = document.getElementById('radar-results-body');
+            tbody.innerHTML = '';
+            list.forEach(function(r, idx) {
+                const tr = document.createElement('tr');
+                if (idx === 0) tr.className = 'radar-row-best';
+                tr.innerHTML = '<td>' + (idx + 1) + '</td>' +
+                    '<td class="en-font">' + r.ip + '<span class="radar-port-tag">:' + r.port + '</span></td>' +
+                    '<td class="en-font">' + r.avg + ' ms</td>' +
+                    '<td class="en-font">' + r.jitter + '</td>' +
+                    '<td class="en-font">' + r.loss + '%</td>';
+                tbody.appendChild(tr);
+            });
+            document.getElementById('radar-table-wrap').classList.toggle('show', list.length > 0);
+        }
+
+        function radarFindVlessLink() {
+            const links = sanaeiClientData.links || [];
+            for (let i = 0; i < links.length; i++) {
+                if (/^vless:\/\//i.test(links[i])) return links[i];
+            }
+            return null;
+        }
+
+        function radarBuildBestConfig(best) {
+            const data = locales[currentLang] || locales.fa;
+            const noteEl = document.getElementById('radar-best-note');
+            document.getElementById('radar-best').classList.add('show');
+            document.getElementById('radar-best-link').value = '';
+
+            const sourceLink = radarFindVlessLink();
+            if (!sourceLink) {
+                noteEl.textContent = data.radarStatusNoConfig;
+                return;
+            }
+            const uuidMatch = sourceLink.match(/^vless:\/\/([^@]+)@/i);
+            const queryStart = sourceLink.indexOf('?');
+            if (!uuidMatch || queryStart < 0) {
+                noteEl.textContent = data.radarStatusNoConfig;
+                return;
+            }
+            const uuid = uuidMatch[1];
+            const afterQuery = sourceLink.slice(queryStart + 1);
+            const hashIdx = afterQuery.indexOf('#');
+            const query = hashIdx >= 0 ? afterQuery.slice(0, hashIdx) : afterQuery;
+
+            const parsed = parseConfigLink(sourceLink);
+            const baseName = (parsed.remark || sanaeiClientData.username || 'Sub').trim();
+            const newLink = 'vless://' + uuid + '@' + best.ip + ':' + best.port + '?' + query + '#' + encodeURIComponent(baseName + ' - Radar');
+
+            document.getElementById('radar-best-link').value = newLink;
+            noteEl.textContent = data.radarBestNote.replace('{port}', best.port);
+        }
+
+        async function radarRun() {
+            const data = locales[currentLang] || locales.fa;
+            const statusEl = document.getElementById('radar-status');
+            const startBtn = document.getElementById('radar-start-btn');
+
+            if (radarRunning) {
+                radarCancelRequested = true;
+                return;
+            }
+
+            const ports = radarSelectedPorts();
+            if (ports.length === 0) {
+                statusEl.textContent = data.radarStatusNoPort;
+                return;
+            }
+
+            radarRunning = true;
+            radarCancelRequested = false;
+            startBtn.classList.add('running');
+            document.getElementById('radar-start-label').textContent = data.radarStop;
+            document.getElementById('radar-best').classList.remove('show');
+            document.getElementById('radar-best-note').textContent = '';
+            document.getElementById('radar-results-body').innerHTML = '';
+            document.getElementById('radar-table-wrap').classList.remove('show');
+            document.getElementById('radar-progress-bar').style.width = '0%';
+            statusEl.textContent = data.radarStatusScan.replace('{done}', '0').replace('{total}', RADAR_IP_COUNT).replace('{found}', '0');
+
+            const ips = [];
+            for (let i = 0; i < RADAR_IP_COUNT; i++) ips.push(randCfIp());
+
+            const results = [];
+            let cursor = 0;
+            let doneCount = 0;
+
+            async function worker() {
+                while (cursor < ips.length) {
+                    if (radarCancelRequested) return;
+                    const ip = ips[cursor++];
+                    const res = await radarProbeIp(ip, ports);
+                    if (res) results.push(res);
+                    doneCount++;
+                    document.getElementById('radar-progress-bar').style.width = Math.round(doneCount / ips.length * 100) + '%';
+                    statusEl.textContent = data.radarStatusScan
+                        .replace('{done}', doneCount)
+                        .replace('{total}', ips.length)
+                        .replace('{found}', results.length);
+                }
+            }
+
+            const workers = [];
+            for (let w = 0; w < RADAR_CONCURRENCY; w++) workers.push(worker());
+            await Promise.all(workers);
+
+            results.sort(function(a, b) { return a.score - b.score; });
+            const top = results.slice(0, RADAR_KEEP);
+            radarRenderResults(top);
+
+            if (top.length > 0) {
+                statusEl.textContent = data.radarStatusDone.replace('{found}', results.length);
+                radarBuildBestConfig(top[0]);
+            } else {
+                statusEl.textContent = data.radarStatusNoResult;
+            }
+
+            radarRunning = false;
+            radarCancelRequested = false;
+            startBtn.classList.remove('running');
+            document.getElementById('radar-start-label').textContent = data.radarStart;
+        }
+
+        document.getElementById("btn-radar").addEventListener("click", function(e) {
+            e.stopPropagation();
+            document.getElementById("dropdown-qr-container").classList.remove("show");
+            document.getElementById("dropdown-config-container").classList.remove("show");
+            document.getElementById("dropdown-radar-container").classList.toggle("show");
+        });
+
+        document.getElementById("radar-start-btn").addEventListener("click", function(e) {
+            e.stopPropagation();
+            radarRun();
+        });
+
+        document.querySelectorAll('#radar-ports .radar-port-chip').forEach(function(chip) {
+            chip.addEventListener('click', function(e) {
+                e.stopPropagation();
+                this.classList.toggle('active');
+            });
+        });
+
+        document.getElementById("radar-copy-btn").addEventListener("click", function(e) {
+            e.stopPropagation();
+            const data = locales[currentLang] || locales.fa;
+            const value = document.getElementById('radar-best-link').value;
+            if (!value) return;
+            const label = document.getElementById('radar-copy-label');
+            navigator.clipboard.writeText(value).then(() => {
+                label.textContent = data.actionCopied;
+                this.style.background = "#22C55E";
+                this.style.color = "#fff";
+                setTimeout(() => {
+                    label.textContent = data.copyBtnText;
+                    this.style.background = "";
+                    this.style.color = "";
+                }, 2000);
+            });
         });
 
         function navigateToScreen(screenName) {
@@ -1954,6 +2349,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             langDropdown.classList.remove("show");
             document.getElementById("dropdown-qr-container").classList.remove("show");
             document.getElementById("dropdown-config-container").classList.remove("show");
+            document.getElementById("dropdown-radar-container").classList.remove("show");
         });
 
         const themeToggle = document.getElementById("theme-toggle");
