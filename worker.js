@@ -356,8 +356,12 @@ async function usageInit(env, st) {
      • هیچ خطایی بلعیده نمی‌شود: CONN_LAST_ERR در کارت سلامت نمایش داده می‌شود
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const CONN_TTL = 300000;              // ۵ دقیقه — عمر یک اتصالِ بی‌heartbeat
-const CONN_HB = 120000;               // تمدید هر ۲ دقیقه
+/* ⚠️ اعدادِ قبلی (۵ دقیقه / ۲ دقیقه) باعث می‌شد یک اتصالِ قطع‌شده تا دقیقه‌ها
+   جایِ یک آی‌پی را اشغال نگه دارد و کاربر حس کند «اولین آی‌پی برای همیشه
+   ذخیره شده». حالا: ضربان هر ۲۰ ثانیه، و ردیفی که ۶۰ ثانیه ضربان نداشته باشد
+   مرده حساب می‌شود و خودبه‌خود آزاد می‌شود. */
+const CONN_TTL = 60000;               // ۶۰ ثانیه — عمر یک اتصالِ بی‌heartbeat
+const CONN_HB = 20000;                // تمدید هر ۲۰ ثانیه
 const CONNS = new Map();              // uuid -> Map<ip, Map<connId, lastTs>>
 let CONN_LAST_ERR = null;             // آخرین خطا — در کارت سلامت نمایش داده می‌شود
 let CONN_DENIES = 0;                  // تعداد رد شدن‌ها (اثباتِ فعال بودن محدودیت)
@@ -489,13 +493,24 @@ async function liveEnsure(env) {
   } catch (e) { connErr('D1-schema', e); return false; }
 }
 
-/** حذفِ اتصال‌های مرده (بدون heartbeat برای CONN_TTL) */
+/** حذفِ اتصال‌های مرده (بدون heartbeat برای CONN_TTL)
+    ⚠️ نوعِ ستون هم بررسی می‌شود: در پایگاه‌داده‌های قدیمی ممکن است last_ts به‌جای
+    عددِ میلی‌ثانیه، رشته (مثل ISO) یا مقدارِ ثانیه‌ای باشد. مقایسه‌یِ ساده‌ی
+    «last_ts < cut» چنین ردیف‌هایی را هرگز پاک نمی‌کند (در SQLite هر رشته از هر
+    عدد بزرگ‌تر است) → همان «آی‌پی برای همیشه قفل شده». پس:
+      • هرچه عددِ صحیح نیست (رشته/تهی) → همیشه مرده حساب می‌شود؛
+      • اعداد هم با آستانه‌ی انقضا سنجیده می‌شوند؛
+      • ردیف‌های بی‌uuid هم پاک می‌شوند تا چیزی برای همیشه نماند. */
 async function liveSweep(env, uuid) {
   if (!env || !env.DB) return;
   const cut = Date.now() - CONN_TTL;
   try {
-    if (uuid) await env.DB.prepare('DELETE FROM conns WHERE uuid = ? AND last_ts < ?').bind(uuid, cut).run();
-    else await env.DB.prepare('DELETE FROM conns WHERE last_ts < ?').bind(cut).run();
+    await env.DB.prepare(`DELETE FROM conns
+      WHERE typeof(last_ts) <> 'integer' OR last_ts IS NULL OR last_ts < ?`).bind(cut).run();
+    if (uuid) {
+      /* ردیف‌هایی که به این کاربر تعلق دارند اما شناسه/زمانِ معتبر ندارند */
+      await env.DB.prepare('DELETE FROM conns WHERE uuid = ? AND (ip IS NULL OR ip = \'\')').bind(uuid).run();
+    }
   } catch (e) { connErr('D1-sweep', e); }
 }
 
@@ -562,17 +577,19 @@ async function d1Release(env, connId) {
   catch (e) { connErr('D1-release', e); }
 }
 
-/** heartbeat — اگر ردیف نباشد (پاک‌سازی/ری‌استارت دیتابیس) دوباره درج می‌شود */
+/** heartbeat — فقط تمدیدِ ردیفِ موجود
+    ⚠️ نسخه‌ی قبلی وقتی UPDATE هیچ ردیفی را عوض نمی‌کرد، ردیف را دوباره «درج»
+    می‌کرد. در عمل ضربان‌هایی که با ctx.waitUntil در صف مانده‌اند بعد از بسته
+    شدنِ اتصال اجرا می‌شوند: ردیفِ حذف‌شده دوباره زنده می‌شد و تا پایانِ TTL
+    (قبلاً ۵ دقیقه) جایِ آن آی‌پی را قفل نگه می‌داشت — دقیقاً همان چیزی که کاربر
+    «ذخیره‌ی دائمیِ اولین آی‌پی» توصیف کرده بود. اتصالِ آزادشده هرگز نباید
+    برگردد؛ اگر ردیفی نیست یعنی اتصال تمام شده است. */
 async function d1Touch(env, uuid, ip, connId) {
   if (!env || !env.DB || !connId) return;
   const now = Date.now();
   try {
-    const r = await env.DB.prepare('UPDATE conns SET last_ts = ? WHERE conn_id = ?').bind(now, connId).run();
-    const changed = Number((r && r.meta && r.meta.changes) || (r && r.changes) || 0);
-    if (!changed) {
-      await env.DB.prepare('INSERT OR REPLACE INTO conns (conn_id, uuid, ip, last_ts) VALUES (?, ?, ?, ?)')
-        .bind(connId, uuid, ip, now).run();
-    }
+    await env.DB.prepare(`UPDATE conns SET last_ts = ?
+      WHERE conn_id = ? AND typeof(last_ts) = 'integer'`).bind(now, connId).run();
   } catch (e) { connErr('D1-touch', e); }
 }
 
@@ -671,17 +688,25 @@ async function connAcquire(env, uuid, ip, limit, connId) {
 
 /** کاهش شمارنده — فقط همین connId؛ اگر IP بی‌اتصال شد، آزاد می‌شود */
 async function connRelease(env, uuid, ip, connId) {
-  if (!uuid || !ip) return 0;
-  const backend = limiterBackend(env);
-  if (backend === 'do') {
-    try { await limiterRpc(env, '/release', { uuid, ip, connId }); }
-    catch (e) { connErr('DO', e); }
-  }
-  /* پاک‌سازی روی D1 هر وقت پایگاه‌داده‌ای بایند باشد — حتی اگر مرجعِ تصمیم
-     دیگری باشد، ردیفِ مرده روی پایگاه‌داده نماند */
+  /* ⚠️ حذفِ ردیفِ پایگاه‌داده نباید به داشتنِ uuid/ip وابسته باشد:
+     شناسه‌ی اتصال (conn_id) کلیدِ اصلی است و برای پاک کردن کافی است. قبلاً
+     اگر user یا ip لحظه‌ای در دسترس نبود، ردیف برای همیشه در جدول می‌ماند. */
   if (env && env.DB && connId) {
     try { await d1Release(env, connId); } catch (e) { connErr('D1', e); }
   }
+  /* ⚠️ آزادسازی در بقیهٔ بک‌اندها هم نباید به داشتنِ uuid/ip وابسته باشد:
+     شناسه‌ی اتصال برای حذف کافی است. قبلاً اگر user یا ip لحظه‌ای در دسترس
+     نبود، ردیفِ شیءِ ماندگار و کلیدِ KV برای همیشه می‌ماند. */
+  if (env && env.LIMITER) {
+    try { await limiterRpc(env, '/release', { uuid: uuid || '', ip: ip || '', connId }); }
+    catch (e) { connErr('DO', e); }
+  }
+  if (env && env.KV && connId) {
+    try { await env.KV.delete(KV_C(uuid || '', ip || '', connId)); }
+    catch (e) { connErr('KV', e); }
+  }
+  if (!uuid || !ip) return 0;
+  /* حافظهٔ همین isolate — فقط آینه است و مرجعِ تصمیم نیست */
   const um = CONNS.get(uuid);
   let left = 0;
   if (um) {
@@ -694,11 +719,101 @@ async function connRelease(env, uuid, ip, connId) {
     }
     if (!um.size) CONNS.delete(uuid);
   }
-  if (backend === 'kv' && env && env.KV && connId) {
-    try { await env.KV.delete(KV_C(uuid, ip, connId)); }
-    catch (e) { connErr('KV', e); }
-  }
   return left;
+}
+
+/** پاک‌سازیِ کاملِ «اتصال‌های زنده» — روی هر سه بک‌اند.
+    ⚠️ قبلاً فقط جدولِ D1 خالی می‌شد؛ در استقرارِ با wrangler مرجعِ تصمیم شیءِ
+    ماندگار (LIMITER) است و در استقرارِ بدونِ پایگاه‌داده کلیدهای KV. دکمهٔ
+    «آزادسازی اتصال‌ها» در آن استقرارها هیچ کاری نمی‌کرد و تنها راهِ خروج
+    دستکاریِ دستیِ پایگاه‌داده بود. */
+async function connReset(env, uuid) {
+  const removed = { d1: 0, do: 0, kv: 0, mem: 0 };
+  const u = uuid ? String(uuid) : '';
+  /* ۱) D1 — مرجعِ بیشتر استقرارها (فقط D1 بایند است) */
+  if (env && env.DB) {
+    try {
+      await liveEnsure(env);
+      const cnt = u
+        ? await env.DB.prepare('SELECT COUNT(*) AS n FROM conns WHERE uuid = ?').bind(u).all()
+        : await env.DB.prepare('SELECT COUNT(*) AS n FROM conns').all();
+      removed.d1 = Number((cnt && cnt.results && cnt.results[0] && cnt.results[0].n) || 0);
+      if (u) await env.DB.prepare('DELETE FROM conns WHERE uuid = ?').bind(u).run();
+      else await env.DB.prepare('DELETE FROM conns').run();
+    } catch (e) { connErr('D1-reset', e); }
+  }
+  /* ۲) شیءِ ماندگار — مرجعِ استقرارهای wrangler */
+  if (env && env.LIMITER) {
+    try {
+      const r = await limiterRpc(env, '/reset', { uuid: u });
+      removed.do = Number((r && r.removed) || 0);
+    } catch (e) { connErr('DO-reset', e); }
+  }
+  /* ۳) KV — مرجعِ استقرارهای بدونِ پایگاه‌داده */
+  if (env && env.KV) {
+    try {
+      let cursor = undefined, guard = 0;
+      const prefix = u ? 'c:' + u + ':' : 'c:';
+      do {
+        const list = await env.KV.list(cursor ? { prefix, cursor } : { prefix });
+        for (const k of ((list && list.keys) || [])) {
+          await env.KV.delete(k.name);
+          removed.kv++;
+        }
+        cursor = list && !list.list_complete ? list.cursor : undefined;
+      } while (cursor && ++guard < 50);      /* جلوگیری از حلقهٔ بی‌انتها */
+    } catch (e) { connErr('KV-reset', e); }
+  }
+  /* ۴) آینهٔ حافظهٔ همین isolate */
+  try {
+    if (u) { const um = CONNS.get(u); if (um) { um.forEach((m) => { removed.mem += m.size; }); CONNS.delete(u); } }
+    else { CONNS.forEach((um) => um.forEach((m) => { removed.mem += m.size; })); CONNS.clear(); }
+  } catch (e) {}
+  removed.total = removed.d1 + removed.do + removed.kv + removed.mem;
+  return removed;
+}
+
+/** ردیف‌های زنده با سن‌شان — از مرجعِ تصمیم خوانده می‌شود تا کارتِ سلامت
+    دروغ نگوید (اگر شیءِ ماندگار بایند باشد، جدولِ D1 خالی است). */
+async function liveRowsOf(env) {
+  const nowMs = Date.now();
+  const asRow = (uuid, ip, connId, ts) => ({
+    uuid: String(uuid || ''), ip: String(ip || ''), connId: String(connId || ''),
+    ageSec: (typeof ts === 'number' && isFinite(ts)) ? Math.max(0, Math.floor((nowMs - ts) / 1000)) : null,
+    stale: !(typeof ts === 'number' && isFinite(ts)),
+  });
+  const out = [];
+  if (env && env.LIMITER) {
+    try {
+      const r = await limiterRpc(env, '/dump', { now: nowMs });
+      for (const x of ((r && r.rows) || [])) out.push(asRow(x.uuid, x.ip, x.conn_id, x.last_ts));
+    } catch (e) { connErr('DO-dump', e); }
+    return out;
+  }
+  if (env && env.DB) {
+    try {
+      await liveEnsure(env);
+      await liveSweep(env, null);
+      const r = await env.DB.prepare('SELECT uuid, ip, conn_id, last_ts FROM conns ORDER BY last_ts ASC LIMIT 200').all();
+      for (const x of ((r && r.results) || [])) out.push(asRow(x.uuid, x.ip, x.conn_id, x.last_ts));
+    } catch (e) { connErr('D1-live-rows', e); }
+    return out;
+  }
+  if (env && env.KV) {
+    try {
+      let cursor = undefined, guard = 0;
+      do {
+        const list = await env.KV.list(cursor ? { prefix: 'c:', cursor } : { prefix: 'c:' });
+        for (const k of ((list && list.keys) || [])) {
+          const p = String(k.name).split(':');            /* c : uuid : ip : connId */
+          if (p.length < 4) continue;
+          out.push(asRow(p[1], p[2], p[3], nowMs));       /* KV سنِ واقعی را نگه نمی‌دارد */
+        }
+        cursor = list && !list.list_complete ? list.cursor : undefined;
+      } while (cursor && ++guard < 50);
+    } catch (e) { connErr('KV-live-rows', e); }
+  }
+  return out;
 }
 
 /** تمدید heartbeat — اتصال‌های زنده اما کم‌ترافیک پاک نشوند */
@@ -2566,6 +2681,29 @@ async function apiHandler(req, env, url, ctx) {
       await save(env, st);
       return json({ ok: true, current: cur, latest, newer, msg: a === 'update-check' ? (newer ? 'نسخه‌ی جدید موجود است: ' + latest : 'در آخرین نسخه هستید') : a === 'update-deploy' ? 'استقرار انجام شد' : 'بازگشت انجام شد' });
     }
+    /* ═══ آزادسازیِ دستیِ اتصال‌ها ═══
+       اگر به هر دلیلی ردیفی در جدول/شیءِ اتصال‌های زنده جامانده باشد، یک آی‌پی
+       برای همیشه قفل می‌ماند. این عملیات روی هر سه مرجع (D1 • شیءِ ماندگار • KV)
+       و آینهٔ حافظه پاک‌سازی می‌کند تا کاربر بتواند فوراً از آی‌پیِ جدید وصل
+       شود — بدون نیاز به دستکاریِ پایگاه‌داده. */
+    if (a === 'conn-reset') {
+      const uuid = String((b && b.uuid) || '').trim();
+      const removed = await connReset(env, uuid);
+      const parts = [];
+      if (removed.d1) parts.push(fa(removed.d1) + ' ردیف از پایگاه‌داده');
+      if (removed.do) parts.push(fa(removed.do) + ' اتصال از شیءِ ماندگار');
+      if (removed.kv) parts.push(fa(removed.kv) + ' کلید از KV');
+      if (removed.mem) parts.push(fa(removed.mem) + ' از حافظهٔ این isolate');
+      addLog(st, 'info', 'core', 'آزادسازی اتصال‌ها', (uuid ? 'کاربر ' + uuid.slice(0, 8) : 'همه') + ' • ' + fa(removed.total) + ' مورد');
+      await save(env, st);
+      return json({
+        ok: true, removed: removed.total, byBackend: removed,
+        msg: removed.total
+          ? (parts.join(' • ') + ' آزاد شد — حالا می‌توانید از آی‌پیِ جدید وصل شوید')
+          : 'هیچ اتصالِ زنده‌ای ثبت نبود (جدول از قبل خالی است) — پس هیچ آی‌پی‌ای قفل نیست'
+      });
+    }
+
     if (a === 'usage-health') {
       /* ═══ سلامت شمارش مصرف (volume counting health check) ═══
          بررسی می‌کند: کدام بایندینگ ذخیره‌سازی در دسترس است؟، جدول usage
@@ -2595,17 +2733,39 @@ async function apiHandler(req, env, url, ctx) {
         catch (e) { chk('جدول sessions (ستون conns)', false, 'ستون conns نیست یا جدول خراب است — محدودیت اتصال کار نمی‌کند: ' + String((e && e.message) || e)); }
       }
 
-      /* ۲٫۵) جدول اتصال‌های زنده — همان چیزی که محدودیت روی آن حساب می‌کند */
+      /* ۲٫۵) اتصال‌های زنده — همان چیزی که سقفِ آی‌پی روی آن حساب می‌کند.
+         ⚠️ از مرجعِ تصمیم خوانده می‌شود (liveRowsOf): در استقرارِ wrangler شیءِ
+         ماندگار بایند است و جدولِ D1 خالی می‌ماند؛ نشان دادنِ جدول در آن حالت
+         یک دروغِ تشخیصی است — «هیچ آی‌پی‌ای قفل نیست» در حالی که قفل در شیءِ
+         ماندگار است. سنِ هر ردیف هم نمایش داده می‌شود تا ردیفِ گیرکرده دیده شود. */
+      {
+        const names = new Map(st.users.map((u) => [u.uuid, u.name]));
+        out.liveRows = (await liveRowsOf(env))
+          .map((x) => Object.assign({}, x, { name: names.get(x.uuid) || String(x.uuid).slice(0, 8) }));
+        const ips = new Set(out.liveRows.map((x) => x.ip));
+        const uuids = new Set(out.liveRows.map((x) => x.uuid));
+        const stale = out.liveRows.filter((x) => x.stale).length;
+        const oldest = out.liveRows.reduce((acc, x) => (x.ageSec !== null && x.ageSec > acc ? x.ageSec : acc), 0);
+        out.live = { rows: out.liveRows.length, users: uuids.size, ips: ips.size, source: lim, stale, oldestSec: oldest };
+        const SRC = { do: 'شیءِ ماندگار (LIMITER)', d1: 'جدول conns در D1', kv: 'KV', mem: 'حافظهٔ این isolate' }[lim] || lim;
+        chk('اتصال‌های زنده (مبنای سقفِ آی‌پی)', true,
+          fa(out.live.rows) + ' اتصال • ' + fa(out.live.ips) + ' آی‌پی • ' + fa(out.live.users) + ' کاربر' +
+          ' • مرجع: ' + SRC +
+          (oldest ? ' • قدیمی‌ترین ردیف: ' + fa(oldest) + ' ثانیه' : ''));
+        if (stale) chk('ردیفِ خراب در اتصال‌های زنده', false,
+          fa(stale) + ' ردیف زمانِ معتبر ندارد و در اولین پاک‌سازی حذف می‌شود — اگر دوباره برگشت، پایگاه‌داده دستی دستکاری شده است');
+      }
+      /* جدولِ D1 — فقط وقتی مرجع است باید پر باشد؛ در استقرارهای دیگر می‌تواند
+         خالی بماند، پس نبودش فقط وقتی شکست است که هیچ مرجعِ مشترکی نباشد. */
       if (env.DB) {
         try {
           await liveEnsure(env);
           await liveSweep(env, null);
-          const r = await env.DB.prepare('SELECT COUNT(*) AS n, COUNT(DISTINCT uuid) AS u, COUNT(DISTINCT ip) AS i FROM conns').all();
-          const row = (r && r.results && r.results[0]) || {};
-          out.live = { rows: Number(row.n) || 0, users: Number(row.u) || 0, ips: Number(row.i) || 0 };
+          const r = await env.DB.prepare('SELECT COUNT(*) AS n FROM conns').all();
+          const n = Number((r && r.results && r.results[0] && r.results[0].n) || 0);
           chk('جدول اتصال‌های زنده (conns)', true,
-            fa(out.live.rows) + ' اتصالِ زنده • ' + fa(out.live.ips) + ' آی‌پی • ' + fa(out.live.users) + ' کاربر ✓');
-        } catch (e) { chk('جدول اتصال‌های زنده (conns)', false, 'جدول پیدا نشد یا خطا دارد — محدودیت اعمال نمی‌شود: ' + String((e && e.message) || e)); }
+            'در دسترس ✓ • ' + fa(n) + ' ردیف' + (lim === 'd1' ? ' (مرجعِ تصمیم همین است)' : ' (مرجعِ تصمیم ' + lim + ' است، پس خالی بودن طبیعی است)'));
+        } catch (e) { chk('جدول اتصال‌های زنده (conns)', false, 'جدول پیدا نشد یا خطا دارد: ' + String((e && e.message) || e)); }
       }
 
       /* ۳) تست زنده‌ی افزایش مصرف — واقعاً می‌نویسیم و بازمی‌خوانیم */
@@ -2702,7 +2862,9 @@ async function apiHandler(req, env, url, ctx) {
         defaultLimit: gLimit,
         perUser: st.users.map((u) => ({ name: u.name, uuid: u.uuid, limit: Number(u.ipLimit) || gLimit || 0 })),
         connErr: CONN_LAST_ERR || null, usageErr: USAGE_LAST_ERR || null,
-        acquires: CONN_ACQUIRES, denies: CONN_DENIES
+        acquires: CONN_ACQUIRES, denies: CONN_DENIES,
+        ttlSec: Math.floor(CONN_TTL / 1000), hbSec: Math.floor(CONN_HB / 1000),
+        liveSource: lim, live: out.live
       };
       chk('سقف مؤثری که ورکر برای هر کاربر می‌خواند', true,
         (out.diag.perUser.length ? out.diag.perUser.map((x) => x.name + ': ' + fa(x.limit)).join(' • ') : 'کاربری تعریف نشده') +
@@ -3217,6 +3379,10 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost) {
       const adm = await connAcquire(env, user.uuid, ip, ipLimit, connId);
       if (!adm.ok) {
         try { ws.close(1013, 'connection limit reached'); } catch (e) {}
+        /* هیچ ردیفی از این اتصال نباید بماند: پاک‌سازیِ صریح با conn_id.
+           قبلاً چون connAcquired هنوز false بود، releaseConn() کاری نمی‌کرد و
+           اگر ردیفی در مسیرِ رقابت مانده بود تا پایانِ TTL قفل می‌ماند. */
+        try { await connRelease(env, user.uuid, ip, connId); } catch (e) {}
         await finish();
         return;
       }
@@ -3668,7 +3834,29 @@ export class ConnLimiter {
       return j({ ok: true, sessions });
     }
 
-    if (url.pathname === '/reset') { this.users.clear(); return j({ ok: true }); }
+    /* آزادسازیِ دستی — اگر uuid داده شده باشد فقط همان کاربر */
+    if (url.pathname === '/reset') {
+      let removed = 0;
+      const count = (um) => { if (um) um.forEach((m) => { if (m) removed += m.size; }); };
+      if (uuid && this.users.has(uuid)) { count(this.users.get(uuid)); this.users.delete(uuid); }
+      else if (!uuid) { this.users.forEach((um) => count(um)); this.users.clear(); }
+      return j({ ok: true, removed });
+    }
+
+    /* ریزِ ردیف‌ها با سن‌شان — برای کارتِ سلامت (تشخیصِ «کدام آی‌پی قفل کرده») */
+    if (url.pathname === '/dump') {
+      const rows = [];
+      const list = uuid ? [uuid] : [...this.users.keys()];
+      for (const u of list) {
+        if (!this.users.has(u)) continue;
+        this.prune(u, now);                                  /* مرده‌ها اول پاک می‌شوند */
+        const um = this.users.get(u);
+        if (!um) continue;
+        um.forEach((m, ip) => { if (m) m.forEach((ts, id) => rows.push({ uuid: u, ip, conn_id: id, last_ts: ts })); });
+      }
+      rows.sort((a, c) => (a.last_ts || 0) - (c.last_ts || 0));
+      return j({ ok: true, rows: rows.slice(0, 200) });
+    }
 
     return j({ ok: false, error: 'unknown-path' });
   }
