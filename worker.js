@@ -1696,19 +1696,36 @@ let USER_HTML = null;
    صفحه‌ی سایت واقعی نشان می‌دهند. پنل و API فقط روی مسیر مخفی هستند.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* صفحات استتار — سایت‌های واقعی که با واکشی زنده نمایش داده می‌شوند */
+/* ═══ سایت‌های استتار واقعی — کلیدها باید دقیقاً با DECOY_PAGES یکی باشند ═══
+   انتخابِ کاربر (auth.maintenanceHost) اینجا را انتخاب می‌کند و صفحه به‌صورت
+   زنده واکشی می‌شود؛ اگر واکشی شکست خورد، صفحه‌ی داخلیِ هم‌نام جایگزین می‌شود.
+   ⚠️ کلیدهای این دو جدول باید یکی‌به‌یکی باشند، وگرنه انتخابِ کاربر بی‌اثر
+   می‌شود (قبلاً گزینه‌های wiki/wp/maintenance در رابط بود ولی اینجا نبود). */
 const DECOY_SITES = {
-  nginx:      { url: 'https://nginx.org/en/',                    label: 'nginx' },
-  ubuntu:     { url: 'https://ubuntu.com/server/docs',           label: 'Ubuntu Server' },
-  docker:     { url: 'https://docs.docker.com/',                 label: 'Docker Docs' },
+  nginx:      { url: 'https://nginx.org/en/',                      label: 'nginx' },
+  ubuntu:     { url: 'https://ubuntu.com/server/docs',             label: 'Ubuntu Server' },
+  docker:     { url: 'https://docs.docker.com/',                   label: 'Docker Docs' },
   cloudflare: { url: 'https://developers.cloudflare.com/workers/', label: 'Cloudflare Workers' },
-  python:     { url: 'https://docs.python.org/3/',               label: 'Python Docs' },
-  node:       { url: 'https://nodejs.org/docs/latest/api/',      label: 'Node.js Docs' },
+  python:     { url: 'https://docs.python.org/3/',                 label: 'Python Docs' },
+  node:       { url: 'https://nodejs.org/docs/latest/api/',        label: 'Node.js Docs' },
 };
 
 /* کش صفحات استتار */
 const DECOY_CACHE = new Map();   // url -> {body, ts}
 const DECOY_TTL = 300000;        // ۵ دقیقه
+
+/* فایل‌های غیرـHTML: اگر سایت واقعی خطا بدهد، برای این‌ها ۴۰۴ می‌دهیم تا
+   مرورگر یک صفحه‌ی HTML را به‌جای CSS/تصویر نپذیرد (علتِ «سایت پوششی بی‌ styling»). */
+const ASSET_EXT = /\.(css|js|mjs|json|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf|eot|mp4|webm|mp3|wasm|map|txt|xml|pdf)$/i;
+
+/* سرآیندهایی که از پاسخِ سایت واقعی حذف می‌شوند: یا محتوای بازنویسی‌شده را
+   می‌بندند (CSP/SRI) یا وضعیتِ امنیتیِ دامنه‌ی ما را به هم می‌زنند (HSTS/کوکی). */
+const DECOY_DROP_HEADERS = [
+  'content-security-policy', 'content-security-policy-report-only',
+  'x-frame-options', 'strict-transport-security', 'set-cookie',
+  'clear-site-data', 'cross-origin-embedder-policy',
+  'cross-origin-opener-policy', 'cross-origin-resource-policy',
+];
 
 /* ═══════════ سایت‌های استتار داخلی — کامل با CSS inline، بدون واکشی ═══════════ */
 const DECOY_PAGES = {
@@ -1851,77 +1868,157 @@ async function fetchDecoy(target, force) {
       redirect: 'follow',
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
+    const ctype = String(r.headers.get('content-type') || '');
+    /* فقط HTML — اگر آدرس به یک فایل/JSON اشاره کند، صفحه‌ی داخلی جایگزین می‌شود */
+    if (ctype && !/text\/html|application\/xhtml/i.test(ctype)) throw new Error('not html: ' + ctype);
     let body = await r.text();
-    const base = new URL(target);
 
-    /* ═══ ۱. لینک‌های نسبی → مطلق (مهم‌ترین مرحله) ═══ */
-    const abs = (href) => {
-      try { return new URL(href, base).href; } catch (e) { return href; }
-    };
-    // href و src در همه‌ی تگ‌ها
-    body = body.replace(/\s(href|src)="([^"]+)"/gi, (m, attr, val) => {
-      if (/^(https?:|data:|blob:|#|javascript:|mailto:)/i.test(val)) return m;
-      return ` ${attr}="${abs(val)}"`;
-    });
-    // srcset
-    body = body.replace(/\ssrcset="([^"]+)"/gi, (m, val) => {
-      const parts = val.split(',').map((p) => {
-        const t = p.trim().split(/\s+/);
-        if (t[0] && !/^(https?:|data:)/i.test(t[0])) t[0] = abs(t[0]);
-        return t.join(' ');
-      });
-      return ` srcset="${parts.join(', ')}"`;
-    });
-
-    /* ═══ ۲. CSS داخلی: url() های نسبی → مطلق ═══ */
-    body = body.replace(/url\(\s*['"]?([^'")\s]+)['"]?\s*\)/gi, (m, val) => {
-      if (/^(https?:|data:|#)/i.test(val)) return m;
-      return `url("${abs(val)}")`;
-    });
-
-    /* ═══ ۳. حذف CSP و meta refresh که لود را بلاک می‌کنند ═══ */
+    /* ═══ ۱. حذف CSP و meta refresh که لودِ دارایی‌ها را بلاک می‌کنند ═══ */
     body = body
       .replace(/<meta[^>]+http-equiv=["']?content-security-policy["']?[^>]*>/gi, '')
       .replace(/<meta[^>]+http-equiv=["']?refresh["']?[^>]*>/gi, '');
 
-    /* ═══ ۴. تگ base برای هر مورد باقی‌مانده ═══ */
-    if (!/<base\s/i.test(body)) {
-      body = body.replace(/<\/head>/i, `<base href="${target}">\n</head>`);
-    }
-
-    /* ═══ ۵. حذف اسکریپت‌ها (جلوگیری از رفتار ناخواسته و خطا) ═══ */
+    /* ═══ ۲. حذف اسکریپت‌ها (جلوگیری از رفتار ناخواسته و خطا) ═══ */
     body = body.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+
+    /* ⚠️ لینک‌های نسبی دست‌نخورده می‌مانند — عمداً.
+       قبلاً همه‌ی href/src به آدرسِ مطلقِ سایت اصلی تبدیل می‌شدند، برای همین
+       مرورگر دارایی را مستقیم از سایت اصلی می‌گرفت: اگر آن سایت برای کاربر
+       در دسترس نبود (یا آدرس با regex پوشش داده نمی‌شد، مثل نقل‌قول‌ تکی یا
+       crossorigin)، صفحه بی‌استایل می‌شد. حالا مسیرِ نسبی روی دامنه‌ی خودمان
+       می‌ماند و proxyDecoyAsset آن را از سایت واقعی می‌گیرد — دقیقاً مثل
+       serveMaintenancePage در نهان. دارایی‌ها همیشه از لبه‌ی کلاودفلر می‌آیند. */
 
     DECOY_CACHE.set(target, { body, ts: Date.now() });
     return body;
   } catch (e) { return null; }
 }
 
-/** پاسخ استتار — صفحه‌ی داخلی یا سایت واکشی‌شده */
-async function decoyPage(s, force) {
-  const host = (s.auth && s.auth.maintenanceHost) || 'nginx';
-  /* ۱) اگر آدرس دلخواه تنظیم شده → واکشی از آن */
-  const custom = (s.auth && s.auth.decoyUrl && String(s.auth.decoyUrl).trim());
+/** آدرسِ سایت پوششی: آدرسِ دلخواه، وگرنه سایتِ انتخاب‌شده از فهرست */
+function decoyTarget(s) {
+  const custom = s && s.auth && s.auth.decoyUrl ? String(s.auth.decoyUrl).trim() : '';
   if (custom) {
-    const body = await fetchDecoy(custom, force);
-    if (body) return new Response(body, {
-      status: 200,
-      headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300', 'x-frame-options': 'SAMEORIGIN' },
+    try { return new URL(/^https?:\/\//i.test(custom) ? custom : 'https://' + custom).href; }
+    catch (e) { /* آدرس نامعتبر → فهرستِ زیر جایگزین می‌شود */ }
+  }
+  const host = (s && s.auth && s.auth.maintenanceHost) || 'nginx';
+  const site = DECOY_SITES[host];
+  return site && site.url ? site.url : null;
+}
+
+/** سرآیندهای صفحه‌ی پوششی — عمداً بدون secHeaders تا هیچ نشانی از پنل درز نکند
+    (secHeaders شامل CSP و Access-Control-Allow-Origin است که مالِ پنل است) */
+function decoyHtml(body, maxAge) {
+  return new Response(body, {
+    status: 200,
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'public, max-age=' + (maxAge || 300),
+      'x-content-type-options': 'nosniff',
+      'referrer-policy': 'no-referrer',
+    },
+  });
+}
+
+/** اندازه‌ی متنِ واقعیِ صفحه (بدون تگ) */
+const decoyTextLen = (html) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().length;
+/* کمینه‌ی متن برای پذیرشِ صفحه‌ی زنده: سایت‌های تک‌صفحه‌ای (مثل مستنداتِ
+   داکر/کلاودفلر) بعد از حذفِ اسکریپت تقریباً خالی می‌مانند — در آن صورت
+   صفحه‌ی داخلی نمایش داده می‌شود تا ریشه هیچ‌وقت سفید نماند. */
+const DECOY_MIN_TEXT = 400;
+
+/** پاسخِ «پیدا نشد» برای دارایی‌ها — هرگز ۵۰۰ و هرگز بدنه‌ی خالی */
+const decoyMiss = () => new Response('Not Found', {
+  status: 404,
+  headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=60' },
+});
+
+/**
+ * بازتابِ مسیر روی سایت واقعی — روشِ نهان (serveMaintenancePage):
+ * درخواستِ دارایی با همان مسیر به سایت مقصد فرستاده می‌شود و پاسخ با
+ * content-type خودش برمی‌گردد. برای همین CSS و تصویر دیگر با text/html
+ * اشتباه گرفته نمی‌شوند و صفحه بی‌استایل نمی‌ماند.
+ */
+async function proxyDecoyAsset(target, request, url) {
+  try {
+    const u = decoyMirrorUrl(target, url);
+    if (!u) return null;
+    /* ضدِ حلقه: اگر مقصد خودِ همین ورکر باشد دارایی را واکشی نمی‌کنیم */
+    if (u.hostname === url.hostname) return null;
+
+    const h = new Headers(request.headers);
+    h.set('host', u.hostname);
+    /* نشتِ هویتِ کاربر به سایت مقصد */
+    ['cf-connecting-ip', 'x-forwarded-for', 'x-real-ip', 'cf-ray', 'cf-visitor',
+      'cf-ipcountry', 'authorization', 'cookie'].forEach((k) => h.delete(k));
+
+    const init = { method: request.method, headers: h, redirect: 'follow' };
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      init.body = await request.arrayBuffer();
+    }
+    const r = await fetch(new Request(u.toString(), init), { cf: { cacheTtl: 300 } });
+
+    const out = new Headers();
+    ['content-type', 'cache-control', 'etag', 'last-modified', 'expires',
+      'content-language', 'content-disposition'].forEach((k) => {
+      const v = r.headers.get(k);
+      if (v) out.set(k, v);
     });
+    out.set('x-content-type-options', 'nosniff');
+    DECOY_DROP_HEADERS.forEach((k) => out.delete(k));
+    /* بدنه دست‌نخورده است، پس content-length را به پلتفرم می‌سپاریم */
+    out.delete('content-length');
+    if (!out.has('cache-control')) out.set('cache-control', 'public, max-age=300');
+    return new Response(r.body, { status: r.status, headers: out });
+  } catch (e) { return null; }
+}
+
+/** مسیرِ درخواست → آدرسِ متناظر روی سایت مقصد (نسبت به پوشه‌ی همان صفحه) */
+function decoyMirrorUrl(target, url) {
+  try {
+    const base = new URL(target);
+    const p = String(url.pathname || '/');
+    /* مسیرِ کاملِ خودِ سایت مقصد (مثل /en/docs) مستقیم می‌رود */
+    const prefix = base.pathname.replace(/\/+$/, '');
+    if (prefix && (p === prefix || p.startsWith(prefix + '/'))) {
+      const d = new URL(p + (url.search || ''), base.origin);
+      return d;
+    }
+    /* وگرنه نسبت به پوشه‌ی صفحه‌ی پایه حل می‌شود: /style.css روی /en/ → /en/style.css */
+    const b = new URL(target);
+    if (!b.pathname.endsWith('/')) b.pathname += '/';
+    const d = new URL(p.replace(/^\/+/, ''), b);
+    d.search = url.search || '';
+    return d;
+  } catch (e) { return null; }
+}
+
+/** پاسخ استتار — سایت واقعی (زنده) یا صفحه‌ی داخلی
+    info (اختیاری): {mode} پر می‌شود تا پنل بداند کدام شاخه استفاده شد */
+async function decoyPage(s, force, request, url, info) {
+  const target = decoyTarget(s);
+
+  /* ۱) دارایی‌ها و زیرصفحه‌ها — مسیر روی سایت واقعی بازتاب می‌شود */
+  if (target && url && url.pathname && url.pathname !== '/') {
+    const proxied = await proxyDecoyAsset(target, request, url);
+    if (proxied) { if (info) info.mode = 'asset'; return proxied; }
+    /* خطا: برای دارایی ۴۰۴ (هرگز HTML به‌جای CSS)، برای زیرصفحه ادامه می‌دهیم */
+    if (ASSET_EXT.test(url.pathname)) return decoyMiss();
   }
 
-  /* ۲) صفحه‌ی داخلی — همیشه با CSS کامل، بدون نیاز به واکشی */
-  const page = DECOY_PAGES[host] || DECOY_PAGES.nginx;
-  if (page) return new Response(page, {
-    status: 200,
-    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=3600' },
-  });
+  /* ۲) صفحه‌ی زنده‌ی سایت واقعی — فقط اگر متنِ کافی داشته باشد */
+  if (target) {
+    const body = await fetchDecoy(target, force);
+    if (body && decoyTextLen(body) >= DECOY_MIN_TEXT) {
+      if (info) info.mode = 'live';
+      return decoyHtml(body, 300);
+    }
+  }
 
-  /* ۳) fallback — صفحه‌ی nginx داخلی */
-  return new Response(DECOY_PAGES.nginx, {
-    status: 200,
-    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=3600' },
-  });
+  /* ۳) صفحه‌ی داخلی — همیشه با CSS کامل، بدون نیاز به واکشی (شکستِ graceful) */
+  const host = (s && s.auth && s.auth.maintenanceHost) || 'nginx';
+  if (info) info.mode = 'builtin';
+  return decoyHtml(DECOY_PAGES[host] || DECOY_PAGES.nginx, 3600);
 }
 
 /* صفحه‌ی استاتیک پشتیبان */
@@ -2529,7 +2626,22 @@ async function apiHandler(req, env, url, ctx) {
     if (a === '2fa-secret') { const sec = b32enc(crypto.getRandomValues(new Uint8Array(20))); s.auth.totp = true; s.auth.totpSecret = sec; await save(env, st); return json({ ok: true, secret: sec, url: `otpauth://totp/${encodeURIComponent(s.panel.name)}?secret=${sec}&issuer=Panel` }); }
     if (a === 'pw-change') { if (b.old !== masterKey(st, env)) return json({ error: 'رمز فعلی نادرست است' }, 400); if (!b.nw || b.nw.length < 5) return json({ error: 'رمز جدید خیلی کوتاه است' }, 400); s.auth.password = b.nw; addLog(st, 'warn', 'auth', 'رمز تغییر کرد', ''); await save(env, st); return json({ ok: true }); }
     if (a === 'ui-refresh') { const h = await loadUI(env, true); return json({ ok: !!h && h !== FALLBACK, size: h ? h.length : 0, userPage: !!USER_HTML }); }
-    if (a === 'decoy-test') { const r = await decoyPage(s, true); const t = await r.text(); return json({ ok: t.length > 500, size: t.length, target: (s.auth.decoyUrl || DECOY_SITES[s.auth.maintenanceHost] || DECOY_SITES.nginx), sample: t.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 220) }); }
+    if (a === 'decoy-test') {
+      const target = decoyTarget(s);
+      const info = {};
+      const r = await decoyPage(s, true, null, null, info);
+      const t = await r.text();
+      const host = (s.auth && s.auth.maintenanceHost) || 'nginx';
+      return json({
+        ok: t.length > 500, size: t.length,
+        /* «زنده» = واکشی از سایت واقعی موفق بود؛ «داخلی» = صفحه‌ی آماده‌ی خودمان */
+        mode: info.mode || 'builtin',
+        target: target || host,
+        site: (DECOY_SITES[host] && DECOY_SITES[host].label) || host,
+        disguise: s.auth.disguise !== false, panic: !!s.auth.panic,
+        sample: t.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 220),
+      });
+    }
     if (a === 'logs-clear') { st.logs = []; await save(env, st); return json({ ok: true }); }
     if (a === 'factory') {
       const fresh = DEF();
@@ -4028,21 +4140,34 @@ export default {
       let path = url.pathname;
       if (path.endsWith('/') && path.length > 1) path = path.slice(0, -1);
 
+      /* ── کلیدهای استتار (قبلاً فقط در تنظیمات بودند و هیچ جا خوانده نمی‌شدند) ──
+         disguise: پیش‌فرض روشن؛ با خاموش بودن، ریشه (/) هم پنل را نشان می‌دهد.
+         panic:    پنل و اشتراک هم پشتِ سایت پوششی پنهان می‌شوند. */
+      const refresh = url.searchParams.get('refresh') === '1';
+      const disguiseOn = s.auth.disguise !== false;
+      const panicOn = !!s.auth.panic;
+      const cover = () => decoyPage(s, refresh, request, url);
+      const panelHtml = async () => new Response(await loadUI(env, false), {
+        headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', ...secHeaders(s) },
+      });
+
       const isPanel = path === route || path === route + '/dash';
       const isSub   = path.startsWith(route + '/sub');
       const isHealth = path === '/health' || path.startsWith('/api/');
 
-      /* health و api همیشه آزادند (برای مانیتورینگ) */
+      /* health و api همیشه آزادند (برای مانیتورینگ) — حتی در وضعیت اضطراری،
+         وگرنه نه راهی برای خاموش کردنش می‌ماند و نه برای مانیتورینگ */
       if (isHealth) { try { return await apiHandler(request, env, url, ctx); } catch (e) { return json({ ok: false, error: String((e && e.message) || e) }, 500); } }
 
-      /* ۳) پنل — روی مسیر مخفی */
+      /* ۳) پنل — روی مسیر مخفی (در وضعیت اضطراری: سایت پوششی) */
       if (isPanel) {
-        const html = await loadUI(env, false);
-        return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', ...secHeaders(s) } });
+        if (panicOn) return cover();
+        return panelHtml();
       }
 
-      /* ۴) اشتراک — روی مسیر مخفی */
+      /* ۴) اشتراک — روی مسیر مخفی (در وضعیت اضطراری: سایت پوششی) */
       if (isSub) {
+        if (panicOn) return cover();
         const id = path.split('/').pop();
         const newUrl = new URL(url);
         newUrl.pathname = '/' + s.sub.path + '/' + (id || '');
@@ -4050,16 +4175,21 @@ export default {
       }
 
       /* ۵) صفحه‌ی کاربر (اختیاری، مسیر مستقیم) */
-      if (path.startsWith('/status/')) return subHandler(request, env, url, cf, true);
-      if (path.startsWith('/' + s.sub.path + '/')) return subHandler(request, env, url, cf, false);
+      if (path.startsWith('/status/')) return panicOn ? cover() : subHandler(request, env, url, cf, true);
+      if (path.startsWith('/' + s.sub.path + '/')) return panicOn ? cover() : subHandler(request, env, url, cf, false);
 
-      /* ۶) تست سلامت مسیر */
-      if (url.searchParams.get('test') === '1') {
+      /* ۶) ریشه — با استتارِ خاموش پنل، وگرنه سایت پوششی
+         (وضعیت اضطراری همیشه سایت پوششی را نشان می‌دهد) */
+      if (path === '/') return (!panicOn && !disguiseOn) ? panelHtml() : cover();
+
+      /* ۷) تست سلامت مسیر — فقط وقتی استتار خاموش است؛ وگرنه هر رباتی با
+         یک ?test=1 می‌توانست بفهمد این دامنه یک تونل است */
+      if (!disguiseOn && url.searchParams.get('test') === '1') {
         return txt('TUNNEL_OK • host=' + url.hostname + '\nمسیر تونل فعال است.', { 'x-tunnel': 'ok' });
       }
 
-      /* ۷) همه‌ی مسیرهای دیگر = سایت پوششی (استتار مثل نهان) */
-      return decoyPage(s, url.searchParams.get('refresh') === '1');
+      /* ۸) همه‌ی مسیرهای دیگر = سایت پوششی (استتار مثل نهان) */
+      return cover();
     } catch (e) {
       return json({ error: String((e && e.message) || e) }, 500);
     } finally {

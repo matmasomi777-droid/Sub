@@ -462,11 +462,14 @@
       ] },
       { t: 'مسیر ورود و سایت پوششی', icon: 'fa-mask', d: 'پنل روی مسیر مخفی؛ ریشه‌ی دامنه یک سایت واقعی نشان می‌دهد', two: 1, f: [
         { p: 'auth.path', l: 'مسیر ورود پنل', t: 'text', mono: 1, h: 'پنل روی /این‌مسیر سرو می‌شود. ریشه (/) سایت پوششی واقعی نشان می‌دهد' },
-        { p: 'auth.disguise', l: 'Disguise mode', t: 'sw', h: 'خاموش = ریشه هم پنل را نشان می‌دهد' },
-        { p: 'auth.maintenanceHost', l: 'سایت پوششی واقعی', t: 'sel', o: ['nginx', 'wiki', 'wp', 'cloudflare', 'maintenance'], lbls: { nginx: 'nginx.org (سایت رسمی nginx)', wiki: 'ویکی‌پدیا — مقاله‌ی Web server', wp: 'wordpress.org', cloudflare: 'صفحه‌ی خطای کلاودفلر', maintenance: 'example.com' } },
-        { p: 'auth.decoyUrl', l: 'آدرس سایت پوششی دلخواه', t: 'text', mono: 1, h: 'خالی = یکی از سایت‌های بالا. هر آدرس واقعی دیگری هم می‌شود' },
+        { p: 'auth.disguise', l: 'Disguise mode', t: 'sw', h: 'روشن = ریشه و هر مسیر ناشناخته سایت پوششی را نشان می‌دهد. خاموش = ریشه هم پنل را نشان می‌دهد' },
+        /* ⚠️ گزینه‌ها باید دقیقاً با کلیدهای DECOY_SITES/DECOY_PAGES در ورکر یکی باشند؛
+           قبلاً wiki/wp/maintenance اینجا بودند ولی در ورکر وجود نداشتند، برای همین
+           انتخابِ کاربر بی‌اثر می‌شد و همه چیز به nginx برمی‌گشت. */
+        { p: 'auth.maintenanceHost', l: 'سایت پوششی واقعی', t: 'sel', o: ['nginx', 'ubuntu', 'docker', 'cloudflare', 'python', 'node'], lbls: { nginx: 'nginx.org — صفحه‌ی خوش‌آمدگویی', ubuntu: 'Ubuntu Server — مستندات', docker: 'Docker Docs — مستندات', cloudflare: 'Cloudflare Workers — مستندات', python: 'Python Docs — مستندات', node: 'Node.js Docs — مستندات' } },
+        { p: 'auth.decoyUrl', l: 'آدرس سایت پوششی دلخواه', t: 'text', mono: 1, h: 'خالی = یکی از سایت‌های بالا. هر آدرس واقعی دیگری هم می‌شود (واکشیِ زنده؛ اگر در دسترس نباشد صفحه‌ی داخلی جایگزین می‌شود)' },
         { p: 'auth.pathRotate', l: 'چرخش خودکار مسیر', t: 'sw' },
-        { p: 'auth.panic', l: 'Panic mode', t: 'sw', bad: 1 },
+        { p: 'auth.panic', l: 'Panic mode', t: 'sw', bad: 1, h: 'پنل، اشتراک و صفحه‌ی کاربر هم پشتِ سایت پوششی پنهان می‌شوند. /health و /api باز می‌مانند تا بتوانید آن را دوباره خاموش کنید' },
         { p: 'sec.killSwitch', l: 'Kill Switch', t: 'sw', bad: 1 },
         { p: 'sec.ipConnLimit', l: 'سقف IP همزمان هر کاربر (پیش‌فرض سراسری)', t: 'num', h: '۰ = نامحدود • بیشینه‌ی تعداد IPهایی که همزمان می‌توانند با یک حساب وصل شوند (مدل Nova-Proxy). مقدار هر کاربر بر این اولویت دارد' },
         { p: 'sec.speedTestUrl', l: 'نشانی فایل تست ترافیک', t: 'text', h: 'پیش‌فرض: speed.cloudflare.com/__down • باید یک نشانی «خارجی» باشد (ورکر نمی‌تواند خودش را صدا بزند)' },
@@ -853,6 +856,12 @@
       '<div class="acts"><button class="btn sm" data-act="domain-check">' + icon('fa-stethoscope') + ' بررسی سلامت</button></div></header>' +
       '<div class="bd"><div id="domainOut"><div class="empty">برای بررسی دامنه دکمه را بزنید</div></div></div></div></div>';
   }
+  /* برچسبِ خوانا برای هر کلیدِ سایت پوششی — باید با DECOY_SITES در ورکر یکی باشد */
+  const DECOY_LABEL = {
+    nginx: 'nginx.org', ubuntu: 'ubuntu.com/server/docs', docker: 'docs.docker.com',
+    cloudflare: 'developers.cloudflare.com/workers', python: 'docs.python.org/3',
+    node: 'nodejs.org/docs/latest/api',
+  };
   function secExtra() {
     const s = S.d.settings, p = s.auth.path;
     return '<div class="grid g2">' +
@@ -869,8 +878,9 @@
       '<div class="card"><header><span class="ic warn">' + icon('fa-mask') + '</span><div><h3>مسیر ورود و سایت پوششی واقعی</h3><p>ریشه‌ی دامنه یک سایت زنده‌ی واقعی را کامل نشان می‌دهد</p></div>' +
       '<div class="acts"><button class="btn sm s" data-act="decoy-test">' + icon('fa-vial') + ' تست سایت پوششی</button></div></header><div class="bd">' +
       '<div class="kv"><span>' + icon('fa-lock') + ' آدرس پنل</span><b class="mono">' + esc(location.origin + '/' + p) + '</b></div>' +
-      '<div class="kv"><span>Disguise</span><b>' + (s.auth.disguise ? 'فعال — ریشه سایت پوششی است' : 'خاموش — ریشه هم پنل است') + '</b></div>' +
-      '<div class="kv"><span>سایت پوششی</span><b class="mono">' + esc(s.auth.decoyUrl || s.auth.maintenanceHost) + '</b></div>' +
+      '<div class="kv"><span>Disguise</span><b>' + (s.auth.disguise !== false ? 'فعال — ریشه سایت پوششی است' : 'خاموش — ریشه هم پنل است') + '</b></div>' +
+      '<div class="kv"><span>سایت پوششی</span><b class="mono">' + esc(s.auth.decoyUrl || (DECOY_LABEL[s.auth.maintenanceHost] || s.auth.maintenanceHost)) + '</b></div>' +
+      (s.auth.panic ? '<div class="kv"><span>Panic</span><b style="color:var(--bad)">فعال — پنل و اشتراک پنهان‌اند؛ فقط /health و /api پاسخ می‌دهند</b></div>' : '') +
       '<div class="kv"><span>' + icon('fa-users') + ' صفحه‌ی کاربر</span><b class="mono">/' + esc(s.sub.path) + '/&lt;uuid&gt;</b></div>' +
       '<div class="kv"><span>CSP / XFO / nosniff</span><b>' + (s.sec.csp ? 'فعال' : 'خاموش') + '</b></div>' +
       '<div id="decoyOut" style="margin-top:10px"></div>' +
@@ -997,6 +1007,12 @@
         /* آدرس دلخواه */
         '<div style="margin-top:10px">' +
         field({ p: 'auth.decoyUrl', l: 'یا آدرس دلخواه', t: 'text', mono: 1, h: 'خالی = یکی از سایت‌های بالا. هر سایت واقعی دیگری' }, s.auth.decoyUrl) +
+        '</div>' +
+
+        /* کلیدهای استتار — الان واقعاً در مسیریابی اثر دارند */
+        '<div class="um-grid two" style="padding:8px 0 0">' +
+        field({ p: 'auth.disguise', l: 'Disguise mode', t: 'sw', h: 'خاموش = ریشه هم پنل را نشان می‌دهد' }, s.auth.disguise) +
+        field({ p: 'auth.panic', l: 'Panic mode', t: 'sw', bad: 1, h: 'پنل و اشتراک پشتِ سایت پوششی پنهان می‌شوند' }, s.auth.panic) +
         '</div>' +
 
         /* مسیر مخفی */
@@ -1540,6 +1556,8 @@
         const o = $('#decoyOut');
         if (o) o.innerHTML = r.ok
           ? '<div class="kv"><span>' + icon('fa-circle-check') + ' سایت پوششی فعال</span><b class="mono">' + esc(r.target) + '</b></div>' +
+            '<div class="kv"><span>منبع</span><b>' + (r.mode === 'live' ? 'واکشیِ زنده از سایت واقعی' : 'صفحه‌ی داخلی — سایت در دسترس نبود') + '</b></div>' +
+            '<div class="kv"><span>استتار / اضطراری</span><b>' + (r.disguise ? 'فعال' : 'خاموش') + ' / ' + (r.panic ? 'فعال' : 'خاموش') + '</b></div>' +
             '<div class="kv"><span>حجم پاسخ</span><b class="mono">' + fa(r.size) + ' بایت</b></div>' +
             '<div class="kv" style="flex-direction:column;align-items:flex-start"><span>متن صفحه</span><b style="font-weight:400;line-height:1.9">' + esc(r.sample) + '…</b></div>'
           : '<div class="kv"><span>' + icon('fa-circle-xmark') + ' سایت پوششی</span><b class="mono">خطا در دریافت</b></div>';
