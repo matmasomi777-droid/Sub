@@ -21,6 +21,90 @@
     try { localStorage.setItem(TT_KEY, JSON.stringify(r)); } catch (e) {}
   };
 
+  /* ═══ گزارشِ «بررسی سلامت شمارش مصرف» هم تا بررسیِ بعدی باقی می‌ماند ═══
+     همان الگوی تست ترافیک: نتیجه در state و localStorage نگه داشته می‌شود و
+     در هر بار بازسازیِ صفحه دوباره رندر می‌شود؛ نه رفرش خودکار و نه جابه‌جایی
+     بین بخش‌ها آن را پاک نمی‌کند — فقط یک «بررسی سلامت» تازه جایگزینش می‌کند. */
+  const UH = { last: null, ts: 0 };
+  const UH_KEY = 'sg_uh_last';
+  try {
+    const rawUH = localStorage.getItem(UH_KEY);
+    if (rawUH) { const p = JSON.parse(rawUH); if (p && typeof p === 'object') { UH.last = p; UH.ts = p.__ts || 0; } }
+  } catch (e) { UH.last = null; }
+  const uhSave = (r) => {
+    const rec = Object.assign({}, r, { __ts: Date.now() });
+    UH.last = rec; UH.ts = rec.__ts;
+    try { localStorage.setItem(UH_KEY, JSON.stringify(rec)); } catch (e) {}
+  };
+  const uhShow = () => { const o = $('#usageHealthOut'); if (o) o.innerHTML = uhHtml(UH.last); };
+
+  /* ═══════ رندرِ گزارشِ «بررسی سلامت شمارش مصرف» ═══════
+     این تابع در هر بار بازسازیِ صفحه صدا زده می‌شود (نه فقط هنگام کلیک)،
+     برای همین رفرش خودکار و جابه‌جایی بین بخش‌ها گزارش را پاک نمی‌کند. */
+  function uhHtml(r) {
+    if (!r || (!r.checks && !r.users && !r.limiter)) {
+      return '<div class="empty">با یک کلیک، جدول مصرف، جریان ثبت (last_seen)، آخرین نوشتن D1 و مصرف ذخیره‌شده‌ی هر کاربر بررسی می‌شود.</div>';
+    }
+    const lim = r.limiter || 'mem';
+    const limBadge = lim === 'do'
+      ? '<span class="badge ok">' + icon('fa-server') + ' مرجع محدودیت: Durable Object — سراسری و دقیق ✓</span>'
+      : lim === 'd1'
+        ? '<span class="badge ok">' + icon('fa-database') + ' مرجع محدودیت: D1 — سراسری و دقیق ✓</span>'
+        : lim === 'kv'
+          ? '<span class="badge warn">' + icon('fa-database') + ' مرجع محدودیت: KV — مشترک اما تقریبی</span>'
+          : '<span class="badge bad">' + icon('fa-triangle-exclamation') + ' مرجع محدودیت: حافظه — فقط همین isolate؛ بین isolateها تضمین نمی‌شود</span>';
+    const d = r.diag || null;
+    const diagHtml = d
+      ? '<div class="hint" style="margin-bottom:10px">بایندینگ‌ها: D1 ' + (d.bound && d.bound.DB ? '✓' : '✗') +
+        ' • KV ' + (d.bound && d.bound.KV ? '✓' : '✗') +
+        ' • Durable Object ' + (d.bound && d.bound.LIMITER ? '✓' : '✗') +
+        ' • آی‌پیِ شما: <span class="mono">' + esc(d.callerIp || '—') + '</span>' +
+        ' • سقف سراسری: <span class="mono">' + fa(d.defaultLimit || 0) + '</span>' +
+        ' • پذیرش/رد: <span class="mono">' + fa(d.acquires || 0) + '/' + fa(d.denies || 0) + '</span>' +
+        (d.connErr ? '<br>آخرین خطای محدودیت: <span class="mono">' + esc(String(d.connErr)) + '</span>' : '') +
+        '</div>'
+      : '';
+    const stamp = r.__ts ? new Date(r.__ts).toLocaleString('fa-IR', { hour12: false }) : '';
+    const head = '<div class="hint" style="margin-bottom:8px">آخرین بررسی: <b>' + (stamp ? fa(stamp) : '—') + '</b>' +
+      ' • <span class="hint">این گزارش تا وقتی دوباره «بررسی سلامت» را نزنید باقی می‌ماند.</span>' +
+      '<button class="btn sm ghost" data-act="usage-health-clear" style="margin-inline-start:8px">' + icon('fa-eraser') + ' پاک‌کردن گزارش</button></div>';
+    return head +
+      '<div style="margin-bottom:10px">' + limBadge + '</div>' +
+      diagHtml +
+      (lim !== 'do' && lim !== 'd1'
+        ? '<div class="hint" style="margin-bottom:10px">هیچ مرجعِ مشترکی بین isolateها ندارید: هر isolate شمارنده‌ی خودش را دارد و محدودیت عملاً اعمال نمی‌شود. در Settings → Variables یک پایگاه D1 با نام <span class="mono">DB</span> ببندید (در داشبورد کلاودفلر هم می‌توان ساخت).</div>'
+        : '') +
+      (r.checks || []).map((c) => '<div class="kv"><span>' + icon(c.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' ' + esc(c.name) + '</span><b class="mono" style="color:' + (c.ok ? 'var(--ok)' : 'var(--bad)') + '">' + esc(c.note || '') + '</b></div>').join('') +
+      /* ═══ اتصال‌های زنده — اگر چیزی گیر کرده باشد اینجا دیده می‌شود ═══ */
+      '<div class="hint" style="margin-top:12px"><b>اتصال‌های زنده (مبنای محدودیت آی‌پی):</b> ' +
+      esc(String(((r.diag || {}).ttlSec || 60))) + ' ثانیه بدون ضربان = آزاد شدن خودکار • ضربان هر ' +
+      esc(String(((r.diag || {}).hbSec || 20))) + ' ثانیه • بعد از ' +
+      esc(String(((r.diag || {}).idleAfterSec || 30))) + ' ثانیه بی‌ضربانی، آی‌پیِ جدید فوراً جای آن را می‌گیرد (' +
+      esc(fa(((r.diag || {}).evicts || 0))) + ' مورد تاکنون) • مرجع: ' +
+      esc({ do: 'شیءِ ماندگار (LIMITER)', d1: 'جدول conns در D1', kv: 'KV', mem: 'حافظهٔ این isolate' }[(r.diag || {}).liveSource] || ((r.diag || {}).liveSource || '—')) +
+      (((r.live || {}).oldestSec) ? ' • قدیمی‌ترین ردیف: ' + esc(fa((r.live || {}).oldestSec)) + ' ثانیه' : '') + '</div>' +
+      (((r.live || {}).stale)
+        ? '<div class="hint" style="margin-top:6px;color:var(--bad)">' + esc(fa((r.live || {}).stale)) + ' ردیف زمانِ معتبر ندارد و در اولین پاک‌سازی حذف می‌شود.</div>'
+        : '') +
+      ((r.liveRows && r.liveRows.length)
+        ? '<div style="margin-top:8px;max-height:220px;overflow:auto" class="tbl-wrap"><table>' +
+          '<thead><tr><th>کاربر</th><th>آی‌پی</th><th>سن</th><th>وضعیت</th></tr></thead><tbody>' +
+          r.liveRows.map((x) => '<tr><td class="cell-main">' + esc(x.name || x.uuid) + '</td><td class="mono">' + esc(x.ip) + '</td>' +
+            '<td class="mono">' + (x.stale || x.ageSec === null ? 'نامعتبر' : fa(x.ageSec) + ' ثانیه') + '</td>' +
+            '<td><span class="badge ' + (x.stale ? 'bad' : (x.idle ? 'warn' : 'ok')) + '">' +
+            (x.stale ? 'خراب — پاک می‌شود' : (x.idle ? 'بی‌ضربان — با اولین آی‌پیِ جدید جایگزین می‌شود' : 'زنده')) +
+            '</span></td></tr>').join('') +
+          '</tbody></table></div>'
+        : '<div class="hint" style="margin-top:6px">هیچ اتصالِ زنده‌ای ثبت نشده — هیچ آی‌پی‌ای قفل نیست.</div>') +
+      '<div class="hint" style="margin-top:12px"><b>مصرف ذخیره‌شده‌ی هر کاربر:</b></div>' +
+      '<div style="margin-top:8px;max-height:260px;overflow:auto" class="tbl-wrap"><table>' +
+      '<thead><tr><th>کاربر</th><th>آپلود</th><th>دانلود</th><th>درخواست</th><th>آخرین ثبت</th><th>وضعیت</th></tr></thead><tbody>' +
+      (r.users || []).map((x) => '<tr><td class="cell-main">' + esc(x.name) + '</td><td class="mono">' + bytes(x.up || 0) + '</td><td class="mono">' + bytes(x.down || 0) + '</td><td class="mono">' + fa(x.reqs || 0) + '</td><td class="hint">' + ago(x.lastSeen) + '</td>' +
+        '<td><span class="badge ' + (x.recording ? 'ok' : 'warn') + '">' + (x.recording ? 'در حال ثبت ✓' : 'مصرفی ثبت نشده') + '</span></td></tr>').join('') +
+      '</tbody></table></div>' +
+      '<div class="hint" style="margin-top:10px">اگر «در حال ثبت ✓» می‌بینید یعنی افزایش مصرف برای آن کاربر جریان دارد. «مصرفی ثبت نشده» فقط برای کاربرانی که وصل نبوده‌اند طبیعی است.</div>';
+  }
+
   /* ─────────── ابزارها ─────────── */
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fa = (v) => String(v).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
@@ -249,7 +333,7 @@
   const NAV = [
     { g: 'اصلی', items: [['dash', 'نمای کلی', 'fa-gauge-high'], ['users', 'کاربران', 'fa-users']] },
     { g: 'شبکه', items: [['monitor', 'آمار مصرف', 'fa-chart-line']] },
-    { g: 'پیکربندی', items: [['config', 'پیکربندی', 'fa-gear'], ['sub', 'اشتراک', 'fa-link']] },
+    { g: 'پیکربندی', items: [['config', 'پیکربندی', 'fa-gear'], ['sub', 'اشتراک', 'fa-link'], ['security', 'امنیت', 'fa-shield-halved']] },
     { g: 'سیستم', items: [['logs', 'لاگ', 'fa-list-check'], ['settings', 'پشتیبان', 'fa-database']] },
   ];
 
@@ -667,7 +751,8 @@
       '<div class="acts"><button class="btn sm p" data-act="usage-health">' + icon('fa-stethoscope') + ' بررسی سلامت</button>' +
       '<button class="btn sm d" data-act="conn-reset">' + icon('fa-trash-can') + ' آزادسازی اتصال‌ها</button></div></header>' +
       '<div class="bd">' +
-      '<div id="usageHealthOut"><div class="empty">با یک کلیک، جدول مصرف، جریان ثبت (last_seen)، آخرین نوشتن D1 و مصرف ذخیره‌شده‌ی هر کاربر بررسی می‌شود.</div></div>' +
+      /* گزارشِ آخرین بررسی در هر بار رندر نوشته می‌شود — با رفرش پاک نمی‌شود */
+      '<div id="usageHealthOut">' + uhHtml(UH.last) + '</div>' +
       /* ═══ تست واقعی ترافیک — درخواست از مرورگرِ کاربر، پاسخ از سرور ═══ */
       '<div style="border-top:1px solid var(--bs);margin:14px 0 12px"></div>' +
       '<div class="hint" style="margin-bottom:8px"><b>تست واقعی ترافیک</b> — مرورگرِ شما یک فایل با اندازه‌ی معلوم را از سرور درخواست می‌کند؛ سرور با کانفیگِ همان کاربر پاسخ می‌دهد و حجمِ دانلود برای او ثبت می‌شود. سپس افزایش مصرف با اندازه‌ی فایل مقایسه می‌شود (چند کیلوبایت اختلاف طبیعی است).</div>' +
@@ -796,6 +881,35 @@
       '<button class="btn" data-act="open" data-v="' + esc(location.origin + '/?refresh=1') + '">' + icon('fa-eye') + ' پیش‌نمایش سایت پوششی</button>' +
       '<button class="btn ghost" data-act="copy" data-v="' + esc(location.origin + '/' + p) + '">' + icon('fa-copy') + ' کپی آدرس پنل</button></div>' +
       '<div class="hint" style="margin-top:10px">هر مسیر ناشناخته هم همان سایت پوششی را نشان می‌دهد. پس از تغییر مسیر ورود، صفحه را با آدرس جدید باز کنید.</div></div></div></div>';
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+     نمای امنیت — محدودیت اتصال (فقط آی‌پی) + تنظیمات امنیتی
+     گروه‌های اسکیمای security (شامل sec.ipConnLimit و sec.connTtlSec)
+     اینجا بالاخره رندر می‌شوند؛ قبلاً هیچ مسیری به آن‌ها نداشتیم. */
+  function securityView() {
+    const s = S.d.settings;
+    const store = S.d.storage || 'mem';
+    const storeBadge =
+      store === 'd1' ? '<span class="badge ok">' + icon('fa-database') + ' مرجع محدودیت: D1 — سراسری و دقیق ✓</span>'
+        : store === 'kv' ? '<span class="badge warn">' + icon('fa-database') + ' مرجع محدودیت: KV — مشترک اما تقریبی</span>'
+          : store === 'do' ? '<span class="badge ok">' + icon('fa-server') + ' مرجع محدودیت: Durable Object — سراسری و دقیق ✓</span>'
+            : '<span class="badge bad">' + icon('fa-triangle-exclamation') + ' مرجع محدودیت: حافظه — فقط همین isolate؛ بین isolateها تضمین نمی‌شود</span>';
+    const ttl = Number(s.sec.connTtlSec) || 45;
+    const hb = Math.max(5, Math.round(ttl / 3));
+    const idle = Math.round(ttl / 2);
+    return '<div class="page-head"><div><h1>امنیت و محدودیت اتصال</h1><p>سقف آی‌پی همزمان، زمان آزاد شدن آی‌پی و تنظیمات امنیتی</p></div></div>' +
+      '<div class="card" style="margin-bottom:12px"><header><span class="ic">' + icon('fa-shield-halved') + '</span>' +
+      '<div><h3>محدودیت اتصال (فقط بر اساس آی‌پی)</h3><p>مدل Nova-Proxy — سقف برابر تعداد آی‌پی‌های همزمانِ هر کاربر</p></div>' +
+      '<div class="acts">' + saveBtn('save-security') + '</div></header><div class="bd">' +
+      '<div style="margin-bottom:10px">' + storeBadge + '</div>' +
+      '<div class="hint" style="margin-bottom:12px">هم‌اکنون: زمان آزاد شدنِ آی‌پی <b>' + fa(ttl) + '</b> ثانیه • ضربان هر <b>' + fa(hb) + '</b> ثانیه • ' +
+      'بعد از <b>' + fa(idle) + '</b> ثانیه بی‌ضربانی، آی‌پیِ جدید فوراً جای آن را می‌گیرد • سقف سراسری: <b>' + fa(Number(s.sec.ipConnLimit) || 0) + '</b> (۰ = نامحدود)</div>' +
+      SCHEMA.security.map((g) => acc(g.t, g.icon || 'fa-gear', g.f, s, g.two ? 'two' : 'two')).join('') +
+      '<div class="hint" style="margin-top:12px">زمانِ آزادسازی بین ۱۵ تا ۶۰۰ ثانیه است. کمتر یعنی عوض کردن اینترنت زودتر آزاد می‌شود، ' +
+      'اما اگر خیلی کم باشد ممکن است یک اتصالِ واقعاً زنده هنگام جابه‌جاییِ isolate اشتباهاً آزاد شود. پیشنهاد: ۳۰ تا ۶۰ ثانیه.</div>' +
+      '</div></div>' +
+      secExtra();
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -966,7 +1080,7 @@
     network: () => configView(),
     telegram: () => configView(),
     cloud: () => configView(),
-    security: () => configView(),
+    security: securityView,
   };
   function protoExtra() {
     const s = S.d.settings;
@@ -1346,73 +1460,32 @@
         busy(t, 'بررسی');
         const r = await api('POST', '/api/action', { act: 'usage-health' });
         free(t);
-        const o = $('#usageHealthOut');
-        /* مرجعِ شمارشِ محدودیت اتصال — باید صریح باشد تا عدد گمراه‌کننده نباشد */
-        const lim = r.limiter || 'mem';
-        const limBadge = lim === 'do'
-          ? '<span class="badge ok">' + icon('fa-server') + ' مرجع محدودیت: Durable Object — سراسری و دقیق ✓</span>'
-          : lim === 'd1'
-            ? '<span class="badge ok">' + icon('fa-database') + ' مرجع محدودیت: D1 — سراسری و دقیق ✓</span>'
-            : lim === 'kv'
-              ? '<span class="badge warn">' + icon('fa-database') + ' مرجع محدودیت: KV — مشترک اما تقریبی</span>'
-              : '<span class="badge bad">' + icon('fa-triangle-exclamation') + ' مرجع محدودیت: حافظه — فقط همین isolate؛ بین isolateها تضمین نمی‌شود</span>';
-        const d = r.diag || null;
-        const diagHtml = d
-          ? '<div class="hint" style="margin-bottom:10px" >بایندینگ‌ها: D1 ' + (d.bound && d.bound.DB ? '✓' : '✗') +
-            ' • KV ' + (d.bound && d.bound.KV ? '✓' : '✗') +
-            ' • Durable Object ' + (d.bound && d.bound.LIMITER ? '✓' : '✗') +
-            ' • آی‌پیِ شما: <span class="mono">' + esc(d.callerIp || '—') + '</span>' +
-            ' • سقف سراسری: <span class="mono">' + fa(d.defaultLimit || 0) + '</span>' +
-            ' • پذیرش/رد: <span class="mono">' + fa(d.acquires || 0) + '/' + fa(d.denies || 0) + '</span>' +
-            (d.connErr ? '<br>آخرین خطای محدودیت: <span class="mono">' + esc(String(d.connErr)) + '</span>' : '') +
-            '</div>'
-          : '';
-        if (o) o.innerHTML =
-          '<div style="margin-bottom:10px">' + limBadge + '</div>' +
-          diagHtml +
-          (lim !== 'do' && lim !== 'd1'
-            ? '<div class="hint" style="margin-bottom:10px">هیچ مرجعِ مشترکی بین isolateها ندارید: هر isolate شمارنده‌ی خودش را دارد و محدودیت عملاً اعمال نمی‌شود. در Settings → Variables یک پایگاه D1 با نام <span class="mono">DB</span> ببندید (در داشبورد کلاودفلر هم می‌توان ساخت).</div>'
-            : '') +
-          (r.checks || []).map((c) => '<div class="kv"><span>' + icon(c.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' ' + esc(c.name) + '</span><b class="mono" style="color:' + (c.ok ? 'var(--ok)' : 'var(--bad)') + '">' + esc(c.note || '') + '</b></div>').join('') +
-          /* ═══ اتصال‌های زنده — اگر چیزی گیر کرده باشد اینجا دیده می‌شود ═══ */
-          '<div class="hint" style="margin-top:12px"><b>اتصال‌های زنده (مبنای محدودیت آی‌پی):</b> ' +
-          esc(String(((r.diag || {}).ttlSec || 60))) + ' ثانیه بدون ضربان = آزاد شدن خودکار • ضربان هر ' +
-          esc(String(((r.diag || {}).hbSec || 20))) + ' ثانیه • بعد از ' +
-          esc(String(((r.diag || {}).idleAfterSec || 30))) + ' ثانیه بی‌ضربانی، آی‌پیِ جدید فوراً جای آن را می‌گیرد (' +
-          esc(fa(((r.diag || {}).evicts || 0))) + ' مورد تاکنون) • مرجع: ' +
-          esc({ do: 'شیءِ ماندگار (LIMITER)', d1: 'جدول conns در D1', kv: 'KV', mem: 'حافظهٔ این isolate' }[(r.diag || {}).liveSource] || ((r.diag || {}).liveSource || '—')) +
-          (((r.live || {}).oldestSec) ? ' • قدیمی‌ترین ردیف: ' + esc(fa((r.live || {}).oldestSec)) + ' ثانیه' : '') + '</div>' +
-          (((r.live || {}).stale)
-            ? '<div class="hint" style="margin-top:6px;color:var(--bad)">' + esc(fa((r.live || {}).stale)) + ' ردیف زمانِ معتبر ندارد و در اولین پاک‌سازی حذف می‌شود.</div>'
-            : '') +
-          ((r.liveRows && r.liveRows.length)
-            ? '<div style="margin-top:8px;max-height:220px;overflow:auto" class="tbl-wrap"><table>' +
-              '<thead><tr><th>کاربر</th><th>آی‌پی</th><th>سن</th><th>وضعیت</th></tr></thead><tbody>' +
-              r.liveRows.map((x) => '<tr><td class="cell-main">' + esc(x.name || x.uuid) + '</td><td class="mono">' + esc(x.ip) + '</td>' +
-                '<td class="mono">' + (x.stale || x.ageSec === null ? 'نامعتبر' : fa(x.ageSec) + ' ثانیه') + '</td>' +
-                '<td><span class="badge ' + (x.stale ? 'bad' : (x.idle ? 'warn' : 'ok')) + '">' +
-                (x.stale ? 'خراب — پاک می‌شود' : (x.idle ? 'بی‌ضربان — با اولین آی‌پیِ جدید جایگزین می‌شود' : 'زنده')) +
-                '</span></td></tr>').join('') +
-              '</tbody></table></div>'
-            : '<div class="hint" style="margin-top:6px">هیچ اتصالِ زنده‌ای ثبت نشده — هیچ آی‌پی‌ای قفل نیست.</div>') +
-          '<div class="hint" style="margin-top:12px"><b>مصرف ذخیره‌شده‌ی هر کاربر:</b></div>' +
-          '<div style="margin-top:8px;max-height:260px;overflow:auto" class="tbl-wrap"><table>' +
-          '<thead><tr><th>کاربر</th><th>آپلود</th><th>دانلود</th><th>درخواست</th><th>آخرین ثبت</th><th>وضعیت</th></tr></thead><tbody>' +
-          (r.users || []).map((x) => '<tr><td class="cell-main">' + esc(x.name) + '</td><td class="mono">' + bytes(x.up || 0) + '</td><td class="mono">' + bytes(x.down || 0) + '</td><td class="mono">' + fa(x.reqs || 0) + '</td><td class="hint">' + ago(x.lastSeen) + '</td>' +
-            '<td><span class="badge ' + (x.recording ? 'ok' : 'warn') + '">' + (x.recording ? 'در حال ثبت ✓' : 'مصرفی ثبت نشده') + '</span></td></tr>').join('') +
-          '</tbody></table></div>' +
-          '<div class="hint" style="margin-top:10px">اگر «در حال ثبت ✓» می‌بینید یعنی افزایش مصرف برای آن کاربر جریان دارد. «مصرفی ثبت نشده» فقط برای کاربرانی که وصل نبوده‌اند طبیعی است.</div>';
+        /* نتیجه ذخیره و سپس رندر می‌شود — uhHtml از state/localStorage می‌خواند
+           پس با هر بار بازسازیِ صفحه همین گزارش دوباره نمایش داده می‌شود. */
+        uhSave(r);
+        uhShow();
       }
       else if (a === 'conn-reset') {
         /* ═══ آزادسازیِ دستی ═══
            اگر ردیفی در جدولِ اتصال‌های زنده جامانده باشد، یک آی‌پی برای همیشه
            قفل می‌ماند. این دکمه جدول را خالی می‌کند تا فوراً بتوان از آی‌پیِ
-           جدید وصل شد — بدون دستکاریِ پایگاه‌داده. */
+           جدید وصل شد — بدون دستکاریِ پایگاه‌داده.
+           گزارشِ قبلی پاک نمی‌شود: فقط یک بررسیِ تازه جای آن را می‌گیرد،
+           برای همین بلافاصله «بررسی سلامت» دوباره اجرا و ذخیره می‌شود. */
         busy(t, 'آزادسازی…');
         const r = await api('POST', '/api/action', { act: 'conn-reset' });
         free(t);
         toast(r.ok ? (r.msg || 'اتصال‌ها آزاد شد') : (r.error || 'انجام نشد'), r.ok ? 'ok' : 'err');
-        if (r.ok) { const o = $('#usageHealthOut'); if (o) o.innerHTML = '<div class="empty">' + esc(r.msg || 'اتصال‌ها آزاد شد') + ' — دوباره «بررسی سلامت» را بزنید.</div>'; }
+        try {
+          const r2 = await api('POST', '/api/action', { act: 'usage-health' });
+          if (r2 && (r2.checks || r2.users)) { uhSave(r2); }
+        } catch (e) {}
+        uhShow();
+      }
+      else if (a === 'usage-health-clear') {
+        UH.last = null; UH.ts = 0;
+        try { localStorage.removeItem(UH_KEY); } catch (e) {}
+        uhShow();
       }
       else if (a === 'traffic-test') {
         /* ═══ تست واقعی ترافیک — درخواست از مرورگرِ کسی که دکمه را زده ═══
