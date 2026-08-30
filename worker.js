@@ -2373,6 +2373,9 @@ async function statusPage(env, name, url) {
 async function apiHandler(req, env, url, ctx) {
   const st = seed(await load(env));
   const s = st.settings, route = url.pathname.replace(/^\/api\/?/, ''), m = req.method.toUpperCase();
+  /* مدتِ زنده‌ماندنِ اتصال از تنظیماتِ پنل — قبل از هر عملیاتِ محدودیت/سلامت،
+     تا isolateهایی که هیچ تونلی نساخته‌اند هم مقدارِ درست را ببینند. */
+  try { connApplySettings(s && s.sec); } catch (e) {}
 
   if (route === 'login' && m === 'POST') {
     const ip = ipOf(req);
