@@ -38,6 +38,71 @@
   };
   const uhShow = () => { const o = $('#usageHealthOut'); if (o) o.innerHTML = uhHtml(UH.last); };
 
+  /* ═══════ بخش «اتصال‌های زنده» ═══════
+     داده در state نگه داشته می‌شود، نه در DOM: به‌روزرسانیِ دوره‌ای و
+     جابه‌جایی بین بخش‌ها جدول را خالی نمی‌کند — فقط یک بارخوانیِ موفق
+     جای داده‌ی قبلی را می‌گیرد (خطا یا قطعیِ لحظه‌ای چیزی را پاک نمی‌کند). */
+  const CN = { data: null, bans: null, q: '', ts: 0, err: '' };
+  const cnShow = () => {
+    const o = $('#connOut'); if (o) o.innerHTML = cnHtml(CN.data);
+    const b = $('#connBansOut'); if (b) b.innerHTML = cnBansHtml(CN.bans);
+    /* خلاصه و نشانگرِ وضعیت هم همان لحظه به‌روز می‌شوند — وگرنه عددهای
+       بالای صفحه روی همان صفرِ رندرِ اول می‌ماندند */
+    const st = $('#connStats'); if (st) st.innerHTML = cnStatsHtml();
+    const bg = $('#connBadge'); if (bg) bg.innerHTML = cnBadgeHtml();
+  };
+
+  /* ═══════ رادار — نتیجه‌ی اسکن تا اسکنِ بعدی باقی می‌ماند ═══════
+     دقیقاً همان الگوی گزارشِ «بررسی سلامت» و «تست ترافیک»: نتیجه در state و
+     localStorage نگه داشته می‌شود و در هر بار بازسازیِ صفحه دوباره رندر
+     می‌شود؛ نه رفرش و نه جابه‌جایی بین بخش‌ها و نه عوض کردنِ کاربر آن را
+     پاک نمی‌کند — فقط یک اسکنِ تازه (یا دکمه‌ی پاک‌کردن) جایگزینش می‌کند.
+     چون اسکن برای یک کانفیگ انجام می‌شود، گزارش به تفکیکِ uuid نگه داشته
+     می‌شود تا جابه‌جایی بین کانفیگ‌ها گزارشِ دیگری را نپوشاند. */
+  const RD = { last: {}, cfg: null, opt: null, running: false, err: '', uuid: '' };
+  const RD_KEY = 'sg_radar_last';
+  try {
+    const rawRD = localStorage.getItem(RD_KEY);
+    if (rawRD) { const p = JSON.parse(rawRD); if (p && typeof p === 'object') RD.last = p; }
+  } catch (e) { RD.last = {}; }
+  const radarSave = (uuid, r) => {
+    const rec = Object.assign({}, r, { __ts: Date.now(), __uuid: uuid });
+    RD.last[uuid] = rec; RD.err = '';
+    try { localStorage.setItem(RD_KEY, JSON.stringify(RD.last)); } catch (e) {}
+    return rec;
+  };
+  const radarLast = (uuid) => (uuid && RD.last[uuid]) || null;
+  const radarShow = () => { const o = $('#radarOut'); if (o) o.innerHTML = radarHtml(radarLast(RD.uuid)); };
+
+  /* ═══════════════════════════════════════════════════════════════
+     مرحله‌ی ۴ — وضعیتِ بخش‌های تازه
+     هر سه از همان الگویِ «داده در state» پیروی می‌کنند: نتیجه در حافظه‌ی
+     پنل نگه داشته می‌شود و در هر بار بازسازیِ صفحه دوباره رندر می‌شود،
+     پس رفرش و جابه‌جایی بین بخش‌ها آن را پاک نمی‌کند — فقط یک بارخوانیِ
+     تازه (یا دکمه‌ی پاک‌کردن) جای آن را می‌گیرد.
+     ═══════════════════════════════════════════════════════════════ */
+  /* سرورهای خروجی VLESS — پاسخِ GET /api/exits؛ form هم فرمِ افزودن/ویرایش است */
+  const EX = { data: null, err: '', testing: '', test: null, form: null };
+  const exShow = () => { const o = $('#exitsOut'); if (o) o.innerHTML = exitsHtml(EX.data); };
+  /* تغییر رمز عبور —locked یعنی رمز از MASTER_KEY بایند شده و فیلدها بسته می‌شوند */
+  const PW = { msg: '', kind: '', locked: false };
+  const pwShow = () => {
+    const o = $('#pwOut'); if (o) o.innerHTML = pwOutHtml();
+    ['#pwCur', '#pwNew', '#pwNew2'].forEach((s) => { const e = $(s); if (e) e.disabled = PW.locked; });
+    const b = $('[data-act="pw-save"]'); if (b) b.disabled = PW.locked;
+  };
+  /* پشتیبان و بازیابی — خروجیِ GET /api/backup و فایلی که رها شده */
+  const BK = { data: null, file: null, err: '', errors: [], mode: 'merge' };
+  const bkShow = () => {
+    const o = $('#bkOut'); if (o) o.innerHTML = bkOutHtml(BK.data);
+    const i = $('#bkInfo'); if (i) i.innerHTML = bkInfoHtml();
+    const e = $('#bkErr'); if (e) e.innerHTML = bkErrHtml();
+  };
+  /* نام‌گذاریِ گروهی — الگو، شروعِ شماره‌گذاری و انتخابِ کانفیگ‌ها بین
+     بازسازی‌ها حفظ می‌شوند (تا ذخیره‌ی تنظیمات پیش‌نمایش را نپراند) */
+  const NM = { pat: '', start: 1, sel: {} };
+  const nmShow = () => { const o = $('#nmPreview'); if (o) o.innerHTML = nmPreviewHtml(); };
+
   /* ═══════ رندرِ گزارشِ «بررسی سلامت شمارش مصرف» ═══════
      این تابع در هر بار بازسازیِ صفحه صدا زده می‌شود (نه فقط هنگام کلیک)،
      برای همین رفرش خودکار و جابه‌جایی بین بخش‌ها گزارش را پاک نمی‌کند. */
@@ -110,6 +175,14 @@
   const n = (v) => (v == null || isNaN(v) ? '—' : fa(Number(v).toLocaleString('en-US')));
   const bytes = (b) => { if (!b || b < 0) return '۰ بایت'; const u = ['بایت', 'کیلوبایت', 'مگابایت', 'گیگابایت', 'ترابایت']; const i = Math.min(4, Math.floor(Math.log(b) / Math.log(1024))); return fa((b / 1024 ** i).toFixed(i ? 1 : 0)) + ' ' + u[i]; };
   const ago = (t) => { if (!t) return '—'; const s = (Date.now() - t) / 1000; if (s < 60) return 'همین حالا'; if (s < 3600) return fa(Math.floor(s / 60)) + ' دقیقه پیش'; if (s < 86400) return fa(Math.floor(s / 3600)) + ' ساعت پیش'; return fa(Math.floor(s / 86400)) + ' روز پیش'; };
+  /* مدتِ اتصال به فارسی — برای ستون‌های «مدت اتصال» و «زمان باقی‌مانده» */
+  const durFa = (sec) => {
+    const s = Math.max(0, Math.round(Number(sec) || 0));
+    if (s < 60) return fa(s) + ' ثانیه';
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+    if (h) return fa(h) + ' ساعت' + (m ? ' و ' + fa(m) + ' دقیقه' : '');
+    return fa(m) + ' دقیقه' + (r ? ' و ' + fa(r) + ' ثانیه' : '');
+  };
   /* ═══════════ آیکون‌های SVG داخلی — بدون هیچ وابستگی به CDN یا فونت ═══════════
      مقاوم‌ترین روش: هر آیکون یک SVG کامل داخل صفحه است.
      نام‌های Font Awesome به معادل SVG نگاشت می‌شوند. */
@@ -231,6 +304,9 @@
       });
       clearTimeout(to);
       const j = await r.json().catch(() => ({ error: 'bad json' }));
+      /* کدِ وضعیت همراهِ پاسخ برمی‌گردد — بخش‌هایی مثل تغییرِ رمز باید بتوانند
+         پاسخِ ۴۰۹ (رمز بایند‌شده به MASTER_KEY) را از یک خطای ساده تشخیص دهند */
+      if (j && typeof j === 'object') j.__status = r.status;
       if (r.status === 401 && S.token) { S.token = ''; sessionStorage.removeItem('sg_t'); S.d = null; render(); }
       return j;
     } catch (e) {
@@ -324,134 +400,371 @@
   /* گروه کلاسیک (فقط برای بخش‌های کوچک) */
   const group = (g, s) => '<div class="card"><header><span class="ic">' + icon(g.icon || 'fa-gear') + '</span><div><h3>' + esc(g.t) + '</h3>' + (g.d ? '<p>' + g.d + '</p>' : '') + '</div></header><div class="bd">' +
     g.f.map((f) => field(f, getP(s, f.p))).join('') + '</div></div>';
-  function collect(root) { const o = {}; if (!root) return o; $$('[data-p]', root).forEach((el) => { const t = el.dataset.t; let v = el.type === 'checkbox' ? el.checked : el.value; if (t === 'num') v = Number(v) || 0; if (t === 'bool') v = !!v; if (t === 'lines') v = String(v).split('\n').map((x) => x.trim()).filter(Boolean); setP(o, el.dataset.p, v); }); return o; }
+  function collect(root) { const o = {}; if (!root) return o; $$('[data-p]', root).forEach((el) => { const t = el.dataset.t; let v = el.type === 'checkbox' ? el.checked : el.value; if (t === 'num') v = Number(v) || 0; if (t === 'bool') v = !!v; if (t === 'lines') v = String(v).split('\n').map((x) => x.trim()).filter(Boolean);
+    /* انتخابگرِ پورت: مقدارِ فیلدِ پنهان «443,2053» است که باید آرایه‌ای از عدد شود */
+    if (t === 'ports') v = String(v).split(/[,\s]+/).map((x) => parseInt(x, 10)).filter((x) => x > 0 && x < 65536);
+    setP(o, el.dataset.p, v); }); return o; }
   const saveBtn = (act, lbl) => '<button class="btn p" data-act="' + act + '">' + icon('fa-floppy-disk') + ' ' + (lbl || 'ذخیره') + '</button>';
+
+  /* ═══════════════════════════════════════════════════════════════
+     مرحله‌ی ۴ — انتخابگرِ پورت (غیرنوشتاری)
+     فقط پورت‌هایی پیشنهاد می‌شوند که کلاودفلر روی لبه پشتیبانی می‌کند.
+     ۴۴۳ و ۸۰ «ضروری»اند: ترافیکِ عادیِ https/httpِ ورکر از همین دو مسیر
+     می‌آید، برای همین همیشه فعال‌اند و غیرفعال‌کردن‌شان بی‌معنی است.
+     ═══════════════════════════════════════════════════════════════ */
+  const PORT_ESSENTIAL = [443, 80];
+  const PORT_RECOMMENDED = [8443, 2053, 2083, 2087, 2096, 8880];
+  const PORT_OPTIONAL = [2052, 2082, 2086, 8080];
+  const PORTS_ALL = PORT_ESSENTIAL.concat(PORT_RECOMMENDED, PORT_OPTIONAL);
+  const PORTS_DEFAULT = PORT_ESSENTIAL.concat(PORT_RECOMMENDED);
+  /* مقدار ممکن است آرایه (تنظیماتِ تازه) یا رشته (تنظیماتِ قدیمی) باشد */
+  const portList = (v) => (Array.isArray(v) ? v : String(v == null ? '' : v).split(/[,\s]+/))
+    .map((x) => parseInt(x, 10)).filter((x) => x > 0 && x < 65536);
+  const portKind = (p) => (PORT_ESSENTIAL.indexOf(p) >= 0 ? 'ضروری' : PORT_RECOMMENDED.indexOf(p) >= 0 ? 'پیشنهادی' : 'انتخابی');
+  const portChip = (p, on) => {
+    const k = portKind(p), lock = k === 'ضروری';
+    const st = on
+      ? (lock ? 'background:var(--ac);border-color:var(--ac);color:#fff' : 'border-color:var(--ac2);background:color-mix(in oklab,var(--ac2) 16%,transparent)')
+      : 'opacity:.45';
+    return '<button type="button" class="chip" data-port="' + p + '"' + (lock ? ' data-lock="1"' : '') +
+      ' title="' + (lock ? 'ضروری — غیرقابل غیرفعال‌کردن' : k) + '" style="' + st + '">' +
+      (lock ? icon('fa-lock') : '') + '<span class="mono">' + fa(p) + '</span>' +
+      '<span style="font-size:9px;opacity:.85">' + k + '</span></button>';
+  };
+  const portSumHtml = (cur) => '<b>' + fa(cur.length) + ' پورت فعال:</b> ' +
+    (cur.length ? cur.slice().sort((a, b) => a - b).map(fa).join(' • ') : 'هیچ — دست‌کم یکی را انتخاب کنید');
+  /* بازنویسیِ چیپ‌ها + فیلدِ پنهان + خلاصه — در هر تغییر یک‌جا صدا زده می‌شود */
+  const portSet = (list) => {
+    const cur = portList(list);
+    const c = $('#portChips'); if (c) c.innerHTML = PORTS_ALL.map((p) => portChip(p, cur.indexOf(p) >= 0)).join('');
+    const h = $('#portsVal'); if (h) h.value = cur.join(',');
+    const s = $('#portSum'); if (s) s.innerHTML = portSumHtml(cur);
+    return cur;
+  };
+
+  /* ═══════════════════════════════════════════════════════════════
+     مرحله‌ی ۴ — نام‌گذاریِ کانفیگ‌ها
+     الگو کاملاً دلخواه است: نه محدودیتِ الگو دارد و نه سقفِ طول.
+     ═══════════════════════════════════════════════════════════════ */
+  const NAME_TOKENS = [
+    { k: 'prefix', l: 'پیشوند' }, { k: 'user', l: 'کاربر' }, { k: 'proto', l: 'پروتکل' },
+    { k: 'port', l: 'پورت' }, { k: 'ip', l: 'آی‌پی نود' }, { k: 'node', l: 'نام نود (شهر)' },
+    { k: 'index', l: 'شماره' }, { k: 'mark', l: 'نشان' },
+  ];
+  const NAME_TPL = [
+    { l: 'شهر-شماره', p: '{node}-{index}' },
+    { l: 'کاربر-شماره', p: '{user}-{index}' },
+    { l: 'پروتکل-کشور-شماره', p: '{proto}-{node}-{index}' },
+    { l: 'کوتاه', p: '{node}:{port}' },
+    { l: 'فقط آی‌پی', p: '{ip}' },
+    { l: 'پیش‌فرضِ پنل', p: '{prefix} | {node} | :{port} | {mark}' },
+    { l: 'تصادفی', rnd: 1 },
+  ];
+  /* همان منطقِ رندرِ الگو در ورکر: توکنِ خالی همراهِ جداکننده‌اش حذف می‌شود تا
+     «{prefix} | {node}» با پیشوندِ خالی به « | فرانکفورت» تبدیل نشود. */
+  const nmRender = (pattern, vars) => {
+    let out = String(pattern == null ? '' : pattern);
+    out = out.replace(/([\s|\-]*)\{(\w+)\}([\s|\-]*)/g, (m, pre, k, post) => {
+      const v = vars[k];
+      if (v === undefined || v === null || v === '') return (pre && post) ? ' ' : (pre || post);
+      return pre + String(v) + post;
+    });
+    out = out.replace(/\{(\w+)\}/g, '');
+    out = out.replace(/[ \t]*\|[ \t]*(\|[ \t]*)+/g, ' | ');
+    out = out.replace(/[ \t]{2,}/g, ' ');
+    return out.replace(/^[\s|\-]+/, '').replace(/[\s|\-]+$/, '').trim();
+  };
+  /* نودِ نمونه برای پیش‌نمایش — نخستین آی‌پی پاکِ تنظیمات (قالب: ip#نام‌شهر) */
+  const nmNode = () => {
+    const l = ((S.d && S.d.settings && S.d.settings.cleanIPs) || [])[0] || '';
+    const parts = String(l).split('#');
+    return { ip: parts[0] || '104.17.1.1', name: parts[1] || 'فرانکفورت' };
+  };
+  const nmVars = (u, index) => {
+    const nd = nmNode();
+    const ports = portList(S.d && S.d.settings ? S.d.settings.ports : []);
+    return {
+      prefix: (S.d && getP(S.d.settings, 'sub.namePrefix')) || '',
+      user: (u && u.name) || '', proto: 'VLESS',
+      port: String(ports[0] || 443), ip: nd.ip, node: nd.name,
+      index: (index === '' || index === undefined) ? '' : String(index), mark: '',
+    };
+  };
+  const nmPat = () => { const e = $('#nmPat'); return e ? String(e.value == null ? '' : e.value) : String(NM.pat || ''); };
+  const nmStart = () => { const e = $('#nmStart'); return Math.max(1, Number(e ? e.value : NM.start) || 1); };
+  /**
+   * برنامه‌ی اعمالِ الگو. پیش‌نمایش و اعمالِ واقعی هر دو از همین تابع
+   * می‌خوانند، پس آنچه دیده می‌شود دقیقاً همان است که ذخیره می‌شود.
+   * شماره‌گذاری خودکار است و نامِ تکراری به‌جای خطا شماره می‌گیرد.
+   */
+  const nmPlan = () => {
+    const users = (S.d && S.d.users) || [];
+    const sel = users.filter((u) => NM.sel[u.id]);
+    if (!sel.length) return [];
+    const pat = nmPat(), start = nmStart();
+    /* نام‌های کانفیگ‌هایی که انتخاب نشده‌اند (اگر الگوی اختصاصی دارند) محفوظ‌اند */
+    const used = new Set();
+    users.filter((u) => !NM.sel[u.id]).forEach((u) => {
+      const p = String(u.namePattern || '').trim();
+      if (p) used.add(nmRender(p, nmVars(u, '')));
+    });
+    let k = start;
+    return sel.map((u) => {
+      const pattern = /\{index\}/.test(pat) ? pat.replace(/\{index\}/g, String(k)) : (pat ? pat + '-' + k : String(k));
+      const base = nmRender(pattern, nmVars(u, k)) || ('کانفیگ-' + k);
+      let name = base, dup = false, extra = 0;
+      while (used.has(name)) { extra++; dup = true; name = base + '-' + (k + extra); }
+      const finalPat = dup ? pattern + '-' + (k + extra) : pattern;
+      used.add(name);
+      k++;
+      return { id: u.id, user: u.name, pattern: finalPat, name, dup };
+    });
+  };
+  const nmPreviewHtml = () => {
+    const users = (S.d && S.d.users) || [];
+    if (!users.length) return '<div class="empty">هنوز کانفیگی ساخته نشده است</div>';
+    const chips = '<div class="hint" style="margin-bottom:6px">کانفیگ‌هایی که الگو روی آن‌ها اعمال می‌شود:</div>' +
+      '<div class="chips" style="margin-bottom:10px">' + users.map((u) =>
+        '<button type="button" class="chip" data-nm-user="' + esc(u.id) + '" style="' +
+        (NM.sel[u.id] ? 'background:var(--ac);border-color:var(--ac);color:#fff' : 'opacity:.5') + '">' +
+        esc(u.name) + '</button>').join('') + '</div>';
+    const plan = nmPlan();
+    if (!plan.length) return chips + '<div class="empty">هیچ کانفیگی انتخاب نشده — روی نامِ کانفیگ‌ها در بالا کلیک کنید</div>';
+    return chips + '<div class="list">' + plan.map((p) =>
+      '<div class="row-item">' + icon('fa-pen') +
+      '<div class="grow"><b>' + esc(p.name) + '</b>' +
+      (p.dup ? ' <span class="badge warn">تکراری — شماره افزوده شد</span>' : '') +
+      '<div class="mono cell-sub">' + esc(p.user) + ' • الگو: ' + esc(p.pattern) + '</div></div></div>').join('') + '</div>';
+  };
+
+  /* ═══════════════════════════════════════════════════════════════
+     مرحله‌ی ۴ — سرورهای خروجی VLESS
+     ═══════════════════════════════════════════════════════════════ */
+  const EXIT_SECURITIES = ['none', 'tls', 'reality'];
+  const EXIT_TRANSPORTS = ['raw', 'ws', 'grpc'];
+  const EXIT_FIELDS = [
+    { k: 'name', l: 'نام', ph: 'آلمان — فرانکفورت' },
+    { k: 'label', l: 'برچسب (اختیاری)', ph: 'همان نام اگر خالی باشد' },
+    { k: 'address', l: 'آدرس سرور', ph: 'de1.example.com' },
+    { k: 'port', l: 'پورت', ph: '443' },
+    { k: 'uuid', l: 'UUID', ph: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
+    { k: 'flow', l: 'Flow', ph: 'xtls-rprx-vision' },
+    { k: 'path', l: 'مسیر (path)', ph: '/' },
+    { k: 'serviceName', l: 'نام سرویس gRPC', ph: '' },
+    { k: 'sni', l: 'SNI', ph: '' },
+    { k: 'host', l: 'Host', ph: '' },
+  ];
+  const exitBlank = () => ({ id: '', name: '', label: '', address: '', port: 443, uuid: '', flow: '',
+    security: 'tls', transport: 'ws', path: '/', serviceName: '', sni: '', host: '', enabled: true, params: {} });
+  const exitRead = (s) => ({
+    id: (s && s.id) || '', name: (s && s.name) || '', label: (s && s.label) || '',
+    address: (s && s.address) || '', port: (s && s.port) || 443, uuid: (s && s.uuid) || '',
+    flow: (s && s.flow) || '', security: (s && s.security) || 'tls',
+    transport: (s && s.transport) || 'ws', path: (s && s.path) || '/',
+    serviceName: (s && s.serviceName) || '', sni: (s && s.sni) || '', host: (s && s.host) || '',
+    enabled: !s || s.enabled !== false,
+    params: (s && s.params && typeof s.params === 'object') ? s.params : {},
+  });
+  /* فرم از روی idهای خودش خوانده می‌شود، نه data-p — وگرنه collect() در هنگامِ
+     ذخیره‌ی تنظیمات این فیلدها را هم به /api/settings می‌فرستاد. */
+  const xf = (k) => { const e = $('#ex_' + k); return e ? String(e.value == null ? '' : e.value).trim() : ''; };
+  const exitFormRead = () => {
+    let params = {};
+    const raw = xf('params');
+    if (raw) {
+      try {
+        const p = JSON.parse(raw);
+        if (p && typeof p === 'object' && !Array.isArray(p)) params = p;
+        else throw new Error('not an object');
+      } catch (e) { throw new Error('پارامترهای آزاد باید یک شیء JSON معتبر باشند — مثل {"key":"value"}'); }
+    }
+    return {
+      id: xf('id'), name: xf('name'), label: xf('label'), address: xf('address'),
+      port: parseInt(xf('port'), 10) || 443, uuid: xf('uuid'), flow: xf('flow'),
+      security: xf('security'), transport: xf('transport'), path: xf('path'),
+      serviceName: xf('serviceName'), sni: xf('sni'), host: xf('host'),
+      enabled: ($('#ex_enabled') ? !!$('#ex_enabled').checked : true),
+      params,
+    };
+  };
+  const exitFormHtml = (x) => {
+    const v = exitRead(x);
+    const inp = (f) => '<label class="f"><span>' + f.l + '</span><input id="ex_' + f.k + '" value="' +
+      esc(v[f.k] == null ? '' : v[f.k]) + '"' + (f.k === 'uuid' || f.k === 'address' || f.k === 'path' || f.k === 'sni' || f.k === 'host' ? ' class="mono"' : '') +
+      (f.k === 'port' ? ' type="number" min="1" max="65535"' : '') + ' placeholder="' + esc(f.ph) + '"></label>';
+    return '<div class="um-sec" style="margin-top:10px">' +
+      '<div class="um-sec-h">' + icon(v.id ? 'fa-pen' : 'fa-plus') + '<span>' + (v.id ? 'ویرایشِ سرور خروجی' : 'سرور خروجیِ تازه') + '</span></div>' +
+      '<div class="um-grid two" style="padding:10px 0 0">' +
+      EXIT_FIELDS.map(inp).join('') +
+      '<label class="f"><span>امنیت (security)</span><select id="ex_security">' +
+      EXIT_SECURITIES.map((o) => '<option value="' + o + '"' + (o === v.security ? ' selected' : '') + '>' + o + '</option>').join('') + '</select></label>' +
+      '<label class="f"><span>انتقال (transport)</span><select id="ex_transport">' +
+      EXIT_TRANSPORTS.map((o) => '<option value="' + o + '"' + (o === v.transport ? ' selected' : '') + '>' + o + '</option>').join('') + '</select></label>' +
+      '<label class="f"><span>فعال باشد</span><div class="sw ' + (v.enabled ? 'on' : '') + '" data-sw="ex_enabled"><i></i></div>' +
+      '<input type="checkbox" id="ex_enabled" data-sw-inp="ex_enabled" class="hide"' + (v.enabled ? ' checked' : '') + '></label>' +
+      '<label class="f"><span>پارامترهای آزاد (JSON)</span><textarea id="ex_params" rows="2" class="mono" placeholder=\'{"key":"value"}\'>' +
+      esc(Object.keys(v.params).length ? JSON.stringify(v.params) : '') + '</textarea>' +
+      '<div class="hint" style="margin-top:5px">هر کلیدی که پنل نشناسد در params نگه داشته می‌شود و با ذخیره/بازیابی از بین نمی‌رود.</div></label>' +
+      '</div>' +
+      '<input type="hidden" id="ex_id" value="' + esc(v.id) + '">' +
+      '<div class="btn-row" style="margin-top:10px;gap:6px">' +
+      '<button class="btn p" data-act="exit-save">' + icon('fa-floppy-disk') + ' ' + (v.id ? 'ذخیره‌ی تغییرات' : 'افزودن سرور') + '</button>' +
+      '<button class="btn ghost" data-act="exit-cancel">' + icon('fa-xmark') + ' انصراف</button></div>' +
+      '</div>';
+  };
+  const exTestHtml = () => {
+    if (EX.testing) return '<div class="hint" style="margin-top:8px">در حال تستِ اتصال…</div>';
+    const r = EX.test;
+    if (!r || !r.name) return '';
+    const good = !!r.reachable;
+    return '<div class="row-item" style="margin-top:8px">' + icon(good ? 'fa-circle-check' : 'fa-circle-xmark') +
+      '<div class="grow"><b>' + esc(r.name) + ' — ' + (good ? 'اتصال برقرار شد' : 'اتصال برقرار نشد') + '</b>' +
+      '<div class="cell-sub">' + (good ? ('زمان پاسخ: ' + fa(Number(r.ms) || 0) + ' میلی‌ثانیه') : ('علت: ' + esc(r.error || 'نامشخص'))) +
+      (r.transport ? ' • ' + esc(r.transport) : '') + (r.security ? ' • ' + esc(r.security) : '') + '</div></div>' +
+      '<span class="badge ' + (good ? 'ok' : 'bad') + '">' + (good ? fa(Number(r.ms) || 0) + ' ms' : 'ناموفق') + '</span></div>';
+  };
+  const exitsHtml = (d) => {
+    if (EX.err) {
+      return '<div class="badge bad">' + icon('fa-triangle-exclamation') + ' ' + esc(EX.err) + '</div>' +
+        '<div class="hint" style="margin-top:6px">دکمه‌ی «بارخوانی» را بزنید تا دوباره تلاش شود.</div>';
+    }
+    if (!d || !d.servers) return '<div class="empty">در حال دریافتِ فهرستِ سرورهای خروجی…</div>';
+    const servers = d.servers || [];
+    /* پیش‌فرضِ سراسری */
+    const defSel = '<div class="row-item" style="margin-bottom:10px">' + icon('fa-route') +
+      '<div class="grow"><b>پیش‌فرضِ سراسری</b><div class="cell-sub">کانفیگ‌هایی که روی «پیروی از پیش‌فرض» هستند از این مسیر می‌روند' +
+      '<br>مؤثر در حال حاضر: <b>' + esc(((d.effective || {}).name) || 'مستقیم') + '</b></div></div>' +
+      '<select id="exDefault" style="max-width:200px"><option value="">مستقیم (بدون واسطه)</option>' +
+      servers.map((s) => '<option value="' + esc(s.id) + '"' + (d.defaultMode === 'exit' && d.defaultExit === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') +
+      '</select><button class="btn sm p" data-act="exit-default">' + icon('fa-floppy-disk') + ' ذخیره</button></div>';
+    /* فهرستِ سرورها */
+    const list = servers.length
+      ? '<div class="list">' + servers.map((s) => '<div class="row-item">' +
+          '<span class="dot ' + (s.enabled ? 'on' : 'bad') + '"></span>' +
+          '<div class="grow"><b>' + esc(s.name) + '</b> ' +
+          '<span class="badge ' + (s.enabled ? 'ok' : 'bad') + '">' + (s.enabled ? 'فعال' : 'غیرفعال') + '</span>' +
+          '<div class="mono cell-sub">' + esc(s.address) + ':' + fa(s.port) + ' • ' + esc(s.security) + '/' + esc(s.transport) + '</div></div>' +
+          '<button class="btn sm s" data-act="exit-test" data-id="' + esc(s.id) + '" title="تست اتصال">' + icon('fa-stethoscope') + '</button>' +
+          '<button class="btn sm" data-act="exit-edit" data-id="' + esc(s.id) + '" title="ویرایش">' + icon('fa-pen') + '</button>' +
+          '<button class="btn sm d" data-act="exit-del" data-id="' + esc(s.id) + '" title="حذف">' + icon('fa-trash-can') + '</button>' +
+          '</div>').join('') + '</div>'
+      : '<div class="empty">هنوز سرور خروجی‌ای تعریف نشده است</div>';
+    /* انتخابِ هر کانفیگ */
+    const per = (d.perConfig || []).length
+      ? '<div class="hint" style="margin:12px 0 6px"><b>انتخاب برای هر کانفیگ</b> — بر پیش‌فرضِ سراسری مقدم است:</div>' +
+        '<div class="list">' + d.perConfig.map((c) => '<div class="row-item">' + icon('fa-user') +
+          '<div class="grow"><b>' + esc(c.name) + '</b><div class="cell-sub">مؤثر: ' + esc(c.effectiveId ? ((servers.find((s) => s.id === c.effectiveId) || {}).name || c.effectiveMode) : 'مستقیم') + '</div></div>' +
+          '<select id="exSel-' + esc(c.id) + '" style="max-width:200px">' +
+          '<option value="inherit"' + (c.mode === 'inherit' ? ' selected' : '') + '>پیروی از پیش‌فرضِ سراسری</option>' +
+          '<option value="direct"' + (c.mode === 'direct' ? ' selected' : '') + '>مستقیم (بدون واسطه)</option>' +
+          servers.map((s) => '<option value="' + esc(s.id) + '"' + (c.mode === 'exit' && c.exitId === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') +
+          '</select></div>').join('') + '</div>'
+      : '';
+    return defSel + list + exTestHtml() +
+      (EX.form ? exitFormHtml(EX.form) : '') + per;
+  };
+  async function exLoad() {
+    const r = await api('GET', '/api/exits');
+    if (r && !r.error && Array.isArray(r.servers)) { EX.data = r; EX.err = ''; }
+    else EX.err = (r && r.error) ? String(r.error) : 'دریافتِ فهرستِ سرورهای خروجی انجام نشد';
+    exShow();
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+     مرحله‌ی ۴ — پشتیبان و بازیابی با کشیدن و رها کردن
+     ═══════════════════════════════════════════════════════════════ */
+  const bkName = (d) => 'panel-backup-' + new Date((d && d.exportedAt) || Date.now()).toISOString().slice(0, 10) + '.json';
+  const bkOutHtml = (d) => {
+    if (!d || !d.kind) return '<div class="empty">هنوز پشتیبانی ساخته نشده — دکمه‌ی «ساخت پشتیبان» را بزنید</div>';
+    const txt = JSON.stringify(d);
+    return '<div class="row-item" id="bkHandle" draggable="true" style="cursor:grab" title="این کارت را بکشید و در پوشه رها کنید">' +
+      icon('fa-box-open') +
+      '<div class="grow"><b class="mono">' + esc(bkName(d)) + '</b>' +
+      '<div class="cell-sub">' + fa(((d.data || {}).users || []).length) + ' کاربر • ' + bytes(txt.length) + ' • نسخه ' + esc(d.version || '—') + '</div>' +
+      '<div class="hint" style="margin-top:4px">برای ذخیره، این کارت را به بیرون بکشید (یا دکمه‌ی دانلود را بزنید)</div></div>' +
+      '<button class="btn sm p" data-act="bk-download">' + icon('fa-download') + ' دانلود</button></div>';
+  };
+  const bkInfoHtml = () => {
+    const f = BK.file;
+    if (!f || !f.data) return '';
+    const d = f.data;
+    return '<div style="margin-top:10px">' +
+      '<div class="kv"><span>' + icon('fa-box-open') + ' نسخه</span><b class="mono">' + esc(f.version || '—') + '</b></div>' +
+      '<div class="kv"><span>تاریخ پشتیبان</span><b>' + (f.exportedAt ? new Date(f.exportedAt).toLocaleString('fa-IR') : '—') + '</b></div>' +
+      '<div class="kv"><span>تعداد کاربر</span><b>' + fa((d.users || []).length) + '</b></div>' +
+      '<div class="kv"><span>مخزن</span><b class="mono">' + esc(f.storage || '—') + '</b></div>' +
+      '<div class="hint" style="margin-top:8px">روشِ بازیابی:</div>' +
+      '<div class="seg" style="margin-top:5px">' +
+      [['merge', 'ادغام با تنظیماتِ فعلی'], ['replace', 'جایگزینی کامل']].map(([k, l]) =>
+        '<button data-act="bk-mode" data-v="' + k + '" class="' + (BK.mode === k ? 'on' : '') + '">' + l + '</button>').join('') +
+      '</div>' +
+      '<div class="btn-row" style="margin-top:8px;gap:6px">' +
+      '<button class="btn p" data-act="bk-restore">' + icon('fa-rotate-left') + ' بازیابی</button>' +
+      '<button class="btn ghost" data-act="bk-cancel">' + icon('fa-xmark') + ' انصراف</button></div>' +
+      '</div>';
+  };
+  const bkErrHtml = () => {
+    if (!BK.err && !(BK.errors || []).length) return '';
+    return '<div style="margin-top:10px"><div class="badge bad">' + icon('fa-triangle-exclamation') + ' ' +
+      esc(BK.err || 'فایل پشتیبان نامعتبر است و هیچ تغییری اعمال نشد') + '</div>' +
+      ((BK.errors || []).length ? '<div class="list" style="margin-top:6px">' + BK.errors.map((e) =>
+        '<div class="row-item">' + icon('fa-circle-xmark') + '<div class="grow">' + esc(e) + '</div></div>').join('') + '</div>' : '') +
+      '</div>';
+  };
+  async function bkReadFile(f) {
+    BK.err = ''; BK.errors = []; BK.file = null;
+    let txt = '';
+    try { txt = await f.text(); } catch (e) { BK.err = 'خواندنِ فایل انجام نشد'; bkShow(); toast(BK.err, 'err'); return; }
+    let j = null;
+    try { j = JSON.parse(txt); } catch (e) { BK.err = 'این فایل یک JSON معتبر نیست'; bkShow(); toast(BK.err, 'err'); return; }
+    if (!j || typeof j !== 'object') { BK.err = 'ساختارِ فایل پشتیبان شناخته نشد'; bkShow(); toast(BK.err, 'err'); return; }
+    /* هم «{kind,version,data:{…}}» پذیرفته می‌شود و هم خودِ داده‌ی خام */
+    const d = (j.data && typeof j.data === 'object') ? j.data : j;
+    BK.file = { kind: j.kind || '', version: j.version || '', build: j.build || '',
+      exportedAt: j.exportedAt || 0, storage: j.storage || '', source: j.source || '', data: d };
+    bkShow();
+    toast('فایل پشتیبان خوانده شد — ' + fa((d.users || []).length) + ' کاربر • حالا روشِ بازیابی را انتخاب کنید', 'info');
+  }
+  /* ظاهرِ ناحیه هنگامی که فایلی روی آن کشیده می‌شود */
+  const bkZone = (e) => (e && e.target && e.target.closest ? e.target.closest('#bkDrop') : null);
+  const bkZoneOn = (z, on) => {
+    if (!z) return;
+    z.classList.toggle('on', on);
+    z.style.borderColor = on ? 'var(--ac)' : '';
+    z.style.background = on ? 'color-mix(in oklab, var(--ac) 12%, transparent)' : '';
+  };
+
+  /* ═══════════════════════════════════════════════════════════════
+     مرحله‌ی ۴ — تغییرِ رمز عبور
+     ═══════════════════════════════════════════════════════════════ */
+  const pwOutHtml = () => {
+    if (PW.locked) {
+      return '<div class="badge bad">' + icon('fa-lock') + ' رمز عبور از متغیر محیطی MASTER_KEY خوانده می‌شود</div>' +
+        '<div class="hint" style="margin-top:6px">برای همین از این صفحه قابل تغییر نیست؛ مقدار را در تنظیماتِ ورکر (Variables and Secrets) عوض کنید. ' +
+        'هر زمان تغییرش دادید این صفحه را بارگیریِ دوباره کنید.</div>';
+    }
+    if (!PW.msg) return '';
+    const k = PW.kind || 'info';
+    return '<div class="badge ' + (k === 'ok' ? 'ok' : k === 'err' ? 'bad' : 'b2') + '">' +
+      icon(k === 'ok' ? 'fa-circle-check' : k === 'err' ? 'fa-circle-xmark' : 'fa-circle-info') + ' ' + esc(PW.msg) + '</div>';
+  };
 
   /* ─────────── ناوبری و اسکیمای تنظیمات ─────────── */
   /* ناوبری — تمیز، بدون تکرار */
   const NAV = [
     { g: 'اصلی', items: [['dash', 'نمای کلی', 'fa-gauge-high'], ['users', 'کاربران', 'fa-users']] },
-    { g: 'شبکه', items: [['monitor', 'آمار مصرف', 'fa-chart-line']] },
+    { g: 'شبکه', items: [['conns', 'اتصال‌های زنده', 'fa-activity'], ['monitor', 'آمار مصرف', 'fa-chart-line']] },
     { g: 'پیکربندی', items: [['config', 'پیکربندی', 'fa-gear'], ['sub', 'اشتراک', 'fa-link'], ['security', 'امنیت', 'fa-shield-halved']] },
     { g: 'سیستم', items: [['logs', 'لاگ', 'fa-list-check'], ['settings', 'پشتیبان', 'fa-database']] },
   ];
 
+  /* ═══ اسکیمای تنظیمات ═══
+     فقط گروهی که واقعاً رندر می‌شود اینجا مانده. گروه‌های proto / network /
+     telegram / cloud / update پیش از این تعریف شده بودند ولی هیچ مسیری به
+     آن‌ها نداشتند (schemaView مرده بود و همه‌ی viewهای قدیمی به configView
+     می‌رسیدند)، برای همین فیلدهایشان در هیچ صفحه‌ای دیده نمی‌شد. تنظیماتی
+     که کاربر واقعاً لازم دارد در خودِ configView هستند. */
   const SCHEMA = {
-    proto: [
-      { t: 'حالت پروتکل', icon: 'fa-shield-halved', d: 'Alpha = VLESS • Beta = Trojan(SHA-224) • Both = هر دو', two: 1, f: [
-        { p: 'mode', l: 'حالت کاری', t: 'sel', o: ['alpha', 'beta', 'both'], lbls: { alpha: 'Alpha — VLESS', beta: 'Beta — Trojan', both: 'Both — هر دو' } },
-        { p: 'multiSplit', l: 'تقسیم مساوی بین پروتکل‌ها', t: 'sw', h: 'اشتراک چندپروتکله' },
-        { p: 'protocols.vless', l: 'VLESS', t: 'sw', h: 'پشتیبانی‌شده در هسته‌ی تونل' },
-        { p: 'protocols.trojan', l: 'Trojan (SHA-224)', t: 'sw', h: 'پشتیبانی‌شده در هسته‌ی تونل' },
-        { p: 'protocols.ss', l: 'Shadowsocks', t: 'sw', bad: 1, h: 'فقط تولید در ساب — هسته نمی‌پذیرد' },
-        { p: 'protocols.vmess', l: 'VMess', t: 'sw', bad: 1, h: 'فقط تولید در ساب — هسته نمی‌پذیرد' },
-        { p: 'trojanHash', l: 'هش رمز Trojan', t: 'sel', o: ['sha224', 'sha256'] },
-      ] },
-      { t: 'ترنسپورت', icon: 'fa-bolt', d: 'هسته‌ی تونل فقط WebSocket را می‌پذیرد', two: 1, f: [
-        { p: 'transport', l: 'نوع ترنسپورت', t: 'sel', o: ['ws', 'grpc', 'xhttp'], lbls: { ws: 'WebSocket ✓', grpc: 'gRPC (فقط ساب)', xhttp: 'XHTTP (فقط ساب)' } },
-        { p: 'path', l: 'مسیر پایه (path)', t: 'text', mono: 1, h: 'مسیر اتصال تونل — باید با / شروع شود' },
-        { p: 'grpcService', l: 'gRPC Service Name', t: 'text', mono: 1 },
-        { p: 'xhttpMode', l: 'XHTTP Mode', t: 'sel', o: ['auto', 'packet-up', 'stream-up', 'stream-one'] },
-        { p: 'tfo', l: 'TCP Fast Open (TFO)', t: 'sw' },
-        { p: 'randomJunk', l: 'جانک تصادفی مسیر (پایدار)', t: 'sw', h: 'مسیر برای هر کاربر ثابت می‌ماند و با رفرش ساب عوض نمی‌شود' },
-        { p: 'earlyData', l: 'Early Data (?ed=2048)', t: 'sw', h: 'خاموش = سازگار با همه‌ی کلاینت‌ها (پیشنهادی). روشن = سرعت اتصال بیشتر ولی بعضی کلاینت‌ها وصل نمی‌شوند' },
-        { p: 'ports', l: 'پورت‌های TLS (با کاما)', t: 'text', mono: 1 },
-        { p: 'mux', l: 'Mux multiplexing', t: 'sw' },
-      ] },
-      { t: 'TLS و رمزنگاری', icon: 'fa-lock', d: 'uTLS، ECH و ALPN', two: 1, f: [
-        { p: 'tls', l: 'TLS فعال', t: 'sw' },
-        { p: 'fingerprint', l: 'uTLS Fingerprint', t: 'sel', o: ['randomized', 'chrome', 'firefox', 'safari', 'ios', 'android', 'edge', 'random'] },
-        { p: 'sni', l: 'SNI', t: 'text', mono: 1, h: 'خالی = دامنه‌ی خود ورکر (پیشنهادی). مقدار دیگر = کانفیگ وصل نمی‌شود' },
-        { p: 'host', l: 'Host header', t: 'text', mono: 1, h: 'خالی = دامنه‌ی خود ورکر' },
-        { p: 'alpn', l: 'ALPN', t: 'text', mono: 1 },
-        { p: 'allowInsecure', l: 'allowInsecure', t: 'sw', bad: 1, h: 'فقط برای تست' },
-        { p: 'ech.enabled', l: 'ECH (رمزنگاری SNI)', t: 'sw' },
-        { p: 'ech.mode', l: 'روش دریافت ECH config', t: 'sel', o: ['doh', 'sni'] },
-      ] },
-      { t: 'Fragment', icon: 'fa-scissors', d: 'شکستن بسته‌ی TLS', two: 1, f: [
-        { p: 'fragment.enabled', l: 'Fragment فعال', t: 'sw' },
-        { p: 'fragment.mode', l: 'حالت', t: 'sel', o: ['shadowrocket', 'happ', 'custom'] },
-        { p: 'fragment.length', l: 'طول (بایت)', t: 'text', mono: 1 },
-        { p: 'fragment.interval', l: 'فاصله (ms)', t: 'text', mono: 1 },
-      ] },
-    ],
-    network: [
-      { t: 'آی‌پی‌های پاک', icon: 'fa-network-wired', d: 'قالب ip#نام', two: 1, f: [
-        { p: 'cleanIPs', l: 'لیست IP پاک (هر خط یکی)', t: 'area', dt: 'lines', h: 'مثال: 104.17.1.1#فرانکفورت' },
-        { p: 'perIsp', l: 'استخر اختصاصی هر اپراتور', t: 'sw' },
-        { p: 'ispPools', l: 'استخرهای ISP', t: 'area', dt: 'lines', h: 'MCI=104.17.1.1,104.17.1.2' },
-        { p: 'ipRotation', l: 'چرخش خودکار بر اساس اپراتور', t: 'sw' },
-        { p: 'nodeLimit', l: 'سقف گره در هر اشتراک', t: 'num' },
-      ] },
-      { t: 'پروکسی و ریلی', icon: 'fa-server', d: 'failover و مسیر پشتیبان', two: 1, f: [
-        { p: 'proxyIPs', l: 'Proxy IPs (هر خط یکی)', t: 'area', dt: 'lines' },
-        { p: 'failover', l: 'failover خودکار', t: 'sw' },
-        { p: 'failoverTimeout', l: 'زمان‌سنج failover (ms)', t: 'num' },
-        { p: 'backupRelay', l: 'Backup Relay', t: 'text', mono: 1 },
-        { p: 'customRelay', l: 'Custom Relay', t: 'text', mono: 1 },
-        { p: 'upstream', l: 'Upstream (VLESS URI)', t: 'area', dt: 'lines', h: 'زنجیره‌ی پراکسی با detour' },
-      ] },
-      { t: 'DNS و NAT64', icon: 'fa-globe', d: 'resolve قبل از اتصال، جلوگیری از SNI leak', two: 1, f: [
-        { p: 'doh.url', l: 'Custom DoH', t: 'text', mono: 1 },
-        { p: 'dohProxy', l: 'اندپوینت DoH برای کلاینت (/dns-query)', t: 'sw' },
-        { p: 'resolveFirst', l: 'DNS resolution قبل از اتصال', t: 'sw' },
-        { p: 'nat64.prefix', l: 'NAT64 Prefix', t: 'text', mono: 1 },
-        { p: 'nat64.fromUrl', l: 'دریافت NAT64 از URL', t: 'sw' },
-        { p: 'nat64.url', l: 'آدرس دریافت NAT64', t: 'text', mono: 1 },
-        { p: 'raceDial', l: 'تلاش همزمان (race dial)', t: 'num' },
-        { p: 'geoip.enabled', l: 'GeoIP lookup (پرچم + ISP)', t: 'sw' },
-        { p: 'geoip.api', l: 'سرویس GeoIP', t: 'text', mono: 1 },
-      ] },
-    ],
-    telegram: [
-      { t: 'ربات تلگرام', icon: 'fa-brands fa-telegram', d: 'پنل تلگرامی با دکمه‌های inline', two: 1, f: [
-        { p: 'tg.enabled', l: 'فعال‌سازی ربات', t: 'sw' },
-        { p: 'tg.lang', l: 'زبان ربات', t: 'sel', o: ['fa', 'en'], lbls: { fa: 'فارسی', en: 'English' } },
-        { p: 'tg.token', l: 'Bot Token', t: 'pw', mono: 1 },
-        { p: 'tg.chatId', l: 'Chat ID', t: 'text', mono: 1 },
-        { p: 'tg.adminId', l: 'Admin ID', t: 'text', mono: 1 },
-        { p: 'tg.silent', l: 'هشدارهای بی‌صدا', t: 'sw' },
-        { p: 'tg.multiPanel', l: 'مدیریت چندپنلی از تلگرام', t: 'sw' },
-        { p: 'tg.loginAlert', l: 'هشدار ورود', t: 'sw' },
-        { p: 'tg.autoDisableAlert', l: 'هشدار غیرفعال‌سازی خودکار', t: 'sw' },
-        { p: 'tg.usageFromCF', l: 'Usage از Cloudflare API', t: 'sw' },
-        { p: 'tg.notify.user', l: 'اعلان: کاربر جدید', t: 'sw' },
-        { p: 'tg.notify.quota', l: 'اعلان: اتمام سهمیه', t: 'sw' },
-        { p: 'tg.notify.expiry', l: 'اعلان: نزدیک انقضا', t: 'sw' },
-        { p: 'tg.notify.err', l: 'اعلان: خطای ورکر', t: 'sw' },
-        { p: 'tg.notify.daily', l: 'گزارش روزانه', t: 'sw' },
-      ] },
-    ],
-    cloud: [
-      { t: 'Cloudflare API', icon: 'fa-cloud', d: 'استقرار، آمار و دامنه', two: 1, f: [
-        { p: 'cf.accountId', l: 'Account ID', t: 'text', mono: 1 },
-        { p: 'cf.apiToken', l: 'API Token', t: 'pw', mono: 1 },
-        { p: 'cf.zoneId', l: 'Zone ID', t: 'text', mono: 1 },
-        { p: 'cf.domain', l: 'دامنه‌ی اختصاصی', t: 'text', mono: 1 },
-        { p: 'cf.usageApi', l: 'آمار درخواست از CF API', t: 'sw' },
-        { p: 'panel.name', l: 'نام پنل', t: 'text' },
-        { p: 'panel.url', l: 'آدرس پنل', t: 'text', mono: 1 },
-        /* بایندینگ D1 با نام DB */
-      ] },
-      { t: 'پنل‌های لینک‌شده', icon: 'fa-network-wired', d: 'Hub & Spoke', two: 1, f: [
-        { p: 'linked.enabled', l: 'اتصال چندپنلی', t: 'sw' },
-        { p: 'linked.hubUrl', l: 'آدرس Hub', t: 'text', mono: 1 },
-        { p: 'linked.apiKey', l: 'کلید همگام‌سازی', t: 'pw', mono: 1 },
-        { p: 'linked.propagateConfig', l: 'انتشار کانفیگ به نودها', t: 'sw' },
-        { p: 'linked.propagateUpdate', l: 'انتشار آپدیت به نودها', t: 'sw' },
-        { p: 'linked.loginSignal', l: 'Login signal', t: 'sw' },
-      ] },
-    ],
-    update: [
-      { t: 'به‌روزرسانی خودکار', icon: 'fa-rotate', d: 'مقایسه‌ی نسخه، استقرار و بازگشت', two: 1, f: [
-        { p: 'upd.auto', l: 'به‌روزرسانی خودکار', t: 'sw' },
-        { p: 'upd.repo', l: 'مخزن GitHub', t: 'text', mono: 1 },
-        { p: 'upd.channel', l: 'کانال', t: 'sel', o: ['stable', 'beta'] },
-        { p: 'upd.interval', l: 'بازه‌ی بررسی (دقیقه)', t: 'rng', min: 30, max: 1440, step: 30, u: ' دقیقه' },
-        { p: 'upd.healthCheck', l: 'سلامت‌سنجی بعد از آپدیت', t: 'sw' },
-        { p: 'upd.rollback', l: 'بازگشت خودکار در صورت خطا', t: 'sw' },
-      ] },
-    ],
     security: [
       { t: 'احراز هویت', icon: 'fa-key', d: 'توکن ۲۴ ساعته + 2FA + rate limit', two: 1, f: [
         { p: 'auth.totp', l: '2FA (TOTP / Google Authenticator)', t: 'sw' },
@@ -620,6 +933,154 @@
   }
 
   /* ═══════════════════════════════════════════════════════════════
+     رادار — اسکنرِ آی‌پی تمیز
+     اندازه‌گیری واقعی در ورکر انجام می‌شود (اتصالِ TCP/TLS به ip:port)؛
+     اینجا فقط تنظیمات را می‌گیریم، اسکن را صدا می‌زنیم و گزارش را نشان
+     می‌دهیم. هیچ عددی در مرورگر ساخته نمی‌شود.
+     ═══════════════════════════════════════════════════════════════ */
+
+  /* تنظیماتِ مؤثر — پیش‌فرض از /api/radar/config، محدود به سقف‌های همان پاسخ */
+  const rdOpt = () => {
+    const cfg = (RD.cfg && RD.cfg.config) || {};
+    const o = RD.opt || {};
+    const maxC = (RD.cfg && RD.cfg.maxConcurrency) || 6;
+    const maxN = (RD.cfg && RD.cfg.maxCount) || 200;
+    const port = Number(o.port !== undefined ? o.port : (cfg.ports && cfg.ports[0])) || 443;
+    return {
+      count: Math.max(1, Math.min(maxN, Number(o.count !== undefined ? o.count : cfg.count) || 20)),
+      concurrency: Math.max(1, Math.min(maxC, Number(o.concurrency !== undefined ? o.concurrency : cfg.concurrency) || 4)),
+      timeoutMs: Math.max(200, Math.min(30000, Number(o.timeoutMs !== undefined ? o.timeoutMs : cfg.timeoutMs) || 2000)),
+      probes: Math.max(1, Math.min(5, Number(cfg.probes) || 2)),
+      keep: Math.max(1, Math.min(50, Number(cfg.keep) || 10)),
+      port: Math.max(1, Math.min(65535, port)),
+      tls: o.tls !== undefined ? !!o.tls : (cfg.tls !== false),
+      exitId: String(o.exitId !== undefined ? o.exitId : (cfg.exitId || '')),
+      maxCount: maxN, maxConcurrency: maxC,
+    };
+  };
+
+  async function radarCfg() {
+    if (RD.cfg) return RD.cfg;
+    const r = await api('GET', '/api/radar/config');
+    if (r && !r.error && r.config) {
+      RD.cfg = r;
+      if (!RD.opt) {
+        RD.opt = {
+          count: r.config.count, concurrency: r.config.concurrency,
+          timeoutMs: r.config.timeoutMs, port: (r.config.ports && r.config.ports[0]) || 443,
+          tls: r.config.tls !== false, exitId: r.config.exitId || '',
+        };
+      }
+      /* تنظیمات دیرتر از رندرِ اول می‌رسند (پاسخِ شبکه): فقط بلوکِ تنظیمات
+         دوباره نوشته می‌شود تا پیش‌فرض‌ها — به‌ویژه فهرستِ سرورهای خروجی —
+         دیده شوند. کلِ صفحه بازسازی نمی‌شود تا چیزی که کاربر در حال
+         نوشتنِ آن است از بین نرود. */
+      const w = $('#radarCfgWrap');
+      if (w) w.innerHTML = radarSettings();
+    }
+    return RD.cfg;
+  }
+
+  /* ═══════ رندرِ گزارشِ رادار ═══════
+     در هر بار بازسازیِ صفحه از RD.last[uuid] رندر می‌شود، برای همین رفرش،
+     جابه‌جایی بین بخش‌ها و عوض کردنِ کاربر گزارش را پاک نمی‌کند. */
+  function radarHtml(rec) {
+    if (RD.running) {
+      const o = rdOpt();
+      return '<div class="empty">' + icon('fa-spinner fa-spin') + ' در حال اسکن…</div>' +
+        '<div class="hint" style="text-align:center">آی‌پی کاندیدا: ' + fa(o.count) +
+        ' • هم‌زمانی: ' + fa(o.concurrency) + ' • زمان انتظار: ' + fa(o.timeoutMs) + ' میلی‌ثانیه' +
+        (o.exitId ? ' • از مسیر سرور خروجی' : ' • مسیر مستقیم') + '</div>';
+    }
+    if (!rec || !rec.results) {
+      return '<div class="empty">هنوز اسکنی اجرا نشده است — با یک کلیک، آی‌پی‌های کاندیدا اندازه‌گیری می‌شوند.</div>' +
+        (RD.err ? '<div class="hint" style="color:var(--bad)">' + esc(RD.err) + '</div>' : '');
+    }
+    const stamp = rec.__ts ? new Date(rec.__ts).toLocaleString('fa-IR', { hour12: false }) : '';
+    const res = Array.isArray(rec.results) ? rec.results : [];
+    const bestIp = rec.best ? String(rec.best.ip) : '';
+    const alive = res.filter((x) => x.ok).map((x) => x.ip);
+    const head = '<div class="hint" style="margin-bottom:8px">آخرین اسکن: <b>' + (stamp ? fa(stamp) : '—') + '</b>' +
+      ' • <span class="hint">این گزارش تا اسکنِ بعدی باقی می‌ماند.</span>' +
+      '<button class="btn sm ghost" data-act="radar-clear" style="margin-inline-start:8px">' + icon('fa-broom') + ' پاک‌کردن گزارش</button></div>';
+    if (!res.length) {
+      return head + '<div class="empty">هیچ آی‌پی‌ای برای اسکن پیدا نشد.</div>';
+    }
+    const summary = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">' +
+      '<span class="badge ' + (rec.alive ? 'ok' : 'bad') + '">' + icon('fa-circle-check') + ' موفق: ' + fa(rec.alive || 0) + '</span>' +
+      '<span class="badge ' + (rec.failed ? 'bad' : '') + '">' + icon('fa-circle-xmark') + ' ناموفق: ' + fa(rec.failed || 0) + '</span>' +
+      '<span class="badge b2">' + icon('fa-activity') + ' تست‌شده: ' + fa(rec.tested || 0) + '</span>' +
+      '<span class="badge ac">' + icon('fa-gauge-high') + ' زمان کل اسکن: ' + fa(rec.scanMs || 0) + ' میلی‌ثانیه</span>' +
+      '<span class="badge">' + icon('fa-route') + ' مسیر: ' + (rec.via === 'direct' ? 'مستقیم' : esc(String(rec.via || '').replace(/^exit:/, 'خروجی: '))) + '</span>' +
+      '</div>';
+    const table = '<div style="max-height:340px;overflow:auto" class="tbl-wrap"><table>' +
+      '<thead><tr><th>آی‌پی</th><th>پورت</th><th>وضعیت</th><th>تأخیر</th><th>جیتر</th><th>میزان خطا</th><th>امتیاز</th></tr></thead><tbody>' +
+      res.map((x) => {
+        const isBest = bestIp && x.ip === bestIp;
+        return '<tr' + (isBest ? ' style="background:var(--acsoft)"' : '') + '>' +
+          '<td class="mono">' + esc(x.ip) + (isBest ? ' <span class="badge ac">' + icon('fa-ranking-star') + ' بهترین</span>' : '') + '</td>' +
+          '<td class="mono">' + fa(x.port) + '</td>' +
+          '<td>' + (x.ok ? '<span class="badge ok">' + icon('fa-circle-check') + ' سالم</span>'
+                        : '<span class="badge bad">' + icon('fa-circle-xmark') + ' پاسخ نداد</span>') + '</td>' +
+          '<td class="mono">' + (x.ok ? fa(x.ms) + ' ms' : '—') + '</td>' +
+          '<td class="mono">' + (x.ok ? fa(x.jitter || 0) + ' ms' : '—') + '</td>' +
+          '<td class="mono">' + fa(x.loss || 0) + '٪</td>' +
+          '<td class="mono"><b>' + (x.ok ? fa(x.score) : '—') + '</b></td>' +
+          '</tr>';
+      }).join('') +
+      '</tbody></table></div>';
+    const applyRow = alive.length
+      ? '<div class="btn-row" style="margin-top:10px">' +
+        '<button class="btn sm p" data-act="radar-apply" data-uuid="' + esc(rec.__uuid || '') + '">' +
+        icon('fa-check') + ' اعمال روی این کانفیگ (' + fa(Math.min(10, alive.length)) + ' آی‌پی)</button>' +
+        '<button class="btn sm" data-act="radar-apply-all" data-uuid="' + esc(rec.__uuid || '') + '">' +
+        icon('fa-users') + ' اعمال روی همه‌ی کانفیگ‌ها</button></div>' +
+        '<div class="hint" style="margin-top:6px">با اعمال، آی‌پی‌های تمیز جایگزینِ لیستِ Clean IP این کانفیگ می‌شوند و کاربر باید اشتراکش را دوباره بگیرد.</div>'
+      : '<div class="hint" style="margin-top:8px;color:var(--warn)">هیچ آی‌پیِ سالمی پیدا نشد — می‌توانید دوباره اسکن کنید.</div>';
+    return head + summary + table + applyRow +
+      (rec.msg ? '<div class="hint" style="margin-top:8px">' + esc(rec.msg) + '</div>' : '');
+  }
+
+  /* تنظیماتِ اسکن — یک تابعِ جدا تا بعد از رسیدنِ /api/radar/config
+     بتواند بدون بازسازیِ کلِ صفحه دوباره نوشته شود */
+  function radarSettings() {
+    const o = rdOpt();
+    const exits = (RD.cfg && Array.isArray(RD.cfg.exits)) ? RD.cfg.exits : [];
+    const numF = (id, val, max, min, lbl) =>
+      '<label class="f"><span>' + lbl + '</span><input id="' + id + '" type="number" min="' + min + '" max="' + max + '" step="1" value="' + esc(val) + '"></label>';
+    return '<div class="um-grid three">' +
+      numF('rdCount', o.count, o.maxCount, 1, 'تعداد آی‌پی کاندیدا (حداکثر ' + fa(o.maxCount) + ')') +
+      numF('rdConc', o.concurrency, o.maxConcurrency, 1, 'هم‌زمانی (حداکثر ' + fa(o.maxConcurrency) + ')') +
+      numF('rdTimeout', o.timeoutMs, 30000, 200, 'زمان انتظار (میلی‌ثانیه)') +
+      numF('rdPort', o.port, 65535, 1, 'پورت') +
+      '<label class="f"><span>استفاده از TLS</span><div class="sw ' + (o.tls ? 'on' : '') + '" data-sw="rdTls"><i></i></div><input type="checkbox" class="hide" id="rdTls" data-sw-inp="rdTls"' + (o.tls ? ' checked' : '') + '></label>' +
+      '<label class="f"><span>اسکن از مسیرِ سرور خروجی</span><select id="rdExit">' +
+      '<option value=""' + (o.exitId ? '' : ' selected') + '>— مسیر مستقیم —</option>' +
+      exits.map((x) => '<option value="' + esc(x.id) + '"' + (x.id === o.exitId ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') +
+      '</select></label>' +
+      '</div>' +
+      '<div class="hint" style="margin-top:8px">تعدادِ نمونه برای هر آی‌پی: ' + fa(o.probes) +
+      ' • نگه‌داشتنِ ' + fa(o.keep) + ' نتیجه • سقفِ هم‌زمانی ' + fa(o.maxConcurrency) + ' (محدودیتِ سوکتِ ورکرز)' +
+      (RD.cfg && RD.cfg.msg ? ' • ' + esc(RD.cfg.msg) : '') + '</div>' +
+      '<div style="border-top:1px solid var(--bs);margin:14px 0 12px"></div>';
+  }
+
+  /* کارتِ رادار در صفحه‌ی هر کاربر/کانفیگ */
+  function radarCard(u) {
+    const rec = radarLast(u.uuid);
+    RD.uuid = u.uuid;
+    return '<div class="card" style="margin-top:12px"><header><span class="ic b2">' + icon('fa-tower-broadcast') + '</span>' +
+      '<div><h3>رادار — اسکنرِ آی‌پی تمیز</h3>' +
+      '<p>اندازه‌گیریِ واقعیِ تأخیر و جیتر از خودِ ورکر، یا از مسیرِ یکی از سرورهای خروجی</p></div>' +
+      '<div class="acts"><button class="btn sm p" data-act="radar-scan" data-uuid="' + esc(u.uuid) + '">' +
+      icon('fa-bolt') + ' شروع اسکن</button></div></header>' +
+      '<div class="bd">' +
+      '<div id="radarCfgWrap">' + radarSettings() + '</div>' +
+      '<div id="radarOut">' + radarHtml(rec) + '</div>' +
+      '</div></div>';
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
      نمای اشتراک — بازطراحی‌شده
      یک لینک، دو کار: داشبورد کاربر در مرورگر + کانفیگ در کلاینت
      ═══════════════════════════════════════════════════════════════ */
@@ -692,7 +1153,7 @@
       '</div></div>';
 
     return '<div class="page-head"><div><h1>اشتراک</h1><p>یک لینک برای همه‌ی کلاینت‌ها</p></div></div>' +
-      heroCard() + statusCard() + outputCard() + fakeConfigsCard();
+      heroCard() + statusCard() + radarCard(u) + outputCard() + fakeConfigsCard();
   }
 
   /* ═══════════ رندرِ گزارشِ «تست واقعی ترافیک» ═══════════
@@ -727,6 +1188,146 @@
       '<div class="hint" style="margin-top:8px">چند کیلوبایت اختلاف به‌خاطر هدرهای HTTP طبیعی است. دانلود توسط مرورگرِ شما انجام شد و حجم آن برای کانفیگِ همین کاربر ثبت گردید.</div>';
   }
   const ttShow = () => { const o = $('#trafficTestOut'); if (o) o.innerHTML = ttHtml(TT.last); };
+
+  /* ═══════════════════════════════════════════════════════════════
+     نمای «اتصال‌های زنده»
+     همان ردیف‌هایی که محدودساز روی آن‌ها تصمیم می‌گیرد — پس عددِ این
+     جدول با عددی که باعث رد شدنِ اتصال می‌شود یکی است.
+     ═══════════════════════════════════════════════════════════════ */
+
+  /* کارت‌های خلاصه — از CN.data رندر می‌شوند (نه از DOM)، برای همین
+     هر بارخوانی عددها را هم به‌روز می‌کند و فقط جدول نیست که تکان می‌خورد */
+  function cnStatsHtml() {
+    const d = CN.data || {};
+    const sum = d.summary || { users: 0, ips: 0, connections: 0 };
+    const ttl = d.ttlMs ? fa(Math.round(d.ttlMs / 1000)) + ' ثانیه' : '—';
+    return '<div class="grid g4">' +
+      '<div class="stat"><div class="lbl">کاربران متصل</div><div class="val">' + fa(sum.users || 0) + '</div>' +
+      '<div class="sub">از ' + fa(((S.d && S.d.users) || []).length) + ' کاربرِ تعریف‌شده</div></div>' +
+      '<div class="stat"><div class="lbl">آی‌پی‌های متمایز</div><div class="val">' + fa(sum.ips || 0) + '</div>' +
+      '<div class="sub">همان شمارنده‌ای که سقف روی آن بسته می‌شود</div></div>' +
+      '<div class="stat"><div class="lbl">تعداد اتصال‌ها</div><div class="val">' + fa(sum.connections || 0) + '</div>' +
+      '<div class="sub">نشستِ در جریان روی این مرجع</div></div>' +
+      '<div class="stat"><div class="lbl">مرجع فعال</div><div class="val" style="font-size:15px">' + esc(d.sourceLabel || d.source || '—') + '</div>' +
+      '<div class="sub">زمان آزادسازی: ' + ttl + '</div></div>' +
+      '</div>';
+  }
+
+  /* نشانگرِ کنارِ دکمه‌ی بارخوانی */
+  function cnBadgeHtml() {
+    if (!CN.data) return '<span class="badge">' + icon('fa-spinner fa-spin') + ' در حال بارگیری…</span>';
+    const n = (CN.data.summary || {}).connections || 0;
+    return '<span class="badge ' + (n ? 'ok' : '') + '">' + icon('fa-tower-broadcast') + ' به‌روزرسانی خودکار • ' + fa(n) + ' اتصال</span>';
+  }
+
+  /* متنِ قابلِ جست‌وجوی هر نشست — هم برای رندرِ اول و هم برای فیلترِ زنده،
+     تا فیلترِ لحظه‌ای دقیقاً همان ردیف‌هایی را نگه دارد که رندرِ بعدی نگه
+     می‌دارد (و برعکس) */
+  const cnKey = (s) => [s.user, s.uuid, s.ip, s.cc, s.transport].join(' ').toLowerCase();
+  const cnHit = (s) => {
+    const q = (CN.q || '').trim().toLowerCase();
+    return !q || cnKey(s).includes(q) ? 1 : 0;
+  };
+
+  /* جدولِ نشست‌ها — در هر بار بازسازیِ صفحه از CN.data رندر می‌شود */
+  function cnHtml(r) {
+    if (!r || !r.sessions) {
+      return '<div class="empty">در حال بارگیریِ اتصال‌های زنده…</div>';
+    }
+    if (!r.sessions.length) {
+      return '<div class="empty">هیچ اتصالِ زنده‌ای ثبت نشده است — هیچ آی‌پی‌ای قفل نیست.</div>';
+    }
+    const stamp = CN.ts ? new Date(CN.ts).toLocaleString('fa-IR', { hour12: false }) : '';
+    return '<div class="hint" style="margin-bottom:8px">آخرین بارخوانی: <b>' + (stamp ? fa(stamp) : '—') + '</b>' +
+      (CN.err ? ' • <span style="color:var(--bad)">' + esc(CN.err) + '</span>' : '') +
+      ' • <span class="hint">جدول هر ۱۰ ثانیه به‌روز می‌شود؛ داده‌ی قبلی تا رسیدنِ پاسخِ تازه سر جایش می‌ماند.</span></div>' +
+      '<div style="max-height:460px;overflow:auto" class="tbl-wrap"><table>' +
+      '<thead><tr><th>کانفیگ (یوزر)</th><th>آی‌پی</th><th>کشور</th><th>شروع</th><th>مدت اتصال</th>' +
+      '<th>ارسال</th><th>دریافت</th><th>انتقال</th><th>آخرین فعالیت</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>' +
+      r.sessions.map((s) => {
+        const nm = s.user || (s.known === false ? 'کانفیگ حذف‌شده' : '—');
+        const started = s.startedAt ? new Date(s.startedAt).toLocaleTimeString('fa-IR', { hour12: false }) : '—';
+        const hit = cnHit(s);
+        return '<tr data-hit="' + hit + '" data-q="' + esc(cnKey(s)) + '"' + (hit ? '' : ' class="hide"') + '>' +
+          '<td><div class="cell-main">' + esc(nm) + '</div><div class="cell-sub mono">' + esc(String(s.uuid || '').slice(0, 13)) + '…</div></td>' +
+          '<td class="mono">' + esc(s.ip || '—') + '</td>' +
+          '<td>' + (s.cc ? '<span class="badge">' + esc(s.cc) + '</span>' : '<span class="cell-sub">—</span>') + '</td>' +
+          '<td class="mono">' + esc(started) + '</td>' +
+          '<td class="mono">' + (s.durationSec === null || s.durationSec === undefined ? '<span class="cell-sub">نامعلوم</span>' : durFa(s.durationSec)) + '</td>' +
+          '<td class="mono">' + bytes(s.up || 0) + '</td>' +
+          '<td class="mono">' + bytes(s.down || 0) + '</td>' +
+          '<td><span class="badge b2">' + esc(s.transport || '—') + '</span></td>' +
+          '<td class="mono">' + (s.idleSec === null || s.idleSec === undefined ? '—' : durFa(s.idleSec) + ' پیش') + '</td>' +
+          '<td>' + (s.idle
+            ? '<span class="badge warn">' + icon('fa-triangle-exclamation') + ' بی‌فعالیت</span>'
+            : '<span class="badge ok">' + icon('fa-circle-check') + ' فعال</span>') + '</td>' +
+          '<td><div class="row-btns">' +
+          '<button class="btn sm" data-act="conn-kick" data-conn="' + esc(s.connId || '') + '" data-ip="' + esc(s.ip || '') + '" data-uuid="' + esc(s.uuid || '') + '" data-name="' + esc(nm) + '" title="قطع موقتِ فقط همین نشست — کاربر می‌تواند دوباره وصل شود">' + icon('fa-scissors') + ' قطع موقت</button>' +
+          '<button class="btn sm d" data-act="conn-ban" data-h="0" data-ip="' + esc(s.ip || '') + '" data-uuid="' + esc(s.uuid || '') + '" data-name="' + esc(nm) + '" title="مسدودسازیِ دائم این آی‌پی">' + icon('fa-ban') + ' مسدود دائم</button>' +
+          '<button class="btn sm d" data-act="conn-ban" data-h="1" data-ip="' + esc(s.ip || '') + '" data-uuid="' + esc(s.uuid || '') + '" data-name="' + esc(nm) + '" title="مسدودسازیِ ۱ ساعته">' + icon('fa-ban') + ' ۱ ساعت</button>' +
+          '<button class="btn sm d" data-act="conn-ban" data-h="24" data-ip="' + esc(s.ip || '') + '" data-uuid="' + esc(s.uuid || '') + '" data-name="' + esc(nm) + '" title="مسدودسازیِ ۲۴ ساعته">' + icon('fa-ban') + ' ۲۴ ساعت</button>' +
+          '</div></td></tr>';
+      }).join('') +
+      '</tbody></table></div>';
+  }
+
+  /* جدولِ آی‌پی‌های مسدودشده */
+  function cnBansHtml(list) {
+    if (!list) return '<div class="empty">در حال بارگیری…</div>';
+    if (!list.length) return '<div class="empty">هیچ آی‌پی‌ای مسدود نیست.</div>';
+    return '<div style="max-height:320px;overflow:auto" class="tbl-wrap"><table>' +
+      '<thead><tr><th>آی‌پی</th><th>کانفیگ</th><th>مانده / نوع</th><th>علت</th><th>زمان ثبت</th><th>عملیات</th></tr></thead><tbody>' +
+      list.map((b) => {
+        const u = (S.d && S.d.users || []).find((x) => String(x.uuid) === String(b.uuid || ''));
+        return '<tr>' +
+          '<td class="mono">' + esc(b.ip) + '</td>' +
+          '<td>' + (u ? '<span class="cell-main">' + esc(u.name) + '</span>' : (b.uuid ? '<span class="cell-sub mono">' + esc(String(b.uuid).slice(0, 13)) + '…</span>' : '<span class="cell-sub">همه</span>')) + '</td>' +
+          '<td>' + (b.permanent
+            ? '<span class="badge bad">' + icon('fa-ban') + ' دائم</span>'
+            : b.expired
+              ? '<span class="badge">' + icon('fa-circle-check') + ' منقضی شده</span>'
+              : '<span class="badge warn">' + icon('fa-triangle-exclamation') + ' ' + durFa(b.remainingSec) + '</span>') + '</td>' +
+          '<td class="cell-sub">' + esc(b.reason || '—') + '</td>' +
+          '<td class="cell-sub">' + (b.createdAt ? ago(b.createdAt) : '—') + '</td>' +
+          '<td><button class="btn sm s" data-act="conn-unban" data-ip="' + esc(b.ip) + '">' + icon('fa-check') + ' رفع مسدودی</button></td>' +
+          '</tr>';
+      }).join('') +
+      '</tbody></table></div>';
+  }
+
+  /* ═══ بارخوانیِ اتصال‌ها ═══
+     فقط پاسخِ سالم جای داده‌ی قبلی را می‌گیرد: اگر سرور لحظه‌ای پاسخ ندهد،
+     جدول همان داده‌ی قبلی را نشان می‌دهد تا نپرد. */
+  async function cnLoad() {
+    const [a, b] = await Promise.all([
+      api('GET', '/api/connections'),
+      api('GET', '/api/connections/bans'),
+    ]);
+    if (a && !a.error && a.sessions) { CN.data = a; CN.ts = Date.now(); CN.err = ''; }
+    else if (a && a.error) CN.err = String(a.error);
+    if (b && !b.error && Array.isArray(b.bans)) CN.bans = b.bans;
+    cnShow();
+  }
+
+  function connsView() {
+    return '<div class="page-head"><div><h1>اتصال‌های زنده</h1>' +
+      '<p>نشست‌های در جریان روی همان مرجعی که سقفِ آی‌پی روی آن حساب می‌شود</p></div>' +
+      '<div class="btn-row">' +
+      '<span id="connBadge" style="display:inline-flex">' + cnBadgeHtml() + '</span>' +
+      '<button class="btn sm" data-act="conn-load">' + icon('fa-rotate') + ' بارخوانی</button>' +
+      '</div></div>' +
+      '<div id="connStats">' + cnStatsHtml() + '</div>' +
+      '<div class="card" style="margin-top:12px"><header><span class="ic">' + icon('fa-activity') + '</span>' +
+      '<div><h3>نشست‌های در جریان</h3><p>قطعِ موقت فقط همین نشست را می‌بندد؛ مسدودسازی روی آی‌پی اعمال می‌شود</p></div>' +
+      '<div class="acts"><div class="search" style="width:210px" id="connSearchBox">' +
+      '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>' +
+      '<input id="connSearch" placeholder="جستجوی نام کانفیگ، UUID، آی‌پی…" value="' + esc(CN.q || '') + '"></div></div></header>' +
+      '<div class="bd"><div id="connOut">' + cnHtml(CN.data) + '</div></div></div>' +
+      '<div class="card" style="margin-top:12px"><header><span class="ic bad">' + icon('fa-ban') + '</span>' +
+      '<div><h3>آی‌پی‌های مسدودشده</h3><p>مسدودیِ دائم تا رفعِ دستی؛ مسدودیِ زمان‌دار خودبه‌خود آزاد می‌شود</p></div>' +
+      '<div class="acts"><button class="btn sm" data-act="conn-load">' + icon('fa-rotate') + ' بارخوانی</button></div></header>' +
+      '<div class="bd"><div id="connBansOut">' + cnBansHtml(CN.bans) + '</div></div></div>';
+  }
 
   function monitorView() {
     const st = S.d.stats || {}, u = S.d.users, r = S.range;
@@ -810,11 +1411,30 @@
       '<div class="bd"><div class="list">' + ((d.keys || []).map((k) => '<div class="row-item"><div class="grow"><b class="mono" style="font-size:11px">' + esc(k.key) + '</b><div class="cell-sub">' + esc(k.name) + ' • ' + (k.ro ? 'فقط‌خواندنی' : 'دسترسی کامل') + '</div></div>' +
         '<button class="btn sm ghost" data-act="copy" data-v="' + esc(k.key) + '">' + icon('fa-copy') + '</button>' +
         '<button class="btn sm d" data-act="key-del" data-id="' + esc(k.id) + '">' + icon('fa-trash-can') + '</button></div>').join('') || '<div class="empty">کلیدی ساخته نشده</div>') + '</div></div></div>' +
-      '<div class="card"><header><span class="ic b2">' + icon('fa-cloud') + '</span><div><h3>پشتیبان و بازیابی</h3><p>Export / Import کامل</p></div></header><div class="bd">' +
-      '<div class="btn-row"><button class="btn" data-act="backup">' + icon('fa-download') + ' دریافت پشتیبان</button>' +
-      '<button class="btn" data-act="restore">' + icon('fa-upload') + ' بازیابی از فایل</button>' +
-      '<input type="file" id="restoreFile" accept="application/json" class="hide"></div>' +
-      '<div class="hint" style="margin-top:10px">پشتیبان شامل تنظیمات، کاربران، کلیدها و قواعد روتینگ است.</div></div></div>' +
+      /* ═══ پشتیبان و بازیابی با کشیدن و رها کردن ═══
+         جایگزینِ دو مسیرِ قدیمی شد: دکمه‌ی «دریافت پشتیبان» که فایل را در
+         مرورگر از state می‌ساخت (و همیشه با سرور یکی نبود) و inputِ پنهانِ
+         بازیابی که از /api/action استفاده می‌کرد. */
+      '<div class="card"><header><span class="ic b2">' + icon('fa-database') + '</span><div><h3>پشتیبان و بازیابی</h3>' +
+      '<p>فایل را اینجا رها کنید • خروجی را بیرون بکشید</p></div></header><div class="bd">' +
+      '<div id="bkOut">' + bkOutHtml(BK.data) + '</div>' +
+      '<div class="btn-row" style="margin-top:8px;gap:6px;flex-wrap:wrap">' +
+      '<button class="btn sm p" data-act="bk-load">' + icon('fa-download') + ' ساخت پشتیبان</button>' +
+      '<button class="btn sm ghost" data-act="bk-clear">' + icon('fa-broom') + ' پاک‌کردن</button>' +
+      '</div>' +
+      '<div style="border-top:1px solid var(--bs);margin:12px 0"></div>' +
+      '<div id="bkDrop" data-act="bk-pick" role="button" tabindex="0" ' +
+      'style="border:1.5px dashed var(--bd);border-radius:12px;padding:20px 12px;text-align:center;cursor:pointer" ' +
+      'title="کلیک کنید تا فایل انتخاب شود">' +
+      '<div style="display:flex;flex-direction:column;align-items:center;gap:6px">' + icon('fa-upload') +
+      '<b>فایل پشتیبان (JSON) را اینجا رها کنید</b>' +
+      '<span class="hint">یا کلیک کنید تا از روی دیسک انتخاب شود</span></div></div>' +
+      '<input type="file" id="bkFile" accept="application/json,.json" class="hide">' +
+      '<div id="bkInfo">' + bkInfoHtml() + '</div>' +
+      '<div id="bkErr">' + bkErrHtml() + '</div>' +
+      '<div class="hint" style="margin-top:10px">پشتیبان شامل تنظیمات، کاربران، کلیدها و قواعد روتینگ است. ' +
+      'در حالتِ «ادغام» کاربرانِ فعلی نگه داشته می‌شوند؛ در «جایگزینی کامل» همه چیز با فایل عوض می‌شود.</div>' +
+      '</div></div>' +
       '<div class="card"><header><span class="ic">' + icon('fa-circle-info') + '</span><div><h3>مسیرهای سرویس</h3></div></header><div class="bd">' +
       '<div class="kv"><span>ورود پنل</span><b class="mono">/' + esc(s.auth.path) + '</b></div>' +
       '<div class="kv"><span>صفحه‌ی کاربر و ساب</span><b class="mono">/' + esc(s.sub.path) + '/&lt;uuid&gt;</b></div>' +
@@ -826,15 +1446,11 @@
       '<button class="btn d" data-act="logs-clear">' + icon('fa-broom') + ' پاک‌سازی لاگ</button></div></div></div></div>';
   }
 
-  /* نمایش اسکیما با آکاردئون به‌جای کارت‌های تودرتو */
-  const schemaView = (key, head) => {
-    const s = S.d.settings;
-    return '<div class="page-head"><div><h1>' + head[0] + '</h1><p>' + head[1] + '</p></div></div>' +
-      '<div class="card"><header><span class="ic">' + icon('fa-gear') + '</span><div><h3>تنظیمات</h3><p>روی هر بخش کلیک کنید تا باز/بسته شود</p></div>' +
-      '<div class="acts">' + saveBtn('save-' + key) + '</div></header><div class="bd" style="padding:12px">' +
-      SCHEMA[key].map((g) => acc(g.t, g.icon || 'fa-gear', g.f, s, g.two ? 'two' : 'two')).join('') +
-      '</div></div>';
-  };
+  /* ⚠️ schemaView از اینجا حذف شد: این تابع تنها مسیری بود که گروه‌های
+     proto / network / telegram / cloud / update را رندر می‌کرد، اما هیچ
+     viewای آن را صدا نمی‌زد (VIEWS مستقیم به configView می‌رساند) و خودِ
+     تابع هم هیچ فراخوانی نداشت — یعنی آن فیلدها در عمل دیده نمی‌شدند.
+     تنظیماتِ معادل در configView و securityView رندر می‌شوند. */
 
   function tgExtra() {
     const cmds = ['/panel', '/users', '/usage', '/sub <uuid>', '/add <name>', '/del <name>', '/reset <name>', '/extend <name> <days>', '/rename <name> <new>', '/note <name> <text>', '/limit <name> <n>', '/search <q>', '/inactive', '/panic', '/kill', '/dns <url>', '/ips <list>', '/relay <url>', '/nodes', '/lang en'];
@@ -868,11 +1484,13 @@
       '<div class="card"><header><span class="ic bad">' + icon('fa-stethoscope') + '</span><div><h3>تست تونل و کانفیگ</h3><p>چرا کانفیگ وصل نمی‌شود؟ اینجا تشخیص داده می‌شود</p></div>' +
       '<div class="acts"><button class="btn sm p" data-act="tunnel-test">' + icon('fa-vial') + ' اجرای تست</button></div></header>' +
       '<div class="bd"><div id="tunnelOut"><div class="empty">با یک کلیک، مسیر تونل، SNI، پروتکل‌ها، خروجی سوکت و یک کانفیگ نمونه بررسی می‌شود.</div></div></div></div>' +
-      '<div class="card"><header><span class="ic">' + icon('fa-key') + '</span><div><h3>تغییر رمز و 2FA</h3><p>پس از تغییر، نشست‌ها باطل می‌شوند</p></div></header><div class="bd">' +
-      '<label class="f"><span>رمز فعلی</span><input type="password" id="pwOld"></label>' +
-      '<label class="f"><span>رمز جدید</span><input type="password" id="pwNew"></label>' +
-      '<div class="btn-row"><button class="btn p" data-act="pw-change">' + icon('fa-check') + ' تغییر رمز</button>' +
-      '<button class="btn" data-act="2fa-gen">' + icon('fa-mobile-screen') + ' ساخت کلید 2FA</button>' +
+      /* ⚠️ کارتِ «تغییر رمز» از اینجا حذف شد: همان کارت با همان عنوان در
+         صفحه‌ی امنیت و در صفحه‌ی پیکربندی دو بار رندر می‌شد و هر کدام مسیرِ
+         متفاوتی را صدا می‌زدند (قدیمی /api/action در برابر /api/password).
+         تنها نسخه‌ی باقی‌مانده کارتِ «تغییر رمز عبور» در صفحه‌ی پیکربندی است. */
+      '<div class="card"><header><span class="ic">' + icon('fa-key') + '</span><div><h3>2FA و مسیر ورود</h3>' +
+      '<p>تغییرِ رمز عبور در صفحه‌ی «پیکربندی» انجام می‌شود</p></div></header><div class="bd">' +
+      '<div class="btn-row"><button class="btn" data-act="2fa-gen">' + icon('fa-mobile-screen') + ' ساخت کلید 2FA</button>' +
       '<button class="btn" data-act="rotate-path">' + icon('fa-shuffle') + ' چرخش مسیر ورود</button></div>' +
       '<div id="totpOut" style="margin-top:12px"></div></div></div>' +
       '<div class="card"><header><span class="ic warn">' + icon('fa-mask') + '</span><div><h3>مسیر ورود و سایت پوششی واقعی</h3><p>ریشه‌ی دامنه یک سایت زنده‌ی واقعی را کامل نشان می‌دهد</p></div>' +
@@ -963,17 +1581,80 @@
     /* ═══ فقط فیلدهای ضروری (مسیر پنل در بخش استتار است) ═══ */
     const essential = () => acc('تنظیمات ضروری', 'fa-gear', [
       { p: 'path', l: 'مسیر تونل', t: 'text', mono: 1, h: 'پیش‌فرض: /sg' },
-      { p: 'ports', l: 'پورت‌ها', t: 'text', mono: 1, h: 'با کاما: 443, 2053' },
-      { p: 'auth.password', l: 'کلید اصلی', t: 'pw', h: 'رمز ورود پنل' },
     ], s);
 
-    /* ═══ نام‌گذاری کانفیگ‌ها — مثل نهان ═══ */
-    const naming = () => acc('نام‌گذاری کانفیگ‌ها', 'fa-edit', [
-      { p: 'sub.namePrefix', l: 'پیشوند نام', t: 'text', h: 'مثل: پنل → «پنل | فرانکفورت | :443»' },
-      { p: 'sub.nameStrategy', t: 'sel', o: ['default', 'user-port', 'type-user-port', 'host-port-user', 'ip'],
-        lbls: { default: 'پیش‌فرض — V-Core-443', 'user-port': 'کاربر-پورت', 'type-user-port': 'پروتکل-کاربر-پورت', 'host-port-user': 'هاست-پورت-کاربر', ip: 'فقط IP' },
-        l: 'استراتژی نام' },
-    ], s);
+    /* ═══ انتخابگرِ پورت — چیپ به‌جای فیلدِ متنی ═══ */
+    const portsAcc = () => {
+      const cur = portList(s.ports);
+      return '<div class="acc open"><div class="acc-h" data-acc>' + icon('fa-tower-broadcast') + '<span>پورت‌ها</span>' +
+        '<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>' +
+        '<div class="acc-b"><div class="bd" style="padding:0 12px 12px">' +
+        '<div class="hint" style="margin-bottom:8px">پورت‌هایی که کلاینت از راهِ آن‌ها به ورکر وصل می‌شود — فقط پورت‌های پشتیبانی‌شده‌ی کلاودفلر نشان داده می‌شوند.</div>' +
+        '<div class="chips" id="portChips">' + PORTS_ALL.map((p) => portChip(p, cur.indexOf(p) >= 0)).join('') + '</div>' +
+        '<input type="hidden" id="portsVal" data-p="ports" data-t="ports" value="' + esc(cur.join(',')) + '">' +
+        '<div class="btn-row" style="margin-top:10px;gap:6px;flex-wrap:wrap">' +
+        '<button class="btn sm s" data-act="ports-essential">' + icon('fa-lock') + ' فقط ضروری</button>' +
+        '<button class="btn sm s" data-act="ports-recommended">' + icon('fa-circle-check') + ' همه‌ی پیشنهادی‌ها</button>' +
+        '<button class="btn sm ghost" data-act="ports-all">' + icon('fa-tower-broadcast') + ' همه‌ی پورت‌ها</button>' +
+        '</div>' +
+        '<div class="hint" id="portSum" style="margin-top:8px">' + portSumHtml(cur) + '</div>' +
+        '<div class="hint" style="margin-top:6px">دو پورتِ ۴۴۳ و ۸۰ «ضروری»اند: ترافیکِ عادیِ https/httpِ ورکر روی همین‌هاست، ' +
+        'برای همین همیشه فعال‌اند و نمی‌توان آن‌ها را خاموش کرد.</div>' +
+        '</div></div></div>';
+    };
+
+    /* ═══ تغییر رمز عبور — کارتِ مستقل در صفحه‌ی پیکربندی ═══
+       مسیرِ قدیمی (فیلدِ auth.password در تنظیماتِ ضروری) حذف شده: آن فیلد
+       مقدارِ ذخیره‌شده را نشان می‌داد ولی وقتی MASTER_KEY بایند شده باشد
+       بی‌اثر است — کاربر فکر می‌کرد رمز عوض شده است. */
+    const pwCard = () => '<div class="card" id="pwCard"><header><span class="ic">' + icon('fa-key') + '</span>' +
+      '<div><h3>تغییر رمز عبور</h3><p>رمزِ ورود به پنل — پس از تغییر، باید دوباره وارد شوید</p></div></header><div class="bd">' +
+      '<div class="um-grid two">' +
+      '<label class="f"><span>رمز فعلی</span><input type="password" id="pwCur" autocomplete="current-password"></label>' +
+      '<label class="f"><span>رمز جدید</span><input type="password" id="pwNew" autocomplete="new-password"></label>' +
+      '<label class="f"><span>تکرارِ رمز جدید</span><input type="password" id="pwNew2" autocomplete="new-password"></label>' +
+      '</div>' +
+      '<div class="hint" style="margin-top:6px">دست‌کم ۵ نویسه • هیچ محدودیتی روی الگو یا طولِ رمز نیست</div>' +
+      '<div class="btn-row" style="margin-top:10px"><button class="btn p" data-act="pw-save">' + icon('fa-check') + ' تغییر رمز</button></div>' +
+      '<div id="pwOut" style="margin-top:10px">' + pwOutHtml() + '</div>' +
+      '</div></div>';
+
+    /* ═══ سرورهای خروجی VLESS ═══ */
+    const exitsCard = () => '<div class="card" id="exitsCard"><header><span class="ic">' + icon('fa-server') + '</span>' +
+      '<div><h3>سرورهای خروجی VLESS</h3><p>ترافیکِ کانفیگ‌ها می‌تواند از یکی از این سرورها خارج شود</p></div>' +
+      '<div class="acts"><button class="btn sm s" data-act="exit-new">' + icon('fa-plus') + ' افزودن</button>' +
+      '<button class="btn sm" data-act="exit-reload">' + icon('fa-rotate') + ' بارخوانی</button></div></header>' +
+      '<div class="bd"><div id="exitsOut">' + exitsHtml(EX.data) + '</div></div></div>';
+
+    /* ═══ نام‌گذاری کانفیگ‌ها — الگوی کاملاً دلخواه + الگوهای آماده ═══ */
+    const naming = () => {
+      const pat = getP(s, 'sub.namePattern') || '';
+      return '<div class="acc open"><div class="acc-h" data-acc>' + icon('fa-pen') + '<span>نام‌گذاری کانفیگ‌ها</span>' +
+        '<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>' +
+        '<div class="acc-b"><div class="bd" style="padding:0 12px 12px">' +
+        '<div class="um-grid two">' +
+        field({ p: 'sub.namePrefix', l: 'پیشوند نام', t: 'text', h: 'در الگو با {prefix} می‌آید' }, getP(s, 'sub.namePrefix')) +
+        '<label class="f"><span>الگوی نام (کاملاً دلخواه)</span><input id="nmPat" data-p="sub.namePattern" class="mono" value="' + esc(pat) + '">' +
+        '<div class="hint" style="margin-top:5px">هر متنی با هر طولی — نه محدودیتِ الگو دارد و نه سقفِ کاراکتر</div></label>' +
+        '</div>' +
+        '<div class="hint" style="margin-top:8px">متغیرها (برای درج کلیک کنید):</div>' +
+        '<div class="chips" style="margin-top:5px">' + NAME_TOKENS.map((t) =>
+          '<button type="button" class="chip" data-nm-var="' + t.k + '"><span class="mono">{' + t.k + '}</span> ' + esc(t.l) + '</button>').join('') + '</div>' +
+        '<div class="hint" style="margin-top:10px">الگوهای آماده:</div>' +
+        '<div class="chips" style="margin-top:5px">' + NAME_TPL.map((t) =>
+          '<button type="button" class="chip" data-nm-tpl="' + esc(t.rnd ? 'rnd' : t.p) + '">' + esc(t.l) + '</button>').join('') + '</div>' +
+        '<div id="nmPreview" style="margin-top:10px">' + nmPreviewHtml() + '</div>' +
+        '<div class="btn-row" style="margin-top:8px;gap:6px;flex-wrap:wrap">' +
+        '<input id="nmStart" type="number" min="1" value="' + esc(NM.start) + '" style="max-width:78px">' +
+        '<span class="hint">شروعِ شماره‌گذاری</span>' +
+        '<button class="btn sm p" data-act="nm-apply">' + icon('fa-check') + ' اعمال روی انتخاب‌شده‌ها</button>' +
+        '<button class="btn sm ghost" data-act="nm-sel-all">' + icon('fa-check') + ' انتخابِ همه</button>' +
+        '<button class="btn sm ghost" data-act="nm-sel-none">' + icon('fa-xmark') + ' هیچ‌کدام</button>' +
+        '</div>' +
+        '<div class="hint" style="margin-top:6px">شماره‌گذاری خودکار است: هر کانفیگِ انتخاب‌شده یک شماره می‌گیرد و اگر نامی تکراری شود، ' +
+        'به‌جای خطا خودکار شماره به آن افزوده می‌شود.</div>' +
+        '</div></div></div>';
+    };
 
     /* ═══ شبکه ═══ */
     const network = () => acc('شبکه', 'fa-network-wired', [
@@ -1080,14 +1761,15 @@
       '<button class="btn p" data-act="save-config">' + icon('fa-floppy-disk') + ' ذخیره</button></div>' +
 
       modeCard() + quickCard() +
-      '<div style="padding:0 2px">' + essential() + naming() + network() + telegram() + stealth() + advanced() + '</div>' +
+      '<div style="padding:0 2px">' + essential() + portsAcc() + naming() + network() + telegram() + stealth() + advanced() + '</div>' +
+      pwCard() + exitsCard() +
 
       '<div class="btn-row" style="justify-content:center;margin-top:10px">' +
       '<button class="btn p lg" data-act="save-config">' + icon('fa-floppy-disk') + ' ذخیره</button></div>';
   }
 
   const VIEWS = {
-    dash: dashView, users: usersView, sub: subView, monitor: monitorView, logs: logsView, settings: settingsView,
+    dash: dashView, users: usersView, sub: subView, monitor: monitorView, conns: connsView, logs: logsView, settings: settingsView,
     config: configView,
     update: () => configView(),
     proto: () => configView(),
@@ -1142,6 +1824,15 @@
       (id === 'logs' ? '<span class="cnt">' + fa((d.logs || []).length) + '</span>' : '') + '</button>').join('') + '</div>').join('');
     $('#view').innerHTML = '<div class="fade">' + (VIEWS[S.view] || dashView)() + '</div>';
     if (S.view === 'sub') setTimeout(refreshPreview, 30);
+    /* صفحه‌ی کاربر: تنظیماتِ پیش‌فرضِ رادار از /api/radar/config خوانده می‌شود؛
+       گزارشِ قبلی دست‌نخورده سر جایش می‌ماند و فقط داخل #radarOut رندر می‌شود. */
+    if (S.view === 'sub') radarCfg();
+    /* اتصال‌های زنده: داده‌ی قبلی همان لحظه رندر می‌شود و بارخوانی فقط همان
+       دو بلوک را به‌روز می‌کند — جدول هیچ وقت خالی نمی‌شود. */
+    if (S.view === 'conns') setTimeout(cnLoad, 20);
+    /* سرورهای خروجی: فهرست از /api/exits خوانده می‌شود و فقط داخل #exitsOut
+       رندر می‌شود — بقیه‌ی صفحه دست‌نخورده می‌ماند. */
+    if (S.view === 'config') setTimeout(exLoad, 20);
     const cw = $('#chartWrap');
     if (cw) {
       const ser = S.view === 'monitor'
@@ -1195,6 +1886,24 @@
       }
       return;
     }
+    /* ═══════ مرحله‌ی ۴ — انتخابگرِ پورت ═══════
+       چیپ‌ها data-act ندارند (دکمه‌یِ فرم نیستند، فقط یک فیلدِ پنهان را
+       عوض می‌کنند) برای همین پیش از نگهبانِ [data-act] بررسی می‌شوند. */
+    const pc = e.target.closest('[data-port]');
+    if (pc) {
+      e.preventDefault();
+      if (pc.dataset.lock) { toast('پورتِ ' + fa(pc.dataset.port) + ' ضروری است و نمی‌توان آن را غیرفعال کرد', 'info'); return; }
+      const cur = portList($('#portsVal') ? $('#portsVal').value : '');
+      const p = parseInt(pc.dataset.port, 10);
+      const at = cur.indexOf(p);
+      if (at >= 0) {
+        if (cur.length <= 1) { toast('دست‌کم یک پورت باید فعال بماند', 'err'); return; }
+        cur.splice(at, 1);
+      } else cur.push(p);
+      portSet(cur);
+      return;
+    }
+
     /* آکاردئون */
     const ach = e.target.closest('[data-acc]');
     if (ach) { e.preventDefault(); e.stopPropagation(); ach.parentElement.classList.toggle('open'); return; }
@@ -1300,7 +2009,8 @@
       e.preventDefault(); e.stopPropagation();
       const on = !sw.classList.contains('on');
       sw.classList.toggle('on', on);
-      const inp = sw.parentElement.querySelector('[data-p="' + sw.dataset.sw + '"]');
+      const inp = sw.parentElement.querySelector('[data-p="' + sw.dataset.sw + '"]') ||
+        sw.parentElement.querySelector('[data-sw-inp="' + sw.dataset.sw + '"]');
       if (inp) inp.checked = on;
       return;
     }
@@ -1337,6 +2047,86 @@
       else if (a === 'fmt') { S.fmt = v; render(); }
       else if (a === 'range') { S.range = v; render(); }
       else if (a === 'loglv') { S.tab.log = v; render(); }
+      /* ═══════ اتصال‌های زنده ═══════ */
+      else if (a === 'conn-load') { busy(t, 'بارخوانی'); await cnLoad(); free(t); }
+      else if (a === 'conn-kick') {
+        const nm = t.dataset.name || t.dataset.uuid || 'این کانفیگ';
+        if (!confirm('نشستِ «' + nm + '» از آی‌پی ' + t.dataset.ip + ' قطع شود؟\nکاربر می‌تواند بلافاصله دوباره وصل شود.')) return;
+        busy(t, 'قطع…');
+        const r = await api('POST', '/api/connections/kick', { connId: t.dataset.conn, uuid: t.dataset.uuid, ip: t.dataset.ip });
+        free(t);
+        toast(r.ok ? (r.msg || 'اتصال قطع شد') : (r.error || 'انجام نشد'), r.ok ? 'ok' : 'err');
+        await cnLoad();
+      }
+      else if (a === 'conn-ban') {
+        const h = Number(t.dataset.h || 0);
+        const nm = t.dataset.name || '';
+        const kind = h ? fa(h) + ' ساعت' : 'دائم';
+        if (!confirm('آی‌پی ' + t.dataset.ip + (nm ? ' (کانفیگ «' + nm + '»)' : '') + ' به‌صورت ' + kind + ' مسدود شود؟\nنشست‌های در جریانِ همین آی‌پی هم بسته می‌شوند.')) return;
+        busy(t, 'مسدودسازی…');
+        const r = await api('POST', '/api/connections/ban', { ip: t.dataset.ip, uuid: t.dataset.uuid, hours: h, reason: 'از پنل — مسدودی ' + (h ? h + ' ساعته' : 'دائم') });
+        free(t);
+        toast(r.ok ? (r.msg || 'آی‌پی مسدود شد') : (r.error || 'انجام نشد'), r.ok ? 'ok' : 'err');
+        await cnLoad();
+      }
+      else if (a === 'conn-unban') {
+        if (!confirm('مسدودیِ آی‌پی ' + t.dataset.ip + ' برداشته شود؟')) return;
+        busy(t, 'رفع مسدودی…');
+        const r = await api('POST', '/api/connections/unban', { ip: t.dataset.ip });
+        free(t);
+        toast(r.ok ? (r.msg || 'مسدودی برداشته شد') : (r.error || 'انجام نشد'), r.ok ? 'ok' : 'err');
+        await cnLoad();
+      }
+      /* ═══════ رادار ═══════ */
+      else if (a === 'radar-scan') {
+        await radarCfg();
+        const o = rdOpt();
+        /* مقادیر از فیلدها خوانده می‌شوند تا همان چیزی فرستاده شود که دیده می‌شود */
+        const num = (id, dflt) => { const el = $('#' + id); return el && el.value !== '' ? Number(el.value) : dflt; };
+        const body = {
+          count: Math.max(1, Math.min(o.maxCount, num('rdCount', o.count) || o.count)),
+          concurrency: Math.max(1, Math.min(o.maxConcurrency, num('rdConc', o.concurrency) || o.concurrency)),
+          timeoutMs: Math.max(200, Math.min(30000, num('rdTimeout', o.timeoutMs) || o.timeoutMs)),
+          ports: [Math.max(1, Math.min(65535, num('rdPort', o.port) || o.port))],
+          tls: $('#rdTls') ? !!$('#rdTls').checked : o.tls,
+          exitId: $('#rdExit') ? String($('#rdExit').value || '') : o.exitId,
+        };
+        RD.opt = { count: body.count, concurrency: body.concurrency, timeoutMs: body.timeoutMs, port: body.ports[0], tls: body.tls, exitId: body.exitId };
+        RD.running = true;
+        radarShow();
+        busy(t, 'در حال اسکن…');
+        const r = await api('POST', '/api/radar/scan', body);
+        free(t);
+        RD.running = false;
+        if (r.error) { RD.err = String(r.error); radarShow(); toast(r.error, 'err'); return; }
+        if (!r.ok) { RD.err = String(r.error || r.msg || 'اسکن انجام نشد'); radarShow(); toast(RD.err, 'err'); return; }
+        radarSave(t.dataset.uuid || RD.uuid || '', r);
+        radarShow();
+        toast(r.msg || ('اسکن تمام شد — ' + fa(r.tested || 0) + ' آی‌پی تست شد'), r.alive ? 'ok' : 'err');
+      }
+      else if (a === 'radar-apply' || a === 'radar-apply-all') {
+        const uuid = t.dataset.uuid || RD.uuid || '';
+        const rec = radarLast(uuid);
+        const ips = rec && Array.isArray(rec.results)
+          ? rec.results.filter((x) => x.ok).map((x) => x.ip).slice(0, 10)
+          : [];
+        if (!ips.length) { toast('در گزارشِ فعلی هیچ آی‌پیِ سالمی نیست — دوباره اسکن کنید', 'err'); return; }
+        const all = a === 'radar-apply-all';
+        if (!confirm(fa(ips.length) + ' آی‌پیِ تمیز روی ' + (all ? 'همه‌ی کانفیگ‌ها' : 'این کانفیگ') + ' اعمال شود؟\nکاربران باید اشتراک‌شان را دوباره بگیرند.')) return;
+        busy(t, 'اعمال…');
+        const r = await api('POST', '/api/radar/apply', all ? { ips, all: true } : { ips, uuid });
+        free(t);
+        toast(r.ok ? (r.msg || 'آی‌پی‌ها اعمال شد') : (r.error || 'انجام نشد'), r.ok ? 'ok' : 'err');
+        if (r.ok) await refresh();
+      }
+      else if (a === 'radar-clear') {
+        const uuid = RD.uuid || '';
+        delete RD.last[uuid];
+        RD.err = '';
+        try { localStorage.setItem(RD_KEY, JSON.stringify(RD.last)); } catch (e) {}
+        radarShow();
+        toast('گزارشِ رادار پاک شد', 'info');
+      }
       else if (a === 'save-config') {
         busy(t, 'ذخیره');
         /* همه‌ی فیلدها از DOM خوانده می‌شوند — شامل تلگرام */
@@ -1596,10 +2386,187 @@
       else if (a === 'upd-deploy') { busy(t, 'نصب'); const r = await api('POST', '/api/action', { act: 'update-deploy' }); free(t); toast(r.msg || 'نصب شد'); await refresh(); }
       else if (a === 'upd-rollback') { busy(t, 'بازگشت'); const r = await api('POST', '/api/action', { act: 'update-rollback' }); free(t); toast(r.msg || 'بازگشت انجام شد', 'info'); await refresh(); }
       else if (a === 'rotate-path') { const r = await api('POST', '/api/action', { act: 'rotate-path' }); toast('مسیر جدید: /' + (r.path || '')); await refresh(); }
-      else if (a === 'pw-change') { const r = await api('POST', '/api/action', { act: 'pw-change', old: $('#pwOld').value, nw: $('#pwNew').value }); toast(r.ok ? 'رمز تغییر کرد — دوباره وارد شوید' : (r.error || 'خطا'), r.ok ? 'ok' : 'err'); if (r.ok) { S.token = ''; sessionStorage.removeItem('sg_t'); S.d = null; render(); } }
+      /* ═════════════════════════════════════════════════════════════
+         مرحله‌ی ۴ — انتخابگرِ پورت
+         این دکمه‌ها فرم را ذخیره نمی‌کنند؛ فقط مقدارِ فیلدِ پنهان را عوض
+         می‌کنند تا با ذخیره‌ی بعدیِ تنظیمات همراه برود.
+         ═════════════════════════════════════════════════════════════ */
+      else if (a === 'ports-essential') { portSet(PORT_ESSENTIAL); toast('فقط پورت‌های ضروری فعال شد — ذخیره را فراموش نکنید', 'info'); }
+      else if (a === 'ports-recommended') { portSet(PORTS_DEFAULT); toast('پورت‌های ضروری + پیشنهادی فعال شد', 'info'); }
+      else if (a === 'ports-all') { portSet(PORTS_ALL); toast('همه‌ی پورت‌های پشتیبانی‌شده فعال شد', 'info'); }
+
+      /* ═════════════════════════════════════════════════════════════
+         مرحله‌ی ۴ — تغییر رمز عبور
+         چهار خروجیِ متفاوت دارد و هر کدام رفتارِ خودش را دارد:
+         ok → پیامِ سرور + خروجِ اجباری (relogin)، چون نشست با رمزِ قبلی
+              امضا شده و بعد از تغییر نامعتبر است؛
+         ۴۰۹ → رمز به MASTER_KEY بایند شده، پس فیلدها قفل می‌شوند تا
+              کاربر فکر نکند چیزی عوض شده است.
+         ═════════════════════════════════════════════════════════════ */
+      else if (a === 'pw-save') {
+        const curEl = $('#pwCur'), nwEl = $('#pwNew'), nw2El = $('#pwNew2');
+        const cur = curEl ? curEl.value : '', nw = nwEl ? nwEl.value : '', nw2 = nw2El ? nw2El.value : '';
+        PW.msg = ''; PW.kind = '';
+        if (!cur) { PW.msg = 'رمز عبور فعلی را وارد کنید'; PW.kind = 'err'; pwShow(); return; }
+        if (nw.length < 5) { PW.msg = 'رمز جدید باید دست‌کم ۵ نویسه باشد'; PW.kind = 'err'; pwShow(); return; }
+        if (nw !== nw2) { PW.msg = 'تکرارِ رمز جدید با رمز جدید یکسان نیست'; PW.kind = 'err'; pwShow(); return; }
+        busy(t, 'در حال تغییر');
+        const r = await api('POST', '/api/password', { current: cur, newPassword: nw });
+        free(t);
+        PW.msg = (r && (r.msg || r.error)) || 'تغییرِ رمز انجام نشد';
+        /* ۴۰۹ = رمز از متغیر محیطی می‌آید و از این صفحه قابل تغییر نیست */
+        if (r && r.__status === 409) { PW.locked = true; PW.kind = 'err'; pwShow(); toast(PW.msg, 'err'); return; }
+        if (r && r.ok) {
+          PW.kind = 'ok'; pwShow(); toast(PW.msg || 'رمز تغییر کرد', 'ok');
+          if (r.relogin !== false) { S.token = ''; sessionStorage.removeItem('sg_t'); S.d = null; render(); }
+          return;
+        }
+        PW.kind = 'err'; pwShow(); toast(PW.msg, 'err');
+      }
+
+      /* ═════════════════════════════════════════════════════════════
+         مرحله‌ی ۴ — پشتیبان و بازیابی
+         ═════════════════════════════════════════════════════════════ */
+      else if (a === 'bk-load') {
+        busy(t, 'در حال ساخت');
+        const r = await api('GET', '/api/backup');
+        free(t);
+        if (r && r.kind) { BK.data = r; BK.err = ''; BK.errors = []; bkShow(); toast('پشتیبان آماده است — آن را بیرون بکشید یا دانلود کنید', 'ok'); }
+        else toast((r && r.error) || 'ساختِ پشتیبان انجام نشد', 'err');
+      }
+      else if (a === 'bk-download') {
+        if (!BK.data) { toast('ابتدا «ساخت پشتیبان» را بزنید', 'err'); return; }
+        const blob = new Blob([JSON.stringify(BK.data, null, 2)], { type: 'application/json' });
+        const dl = document.createElement('a');
+        dl.href = URL.createObjectURL(blob);
+        dl.download = bkName(BK.data);
+        dl.click();
+        setTimeout(() => URL.revokeObjectURL(dl.href), 4000);
+        toast('پشتیبان دانلود شد', 'ok');
+      }
+      else if (a === 'bk-clear') { BK.data = null; BK.file = null; BK.err = ''; BK.errors = []; bkShow(); toast('پاک شد', 'info'); }
+      /* ناحیه‌ی رها کردن — کلیک هم همان انتخاب‌گرِ فایل را باز می‌کند */
+      else if (a === 'bk-pick') { const f = $('#bkFile'); if (f) f.click(); }
+      else if (a === 'bk-mode') { BK.mode = String(v || 'merge'); bkShow(); }
+      else if (a === 'bk-cancel') { BK.file = null; BK.err = ''; BK.errors = []; bkShow(); }
+      else if (a === 'bk-restore') {
+        if (!BK.file || !BK.file.data) { toast('ابتدا یک فایل پشتیبان رها کنید', 'err'); return; }
+        const cnt = fa(((BK.file.data || {}).users || []).length);
+        if (!confirm('فایل پشتیبان با ' + cnt + ' کاربر ' +
+            (BK.mode === 'replace' ? 'جایگزینِ همه‌ی تنظیمات شود؟\nتنظیماتِ فعلی از بین می‌رود.' : 'در تنظیماتِ فعلی ادغام شود؟\nکاربرانِ فعلی نگه داشته می‌شوند.') +
+            '\nادامه می‌دهید؟')) return;
+        busy(t, 'در حال بازیابی');
+        const r = await api('POST', '/api/restore', { data: BK.file.data, mode: BK.mode });
+        free(t);
+        if (r && r.ok) {
+          BK.file = null; BK.data = null; BK.err = ''; BK.errors = []; bkShow();
+          toast(r.msg || 'بازیابی انجام شد', 'ok');
+          await refresh();
+          return;
+        }
+        /* خطاها همان‌طور که سرور فرستاده نمایش داده می‌شوند — فایلِ نامعتبر
+           نباید بی‌صدا رد شود و کاربر نداند کدام بخش مشکل داشت */
+        BK.err = (r && r.error) || 'بازیابی انجام نشد';
+        BK.errors = (r && Array.isArray(r.errors)) ? r.errors : [];
+        bkShow();
+        toast(BK.err, 'err');
+      }
+
+      /* ═════════════════════════════════════════════════════════════
+         مرحله‌ی ۴ — نام‌گذاریِ کانفیگ‌ها
+         ═════════════════════════════════════════════════════════════ */
+      else if (a === 'nm-var') {
+        const pat = $('#nmPat'); if (!pat) return;
+        pat.value = String(pat.value) + '{' + v + '}';
+        NM.pat = pat.value;
+        nmShow(); pat.focus();
+      }
+      else if (a === 'nm-tpl') {
+        /* «تصادفی» یعنی یکی از الگوهای آماده به‌شکل تصادفی انتخاب شود */
+        const list = NAME_TPL.filter((x) => !x.rnd);
+        const pick = (!v || v === 'rnd') ? list[Math.floor(Math.random() * list.length)].p : v;
+        NM.pat = pick;
+        const pat = $('#nmPat'); if (pat) pat.value = pick;
+        nmShow();
+      }
+      else if (a === 'nm-user') { NM.sel[v] = !NM.sel[v]; nmShow(); }
+      else if (a === 'nm-sel-all') { ((S.d && S.d.users) || []).forEach((u) => { NM.sel[u.id] = true; }); nmShow(); }
+      else if (a === 'nm-sel-none') { NM.sel = {}; nmShow(); }
+      else if (a === 'nm-apply') {
+        const plan = nmPlan();
+        if (!plan.length) { toast('هیچ کانفیگی انتخاب نشده — روی نامِ کانفیگ‌ها در بالا کلیک کنید', 'err'); return; }
+        NM.pat = nmPat(); NM.start = nmStart();
+        if (!confirm(fa(plan.length) + ' کانفیگ با این الگو نام‌گذاری شود؟\nکاربران باید اشتراک‌شان را دوباره بگیرند.')) return;
+        busy(t, 'در حال اعمال');
+        let done = 0, failed = 0;
+        /* الگو برای هر کانفیگ جداگانه ذخیره می‌شود: شماره‌ی هر کدام در خودِ
+           الگو نشسته، پس نمی‌شود همه را با یک درخواست فرستاد */
+        for (const p of plan) {
+          const r = await api('POST', '/api/users', { id: p.id, op: 'update', patch: { namePattern: p.pattern } });
+          if (r && r.ok) done++; else failed++;
+        }
+        free(t);
+        await refresh();
+        nmShow();
+        toast(failed ? (fa(done) + ' کانفیگ تغییر کرد، ' + fa(failed) + ' تا انجام نشد')
+                     : (fa(done) + ' کانفیگ نام‌گذاری شد — کاربران ساب را دوباره بگیرند'), failed ? 'err' : 'ok');
+      }
+
+      /* ═════════════════════════════════════════════════════════════
+         مرحله‌ی ۴ — سرورهای خروجی VLESS
+         ═════════════════════════════════════════════════════════════ */
+      else if (a === 'exit-new') { EX.form = exitBlank(); EX.test = null; exShow(); const nm = $('#ex_name'); if (nm) nm.focus(); }
+      else if (a === 'exit-cancel') { EX.form = null; exShow(); }
+      else if (a === 'exit-reload') { busy(t, 'بارخوانی'); EX.test = null; await exLoad(); free(t); }
+      else if (a === 'exit-edit') {
+        const srv = ((EX.data && EX.data.servers) || []).find((x) => x.id === id);
+        EX.form = srv ? exitRead(srv) : exitBlank();
+        EX.test = null; exShow();
+      }
+      else if (a === 'exit-save') {
+        let body = null;
+        try { body = exitFormRead(); } catch (er) { toast(er.message, 'err'); return; }
+        if (!body.name || !body.address || !body.uuid) { toast('نام، آدرس و UUID باید پر باشند', 'err'); return; }
+        busy(t, 'در حال ذخیره');
+        const r = await api('POST', '/api/exits', body.id ? { op: 'update', id: body.id, server: body } : { op: 'add', server: body });
+        free(t);
+        if (r && r.ok) { EX.form = null; await exLoad(); toast(r.msg || 'سرور خروجی ذخیره شد', 'ok'); }
+        else toast((r && r.error) || 'ذخیره انجام نشد', 'err');
+      }
+      else if (a === 'exit-del') {
+        const srv = ((EX.data && EX.data.servers) || []).find((x) => x.id === id);
+        if (!confirm('سرور خروجیِ «' + ((srv && srv.name) || id) + '» حذف شود؟\nکانفیگ‌هایی که به آن وابسته بودند مستقیم می‌شوند.')) return;
+        busy(t, 'در حال حذف');
+        const r = await api('POST', '/api/exits', { op: 'delete', id });
+        free(t);
+        if (r && r.ok) { EX.form = null; EX.test = null; await exLoad(); toast(r.msg || 'حذف شد', 'ok'); }
+        else toast((r && r.error) || 'حذف انجام نشد', 'err');
+      }
+      else if (a === 'exit-test') {
+        EX.testing = id || 'form'; EX.test = null; exShow();
+        /* اگر فرم باز است همان مقادیرِ فرم تست می‌شوند، بی‌آن‌که ذخیره شوند */
+        let body;
+        if (id) body = { id };
+        else {
+          try { body = { server: exitFormRead() }; }
+          catch (er) { EX.testing = ''; exShow(); toast(er.message, 'err'); return; }
+        }
+        const r = await api('POST', '/api/exits/test', body);
+        EX.testing = '';
+        EX.test = (r && r.name) ? r : { name: ((body.server || {}).name) || '—', reachable: false, error: (r && r.error) || 'تست انجام نشد' };
+        exShow();
+        toast((r && r.msg) || 'تست انجام شد', r && r.reachable ? 'ok' : 'err');
+      }
+      else if (a === 'exit-default') {
+        const sel = $('#exDefault');
+        const val = sel ? String(sel.value || '') : '';
+        busy(t, 'در حال ذخیره');
+        const r = await api('POST', '/api/exits/default', val ? { mode: 'exit', exitId: val } : { mode: 'direct' });
+        free(t);
+        if (r && r.ok) { await exLoad(); toast(r.msg || 'پیش‌فرضِ سراسری ذخیره شد', 'ok'); }
+        else toast((r && r.error) || 'ذخیره انجام نشد', 'err');
+      }
       else if (a === '2fa-gen') { const r = await api('POST', '/api/action', { act: '2fa-secret' }); const o = $('#totpOut'); if (o) o.innerHTML = r.secret ? '<div class="row-item"><div class="grow"><b class="mono">' + esc(r.secret) + '</b><div class="cell-sub mono">' + esc(r.url || '') + '</div></div><button class="btn sm ghost" data-act="copy" data-v="' + esc(r.secret) + '">' + icon('fa-copy') + '</button></div>' : '<div class="empty">ساخته نشد</div>'; }
-      else if (a === 'backup') { const blob = new Blob([JSON.stringify(S.d, null, 2)], { type: 'application/json' }); const el = document.createElement('a'); el.href = URL.createObjectURL(blob); el.download = 'panel-backup.json'; el.click(); toast('پشتیبان دانلود شد'); }
-      else if (a === 'restore') $('#restoreFile').click();
       else if (a === 'factory') { if (!confirm('همه‌ی کاربران و تنظیمات به حالت اول برگردند؟')) return; await api('POST', '/api/action', { act: 'factory' }); toast('ریست شد', 'err'); await refresh(); }
       else if (a === 'logs-clear') { await api('POST', '/api/action', { act: 'logs-clear' }); toast('لاگ پاک شد', 'err'); await refresh(); }
     } catch (err) { free(t); toast('خطا: ' + err.message, 'err'); }
@@ -1607,12 +2574,41 @@
 
   document.addEventListener('change', async (e) => {
     if (e.target.closest('[data-act="sel-user"]')) { S.sel = e.target.value; render(); }
+    /* تنظیماتِ رادار — در حافظه‌ی پنل نگه داشته می‌شوند تا بازسازیِ صفحه
+       (رفرشِ خودکار، ذخیره‌ی تنظیمات) مقادیرِ انتخاب‌شده را از بین نبرد */
+    if (e.target.id === 'rdExit') { RD.opt = Object.assign(rdOpt(), { exitId: String(e.target.value || '') }); }
+    if (e.target.id === 'rdTls') { RD.opt = Object.assign(rdOpt(), { tls: !!e.target.checked }); }
+    if (e.target.id === 'rdCount' || e.target.id === 'rdConc' || e.target.id === 'rdTimeout' || e.target.id === 'rdPort') {
+      const o = rdOpt();
+      const val = Math.max(Number(e.target.min) || 1, Math.min(Number(e.target.max) || 65535, Number(e.target.value) || 0));
+      e.target.value = val;
+      RD.opt = Object.assign(o, {
+        count: e.target.id === 'rdCount' ? val : o.count,
+        concurrency: e.target.id === 'rdConc' ? val : o.concurrency,
+        timeoutMs: e.target.id === 'rdTimeout' ? val : o.timeoutMs,
+        port: e.target.id === 'rdPort' ? val : o.port,
+      });
+    }
     if (e.target.classList.contains('fk-proto')) refreshPreview();
-    if (e.target.id === 'restoreFile') {
-      const f = e.target.files[0]; if (!f) return;
-      const r = await api('POST', '/api/action', { act: 'restore', data: JSON.parse(await f.text()) });
-      toast(r.ok ? 'بازیابی شد' : (r.error || 'خطا'), r.ok ? 'ok' : 'err');
-      if (r.ok) await refresh();
+    /* انتخابگرِ فایلِ پشتیبان — مسیرِ کلیک‌کردن، هم‌ارز با رها‌کردن */
+    if (e.target.id === 'bkFile') {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (f) await bkReadFile(f);
+    }
+    /* انتخابِ خروجی برای هر کانفیگ — بر پیش‌فرضِ سراسری مقدم است.
+       مقدارِ select یا inherit/direct است یا شناسه‌ی یکی از سرورها. */
+    if (e.target.id && e.target.id.indexOf('exSel-') === 0) {
+      const uid = e.target.id.slice(6);
+      const val = String(e.target.value || 'inherit');
+      const named = val === 'inherit' || val === 'direct';
+      const r = await api('POST', '/api/exits', {
+        op: 'select', uuid: uid,
+        mode: named ? val : 'exit',
+        exitId: named ? '' : val,
+      });
+      if (r && r.ok) { toast(r.msg || 'خروجیِ کانفیگ ذخیره شد', 'ok'); await exLoad(); }
+      else { toast((r && r.error) || 'ذخیره انجام نشد', 'err'); await exLoad(); }
     }
   });
 
@@ -1632,16 +2628,100 @@
       if (!bar) { bar = document.createElement('div'); bar.id = 'uCount'; bar.className = 'hint'; $('#uSearchBox').parentElement.appendChild(bar); }
       bar.textContent = fa(vis) + ' از ' + fa(S.d.users.length) + ' کاربر';
     }
+    /* جست‌وجو در جدولِ اتصال‌های زنده — فیلترِ زنده، بدون رندرِ مجدد */
+    if (e.target.id === 'connSearch') {
+      CN.q = e.target.value;
+      const q = CN.q.trim().toLowerCase();
+      const rows = $$('#connOut tbody tr[data-hit]');
+      rows.forEach((tr) => {
+        /* همان متنی که هنگامِ رندر ساخته شد — فیلترِ زنده و رندر یکی‌اند */
+        tr.dataset.hit = !q || String(tr.dataset.q || '').includes(q) ? '1' : '0';
+      });
+      const vis = rows.filter((tr) => tr.dataset.hit === '1').length;
+      let bar = $('#cCount');
+      if (!bar) { bar = document.createElement('div'); bar.id = 'cCount'; bar.className = 'hint'; $('#connSearchBox').parentElement.appendChild(bar); }
+      bar.textContent = fa(vis) + ' از ' + fa(rows.length) + ' نشست';
+      $$('#connOut tbody tr[data-hit="0"]').forEach((tr) => tr.classList.add('hide'));
+      $$('#connOut tbody tr[data-hit="1"]').forEach((tr) => tr.classList.remove('hide'));
+      return;
+    }
     if (e.target.id === 'tbSearch') doSearch(e.target.value);
     /* به‌روزرسانی زنده‌ی پیش‌نمایش کانفیگ‌های فیک */
     if (e.target.classList.contains('fk-name') || e.target.classList.contains('fk-pos')) refreshPreview();
     if (e.target.type === 'range') { const b = e.target.parentElement.querySelector('b'); if (b) b.textContent = e.target.value + (b.textContent.match(/[^\d۰-۹]+$/) || [''])[0]; }
+    /* پیش‌نمایشِ زنده‌ی نام‌گذاری — هر تغییر در الگو یا شروعِ شماره‌گذاری
+       همان لحظه پیش‌نمایش را می‌سازد، بدون رندرِ دوباره‌ی کل صفحه */
+    if (e.target.id === 'nmPat' || e.target.id === 'nmStart') {
+      NM.pat = nmPat(); NM.start = nmStart();
+      nmShow();
+    }
   });
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.target.id === 'lgPw') { const b = $('[data-act="login"]'); if (b) b.click(); }
     if (e.key === 'Escape') { closeM(); $('#searchDrop').classList.remove('show'); closeDrawer(); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); const s = $('#tbSearch'); if (s) s.focus(); }
+  });
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     مرحله‌ی ۴ — کشیدن و رها کردنِ فایلِ پشتیبان
+     دو جهت دارد: ورودی (فایل روی ناحیه رها می‌شود) و خروجی (کارتِ پشتیبان
+     بیرون کشیده می‌شود). هر دو روی document گوش می‌دهند، چون ناحیه با هر
+     رندر دوباره ساخته می‌شود و نمی‌شد به خودِ عنصر گره زد.
+     ═══════════════════════════════════════════════════════════════════════ */
+  const BK_MIME = 'application/json';
+  /* خروجی — کارتِ پشتیبان به بیرون کشیده می‌شود */
+  document.addEventListener('dragstart', (e) => {
+    const h = e.target && e.target.closest ? e.target.closest('#bkHandle') : null;
+    if (!h || !BK.data) return;
+    const txt = JSON.stringify(BK.data, null, 2);
+    const name = bkName(BK.data);
+    try {
+      e.dataTransfer.setData(BK_MIME, txt);
+      e.dataTransfer.setData('text/plain', txt);
+      /* DownloadURL مرورگر را وادار می‌کند فایل را با نامِ درست بنویسد؛
+         بدون آن فقط متنِ خام رها می‌شود */
+      e.dataTransfer.setData('DownloadURL', BK_MIME + ':' + name + ':' +
+        URL.createObjectURL(new Blob([txt], { type: BK_MIME })));
+      e.dataTransfer.effectAllowed = 'copy';
+    } catch (er) { /* مرورگری که DownloadURL را نشناسد — همان مسیرِ متنی کافی است */ }
+    h.style.opacity = '.6';
+  });
+  document.addEventListener('dragend', (e) => {
+    const h = e.target && e.target.closest ? e.target.closest('#bkHandle') : null;
+    if (h) h.style.opacity = '';
+  });
+  /* ورودی — باید dragover را پیش‌فرض‌گیری کنیم، وگرنه مرورگر خودش فایل را
+     باز می‌کند و صفحه‌ی پنل از بین می‌رود */
+  document.addEventListener('dragover', (e) => {
+    if (!e.dataTransfer) return;
+    const z = $('#bkDrop'); if (!z) return;
+    if (!e.target || !e.target.closest || !e.target.closest('#bkDrop')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    bkZoneOn(z, true);
+  });
+  document.addEventListener('dragleave', (e) => {
+    const z = $('#bkDrop'); if (!z) return;
+    /* هنگامِ جابه‌جایی روی فرزندانِ ناحیه هم dragleave می‌آید — فقط وقتی
+       واقعاً از ناحیه بیرون رفت حالتِ فعال برداشته شود */
+    const to = e.relatedTarget;
+    if (to && to.closest && to.closest('#bkDrop')) return;
+    bkZoneOn(z, false);
+  });
+  document.addEventListener('drop', async (e) => {
+    const z = $('#bkDrop'); if (!z) return;
+    if (!e.target || !e.target.closest || !e.target.closest('#bkDrop')) return;
+    e.preventDefault();
+    bkZoneOn(z, false);
+    const dt = e.dataTransfer;
+    if (!dt) return;
+    const f = (dt.files && dt.files[0]) || null;
+    if (f) { await bkReadFile(f); return; }
+    /* برخی مرورگرها هنگامِ کشیدنِ متن، files نمی‌دهند — همان متن را می‌خوانیم */
+    const txt = dt.getData(BK_MIME) || dt.getData('text/plain') || '';
+    if (!String(txt).trim()) { BK.err = 'فایلی در ناحیه رها نشد'; BK.errors = []; bkShow(); toast(BK.err, 'err'); return; }
+    await bkReadFile({ name: 'dropped.json', text: async () => txt });
   });
   document.addEventListener('click', (e) => { if (!e.target.closest('#searchBox')) $('#searchDrop').classList.remove('show'); });
 
@@ -1969,4 +3049,7 @@
   window.__sgBooted = true;
   refresh();
   setInterval(() => { if (S.token && (S.view === 'dash' || S.view === 'monitor')) refresh(); }, 20000);
+  /* اتصال‌های زنده هر ۱۰ ثانیه به‌روز می‌شود — با بارخوانیِ هدفمند (cnLoad)،
+     نه رندرِ کل صفحه، تا جدول نپرد و فیلتر/مکانِ اسکرول از بین نرود. */
+  setInterval(() => { if (S.token && S.view === 'conns') cnLoad(); }, 10000);
 })();
