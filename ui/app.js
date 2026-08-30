@@ -663,7 +663,8 @@
         '<td class="mono">' + fa(x.totalReq || 0) + '</td></tr>'; }).join('') +
       '</tbody></table></div></div></div>' +
       '<div class="card" style="margin-top:12px"><header><span class="ic ' + (S.d.storage === 'd1' ? '' : 'bad') + '">' + icon('fa-heart-pulse') + '</span><div><h3>سلامت شمارش مصرف</h3><p>بررسی اینکه شمارنده‌ی حجم (usage) درست کار می‌کند</p></div>' +
-      '<div class="acts"><button class="btn sm p" data-act="usage-health">' + icon('fa-stethoscope') + ' بررسی سلامت</button></div></header>' +
+      '<div class="acts"><button class="btn sm p" data-act="usage-health">' + icon('fa-stethoscope') + ' بررسی سلامت</button>' +
+      '<button class="btn sm d" data-act="conn-reset">' + icon('fa-trash-can') + ' آزادسازی اتصال‌ها</button></div></header>' +
       '<div class="bd">' +
       '<div id="usageHealthOut"><div class="empty">با یک کلیک، جدول مصرف، جریان ثبت (last_seen)، آخرین نوشتن D1 و مصرف ذخیره‌شده‌ی هر کاربر بررسی می‌شود.</div></div>' +
       /* ═══ تست واقعی ترافیک — درخواست از مرورگرِ کاربر، پاسخ از سرور ═══ */
@@ -1372,6 +1373,18 @@
             ? '<div class="hint" style="margin-bottom:10px">هیچ مرجعِ مشترکی بین isolateها ندارید: هر isolate شمارنده‌ی خودش را دارد و محدودیت عملاً اعمال نمی‌شود. در Settings → Variables یک پایگاه D1 با نام <span class="mono">DB</span> ببندید (در داشبورد کلاودفلر هم می‌توان ساخت).</div>'
             : '') +
           (r.checks || []).map((c) => '<div class="kv"><span>' + icon(c.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' ' + esc(c.name) + '</span><b class="mono" style="color:' + (c.ok ? 'var(--ok)' : 'var(--bad)') + '">' + esc(c.note || '') + '</b></div>').join('') +
+          /* ═══ اتصال‌های زنده — اگر چیزی گیر کرده باشد اینجا دیده می‌شود ═══ */
+          '<div class="hint" style="margin-top:12px"><b>اتصال‌های زنده (مبنای محدودیت آی‌پی):</b> ' +
+          esc(String(((r.diag || {}).ttlSec || 60))) + ' ثانیه بدون ضربان = آزاد شدن خودکار • ضربان هر ' +
+          esc(String(((r.diag || {}).hbSec || 20))) + ' ثانیه</div>' +
+          ((r.liveRows && r.liveRows.length)
+            ? '<div style="margin-top:8px;max-height:220px;overflow:auto" class="tbl-wrap"><table>' +
+              '<thead><tr><th>کاربر</th><th>آی‌پی</th><th>سن</th><th>وضعیت</th></tr></thead><tbody>' +
+              r.liveRows.map((x) => '<tr><td class="cell-main">' + esc(x.name || x.uuid) + '</td><td class="mono">' + esc(x.ip) + '</td>' +
+                '<td class="mono">' + (x.stale || x.ageSec === null ? 'نامعتبر' : fa(x.ageSec) + ' ثانیه') + '</td>' +
+                '<td><span class="badge ' + (x.stale ? 'bad' : 'ok') + '">' + (x.stale ? 'خراب — پاک می‌شود' : 'زنده') + '</span></td></tr>').join('') +
+              '</tbody></table></div>'
+            : '<div class="hint" style="margin-top:6px">هیچ اتصالِ زنده‌ای ثبت نشده — هیچ آی‌پی‌ای قفل نیست.</div>') +
           '<div class="hint" style="margin-top:12px"><b>مصرف ذخیره‌شده‌ی هر کاربر:</b></div>' +
           '<div style="margin-top:8px;max-height:260px;overflow:auto" class="tbl-wrap"><table>' +
           '<thead><tr><th>کاربر</th><th>آپلود</th><th>دانلود</th><th>درخواست</th><th>آخرین ثبت</th><th>وضعیت</th></tr></thead><tbody>' +
@@ -1379,6 +1392,17 @@
             '<td><span class="badge ' + (x.recording ? 'ok' : 'warn') + '">' + (x.recording ? 'در حال ثبت ✓' : 'مصرفی ثبت نشده') + '</span></td></tr>').join('') +
           '</tbody></table></div>' +
           '<div class="hint" style="margin-top:10px">اگر «در حال ثبت ✓» می‌بینید یعنی افزایش مصرف برای آن کاربر جریان دارد. «مصرفی ثبت نشده» فقط برای کاربرانی که وصل نبوده‌اند طبیعی است.</div>';
+      }
+      else if (a === 'conn-reset') {
+        /* ═══ آزادسازیِ دستی ═══
+           اگر ردیفی در جدولِ اتصال‌های زنده جامانده باشد، یک آی‌پی برای همیشه
+           قفل می‌ماند. این دکمه جدول را خالی می‌کند تا فوراً بتوان از آی‌پیِ
+           جدید وصل شد — بدون دستکاریِ پایگاه‌داده. */
+        busy(t, 'آزادسازی…');
+        const r = await api('POST', '/api/action', { act: 'conn-reset' });
+        free(t);
+        toast(r.ok ? (r.msg || 'اتصال‌ها آزاد شد') : (r.error || 'انجام نشد'), r.ok ? 'ok' : 'err');
+        if (r.ok) { const o = $('#usageHealthOut'); if (o) o.innerHTML = '<div class="empty">' + esc(r.msg || 'اتصال‌ها آزاد شد') + ' — دوباره «بررسی سلامت» را بزنید.</div>'; }
       }
       else if (a === 'traffic-test') {
         /* ═══ تست واقعی ترافیک — درخواست از مرورگرِ کسی که دکمه را زده ═══
