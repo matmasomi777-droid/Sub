@@ -2847,383 +2847,2367 @@ const notFoundPage = () => new Response(DECOY_STATIC, { status: 200, headers: { 
 const USER_PAGE = `<!DOCTYPE html>
 <html lang="fa" dir="rtl" id="html-root">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title id="page-title">__PANEL_NAME__</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<style>
-@import url('https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/vazirmatn-font-face.css');
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
-*{box-sizing:border-box;margin:0;padding:0;font-family:'Vazirmatn',sans-serif;-webkit-tap-highlight-color:transparent}
-:root{--bg:#090C11;--bg-grid:rgba(255,255,255,.035);--surface:#12161F;--surface-alt:#171C27;--text:#EDEFF3;--text-muted:#838DA0;--border:rgba(255,255,255,.07);--accent:#2DD4BF;--accent-rgb:45,212,191;--accent-2:#4C8DFF;--accent-2-rgb:76,141,255;--alert:#F0655F;--alert-rgb:240,101,95;--warn:#F4A94A;--warn-rgb:244,169,74;--nav-bg:#0C0F15;--hero-1:#101A28;--hero-2:#05070B;--hero-alert-1:#2A1214;--hero-alert-2:#0B0505;--ring-track:rgba(255,255,255,.06);--shadow:rgba(0,0,0,.4);--box-shadow-light:0 4px 12px rgba(0,0,0,.15)}
-body.light-mode{--bg:#EEF1F6;--bg-grid:rgba(16,21,32,.05);--surface:#FFF;--surface-alt:#F4F6FA;--text:#10141C;--text-muted:#6B7484;--border:rgba(16,21,32,.08);--accent:#0EA394;--accent-rgb:14,163,148;--accent-2:#2D6CDF;--accent-2-rgb:45,108,223;--alert:#DC4C43;--alert-rgb:220,76,67;--warn:#DB8A2A;--warn-rgb:219,138,42;--nav-bg:#FFF;--hero-1:#FFF;--hero-2:#EAF6F4;--hero-alert-1:#FDEBEA;--hero-alert-2:#F7CFCB;--ring-track:rgba(16,21,32,.09);--shadow:rgba(16,21,32,.08);--box-shadow-light:0 6px 18px rgba(0,0,0,.12)}
-body{background-color:var(--bg);background-image:radial-gradient(var(--bg-grid) 1px,transparent 1px);background-size:18px 18px;color:var(--text);padding:28px 24px 110px;width:100%;margin:0 auto;transition:background-color .35s,color .35s;position:relative;min-height:100%}
-html[dir="ltr"] body{direction:ltr}
-.en-font{font-family:'JetBrains Mono','Segoe UI',monospace!important;letter-spacing:.2px}
-.app-screen{display:none}.app-screen.active-screen{display:block}
-.header{margin-bottom:24px;display:flex;justify-content:space-between;align-items:center;width:100%;max-width:1180px;margin-left:auto;margin-right:auto}
-.profile-container{display:flex;align-items:center;flex:1;min-width:0}
-html[dir="rtl"] .profile-img-wrapper{margin-left:12px}html[dir="ltr"] .profile-img-wrapper{margin-right:12px}
-.profile-img-wrapper{position:relative;width:54px;height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0}
-.profile-img{width:46px;height:46px;border-radius:50%;background:var(--surface-alt);border:2.5px solid var(--border);display:flex;align-items:center;justify-content:center;transition:border-color .35s}
-.profile-img.online{border-color:var(--accent)}
-.default-avatar-svg{width:24px;height:24px;fill:var(--text-muted);display:block;border-radius:50%}
-.online-status-text{font-size:9px;font-weight:700;color:var(--accent);margin-top:2px;letter-spacing:.3px}
-.online-status-text.offline{color:var(--text-muted)}
-.online-dot{position:absolute;bottom:2px;width:11px;height:11px;background:#555;border-radius:50%;border:2px solid var(--bg);z-index:3;transition:background-color .3s}
-.online-dot.online{background:var(--accent)}
-html[dir="rtl"] .online-dot{left:2px}html[dir="ltr"] .online-dot{right:2px}
-.user-info{display:flex;align-items:center;margin-top:4px;min-width:0}
-.user-name{font-size:16px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}
-html[dir="rtl"] .user-name{flex-direction:row-reverse}
-.greeting-text{white-space:nowrap}
-.username-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px}
-.username-text.online{color:var(--accent)}
-.wave-icon-wrapper{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;transform-origin:bottom center;animation:wave 3.5s ease-in-out infinite;flex-shrink:0}
-.wave-icon-wrapper svg{width:100%;height:100%}
-@keyframes wave{0%{transform:rotate(0) scale(1)}15%{transform:rotate(10deg) scale(1.01)}30%{transform:rotate(-6deg) scale(1.02)}45%{transform:rotate(8deg) scale(1.01)}60%{transform:rotate(-4deg) scale(1)}75%{transform:rotate(4deg) scale(1)}100%{transform:rotate(0) scale(1)}}
-.header-icons{display:flex;gap:10px;align-items:center;flex-shrink:0}
-.lang-container{position:relative}
-.header-icon{height:42px;padding:0 14px;display:flex;align-items:center;justify-content:center;background:var(--surface);border:1px solid var(--border);border-radius:14px;cursor:pointer;transition:border-color .25s;gap:6px}
-.header-icon:hover{border-color:rgba(var(--accent-rgb),.4)}
-.header-icon i{font-size:16px;color:var(--text-muted)}
-.lang-btn{font-size:13px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px}
-.lang-dropdown-menu{position:absolute;top:50px;background:var(--surface);border:1px solid var(--border);border-radius:12px;min-width:110px;box-shadow:0 10px 25px var(--shadow);z-index:1000;display:none}
-html[dir="rtl"] .lang-dropdown-menu{left:0}html[dir="ltr"] .lang-dropdown-menu{right:0}
-.lang-dropdown-menu.show{display:block}
-.lang-dropdown-item{padding:10px 14px;font-size:13px;color:var(--text-muted);cursor:pointer;transition:background .2s}
-.lang-dropdown-item:hover{background:rgba(var(--accent-rgb),.12);color:var(--text)}
-.subscription-card{border:1px solid rgba(var(--accent-rgb),.15);border-radius:22px;padding:28px 32px;margin-bottom:16px;position:relative;display:flex;justify-content:space-between;align-items:center;background:linear-gradient(150deg,var(--hero-1) 0%,var(--hero-2) 100%);box-shadow:inset 0 0 24px rgba(var(--accent-rgb),.06),var(--box-shadow-light);overflow:hidden;transition:background .4s,box-shadow .4s,border-color .4s;min-height:180px}
-.subscription-card::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-size:16px 16px;pointer-events:none}
-.subscription-card.disconnected{background:linear-gradient(150deg,var(--hero-alert-1) 0%,var(--hero-alert-2) 100%);box-shadow:inset 0 0 24px rgba(var(--alert-rgb),.1),var(--box-shadow-light);border-color:rgba(var(--alert-rgb),.18)}
-.status-right{display:flex;flex-direction:column;position:relative;z-index:1}
-.active-badge{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px}
-.status-dot-green{width:16px;height:16px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;animation:pulseG 2s infinite}
-.status-dot-green i{font-size:9px;color:#06110F}
-.subscription-card.disconnected .status-dot-green{background:var(--alert);animation:pulseR 1.5s infinite}
-.subscription-card.disconnected .status-dot-green i{color:#2A0B09}
-@keyframes pulseG{0%{box-shadow:0 0 0 0 rgba(var(--accent-rgb),.5)}70%{box-shadow:0 0 0 8px rgba(var(--accent-rgb),0)}100%{box-shadow:0 0 0 0 rgba(var(--accent-rgb),0)}}
-@keyframes pulseR{0%{box-shadow:0 0 0 0 rgba(var(--alert-rgb),.6)}70%{box-shadow:0 0 10px rgba(var(--alert-rgb),0)}100%{box-shadow:0 0 0 0 rgba(var(--alert-rgb),0)}}
-.days-left{font-size:42px;font-weight:700;margin-bottom:4px;font-family:'JetBrains Mono',monospace}
-.days-left span{color:var(--accent);font-size:18px;font-weight:600;font-family:'Vazirmatn',sans-serif;margin-left:6px}
-.subscription-card.disconnected .days-left span{color:var(--alert)}
-.expire-date{font-size:12px;font-weight:600;color:var(--text-muted)}
-.progress-circle{position:relative;width:132px;height:132px;border-radius:50%;background:conic-gradient(var(--accent) 0% 100%,var(--ring-track) 100% 100%);display:flex;align-items:center;justify-content:center;z-index:1;transition:background .5s cubic-bezier(.4,0,.2,1)}
-.progress-circle::after{content:'';position:absolute;width:108px;height:108px;background:var(--hero-2);border-radius:50%;transition:background-color .3s}
-.radar-sweep{position:absolute;inset:0;border-radius:50%;animation:radar 3.2s linear infinite;pointer-events:none}
-.radar-sweep::before{content:'';position:absolute;top:1px;left:50%;width:5px;height:5px;margin-left:-2.5px;border-radius:50%;background:#fff;box-shadow:0 0 8px 2px rgba(var(--accent-rgb),.9)}
-@keyframes radar{to{transform:rotate(360deg)}}
-.subscription-card.disconnected .radar-sweep{animation-play-state:paused;opacity:.3}
-.subscription-card.disconnected .radar-sweep::before{box-shadow:0 0 8px 2px rgba(var(--alert-rgb),.9)}
-.subscription-card.disconnected .progress-circle::after{background:var(--hero-alert-2)}
-.progress-text{position:relative;z-index:2;text-align:center}
-.progress-text .percent{font-size:22px;font-weight:700;color:var(--text);font-family:'JetBrains Mono',monospace}
-.progress-text .label{font-size:10px;color:var(--text-muted);display:block;margin-top:2px}
-body.light-mode .subscription-card::before{background-image:linear-gradient(rgba(16,21,32,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(16,21,32,.03) 1px,transparent 1px)}
-body.light-mode .subscription-card.disconnected{border-color:rgba(var(--alert-rgb),.4)}
-body.light-mode .progress-circle::after{background:var(--hero-2)}
-body.light-mode .radar-sweep::before{background:var(--text)}
-#screen-dashboard,#screen-download-apps{width:100%;max-width:1180px;margin-left:auto;margin-right:auto}
-.stats-card{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:18px 10px;margin-bottom:16px;display:flex;justify-content:space-between;box-shadow:var(--box-shadow-light)}
-.stat-item{flex:1;display:flex;flex-direction:column;align-items:center}
-.stat-header-row{display:flex;align-items:center;gap:6px;margin-bottom:12px;flex-direction:row-reverse}
-html[dir="ltr"] .stat-header-row{flex-direction:row}
-.stat-icon-wrapper{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--surface-alt);border:1px solid var(--border)}
-.stat-title{font-size:11px;color:var(--text-muted)}
-.stat-value{font-size:14px;font-weight:700;color:var(--text);font-family:'JetBrains Mono',monospace}
-.stat-value.purple-value{color:var(--accent)}
-.stat-divider{height:40px;width:1px;background:var(--border);align-self:center}
-.promo-card{background:linear-gradient(135deg,rgba(var(--accent-rgb),.15),rgba(var(--accent-rgb),.05));border:1px solid rgba(var(--accent-rgb),.25);border-radius:18px;padding:18px 16px;margin-bottom:16px;display:flex;flex-direction:column;align-items:center;gap:14px;box-shadow:var(--box-shadow-light);text-align:center}
-.promo-card .promo-text{font-size:16px;font-weight:500;color:var(--text);line-height:1.8}
-.promo-card .promo-text span{color:var(--accent);font-weight:700}
-.promo-buttons{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
-.promo-btn{display:flex;align-items:center;gap:8px;padding:8px 18px;border-radius:12px;font-size:13px;font-weight:700;text-decoration:none;transition:all .25s;background:var(--surface);border:1px solid var(--border);color:var(--text);box-shadow:var(--box-shadow-light)}
-.promo-btn:hover{transform:scale(1.03);border-color:rgba(var(--accent-rgb),.4)}
-.promo-btn i{font-size:18px}.promo-btn.telegram i{color:#0088cc}
-.details-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px}
-.detail-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px 12px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;min-height:72px;box-shadow:var(--box-shadow-light)}
-.detail-card .label{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:4px}
-.detail-card .value{font-size:16px;font-weight:700;color:var(--text);font-family:'JetBrains Mono',monospace}
-.detail-card .value.accent-value{color:var(--accent)}
-.section-title{font-size:13px;font-weight:700;color:var(--text-muted);margin-bottom:12px;text-align:right;text-transform:uppercase;letter-spacing:.4px}
-html[dir="ltr"] .section-title{text-align:left}
-.actions-grid{display:flex;gap:12px;margin-bottom:12px}
-.action-cell{flex:1}
-.action-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px 10px;text-align:center;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:10px;height:100%;transition:transform .2s,border-color .2s;box-shadow:var(--box-shadow-light)}
-.action-card:active{transform:scale(.96)}
-.action-card:hover{border-color:rgba(var(--accent-rgb),.3)}
-.action-card i{font-size:20px}
-.action-card.renew i{color:var(--warn)}.action-card.link i{color:var(--accent)}.action-card.qr i{color:var(--accent-2)}.action-card.config i{color:var(--accent)}
-.action-label{font-size:12px;color:var(--text);font-weight:600;line-height:1.3}
-.action-dropdown-container{width:100%;margin-bottom:24px;display:none}
-.action-dropdown-container.show{display:block}
-.action-dropdown-menu{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:10px;box-shadow:0 10px 25px var(--shadow);display:flex;flex-direction:column;gap:8px;min-height:60px;align-items:center;justify-content:center;color:var(--text-muted);font-size:13px}
-.ip-row-item{background:var(--surface-alt);border:1px solid var(--border);border-radius:12px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;width:100%}
-.ip-details-left{display:flex;align-items:center;gap:12px}
-html[dir="rtl"] .ip-details-left{flex-direction:row-reverse}
-.action-mini-flag{width:24px;height:24px;border-radius:50%;background-size:cover;background-position:center;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text-muted);flex-shrink:0}
-.ip-meta-block{display:flex;flex-direction:column;gap:4px;min-width:0}
-.ip-address-text{font-size:13px;font-weight:bold;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ip-protocol-badge-box{display:inline-flex;gap:3px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:10px;text-transform:uppercase;font-weight:500;line-height:1.4}
-.proto-part-1{color:var(--warn)}.proto-part-2{color:var(--accent-2)}.proto-part-3{color:var(--accent)}
-.ip-copy-btn{background:rgba(var(--accent-rgb),.12);border:1px solid rgba(var(--accent-rgb),.25);color:var(--accent);padding:6px 12px;border-radius:10px;font-size:11px;font-weight:bold;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .2s;flex-shrink:0}
-.ip-copy-btn:hover{background:var(--accent);color:#06110F}
-.copy-all-btn{background:rgba(var(--accent-rgb),.15);border:1px solid rgba(var(--accent-rgb),.3);color:var(--text);padding:8px 14px;border-radius:12px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;width:100%;transition:all .25s;margin-bottom:8px}
-.copy-all-btn:hover{background:var(--accent);color:#06110F}
-.download-os-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;background:var(--surface);padding:6px;border-radius:16px;margin-bottom:24px;text-align:center;border:1px solid var(--border);box-shadow:var(--box-shadow-light)}
-.os-tab-btn{background:transparent;border:none;color:var(--text-muted);padding:10px 4px;font-size:12px;font-weight:bold;border-radius:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .25s}
-.os-tab-btn.active-tab{background:var(--accent);color:#06110F;box-shadow:0 4px 12px rgba(var(--accent-rgb),.3)}
-.client-card-item{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;box-shadow:var(--box-shadow-light)}
-.client-info-side{display:flex;align-items:center;gap:12px}
-html[dir="ltr"] .client-info-side{flex-direction:row-reverse;text-align:left}
-.client-icon-box{width:44px;height:44px;background:var(--surface-alt);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--text-muted)}
-.client-title-text{font-size:14px;font-weight:700;color:var(--text)}
-.client-subtitle-text{font-size:11px;color:var(--text-muted);margin-top:2px}
-.client-download-btn{background:rgba(var(--accent-rgb),.15);color:var(--accent);padding:8px 18px;border-radius:12px;font-size:12px;font-weight:700;text-decoration:none;transition:all .2s;flex-shrink:0}
-.client-download-btn:hover{background:var(--accent);color:#06110F}
-.config-qr-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;z-index:9999;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);opacity:0;pointer-events:none;transition:opacity .3s}
-.config-qr-overlay.show{opacity:1;pointer-events:auto}
-.config-qr-box{background:var(--surface);border:1px solid var(--border);border-radius:22px;padding:24px;max-width:320px;width:100%;text-align:center;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.4);transform:scale(.9);transition:transform .3s cubic-bezier(.34,1.56,.64,1)}
-.config-qr-overlay.show .config-qr-box{transform:scale(1)}
-.config-qr-close{position:absolute;top:14px;left:14px;width:30px;height:30px;border-radius:50%;border:none;background:var(--surface-alt);color:var(--text-muted);font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer}
-.config-qr-close:hover{background:rgba(var(--alert-rgb),.15);color:var(--alert)}
-.config-qr-remark{font-size:14px;font-weight:700;color:var(--text);margin:6px 0 18px;word-break:break-word}
-.config-qr-img-wrap{background:#fff;border-radius:16px;padding:16px;display:flex;align-items:center;justify-content:center}
-.config-qr-img-wrap img{width:220px;height:220px;display:block}
-.bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:calc(100% - 48px);max-width:1180px;background:var(--nav-bg);border:1px solid var(--border);border-bottom:0;border-radius:18px 18px 0 0;padding:12px 16px;display:flex;z-index:100}
-.nav-item-cell{flex:1;display:flex;justify-content:center}
-.nav-item{color:var(--text-muted);font-size:11px;cursor:pointer;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px;width:100%;padding:8px 0}
-.nav-item i{font-size:18px}
-.nav-item.active{background:rgba(var(--accent-rgb),.12);border:1px solid rgba(var(--accent-rgb),.25);border-radius:16px;color:var(--accent)}
-@media (max-width:768px){body{padding:16px 12px 96px}#screen-dashboard{display:block}.subscription-card{padding:20px 18px;min-height:0}.progress-circle{width:92px;height:92px}.progress-circle::after{width:74px;height:74px}.days-left{font-size:30px}.details-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.action-card{padding:15px 2px}.action-label{font-size:10px}.bottom-nav{width:calc(100% - 24px)}.header{max-width:100%}}
-@media (min-width:769px){#screen-dashboard{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(300px,.9fr);gap:16px;align-items:start}#screen-dashboard>.subscription-card{grid-column:1/-1}#screen-dashboard>.stats-card{grid-column:1;margin-bottom:0}#screen-dashboard>.promo-card{grid-column:2;margin-bottom:0;height:100%}#screen-dashboard>.details-grid,#screen-dashboard>.actions-grid,#screen-dashboard>.action-dropdown-container{grid-column:1/-1}}
-@media (max-width:360px){body{padding-left:8px;padding-right:8px}.progress-circle{width:82px;height:82px}.progress-circle::after{width:66px;height:66px}.days-left{font-size:26px}}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title id="page-title">VPN Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* ===== فونت‌ها و ریست ===== */
+        @import url('https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/vazirmatn-font-face.css');
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Vazirmatn', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* ===== متغیرهای تم ===== */
+        :root {
+            --bg: #090C11;
+            --bg-grid: rgba(255, 255, 255, 0.035);
+            --surface: #12161F;
+            --surface-alt: #171C27;
+            --text: #EDEFF3;
+            --text-muted: #838DA0;
+            --border: rgba(255, 255, 255, 0.07);
+            --accent: #2DD4BF;
+            --accent-rgb: 45, 212, 191;
+            --accent-2: #4C8DFF;
+            --accent-2-rgb: 76, 141, 255;
+            --alert: #F0655F;
+            --alert-rgb: 240, 101, 95;
+            --warn: #F4A94A;
+            --warn-rgb: 244, 169, 74;
+            --nav-bg: #0C0F15;
+            --hero-1: #101A28;
+            --hero-2: #05070B;
+            --hero-alert-1: #2A1214;
+            --hero-alert-2: #0B0505;
+            --ring-track: rgba(255, 255, 255, 0.06);
+            --shadow: rgba(0, 0, 0, 0.4);
+            --box-shadow-light: 0 4px 12px rgba(0,0,0,0.15);
+            --notification-bg: rgba(18, 22, 31, 0.85);
+        }
+
+        body.light-mode {
+            --bg: #EEF1F6;
+            --bg-grid: rgba(16, 21, 32, 0.05);
+            --surface: #FFFFFF;
+            --surface-alt: #F4F6FA;
+            --text: #10141C;
+            --text-muted: #6B7484;
+            --border: rgba(16, 21, 32, 0.08);
+            --accent: #0EA394;
+            --accent-rgb: 14, 163, 148;
+            --accent-2: #2D6CDF;
+            --accent-2-rgb: 45, 108, 223;
+            --alert: #DC4C43;
+            --alert-rgb: 220, 76, 67;
+            --warn: #DB8A2A;
+            --warn-rgb: 219, 138, 42;
+            --nav-bg: #FFFFFF;
+            --hero-1: #FFFFFF;
+            --hero-2: #EAF6F4;
+            --hero-alert-1: #FDEBEA;
+            --hero-alert-2: #F7CFCB;
+            --ring-track: rgba(16, 21, 32, 0.09);
+            --shadow: rgba(16, 21, 32, 0.08);
+            --box-shadow-light: 0 6px 18px rgba(0,0,0,0.12);
+            --notification-bg: rgba(255, 255, 255, 0.92);
+        }
+
+        body {
+            background-color: var(--bg);
+            background-image: radial-gradient(var(--bg-grid) 1px, transparent 1px);
+            background-size: 18px 18px;
+            color: var(--text);
+            padding: 20px 16px 100px 16px;
+            max-width: 480px;
+            margin: 0 auto;
+            transition: background-color 0.35s ease, color 0.35s ease;
+            position: relative;
+        }
+
+        html[dir="ltr"] body { direction: ltr; }
+        html[dir="rtl"] body { direction: rtl; }
+
+        .en-font {
+            font-family: 'JetBrains Mono', 'Segoe UI', Tahoma, Geneva, Verdana, monospace !important;
+            letter-spacing: 0.2px;
+        }
+
+        .app-screen { display: none; }
+        .app-screen.active-screen { display: block; }
+
+        /* ===== هدر ===== */
+        .header {
+            margin-bottom: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .profile-container { display: flex; align-items: center; flex: 1; min-width: 0; }
+        html[dir="rtl"] .profile-img-wrapper { margin-left: 12px; }
+        html[dir="ltr"] .profile-img-wrapper { margin-right: 12px; }
+
+        .profile-img-wrapper {
+            position: relative;
+            cursor: default;
+            width: 54px;
+            height: 54px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .profile-img {
+            width: 46px;
+            height: 46px;
+            border-radius: 50%;
+            background: var(--surface-alt);
+            border: 2.5px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: border-color 0.35s ease;
+        }
+        .profile-img.online {
+            border-color: var(--accent);
+        }
+
+        .default-avatar-svg {
+            width: 24px;
+            height: 24px;
+            fill: var(--text-muted);
+            display: block;
+            border-radius: 50%;
+        }
+
+        .online-status-text {
+            font-size: 9px;
+            font-weight: 700;
+            color: var(--accent);
+            margin-top: 2px;
+            transition: color 0.3s;
+            letter-spacing: 0.3px;
+        }
+        .online-status-text.offline {
+            color: var(--text-muted);
+        }
+
+        .online-dot {
+            position: absolute;
+            bottom: 2px;
+            width: 11px;
+            height: 11px;
+            background-color: #555;
+            border-radius: 50%;
+            border: 2px solid var(--bg);
+            z-index: 3;
+            transition: background-color 0.3s ease;
+        }
+        .online-dot.online {
+            background-color: var(--accent);
+        }
+        html[dir="rtl"] .online-dot { left: 2px; }
+        html[dir="ltr"] .online-dot { right: 2px; }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            margin-top: 4px;
+            min-width: 0;
+        }
+        .user-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            flex-wrap: wrap;
+            min-width: 0;
+        }
+        html[dir="rtl"] .user-name { flex-direction: row-reverse; }
+        html[dir="ltr"] .user-name { flex-direction: row; }
+
+        .greeting-text {
+            color: var(--text);
+            transition: color 0.3s;
+            white-space: nowrap;
+        }
+        .username-text {
+            transition: color 0.3s;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 140px;
+        }
+        .username-text.online {
+            color: var(--accent);
+        }
+
+        .wave-icon-wrapper {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            transform-origin: bottom center;
+            animation: premiumSoftWave 3.5s ease-in-out infinite;
+            flex-shrink: 0;
+        }
+        .wave-icon-wrapper svg { width: 100%; height: 100%; }
+
+        @keyframes premiumSoftWave {
+            0% { transform: rotate(0deg) scale(1); }
+            15% { transform: rotate(10deg) scale(1.01); }
+            30% { transform: rotate(-6deg) scale(1.02); }
+            45% { transform: rotate(8deg) scale(1.01); }
+            60% { transform: rotate(-4deg) scale(1); }
+            75% { transform: rotate(4deg) scale(1); }
+            100% { transform: rotate(0deg) scale(1); }
+        }
+
+        .header-icons {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .lang-container { position: relative; }
+
+        .header-icon {
+            height: 42px;
+            padding: 0 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            cursor: pointer;
+            transition: border-color 0.25s;
+            gap: 6px;
+        }
+        .header-icon:hover { border-color: rgba(var(--accent-rgb), 0.4); }
+        .header-icon i { font-size: 16px; color: var(--text-muted); }
+
+        .lang-btn {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .lang-dropdown-menu {
+            position: absolute;
+            top: 50px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            min-width: 110px;
+            box-shadow: 0 10px 25px var(--shadow);
+            z-index: 1000;
+            display: none;
+            text-align: right;
+        }
+        html[dir="rtl"] .lang-dropdown-menu { left: 0; }
+        html[dir="ltr"] .lang-dropdown-menu { right: 0; }
+        .lang-dropdown-menu.show { display: block; }
+
+        .lang-dropdown-item {
+            padding: 10px 14px;
+            font-size: 13px;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .lang-dropdown-item:hover { background: rgba(var(--accent-rgb), 0.12); color: var(--text); }
+
+        /* ===== کارت اشتراک ===== */
+        .subscription-card {
+            border: 1px solid rgba(var(--accent-rgb), 0.15);
+            border-radius: 22px;
+            padding: 24px;
+            margin-bottom: 16px;
+            position: relative;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(150deg, var(--hero-1) 0%, var(--hero-2) 100%);
+            box-shadow: inset 0 0 24px rgba(var(--accent-rgb), 0.06), var(--box-shadow-light);
+            overflow: hidden;
+            transition: background 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease;
+        }
+        .subscription-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image: linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+                               linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+            background-size: 16px 16px;
+            pointer-events: none;
+        }
+        .subscription-card.disconnected {
+            background: linear-gradient(150deg, var(--hero-alert-1) 0%, var(--hero-alert-2) 100%);
+            box-shadow: inset 0 0 24px rgba(var(--alert-rgb), 0.1), var(--box-shadow-light);
+            border-color: rgba(var(--alert-rgb), 0.18);
+        }
+
+        .status-right { display: flex; flex-direction: column; position: relative; z-index: 1; }
+        .active-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+        .status-dot-green {
+            width: 16px;
+            height: 16px;
+            background-color: var(--accent);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: statusPulseGreen 2s infinite;
+        }
+        .status-dot-green i { font-size: 9px; color: #06110F; }
+        .subscription-card.disconnected .status-dot-green {
+            background-color: var(--alert);
+            animation: statusPulseRed 1.5s infinite;
+        }
+        .subscription-card.disconnected .status-dot-green i { color: #2A0B09; }
+
+        @keyframes statusPulseGreen {
+            0% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.5); }
+            70% { box-shadow: 0 0 0 8px rgba(var(--accent-rgb), 0); }
+            100% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0); }
+        }
+        @keyframes statusPulseRed {
+            0% { box-shadow: 0 0 0 0 rgba(var(--alert-rgb), 0.6); }
+            70% { box-shadow: 0 0 10px rgba(var(--alert-rgb), 0); }
+            100% { box-shadow: 0 0 0 0 rgba(var(--alert-rgb), 0); }
+        }
+
+        .days-left {
+            font-size: 36px;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 4px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .days-left span {
+            color: var(--accent);
+            font-size: 18px;
+            font-weight: 600;
+            font-family: 'Vazirmatn', sans-serif;
+            margin-left: 6px;
+        }
+        .subscription-card.disconnected .days-left span { color: var(--alert); }
+        .expire-date { font-size: 12px; color: rgba(255,255,255,0.65) !important; font-weight: 600; }
+
+        .progress-circle {
+            position: relative;
+            width: 108px;
+            height: 108px;
+            border-radius: 50%;
+            background: conic-gradient(var(--accent) 0% 100%, rgba(255, 255, 255, 0.06) 100% 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1;
+            transition: background 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .progress-circle::after {
+            content: '';
+            position: absolute;
+            width: 88px;
+            height: 88px;
+            background-color: var(--hero-2);
+            border-radius: 50%;
+            transition: background-color 0.3s;
+        }
+        .radar-sweep {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            animation: radarSpin 3.2s linear infinite;
+            pointer-events: none;
+        }
+        .radar-sweep::before {
+            content: '';
+            position: absolute;
+            top: 1px;
+            left: 50%;
+            width: 5px;
+            height: 5px;
+            margin-left: -2.5px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 0 8px 2px rgba(var(--accent-rgb), 0.9);
+        }
+        @keyframes radarSpin { to { transform: rotate(360deg); } }
+        .subscription-card.disconnected .radar-sweep { animation-play-state: paused; opacity: 0.3; }
+        .subscription-card.disconnected .radar-sweep::before { box-shadow: 0 0 8px 2px rgba(var(--alert-rgb), 0.9); }
+        .subscription-card.disconnected .progress-circle::after { background-color: var(--hero-alert-2); }
+
+        .progress-text { position: relative; z-index: 2; text-align: center; }
+        .progress-text .percent { font-size: 22px; font-weight: 700; color: #fff; font-family: 'JetBrains Mono', monospace; }
+        .progress-text .label { font-size: 10px; color: #8891A3; display: block; margin-top: 2px; }
+
+        /* ===== سازگاری کارت اشتراک با حالت روشن ===== */
+        body.light-mode .subscription-card {
+            border-color: rgba(var(--accent-rgb), 0.25);
+        }
+        body.light-mode .subscription-card.disconnected {
+            border-color: rgba(var(--alert-rgb), 0.4);
+            box-shadow: inset 0 0 24px rgba(var(--alert-rgb), 0.12), var(--box-shadow-light);
+        }
+        body.light-mode .subscription-card::before {
+            background-image: linear-gradient(rgba(16,21,32,0.03) 1px, transparent 1px),
+                               linear-gradient(90deg, rgba(16,21,32,0.03) 1px, transparent 1px);
+        }
+        body.light-mode .active-badge { color: var(--text); }
+        body.light-mode .days-left { color: var(--text); }
+        body.light-mode .expire-date { color: var(--text-muted) !important; }
+        body.light-mode .progress-circle::after { background-color: var(--hero-2); }
+        body.light-mode .progress-text .percent { color: var(--text); }
+        body.light-mode .progress-text .label { color: var(--text-muted); }
+        body.light-mode .radar-sweep::before { background: var(--text); }
+
+        /* ===== کارت آمار ===== */
+        .stats-card {
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 18px 10px;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            box-shadow: var(--box-shadow-light);
+        }
+        .stat-item { flex: 1; display: flex; flex-direction: column; align-items: center; }
+        .stat-header-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 12px;
+            flex-direction: row-reverse;
+        }
+        html[dir="ltr"] .stat-header-row { flex-direction: row; }
+        .stat-icon-wrapper {
+            width: 26px;
+            height: 26px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--surface-alt);
+            border: 1px solid var(--border);
+        }
+        .stat-title { font-size: 11px; color: var(--text-muted); }
+        .stat-value { font-size: 14px; font-weight: 700; color: var(--text); font-family: 'JetBrains Mono', monospace; }
+        .stat-value.purple-value { color: var(--accent); }
+        .stat-divider { height: 40px; width: 1px; background: var(--border); align-self: center; }
+
+        /* ===== کارت تبلیغاتی ===== */
+        .promo-card {
+            background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.15), rgba(var(--accent-rgb), 0.05));
+            border: 1px solid rgba(var(--accent-rgb), 0.25);
+            border-radius: 18px;
+            padding: 18px 16px;
+            margin-bottom: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
+            box-shadow: var(--box-shadow-light);
+            text-align: center;
+        }
+        .promo-card .promo-text {
+            font-size: 16px;
+            font-weight: 500;
+            color: var(--text);
+            line-height: 1.8;
+        }
+        .promo-card .promo-text span {
+            color: var(--accent);
+            font-weight: 700;
+        }
+        .promo-buttons {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .promo-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 18px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 700;
+            text-decoration: none;
+            transition: all 0.25s ease;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: var(--text);
+            box-shadow: var(--box-shadow-light);
+        }
+        .promo-btn:hover {
+            transform: scale(1.03);
+            border-color: rgba(var(--accent-rgb), 0.4);
+        }
+        .promo-btn i { font-size: 18px; }
+        .promo-btn.telegram i { color: #0088cc; }
+
+
+        /* ===== گرید جزئیات ===== */
+        .details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+        .detail-card {
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 14px 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: center;
+            min-height: 72px;
+            box-shadow: var(--box-shadow-light);
+        }
+        .detail-card .label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .detail-card .value {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .detail-card .value.accent-value { color: var(--accent); }
+        .detail-card .value.alert-value { color: var(--alert); }
+
+        .section-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            text-align: right;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+        html[dir="ltr"] .section-title { text-align: left; }
+
+        /* ===== دکمه‌های عملیاتی ===== */
+        .actions-grid {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .action-cell { flex: 1; }
+        .action-card {
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 18px 4px;
+            text-align: center;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            height: 100%;
+            transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+            box-shadow: var(--box-shadow-light);
+        }
+        .action-card:active { transform: scale(0.96); }
+        .action-card:hover { border-color: rgba(var(--accent-rgb), 0.3); }
+        .action-card i { font-size: 20px; }
+        .action-card.renew i { color: var(--warn); }
+        .action-card.link i { color: var(--accent); }
+        .action-card.qr i { color: var(--accent-2); }
+        .action-card.config i { color: var(--accent); }
+        .action-label { font-size: 11px; color: var(--text); font-weight: 600; line-height: 1.3; }
+
+        .action-dropdown-container {
+            width: 100%;
+            margin-bottom: 24px;
+            display: none;
+        }
+        .action-dropdown-container.show { display: block; }
+        .action-dropdown-menu {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 10px;
+            box-shadow: 0 10px 25px var(--shadow);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-height: 60px;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        /* ===== رادار آی‌پی تمیز ===== */
+        .radar-panel { align-items: stretch; justify-content: flex-start; gap: 10px; text-align: right; }
+        html[dir="ltr"] .radar-panel { text-align: left; }
+        .radar-head { display: flex; flex-direction: column; gap: 2px; padding: 2px 4px; }
+        .radar-title { font-size: 13px; font-weight: 700; color: var(--text); }
+        .radar-hint { font-size: 10px; color: var(--text-muted); }
+        .radar-ports { display: flex; flex-wrap: wrap; gap: 6px; }
+        .radar-port-chip {
+            background: var(--surface-alt);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            border-radius: 999px;
+            padding: 4px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .radar-port-chip.active { background: rgba(var(--accent-rgb), 0.15); border-color: rgba(var(--accent-rgb), 0.4); color: var(--accent); }
+        .radar-start-btn {
+            background: rgba(var(--accent-rgb), 0.15);
+            border: 1px solid rgba(var(--accent-rgb), 0.3);
+            color: var(--text);
+            padding: 8px 14px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        .radar-start-btn:hover { background: var(--accent); color: #06110F; }
+        .radar-start-btn.running { background: rgba(var(--warn-rgb), 0.15); border-color: rgba(var(--warn-rgb), 0.35); color: var(--warn); }
+        .radar-progress-track { width: 100%; height: 6px; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+        .radar-progress-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.2s; }
+        .radar-status { font-size: 11px; color: var(--text-muted); padding: 0 4px; min-height: 14px; }
+        .radar-table-wrap { width: 100%; overflow-x: auto; display: none; }
+        .radar-table-wrap.show { display: block; }
+        .radar-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        .radar-table th { color: var(--text-muted); font-weight: 600; text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+        html[dir="ltr"] .radar-table th { text-align: left; }
+        .radar-table td { color: var(--text); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+        .radar-table tbody tr:last-child td { border-bottom: none; }
+        .radar-table tr.radar-row-best td { background: rgba(var(--accent-rgb), 0.12); color: var(--accent); font-weight: 700; }
+        .radar-port-tag { color: var(--text-muted); font-size: 10px; }
+        .radar-best { display: none; flex-direction: column; gap: 6px; width: 100%; }
+        .radar-best.show { display: flex; }
+        .radar-best-label { font-size: 11px; color: var(--text-muted); padding: 0 4px; }
+        .radar-best-row { display: flex; gap: 6px; align-items: center; width: 100%; }
+        .radar-best-input {
+            flex: 1; min-width: 0;
+            background: var(--surface-alt);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font-size: 10px;
+            padding: 7px 10px;
+            direction: ltr;
+            text-overflow: ellipsis;
+        }
+        .radar-best-input:focus { outline: none; border-color: rgba(var(--accent-rgb), 0.4); }
+        .radar-best-note { font-size: 10px; color: var(--text-muted); padding: 0 4px; }
+
+        .ip-row-item {
+            background: var(--surface-alt);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 10px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+        }
+        .ip-details-left { display: flex; align-items: center; gap: 12px; text-align: right; }
+        html[dir="ltr"] .ip-details-left { text-align: left; flex-direction: row; }
+        html[dir="rtl"] .ip-details-left { flex-direction: row-reverse; }
+
+        .action-mini-flag {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background-size: cover;
+            background-position: center;
+            border: 1px solid var(--border);
+        }
+        .ip-meta-block { display: flex; flex-direction: column; gap: 4px; }
+        .ip-address-text { font-size: 13px; font-weight: bold; color: var(--text); }
+
+        .ip-protocol-badge-box {
+            display: inline-flex;
+            gap: 3px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 2px 6px;
+            font-size: 10px;
+            text-transform: uppercase;
+            font-weight: 500;
+            line-height: 1.4;
+        }
+        .proto-part-1 { color: var(--warn); }
+        .proto-part-2 { color: var(--accent-2); }
+        .proto-part-3 { color: var(--accent); }
+
+        .ip-copy-btn {
+            background: rgba(var(--accent-rgb), 0.12);
+            border: 1px solid rgba(var(--accent-rgb), 0.25);
+            color: var(--accent);
+            padding: 6px 12px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+        .ip-copy-btn:hover { background: var(--accent); color: #06110F; }
+
+        .copy-all-btn {
+            background: rgba(var(--accent-rgb), 0.15);
+            border: 1px solid rgba(var(--accent-rgb), 0.3);
+            color: var(--text);
+            padding: 8px 14px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            transition: all 0.25s;
+            margin-bottom: 8px;
+        }
+        .copy-all-btn:hover { background: var(--accent); color: #06110F; }
+
+        .qr-modern-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            flex-shrink: 0;
+            margin: 0 4px;
+            transition: border-color 0.2s;
+        }
+        .qr-modern-wrapper:hover { border-color: rgba(var(--accent-rgb), 0.4); }
+        .qr-modern-wrapper img {
+            width: 24px;
+            height: 24px;
+            display: block;
+            border-radius: 4px;
+        }
+
+        /* ===== دانلود برنامه‌ها ===== */
+        .download-os-tabs {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+            background: var(--surface);
+            padding: 6px;
+            border-radius: 16px;
+            margin-bottom: 24px;
+            text-align: center;
+            border: 1px solid var(--border);
+            box-shadow: var(--box-shadow-light);
+        }
+        .os-tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 10px 4px;
+            font-size: 12px;
+            font-weight: bold;
+            border-radius: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: all 0.25s ease;
+        }
+        .os-tab-btn.active-tab {
+            background-color: var(--accent);
+            color: #06110F;
+            box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.3);
+        }
+
+        .client-card-item {
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: var(--box-shadow-light);
+        }
+        .client-info-side { display: flex; align-items: center; gap: 12px; }
+        html[dir="rtl"] .client-info-side { flex-direction: row; text-align: right; }
+        html[dir="ltr"] .client-info-side { flex-direction: row-reverse; text-align: left; }
+        .client-icon-box {
+            width: 44px;
+            height: 44px;
+            background: var(--surface-alt);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            color: var(--text-muted);
+        }
+        .client-title-text { font-size: 14px; font-weight: 700; color: var(--text); }
+        .client-subtitle-text { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+        .client-download-btn {
+            background-color: rgba(var(--accent-rgb), 0.15);
+            color: var(--accent);
+            padding: 8px 18px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 700;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+        .client-download-btn:hover { background-color: var(--accent); color: #06110F; }
+
+        /* ===== مودال QR کد یک کانفیگ ===== */
+        .config-qr-overlay {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            z-index: 9999;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .config-qr-overlay.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .config-qr-box {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 22px;
+            padding: 24px;
+            max-width: 320px;
+            width: 100%;
+            text-align: center;
+            position: relative;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+            transform: scale(0.9);
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .config-qr-overlay.show .config-qr-box {
+            transform: scale(1);
+        }
+        .config-qr-close {
+            position: absolute;
+            top: 14px;
+            left: 14px;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: none;
+            background: var(--surface-alt);
+            color: var(--text-muted);
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .config-qr-close:hover { background: rgba(var(--alert-rgb), 0.15); color: var(--alert); }
+        .config-qr-remark {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 18px;
+            margin-top: 6px;
+            word-break: break-word;
+        }
+        .config-qr-img-wrap {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06);
+        }
+        .config-qr-img-wrap img {
+            width: 220px;
+            height: 220px;
+            display: block;
+        }
+
+        /* ===== ناوبری پایین ===== */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            max-width: 480px;
+            background-color: var(--nav-bg);
+            border-top: 1px solid var(--border);
+            padding: 12px 16px;
+            display: flex;
+            z-index: 100;
+        }
+        .nav-item-cell { flex: 1; display: flex; justify-content: center; }
+        .nav-item {
+            color: var(--text-muted);
+            font-size: 11px;
+            cursor: pointer;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            width: 100%;
+            padding: 8px 0;
+        }
+        .nav-item i { font-size: 18px; }
+        .nav-item.active {
+            background-color: rgba(var(--accent-rgb), 0.12);
+            border: 1px solid rgba(var(--accent-rgb), 0.25);
+            border-radius: 16px;
+            color: var(--accent);
+        }
+
+/* ===== Responsive multi-device layout ===== */
+html, body { width: 100%; min-height: 100%; }
+body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
+.header, #screen-dashboard, #screen-download-apps { width: 100%; max-width: 1180px; margin-left: auto; margin-right: auto; }
+.bottom-nav { max-width: 1180px; width: calc(100% - 48px); border: 1px solid var(--border); border-bottom: 0; border-radius: 18px 18px 0 0; }
+@media (min-width: 769px) {
+  #screen-dashboard { display:grid; grid-template-columns:minmax(0,1.7fr) minmax(300px,.9fr); gap:16px; align-items:start; }
+  #screen-dashboard > .subscription-card { grid-column:1/-1; }
+  #screen-dashboard > .stats-card { grid-column:1; margin-bottom:0; }
+  #screen-dashboard > .promo-card { grid-column:2; margin-bottom:0; height:100%; }
+  #screen-dashboard > .details-grid { grid-column:1/-1; grid-template-columns:repeat(4,minmax(0,1fr)); }
+  #screen-dashboard > .actions-grid { grid-column:1/-1; gap:12px; }
+  #screen-dashboard > .action-dropdown-container, #screen-dashboard > .designer-card { grid-column:1/-1; }
+  .subscription-card { min-height:180px; padding:28px 32px; }
+  .progress-circle { width:132px; height:132px; }
+  .progress-circle::after { width:108px; height:108px; }
+  .days-left { font-size:42px; }
+  .action-card { padding:20px 10px; }
+  .action-label { font-size:12px; }
+}
+@media (min-width:1200px) { body{padding-left:40px;padding-right:40px;} .header,#screen-dashboard,#screen-download-apps{max-width:1280px;} .bottom-nav{max-width:1280px;width:calc(100% - 80px);} }
+@media (min-width:481px) and (max-width:768px) { body{padding:24px 20px 105px;} .bottom-nav{width:calc(100% - 40px);} .details-grid{grid-template-columns:repeat(2,minmax(0,1fr));} }
+@media (max-width:480px) { body{padding:16px 12px 96px;} .subscription-card{padding:20px 18px;} .progress-circle{width:92px;height:92px;} .progress-circle::after{width:74px;height:74px;} .days-left{font-size:30px;} .details-grid{gap:8px;} .action-card{padding:15px 2px;} .action-label{font-size:10px;} .bottom-nav{width:calc(100% - 24px);} }
+@media (max-width:360px) { body{padding-left:8px;padding-right:8px;} .subscription-card{padding:17px 13px;} .progress-circle{width:82px;height:82px;} .progress-circle::after{width:66px;height:66px;} .days-left{font-size:26px;} }
+@media (max-height:520px) and (orientation:landscape) { body{padding-bottom:88px;} .subscription-card{min-height:145px;} }
 </style>
 </head>
 <body>
-<svg style="position:absolute;width:0;height:0"><defs><linearGradient id="waveGrad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#5EEAD4"/><stop offset="50%" stop-color="#2DD4BF"/><stop offset="100%" stop-color="#0F9E90"/></linearGradient></defs></svg>
 
-<div class="header">
-  <div class="profile-container">
-    <div class="profile-img-wrapper">
-      <div class="profile-img" id="profile-img">
-        <svg class="default-avatar-svg" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-      </div>
-      <div class="online-dot" id="online-status-dot"></div>
-      <span class="online-status-text" id="online-status-text">آفلاین</span>
+    <svg style="position: absolute; width: 0; height: 0;" width="0" height="0">
+        <defs>
+            <linearGradient id="premiumPurpleNeon" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="#5EEAD4"/>
+                <stop offset="50%" stop-color="#2DD4BF"/>
+                <stop offset="100%" stop-color="#0F9E90"/>
+            </linearGradient>
+        </defs>
+    </svg>
+
+    <div class="header">
+        <div class="profile-container">
+            <div class="profile-img-wrapper">
+                <div class="profile-img" id="profile-img">
+                    <svg class="default-avatar-svg" id="default-avatar" viewBox="0 0 24 24">
+                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                    </svg>
+                </div>
+                <div class="online-dot" id="online-status-dot"></div>
+                <span class="online-status-text" id="online-status-text">آفلاین</span>
+            </div>
+            <div class="user-info">
+                <div class="user-name" id="user-name"></div>
+            </div>
+        </div>
+
+        <div class="header-icons">
+            <div class="lang-container">
+                <div class="header-icon" id="lang-toggle-btn">
+                    <span class="lang-btn"><i class="fa-solid fa-globe"></i> <span id="lang-text">FA</span></span>
+                </div>
+                <div class="lang-dropdown-menu" id="lang-dropdown">
+                    <div class="lang-dropdown-item" onclick="selectLanguage('fa')">فارسی</div>
+                    <div class="lang-dropdown-item" onclick="selectLanguage('en')">English</div>
+                    <div class="lang-dropdown-item" onclick="selectLanguage('tr')">Türkçe</div>
+                    <div class="lang-dropdown-item" onclick="selectLanguage('ar')">العربية</div>
+                </div>
+            </div>
+            <div class="header-icon" id="theme-toggle">
+                <i class="fa-solid fa-moon" id="theme-icon"></i>
+            </div>
+        </div>
     </div>
-    <div class="user-info"><div class="user-name" id="user-name"></div></div>
-  </div>
-  <div class="header-icons">
-    <div class="lang-container">
-      <div class="header-icon" id="lang-toggle-btn"><span class="lang-btn"><i class="fa-solid fa-globe"></i> <span id="lang-text">FA</span></span></div>
-      <div class="lang-dropdown-menu" id="lang-dropdown">
-        <div class="lang-dropdown-item" onclick="selectLanguage('fa')">فارسی</div>
-        <div class="lang-dropdown-item" onclick="selectLanguage('en')">English</div>
-        <div class="lang-dropdown-item" onclick="selectLanguage('tr')">Türkçe</div>
-        <div class="lang-dropdown-item" onclick="selectLanguage('ar')">العربية</div>
-      </div>
+
+    <div id="screen-dashboard" class="app-screen active-screen">
+        <!-- کارت اشتراک -->
+        <div class="subscription-card" id="main-sub-card">
+            <div class="status-right">
+                <div class="active-badge">
+                    <span class="status-dot-green" id="status-indicator-dot"><i class="fa-solid fa-check" id="status-icon-mark"></i></span>
+                    <span id="badge-text">فعال</span>
+                </div>
+                <div class="days-left en-font" id="live-days-count">0 <span id="days-label">روز</span></div>
+                <div class="expire-date" id="expire-date">تاریخ انقضا: --</div>
+            </div>
+            <div class="status-left">
+                <div class="progress-circle" id="sub-progress-circle">
+                    <div class="radar-sweep"></div>
+                    <div class="progress-text">
+                        <span class="percent en-font" id="live-percent-display">0%</span>
+                        <span class="label" id="remaining-label">باقی‌مانده</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- کارت آمار -->
+        <div class="stats-card">
+            <div class="stat-item">
+                <div class="stat-header-row">
+                    <div class="stat-icon-wrapper"><i class="fa-solid fa-database" style="color: #4C8DFF;"></i></div>
+                    <div class="stat-title" id="title-limit">حجم کلی</div>
+                </div>
+                <div class="stat-value purple-value en-font" id="stat-limit">0 GB</div>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+                <div class="stat-header-row">
+                    <div class="stat-icon-wrapper"><i class="fa-solid fa-chart-pie" style="color: #2DD4BF;"></i></div>
+                    <div class="stat-title" id="title-total">مصرف کل</div>
+                </div>
+                <div class="stat-value en-font" id="stat-total-val">0 B</div>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+                <div class="stat-header-row">
+                    <div class="stat-icon-wrapper"><i class="fa-solid fa-calendar-day" style="color: #4C8DFF;"></i></div>
+                    <div class="stat-title" id="title-download">مصرف روزانه</div>
+                </div>
+                <div class="stat-value en-font" id="stat-dl-val">0 GB</div>
+            </div>
+        </div>
+
+        <!-- کارت تبلیغاتی (فقط تلگرام) -->
+        <div class="promo-card">
+            <div class="promo-text">
+                آیا نیاز به <span>خرید</span> یا <span>تمدید ساب</span> دارید؟<br>
+                با پشتیبانی تماس بگیرید.
+            </div>
+            <div class="promo-buttons" style="justify-content: center;">
+                <a href="__TG_CHANNEL__" target="_blank" class="promo-btn telegram">
+                    <i class="fa-brands fa-telegram"></i> تلگرام
+                </a>
+            </div>
+        </div>
+
+        <!-- گرید جزئیات -->
+        <div class="details-grid">
+            <div class="detail-card">
+                <span class="label" id="detail-total-label">مصرف کل</span>
+                <span class="value" id="detail-total-value">0 B</span>
+            </div>
+            <div class="detail-card">
+                <span class="label" id="detail-remaining-label">باقی‌مانده</span>
+                <span class="value accent-value" id="detail-remaining-value">0%</span>
+            </div>
+            <div class="detail-card">
+                <span class="label" id="detail-remaining-volume-label">حجم باقی‌مانده</span>
+                <span class="value" id="detail-remaining-volume">نامحدود</span>
+            </div>
+            <div class="detail-card">
+                <span class="label" id="detail-last-connect-label">آخرین اتصال</span>
+                <span class="value" id="detail-last-connect-value">--</span>
+            </div>
+        </div>
+
+        <!-- دکمه‌های عملیاتی -->
+        <div class="actions-grid">
+            <div class="action-cell">
+                <div class="action-card renew" onclick="window.open('__TG_CHANNEL__', '_blank')">
+                    <i class="fa-solid fa-battery-three-quarters"></i>
+                    <div class="action-label" id="action-renew">تمدید ساب</div>
+                </div>
+            </div>
+            <div class="action-cell">
+                <div class="action-card link" id="btn-copy-sub">
+                    <i class="fa-solid fa-link"></i>
+                    <div class="action-label" id="action-copy">کپی لینک ساب</div>
+                </div>
+            </div>
+            <div class="action-cell">
+                <div class="action-card qr" id="btn-toggle-qr">
+                    <i class="fa-solid fa-qrcode"></i>
+                    <div class="action-label" id="action-qr">QR Code</div>
+                </div>
+            </div>
+            <div class="action-cell">
+                <div class="action-card config" id="btn-toggle-config">
+                    <i class="fa-solid fa-cloud-arrow-down"></i>
+                    <div class="action-label" id="action-config">کپی کانفیگ</div>
+                </div>
+            </div>
+            <div class="action-cell">
+                <div class="action-card" id="btn-radar">
+                    <i class="fa-solid fa-satellite-dish" style="color: var(--accent-2);"></i>
+                    <div class="action-label" id="action-radar">رادار</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="action-dropdown-container" id="dropdown-qr-container">
+            <div class="action-dropdown-menu" id="list-qr-ips">
+                <span style="color:#6c6c8c;" id="qr-empty-msg">خالی</span>
+            </div>
+        </div>
+
+        <div class="action-dropdown-container" id="dropdown-config-container">
+            <div class="action-dropdown-menu" id="list-config-ips">
+                <span style="color:#6c6c8c;" id="config-empty-msg">خالی</span>
+            </div>
+        </div>
+
+        <div class="action-dropdown-container" id="dropdown-radar-container">
+            <div class="action-dropdown-menu radar-panel" id="radar-panel">
+                <div class="radar-head">
+                    <span class="radar-title" id="radar-title">رادار آی‌پی تمیز</span>
+                    <span class="radar-hint" id="radar-hint">کاملاً در مرورگر شما اجرا می‌شود</span>
+                </div>
+                <div class="radar-ports" id="radar-ports">
+                    <span class="radar-port-chip active" data-port="443">443</span>
+                    <span class="radar-port-chip" data-port="8443">8443</span>
+                    <span class="radar-port-chip" data-port="2053">2053</span>
+                    <span class="radar-port-chip" data-port="2083">2083</span>
+                    <span class="radar-port-chip" data-port="2087">2087</span>
+                    <span class="radar-port-chip" data-port="2096">2096</span>
+                </div>
+                <button class="radar-start-btn" id="radar-start-btn">
+                    <i class="fa-solid fa-satellite-dish"></i> <span id="radar-start-label">شروع اسکن</span>
+                </button>
+                <div class="radar-progress-track">
+                    <div class="radar-progress-bar" id="radar-progress-bar"></div>
+                </div>
+                <div class="radar-status" id="radar-status">آماده برای اسکن</div>
+                <div class="radar-table-wrap" id="radar-table-wrap">
+                    <table class="radar-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>IP</th>
+                                <th id="radar-th-ping">تأخیر</th>
+                                <th id="radar-th-jitter">جیتر</th>
+                                <th id="radar-th-loss">لاس٪</th>
+                            </tr>
+                        </thead>
+                        <tbody id="radar-results-body"></tbody>
+                    </table>
+                </div>
+                <div class="radar-best" id="radar-best">
+                    <div class="radar-best-label" id="radar-best-label">کانفیگ بهترین آی‌پی</div>
+                    <div class="radar-best-row">
+                        <input type="text" class="radar-best-input en-font" id="radar-best-link" readonly value="">
+                        <button class="ip-copy-btn" id="radar-copy-btn">
+                            <i class="fa-solid fa-copy"></i> <span id="radar-copy-label">کپی</span>
+                        </button>
+                    </div>
+                    <div class="radar-best-note" id="radar-best-note"></div>
+                </div>
+            </div>
+        </div>
     </div>
-    <div class="header-icon" id="theme-toggle"><i class="fa-solid fa-moon" id="theme-icon"></i></div>
-  </div>
-</div>
 
-<div id="screen-dashboard" class="app-screen active-screen">
-  <div class="subscription-card" id="main-sub-card">
-    <div class="status-right">
-      <div class="active-badge"><span class="status-dot-green"><i class="fa-solid fa-check" id="status-icon-mark"></i></span><span id="badge-text">فعال</span></div>
-      <div class="days-left en-font" id="live-days-count">0 <span id="days-label">روز</span></div>
-      <div class="expire-date" id="expire-date">--</div>
+    <div id="screen-download-apps" class="app-screen">
+        <div class="section-title" id="download-screen-title" style="margin-bottom: 16px;">دانلود برنامه ها</div>
+        <div class="download-os-tabs">
+            <div class="os-tab-btn active-tab" id="os-tab-android" onclick="switchDownloadTab('android')">
+                <i class="fa-brands fa-android"></i> <span id="lbl-tab-android">اندروید</span>
+            </div>
+            <div class="os-tab-btn" id="os-tab-ios" onclick="switchDownloadTab('ios')">
+                <i class="fa-brands fa-apple"></i> <span id="lbl-tab-ios">آیفون / آیپد</span>
+            </div>
+            <div class="os-tab-btn" id="os-tab-desktop" onclick="switchDownloadTab('desktop')">
+                <i class="fa-solid fa-desktop"></i> <span id="lbl-tab-desktop">ویندوز / مک</span>
+            </div>
+        </div>
+        <div class="client-card-item">
+            <a href="#" id="btn-dl-client1" target="_blank" class="client-download-btn">دانلود</a>
+            <div class="client-info-side">
+                <div class="client-details">
+                    <div class="client-title-text" id="title-client1">v2rayNG</div>
+                    <div class="client-subtitle-text" id="sub-client1">کلاینت رسمی فروشگاه</div>
+                </div>
+                <div class="client-icon-box"><i class="fa-solid fa-paper-plane" id="icon-client1"></i></div>
+            </div>
+        </div>
+        <div class="client-card-item">
+            <a href="#" id="btn-dl-client2" target="_blank" class="client-download-btn">دانلود</a>
+            <div class="client-info-side">
+                <div class="client-details">
+                    <div class="client-title-text" id="title-client2">Hiddify Next</div>
+                    <div class="client-subtitle-text" id="sub-client2">کلاینت رسمی فروشگاه</div>
+                </div>
+                <div class="client-icon-box"><i class="fa-solid fa-shield-halved" id="icon-client2"></i></div>
+            </div>
+        </div>
+        <div class="client-card-item">
+            <a href="#" id="btn-dl-client3" target="_blank" class="client-download-btn">دانلود</a>
+            <div class="client-info-side">
+                <div class="client-details">
+                    <div class="client-title-text" id="title-client3">sing-box</div>
+                    <div class="client-subtitle-text" id="sub-client3">کلاینت رسمی فروشگاه</div>
+                </div>
+                <div class="client-icon-box"><i class="fa-solid fa-box-open" id="icon-client3"></i></div>
+            </div>
+        </div>
+        <div class="client-card-item" id="client-card-4">
+            <a href="#" id="btn-dl-client4" target="_blank" class="client-download-btn">دانلود</a>
+            <div class="client-info-side">
+                <div class="client-details">
+                    <div class="client-title-text" id="title-client4">V2Box</div>
+                    <div class="client-subtitle-text" id="sub-client4">کلاینت رسمی فروشگاه</div>
+                </div>
+                <div class="client-icon-box"><i class="fa-solid fa-cube" id="icon-client4"></i></div>
+            </div>
+        </div>
     </div>
-    <div class="status-left">
-      <div class="progress-circle" id="sub-progress-circle">
-        <div class="radar-sweep"></div>
-        <div class="progress-text"><span class="percent en-font" id="live-percent-display">0%</span><span class="label" id="remaining-label">باقی‌مانده</span></div>
-      </div>
+
+    <!-- ===== مودال QR کد یک کانفیگ ===== -->
+    <div class="config-qr-overlay" id="configQrOverlay" onclick="if(event.target===this) closeConfigQrModal()">
+        <div class="config-qr-box">
+            <button class="config-qr-close" onclick="closeConfigQrModal()"><i class="fa-solid fa-xmark"></i></button>
+            <div class="config-qr-remark en-font" id="configQrRemark"></div>
+            <div class="config-qr-img-wrap">
+                <img id="configQrImage" src="" alt="QR Code" />
+            </div>
+        </div>
     </div>
-  </div>
 
-  <div class="stats-card">
-    <div class="stat-item"><div class="stat-header-row"><div class="stat-icon-wrapper"><i class="fa-solid fa-database" style="color:#4C8DFF"></i></div><div class="stat-title" id="title-limit">حجم کلی</div></div><div class="stat-value purple-value en-font" id="stat-limit">0 GB</div></div>
-    <div class="stat-divider"></div>
-    <div class="stat-item"><div class="stat-header-row"><div class="stat-icon-wrapper"><i class="fa-solid fa-chart-pie" style="color:#2DD4BF"></i></div><div class="stat-title" id="title-total">مصرف کل</div></div><div class="stat-value en-font" id="stat-total-val">0 GB</div></div>
-    <div class="stat-divider"></div>
-    <div class="stat-item"><div class="stat-header-row"><div class="stat-icon-wrapper"><i class="fa-solid fa-calendar-day" style="color:#4C8DFF"></i></div><div class="stat-title" id="title-download">مصرف روزانه</div></div><div class="stat-value en-font" id="stat-dl-val">0 GB</div></div>
-  </div>
+    <div class="bottom-nav">
+        <div class="nav-item-cell">
+            <div class="nav-item active" id="nav-dashboard" onclick="navigateToScreen('dashboard')">
+                <i class="fa-solid fa-house"></i>داشبورد
+            </div>
+        </div>
+        <div class="nav-item-cell">
+            <div class="nav-item" id="nav-download" onclick="navigateToScreen('download')">
+                <i class="fa-solid fa-download"></i>دانلود برنامه
+            </div>
+        </div>
+    </div>
 
-  <div class="promo-card">
-    <div class="promo-text">آیا نیاز به <span>خرید</span> یا <span>تمدید ساب</span> دارید؟<br>با پشتیبانی تماس بگیرید.</div>
-    <div class="promo-buttons"><a href="__TG_CHANNEL__" target="_blank" class="promo-btn telegram"><i class="fa-brands fa-telegram"></i> <span id="promo-tg-label">تلگرام</span></a></div>
-  </div>
+    <script>
+        // ===== داده‌های دریافتی از پنل =====
+        // این مقادیر به‌صورت متن ساده توسط بک‌اند جایگزین می‌شوند.
+        const panelData = {
+            username: "__USER_NAME__",
+            userId: "__USER_ID__",
+            statusCode: "__STATUS_CODE__",       // active | paused | expired | limit | dailyLimit
+            expiryDateText: "__EXPIRY_DATE__",   // متن آماده و فرمت‌شده از سمت سرور
+            totalUsedGB: parseFloat("__TOTAL_GB__"),
+            totalLimitGB: parseFloat("__LIMIT_TOTAL_GB__"),
+            dailyUsedGB: parseFloat("__DAILY_GB__"),
+            dailyLimitGB: parseFloat("__LIMIT_DAILY_GB__"),
+            subUrl: "__SYNC_NORMAL__",
+            subUrlBase64: "__SYNC_NORMAL_BASE64__",
+            rawUrl: "__SYNC_RAW__"
+        };
 
-  <div class="details-grid">
-    <div class="detail-card"><span class="label" id="detail-total-label">مصرف کل</span><span class="value" id="detail-total-value">0 GB</span></div>
-    <div class="detail-card"><span class="label" id="detail-remaining-label">باقی‌مانده</span><span class="value accent-value" id="detail-remaining-value">100%</span></div>
-    <div class="detail-card"><span class="label" id="detail-remaining-volume-label">حجم باقی‌مانده</span><span class="value" id="detail-remaining-volume">نامحدود</span></div>
-    <div class="detail-card"><span class="label" id="detail-last-connect-label">IP اتصال</span><span class="value" id="detail-last-connect-value">--</span></div>
-  </div>
+        // ===== متغیرهای سراسری =====
+        let currentLang = 'fa';
+        let isServerConnected = panelData.statusCode === 'active';
 
-  <div class="actions-grid">
-    <div class="action-cell"><div class="action-card renew" onclick="window.open('__TG_CHANNEL__','_blank')"><i class="fa-solid fa-battery-three-quarters"></i><div class="action-label" id="action-renew">تمدید ساب</div></div></div>
-    <div class="action-cell"><div class="action-card link" id="btn-copy-sub"><i class="fa-solid fa-link"></i><div class="action-label" id="action-copy">کپی لینک ساب</div></div></div>
-    <div class="action-cell"><div class="action-card qr" id="btn-toggle-qr"><i class="fa-solid fa-qrcode"></i><div class="action-label" id="action-qr">QR Code</div></div></div>
-    <div class="action-cell"><div class="action-card config" id="btn-toggle-config"><i class="fa-solid fa-cloud-arrow-down"></i><div class="action-label" id="action-config">کپی کانفیگ</div></div></div>
-  </div>
+        // ===== توابع کمکی =====
+        function decodeBase64Unicode(str) {
+            const clean = str.replace(/-/g, '+').replace(/_/g, '/').trim();
+            const binary = atob(clean);
+            const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+            return new TextDecoder('utf-8').decode(bytes);
+        }
 
-  <div class="action-dropdown-container" id="dropdown-qr-container"><div class="action-dropdown-menu" id="list-qr-ips"><span>در حال دریافت…</span></div></div>
-  <div class="action-dropdown-container" id="dropdown-config-container"><div class="action-dropdown-menu" id="list-config-ips"><span>در حال دریافت…</span></div></div>
-</div>
+        let sanaeiClientData = {
+            username: panelData.username,
+            userId: panelData.userId,
+            statusCode: panelData.statusCode,
+            expiryDateText: panelData.expiryDateText,
+            totalUsedGB: isNaN(panelData.totalUsedGB) ? 0 : panelData.totalUsedGB,
+            totalLimitGB: isNaN(panelData.totalLimitGB) ? 0 : panelData.totalLimitGB,
+            dailyUsedGB: isNaN(panelData.dailyUsedGB) ? 0 : panelData.dailyUsedGB,
+            dailyLimitGB: isNaN(panelData.dailyLimitGB) ? 0 : panelData.dailyLimitGB,
+            subUrl: panelData.subUrl,
+            links: [],
+            clientIp: null
+        };
 
-<div id="screen-download-apps" class="app-screen">
-  <div class="section-title" id="download-screen-title">دانلود برنامه ها</div>
-  <div class="download-os-tabs">
-    <div class="os-tab-btn active-tab" id="os-tab-android" onclick="switchDownloadTab('android')"><i class="fa-brands fa-android"></i> <span id="lbl-tab-android">اندروید</span></div>
-    <div class="os-tab-btn" id="os-tab-ios" onclick="switchDownloadTab('ios')"><i class="fa-brands fa-apple"></i> <span id="lbl-tab-ios">آیفون / آیپد</span></div>
-    <div class="os-tab-btn" id="os-tab-desktop" onclick="switchDownloadTab('desktop')"><i class="fa-solid fa-desktop"></i> <span id="lbl-tab-desktop">ویندوز / مک</span></div>
-  </div>
-  <div class="client-card-item"><a href="#" id="btn-dl-client1" target="_blank" class="client-download-btn">دانلود</a><div class="client-info-side"><div><div class="client-title-text" id="title-client1">v2rayNG</div><div class="client-subtitle-text" id="sub-client1">کلاینت رسمی</div></div><div class="client-icon-box"><i class="fa-solid fa-paper-plane"></i></div></div></div>
-  <div class="client-card-item"><a href="#" id="btn-dl-client2" target="_blank" class="client-download-btn">دانلود</a><div class="client-info-side"><div><div class="client-title-text" id="title-client2">Hiddify</div><div class="client-subtitle-text" id="sub-client2">کلاینت رسمی</div></div><div class="client-icon-box"><i class="fa-solid fa-shield-halved"></i></div></div></div>
-  <div class="client-card-item"><a href="#" id="btn-dl-client3" target="_blank" class="client-download-btn">دانلود</a><div class="client-info-side"><div><div class="client-title-text" id="title-client3">sing-box</div><div class="client-subtitle-text" id="sub-client3">کلاینت رسمی</div></div><div class="client-icon-box"><i class="fa-solid fa-box-open"></i></div></div></div>
-  <div class="client-card-item" id="client-card-4"><a href="#" id="btn-dl-client4" target="_blank" class="client-download-btn">دانلود</a><div class="client-info-side"><div><div class="client-title-text" id="title-client4">V2Box</div><div class="client-subtitle-text" id="sub-client4">کلاینت رسمی</div></div><div class="client-icon-box"><i class="fa-solid fa-cube"></i></div></div></div>
-</div>
+        function updateConnectionStatus() {
+            isServerConnected = sanaeiClientData.statusCode === 'active';
+        }
+        updateConnectionStatus();
 
-<div class="config-qr-overlay" id="configQrOverlay" onclick="if(event.target===this)closeConfigQrModal()">
-  <div class="config-qr-box">
-    <button class="config-qr-close" onclick="closeConfigQrModal()"><i class="fa-solid fa-xmark"></i></button>
-    <div class="config-qr-remark en-font" id="configQrRemark"></div>
-    <div class="config-qr-img-wrap"><img id="configQrImage" src="" alt="QR"></div>
-  </div>
-</div>
+        // کانفیگ‌های خام را از __SYNC_RAW__ می‌گیریم
+        async function loadConfigsFromRawEndpoint() {
+            if (!panelData.rawUrl) return;
+            try {
+                const response = await fetch(panelData.rawUrl, { cache: 'no-store' });
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                const base64Str = (await response.text()).trim();
+                let decodedLinks = [];
+                try {
+                    decodedLinks = decodeBase64Unicode(base64Str).split('\\n').map(l => l.trim()).filter(Boolean);
+                } catch (e) {
+                    decodedLinks = base64Str.split('\\n').map(l => l.trim()).filter(Boolean);
+                }
+                sanaeiClientData.links = decodedLinks;
+                renderActionMenus();
+            } catch (error) {
+                console.error("خطا در دریافت کانفیگ‌ها:", error);
+            }
+        }
 
-<div class="bottom-nav">
-  <div class="nav-item-cell"><div class="nav-item active" id="nav-dashboard" onclick="navigateToScreen('dashboard')"><i class="fa-solid fa-house"></i><span id="nav-dashboard-label">داشبورد</span></div></div>
-  <div class="nav-item-cell"><div class="nav-item" id="nav-download" onclick="navigateToScreen('download')"><i class="fa-solid fa-download"></i><span id="nav-download-label">دانلود برنامه</span></div></div>
-</div>
+        // فچ IP کاربر
+        function loadClientIp() {
+            fetch('https://api.ipify.org?format=json')
+                .then(r => r.json())
+                .then(d => { sanaeiClientData.clientIp = d.ip; renderPanelData(); })
+                .catch(() => { sanaeiClientData.clientIp = null; renderPanelData(); });
+        }
 
-<script>
-var panelData={username:"__USER_NAME__",userId:"__USER_ID__",statusCode:"__STATUS_CODE__",expiryDateText:"__EXPIRY_DATE__",expiryFa:"__EXPIRY_FA__",totalUsedGB:parseFloat("__TOTAL_GB__"),totalLimitGB:parseFloat("__LIMIT_TOTAL_GB__"),dailyUsedGB:parseFloat("__DAILY_GB__"),dailyLimitGB:parseFloat("__LIMIT_DAILY_GB__"),subUrl:"__SYNC_NORMAL__",subUrlBase64:"__SYNC_NORMAL_BASE64__",rawUrl:"__SYNC_RAW__"};
-var currentLang='fa',isServerConnected=panelData.statusCode==='active';
-var D={username:panelData.username,statusCode:panelData.statusCode,expiryDateText:panelData.expiryDateText,expiryFa:panelData.expiryFa,
- totalUsedGB:isNaN(panelData.totalUsedGB)?0:panelData.totalUsedGB,totalLimitGB:isNaN(panelData.totalLimitGB)?0:panelData.totalLimitGB,
- dailyUsedGB:isNaN(panelData.dailyUsedGB)?0:panelData.dailyUsedGB,dailyLimitGB:isNaN(panelData.dailyLimitGB)?0:panelData.dailyLimitGB,
- subUrl:panelData.subUrl,links:[],clientIp:null};
-function decB64(s){try{var b=atob(s.replace(/-/g,'+').replace(/_/g,'/'));var u=Uint8Array.from(b,function(c){return c.charCodeAt(0)});return new TextDecoder('utf-8').decode(u);}catch(e){return s;}}
-function loadConfigs(){if(!panelData.rawUrl)return;fetch(panelData.rawUrl,{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error(r.status);return r.text();}).then(function(t){t=t.trim();var lines;try{lines=decB64(t).split('\\n');}catch(e){lines=t.split('\\n');}D.links=lines.map(function(l){return l.trim();}).filter(Boolean);renderActionMenus();}).catch(function(e){console.error(e);var q=document.getElementById('list-qr-ips'),c=document.getElementById('list-config-ips');if(q)q.innerHTML='<span>خطا در دریافت کانفیگ‌ها</span>';if(c)c.innerHTML='<span>خطا در دریافت کانفیگ‌ها</span>';});}
-function loadIp(){fetch('https://api.ipify.org?format=json').then(function(r){return r.json();}).then(function(d){D.clientIp=d.ip;renderPanelData();}).catch(function(){D.clientIp=null;renderPanelData();});}
-var APPS={android:{c1:{name:"v2rayNG",url:"https://play.google.com/store/apps/details?id=com.v2ray.ang"},c2:{name:"Hiddify",url:"https://play.google.com/store/apps/details?id=fg.hiddify.com"},c3:{name:"sing-box",url:"https://play.google.com/store/apps/details?id=io.nekohasekai.sfa"},c4:{name:"V2Box",url:"https://play.google.com/store/search?q=V2Box%20V2ray%20Client&c=apps"}},ios:{c1:{name:"FoXray",url:"https://apps.apple.com/us/app/foxray/id6448898375"},c2:{name:"Hiddify",url:"https://apps.apple.com/us/app/hiddify-next/id6473611382"},c3:{name:"sing-box",url:"https://apps.apple.com/us/app/sing-box/id6443657551"},c4:{name:"V2Box",url:"https://apps.apple.com/us/app/v2box-v2ray-client/id6446814690"}},desktop:{c1:{name:"v2rayN",url:"https://github.com/2dust/v2rayN/releases"},c2:{name:"Hiddify",url:"https://apps.microsoft.com/detail/hiddify"},c3:{name:"NekoRay",url:"https://github.com/MatsuriDayo/nekoray/releases"}}};
-var WAVE='<div class="wave-icon-wrapper"><svg viewBox="0 0 24 24"><path d="M7 23h7.5c2.2 0 4-1.8 4-4v-7.5c0-.8-.7-1.5-1.5-1.5s-1.5.7-1.5 1.5V11h-.5V4.5c0-.8-.7-1.5-1.5-1.5S12 3.7 12 4.5V11h-.5V2.5c0-.8-.7-1.5-1.5-1.5S8.5 1.7 8.5 2.5V11h-.5V5.5c0-.8-.7-1.5-1.5-1.5S5 4.7 5 5.5v10.3c-.6-.7-1.5-1.1-2.4-.9-.9.2-1.5 1.1-1.4 2 .2 1.9 2 4.2 3.8 5.4C5.7 22.7 6.3 23 7 23z" fill="url(#waveGrad)"/></svg></div>';
-var L={fa:{dir:"rtl",greet:"سلام ",badgeActive:"فعال",badgePaused:"متوقف",badgeExpired:"منقضی",badgeLimit:"اتمام حجم",badgeDailyLimit:"اتمام حجم روزانه",daysUnit:"روز",remainingLabel:"باقی‌مانده",titleLimit:"حجم کلی",titleTotal:"مصرف کل",titleDownload:"مصرف روزانه",detailTotal:"مصرف کل",detailRemaining:"باقی‌مانده",detailRemainingVolume:"حجم باقی‌مانده",detailLastConnect:"IP اتصال",actionRenew:"تمدید ساب",actionCopy:"کپی لینک ساب",actionCopied:"کپی شد!",actionQr:"QR Code",actionConfig:"کپی کانفیگ",copyAllBtn:"کپی همه کانفیگ‌ها",dlScreenTitle:"دانلود برنامه ها",dlSubtitle:"کلاینت رسمی",btnDl:"دانلود",tabAndroid:"اندروید",tabIos:"آیفون / آیپد",tabDesktop:"ویندوز / مک",expiredText:"منقضی",unlimitedText:"نامحدود",emptyConfigs:"خالی",copyBtnText:"کپی",showQrBtn:"نمایش QR",unknown:"--",onlineText:"آنلاین",offlineText:"آفلاین",promoTg:"تلگرام",navDash:"داشبورد",navDl:"دانلود برنامه"},
-en:{dir:"ltr",greet:"Hello ",badgeActive:"Active",badgePaused:"Paused",badgeExpired:"Expired",badgeLimit:"Limit Exceeded",badgeDailyLimit:"Daily Limit",daysUnit:"Days",remainingLabel:"Remaining",titleLimit:"Total Limit",titleTotal:"Total Usage",titleDownload:"Daily Usage",detailTotal:"Total Usage",detailRemaining:"Remaining",detailRemainingVolume:"Remaining Volume",detailLastConnect:"Connection IP",actionRenew:"Renew",actionCopy:"Copy Sub Link",actionCopied:"Copied!",actionQr:"QR Code",actionConfig:"Copy Config",copyAllBtn:"Copy All Configs",dlScreenTitle:"Download Clients",dlSubtitle:"Official Client",btnDl:"Get App",tabAndroid:"Android",tabIos:"iPhone / iPad",tabDesktop:"Win / Mac",expiredText:"Expired",unlimitedText:"Unlimited",emptyConfigs:"Empty",copyBtnText:"Copy",showQrBtn:"Show QR",unknown:"--",onlineText:"Online",offlineText:"Offline",promoTg:"Telegram",navDash:"Dashboard",navDl:"Apps"},
-tr:{dir:"ltr",greet:"Merhaba ",badgeActive:"Aktif",badgePaused:"Duraklatıldı",badgeExpired:"Süresi Doldu",badgeLimit:"Kota Doldu",badgeDailyLimit:"Günlük Kota",daysUnit:"Gün",remainingLabel:"Kalan",titleLimit:"Toplam Kota",titleTotal:"Toplam",titleDownload:"Günlük",detailTotal:"Toplam",detailRemaining:"Kalan",detailRemainingVolume:"Kalan Hacim",detailLastConnect:"Bağlantı IP",actionRenew:"Yenile",actionCopy:"Sub Linki Kopyala",actionCopied:"Kopyalandı!",actionQr:"QR Kodu",actionConfig:"Konfig Kopyala",copyAllBtn:"Tümünü Kopyala",dlScreenTitle:"Uygulamaları İndir",dlSubtitle:"Resmi İstemci",btnDl:"İndir",tabAndroid:"Android",tabIos:"iPhone / iPad",tabDesktop:"Win / Mac",expiredText:"Süresi Doldu",unlimitedText:"Sınırsız",emptyConfigs:"Boş",copyBtnText:"Kopyala",showQrBtn:"QR Göster",unknown:"--",onlineText:"Çevrimiçi",offlineText:"Çevrimdışı",promoTg:"Telegram",navDash:"Panel",navDl:"Uygulama"},
-ar:{dir:"rtl",greet:"أهلاً ",badgeActive:"نشط",badgePaused:"متوقف",badgeExpired:"منتهي",badgeLimit:"تجاوز الحد",badgeDailyLimit:"الحد اليومي",daysUnit:"يوم",remainingLabel:"المتبقي",titleLimit:"الحجم الكلي",titleTotal:"الإجمالي",titleDownload:"يومي",detailTotal:"الإجمالي",detailRemaining:"المتبقي",detailRemainingVolume:"الحجم المتبقي",detailLastConnect:"عنوان IP",actionRenew:"تجديد",actionCopy:"نسخ الرابط",actionCopied:"تم النسخ!",actionQr:"رمز QR",actionConfig:"نسخ التكوين",copyAllBtn:"نسخ الكل",dlScreenTitle:"تحميل التطبيقات",dlSubtitle:"عميل رسمي",btnDl:"تحميل",tabAndroid:"أندرويد",tabIos:"آيفون / آيباد",tabDesktop:"ويندوز / ماك",expiredText:"منتهي",unlimitedText:"غير محدود",emptyConfigs:"خالي",copyBtnText:"نسخ",showQrBtn:"عرض QR",unknown:"--",onlineText:"متصل",offlineText:"غير متصل",promoTg:"تيليجرام",navDash:"الرئيسية",navDl:"التطبيق"}};
-function t(k){return (L[currentLang]||L.fa)[k]||k;}
-function isUnlim(v){return v>=9999||v<=0;}
-function daysLeftFrom(text){if(!text||!text.trim())return null;var p=new Date(text);if(isNaN(p.getTime()))return undefined;var now=new Date();return Math.round((new Date(p.getFullYear(),p.getMonth(),p.getDate())-new Date(now.getFullYear(),now.getMonth(),now.getDate()))/86400000);}
-function ringColor(code,pct){if(code!=='active')return 'var(--alert)';return pct>=50?'var(--accent)':pct>=20?'var(--warn)':'var(--alert)';}
-function overrideText(code){if(code==='expired')return t('expiredText');if(code==='paused')return t('badgePaused');if(code==='limit')return t('badgeLimit');if(code==='dailyLimit')return t('badgeDailyLimit');return null;}
-function set(id,v){var e=document.getElementById(id);if(e)e.innerText=v;}
-function renderPanelData(){
- var un=document.getElementById('user-name');
- un.innerHTML=WAVE+'<span class="greeting-text">'+t('greet')+'</span><span class="username-text'+(isServerConnected?' online':'')+'">'+D.username+'</span>';
- var ov=overrideText(D.statusCode),exp=document.getElementById('expire-date');
- exp.innerText=D.expiryFa||t('unlimitedText');
- var dc=document.getElementById('live-days-count');
- if(ov)dc.innerHTML='<span style="font-size:22px;color:var(--alert)">'+ov+'</span>';
- else{var dl=daysLeftFrom(D.expiryDateText);
-  if(dl===null)dc.innerHTML='<span style="font-size:22px">'+t('unlimitedText')+'</span>';
-  else if(dl===undefined)dc.innerHTML='<span style="font-size:18px">'+esc(D.expiryDateText)+'</span>';
-  else if(dl<0)dc.innerHTML='<span style="font-size:22px;color:var(--alert)">'+t('expiredText')+'</span>';
-  else dc.innerHTML=dl+' <span>'+t('daysUnit')+'</span>';}
- var unlim=isUnlim(D.totalLimitGB);
- set('stat-limit',unlim?t('unlimitedText'):D.totalLimitGB+' GB');
- set('stat-total-val',D.totalUsedGB+' GB');set('stat-dl-val',D.dailyUsedGB+' GB');
- set('detail-total-value',D.totalUsedGB+' GB');
- var rem=100,left=D.totalLimitGB-D.totalUsedGB;
- if(!unlim){rem=Math.max(0,Math.min(100,Math.round(100-(D.totalUsedGB/D.totalLimitGB)*100)));}
- set('detail-remaining-value',rem+'%');
- set('detail-remaining-volume',unlim?t('unlimitedText'):(left>0?left.toFixed(2)+' GB':'0 GB'));
- set('detail-last-connect-value',D.clientIp||t('unknown'));
- var pe=document.getElementById('live-percent-display');
- pe.textContent=unlim?'∞':rem+'%';
- pe.style.color=D.statusCode==='active'?'':'var(--alert)';
- var rp=unlim?100:rem;
- document.getElementById('sub-progress-circle').style.background='conic-gradient('+ringColor(D.statusCode,rem)+' 0% '+rp+'%, var(--ring-track) '+rp+'% 100%)';
- updateStatusUI();
-}
-function esc(s){return String(s||'').replace(/[&<>]/g,function(c){return c==='<'?'&lt;':c==='>'?'&gt;':'&amp;';});}
-function updateOnlineStatus(){var d=document.getElementById('online-status-dot'),s=document.getElementById('online-status-text');
- if(isServerConnected){d.classList.add('online');s.innerText=t('onlineText');s.classList.remove('offline');document.getElementById('profile-img').classList.add('online');}
- else{d.classList.remove('online');s.innerText=t('offlineText');s.classList.add('offline');document.getElementById('profile-img').classList.remove('online');}}
-function updateStatusUI(){var card=document.getElementById('main-sub-card'),map={active:[t('badgeActive'),'fa-solid fa-check',false],paused:[t('badgePaused'),'fa-solid fa-pause',true],expired:[t('badgeExpired'),'fa-solid fa-xmark',true],limit:[t('badgeLimit'),'fa-solid fa-triangle-exclamation',true],dailyLimit:[t('badgeDailyLimit'),'fa-solid fa-triangle-exclamation',true]};
- var s=map[D.statusCode]||map.active;card.classList.toggle('disconnected',s[2]);set('badge-text',s[0]);document.getElementById('status-icon-mark').className=s[1];}
-function parseLink(l){var r={protocol:'unknown',remark:'',host:'',port:'',link:l};try{var m=l.match(/^([a-zA-Z0-9]+):\\/\\//);if(!m)return r;r.protocol=m[1].toLowerCase();
- if(r.protocol==='vmess'){var j=JSON.parse(decB64(l.replace(/^vmess:\\/\\//,'')));r.remark=j.ps||'';r.host=j.add||'';r.port=j.port||'';}
- else{var u=new URL(l);r.remark=decodeURIComponent((u.hash||'').replace(/^#/,''));r.host=u.hostname||'';r.port=u.port||'';}}catch(e){}return r;}
-function protoParts(l){var p=parseLink(l);try{if(p.protocol==='vmess'){var j=JSON.parse(decB64(l.replace(/^vmess:\\/\\//,'')));return [p.protocol,j.net||'tcp',j.tls==='tls'?'tls':'none'];}
- if(p.protocol==='vless'||p.protocol==='trojan'){var u=new URL(l);return [p.protocol,u.searchParams.get('type')||'tcp',u.searchParams.get('security')||'none'];}
- if(p.protocol==='ss'){var d=atob(l.replace(/^ss:\\/\\//,'').split('#')[0]);return ['ss',d.split(':')[0]];}}catch(e){}return [p.protocol];}
-function badge(parts){return parts.map(function(x,i){var c=parts.length>=3?['proto-part-1','proto-part-2','proto-part-3'][i]:parts.length===2?['proto-part-1','proto-part-2'][i]:'proto-part-1';return '<span class="'+c+'">'+esc(x)+'</span>';}).join('<span style="color:rgba(255,255,255,.35);margin:0 1px">+</span>');}
-function countryOf(p){var rem=(p.remark||p.host||'').trim();var noflag=rem.replace(/[\\u{1F1E0}-\\u{1F1FF}]/gu,'').trim();var parts=noflag.split(/[-–—|]/).map(function(x){return x.trim();}).filter(Boolean);
- var name=parts[0]||noflag||p.host||'Unknown';var code='';var fm=rem.match(/[\\u{1F1E0}-\\u{1F1FF}]{2}/u);
- if(fm){var cp=[...fm[0]];code=String.fromCodePoint(cp[0].codePointAt(0)-0x1F1E6+0x61,cp[1].codePointAt(0)-0x1F1E6+0x61);}
- if(!code&&name){var M={germany:'de',frankfurt:'de',netherlands:'nl',amsterdam:'nl',france:'fr',paris:'fr',uk:'gb',britain:'gb',london:'gb',unitedstates:'us',usa:'us',newyork:'us',turkey:'tr',istanbul:'tr',dubai:'ae',uae:'ae',singapore:'sg',japan:'jp',sweden:'se',stockholm:'se',finland:'fi',canada:'ca',iran:'ir',tehran:'ir'};
-  var k=name.toLowerCase().replace(/[^a-z]/g,'');code=M[k]||'';}
- return {name:name,code:code};}
-function flagHtml(c){if(c.code)return '<div class="action-mini-flag" style="background-image:url(https://flagcdn.com/w80/'+c.code+'.png)"></div>';
- return '<div class="action-mini-flag"><i class="fa-solid fa-globe"></i></div>';}
-function showConfigQrModal(link,remark){document.getElementById('configQrRemark').textContent=remark||'';
- document.getElementById('configQrImage').src='https://api.qrserver.com/v1/create-qr-code/?size=300x300&data='+encodeURIComponent(link);
- document.getElementById('configQrOverlay').classList.add('show');}
-function closeConfigQrModal(){document.getElementById('configQrOverlay').classList.remove('show');}
-function renderActionMenus(){
- var qr=document.getElementById('list-qr-ips'),cfg=document.getElementById('list-config-ips'),links=D.links||[];
- qr.innerHTML='';cfg.innerHTML='';
- if(!links.length){qr.innerHTML='<span>'+t('emptyConfigs')+'</span>';cfg.innerHTML='<span>'+t('emptyConfigs')+'</span>';return;}
- var all=document.createElement('button');all.className='copy-all-btn';
- all.innerHTML='<i class="fa-solid fa-copy"></i> '+t('copyAllBtn');
- all.addEventListener('click',function(){var b=this;navigator.clipboard.writeText(links.join('\\n')).then(function(){b.innerHTML='<i class="fa-solid fa-check"></i> '+t('actionCopied');b.style.background='#22C55E';setTimeout(function(){b.innerHTML='<i class="fa-solid fa-copy"></i> '+t('copyAllBtn');b.style.background='';},2000);});});
- cfg.appendChild(all);
- links.forEach(function(raw){
-  var p=parseLink(raw),c=countryOf(p),row=document.createElement('div');row.className='ip-row-item';
-  row.innerHTML='<div class="ip-details-left">'+flagHtml(c)+'<div class="ip-meta-block"><div class="ip-address-text en-font">'+esc(p.remark||p.host)+'</div><div><span class="ip-protocol-badge-box en-font">'+badge(protoParts(raw))+'</span></div></div></div>';
-  var btn=document.createElement('button');btn.className='ip-copy-btn';
-  btn.innerHTML='<i class="fa-solid fa-qrcode"></i> '+t('showQrBtn');
-  btn.addEventListener('click',function(){showConfigQrModal(raw,p.remark||p.host);});
-  var r2=row.cloneNode(true);var b2=document.createElement('button');b2.className='ip-copy-btn';
-  b2.innerHTML='<i class="fa-solid fa-copy"></i> '+t('copyBtnText');
-  b2.addEventListener('click',function(){var x=this;navigator.clipboard.writeText(raw).then(function(){x.innerHTML='<i class="fa-solid fa-check"></i> '+t('actionCopied');x.style.background='#22C55E';x.style.color='#fff';setTimeout(function(){x.innerHTML='<i class="fa-solid fa-copy"></i> '+t('copyBtnText');x.style.background='';x.style.color='';},2000);});});
-  row.appendChild(btn);r2.appendChild(b2);qr.appendChild(row);cfg.appendChild(r2);
- });
-}
-function selectLanguage(lang){currentLang=lang;var d=L[lang]||L.fa;
- set('lang-text',lang.toUpperCase());document.getElementById('html-root').setAttribute('dir',d.dir);
- set('remaining-label',t('remainingLabel'));set('title-limit',t('titleLimit'));set('title-total',t('titleTotal'));set('title-download',t('titleDownload'));
- set('detail-total-label',t('detailTotal'));set('detail-remaining-label',t('detailRemaining'));set('detail-remaining-volume-label',t('detailRemainingVolume'));set('detail-last-connect-label',t('detailLastConnect'));
- set('action-renew',t('actionRenew'));set('action-copy',t('actionCopy'));set('action-qr',t('actionQr'));set('action-config',t('actionConfig'));
- set('download-screen-title',t('dlScreenTitle'));set('lbl-tab-android',t('tabAndroid'));set('lbl-tab-ios',t('tabIos'));set('lbl-tab-desktop',t('tabDesktop'));
- set('nav-dashboard-label',t('navDash'));set('nav-download-label',t('navDl'));set('promo-tg-label',t('promoTg'));
- document.getElementById('page-title').textContent=D.username;
- renderPanelData();updateOnlineStatus();renderActionMenus();}
-document.getElementById('btn-copy-sub').addEventListener('click',function(e){e.stopPropagation();var lab=document.getElementById('action-copy');
- navigator.clipboard.writeText(D.subUrl||location.href).then(function(){lab.innerText=t('actionCopied');lab.style.color='#22C55E';setTimeout(function(){lab.innerText=t('actionCopy');lab.style.color='';},2000);});});
-document.getElementById('btn-toggle-qr').addEventListener('click',function(e){e.stopPropagation();document.getElementById('dropdown-config-container').classList.remove('show');document.getElementById('dropdown-qr-container').classList.toggle('show');});
-document.getElementById('btn-toggle-config').addEventListener('click',function(e){e.stopPropagation();document.getElementById('dropdown-qr-container').classList.remove('show');document.getElementById('dropdown-config-container').classList.toggle('show');});
-function navigateToScreen(s){document.querySelectorAll('.app-screen').forEach(function(x){x.classList.remove('active-screen');});
- document.querySelectorAll('.nav-item').forEach(function(x){x.classList.remove('active');});
- if(s==='dashboard'){document.getElementById('screen-dashboard').classList.add('active-screen');document.getElementById('nav-dashboard').classList.add('active');}
- else{document.getElementById('screen-download-apps').classList.add('active-screen');document.getElementById('nav-download').classList.add('active');switchDownloadTab('android');}}
-function switchDownloadTab(os){document.querySelectorAll('.os-tab-btn').forEach(function(b){b.classList.remove('active-tab');});
- document.getElementById('os-tab-'+os).classList.add('active-tab');var d=APPS[os];
- for(var i=1;i<=4;i++){var card=document.getElementById('client-card-'+i);if(!d['c'+i]){if(card)card.style.display='none';continue;}
-  if(card)card.style.display='';set('title-client'+i,d['c'+i].name);set('sub-client'+i,t('dlSubtitle'));
-  document.getElementById('btn-dl-client'+i).href=d['c'+i].url;}
- document.querySelectorAll('.client-download-btn').forEach(function(b){b.innerText=t('btnDl');});}
-document.addEventListener('DOMContentLoaded',function(){selectLanguage(currentLang);loadConfigs();loadIp();});
-document.getElementById('lang-toggle-btn').addEventListener('click',function(e){e.stopPropagation();document.getElementById('lang-dropdown').classList.toggle('show');});
-document.addEventListener('click',function(){document.getElementById('lang-dropdown').classList.remove('show');document.getElementById('dropdown-qr-container').classList.remove('show');document.getElementById('dropdown-config-container').classList.remove('show');});
-document.getElementById('theme-toggle').addEventListener('click',function(){document.body.classList.toggle('light-mode');
- document.getElementById('theme-icon').className=document.body.classList.contains('light-mode')?'fa-solid fa-sun':'fa-solid fa-moon';});
-</script>
-</body></html>`;
+        const appDownloadLinks = {
+            android: {
+                c1: { name: "v2rayNG", url: "https://play.google.com/store/apps/details?id=com.v2ray.ang" },
+                c2: { name: "Hiddify Next", url: "https://play.google.com/store/apps/details?id=fg.hiddify.com" },
+                c3: { name: "KP2P / sing-box", url: "https://play.google.com/store/apps/details?id=io.nekohasekai.sfa" },
+                c4: { name: "V2Box", url: "https://play.google.com/store/search?q=V2Box%20V2ray%20Client&c=apps" }
+            },
+            ios: {
+                c1: { name: "FoXray", url: "https://apps.apple.com/us/app/foxray/id6448898375" },
+                c2: { name: "Hiddify Next", url: "https://apps.apple.com/us/app/hiddify-next/id6473611382" },
+                c3: { name: "sing-box", url: "https://apps.apple.com/us/app/sing-box/id6443657551" },
+                c4: { name: "V2Box", url: "https://apps.apple.com/us/app/v2box-v2ray-client/id6446814690" }
+            },
+            desktop: {
+                c1: { name: "v2rayN (Windows)", url: "https://github.com/2dust/v2rayN/releases" },
+                c2: { name: "Hiddify (Win/Mac)", url: "https://apps.microsoft.com/detail/hiddify" },
+                c3: { name: "NekoRay (Win/Linux)", url: "https://github.com/MatsuriDayo/nekoray/releases" }
+            }
+        };
+
+        const waveIconHTML = \`
+            <div class="wave-icon-wrapper">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M7 23h7.5c2.2 0 4-1.8 4-4v-7.5c0-.8-.7-1.5-1.5-1.5s-1.5.7-1.5 1.5V11h-.5V4.5c0-.8-.7-1.5-1.5-1.5S12 3.7 12 4.5V11h-.5V2.5c0-.8-.7-1.5-1.5-1.5S8.5 1.7 8.5 2.5V11h-.5V5.5c0-.8-.7-1.5-1.5-1.5S5 4.7 5 5.5v10.3c-.6-.7-1.5-1.1-2.4-.9-.9.2-1.5 1.1-1.4 2 .2 1.9 2 4.2 3.8 5.4C5.7 22.7 6.3 23 7 23z" fill="url(#premiumPurpleNeon)"/>
+                </svg>
+            </div>\`;
+
+        const locales = {
+            fa: {
+                dir: "rtl", greet: "سلام ", badgeActive: "فعال", badgeInactive: "غیرفعال",
+                badgePaused: "متوقف", badgeExpired: "منقضی", badgeLimit: "اتمام حجم", badgeDailyLimit: "اتمام حجم روزانه",
+                detailUserIdLabel: "شناسه کاربری",
+                daysUnit: "روز", remainingLabel: "باقی‌مانده", titleLimit: "حجم کلی", titleTotal: "مصرف کل",
+                titleDownload: "مصرف روزانه",
+                detailTotal: "مصرف کل", detailRemaining: "باقی‌مانده", detailRemainingVolume: "حجم باقی‌مانده", detailLastConnect: "IP اتصال",
+                actionRenew: "تمدید ساب", actionCopy: "کپی لینک ساب", actionCopied: "کپی شد!",
+                actionQr: "QR Code", actionConfig: "کپی کانفیگ", copyAllBtn: "کپی همه کانفیگ‌ها",
+                navDashboard: "<i class='fa-solid fa-house'></i>داشبورد", navDownload: "<i class='fa-solid fa-download'></i>دانلود برنامه",
+                dlScreenTitle: "دانلود برنامه ها", dlSubtitle: "کلاینت رسمی فروشگاه", btnDl: "دانلود",
+                tabAndroid: "اندروید", tabIos: "آیفون / آیپد", tabDesktop: "ویندوز / مک",
+                expiredText: "منقضی", unlimitedText: "نامحدود", emptyConfigs: "خالی", copyBtnText: "کپی", showQrBtn: "نمایش QR",
+                lastConnectUnknown: "--", onlineText: "آنلاین", offlineText: "آفلاین",
+                promoText: "آیا نیاز به <span>خرید</span> یا <span>تمدید ساب</span> دارید؟<br>با پشتیبانی تماس بگیرید.",
+                promoTelegram: "تلگرام",
+                actionRadar: "رادار",
+                radarTitle: "رادار آی‌پی تمیز", radarHint: "کاملاً در مرورگر شما اجرا می‌شود",
+                radarStart: "شروع اسکن", radarStop: "توقف", radarStatusReady: "آماده برای اسکن",
+                radarStatusScan: "در حال اسکن... {done} از {total} - یافت‌شده: {found}",
+                radarStatusDone: "پایان اسکن - {found} آی‌پی سالم یافت شد",
+                radarStatusNoPort: "حداقل یک پورت را انتخاب کنید",
+                radarStatusNoResult: "آی‌پی سالمی یافت نشد",
+                radarStatusNoConfig: "کانفیگ vless در این ساب یافت نشد",
+                radarThPing: "تأخیر", radarThJitter: "جیتر", radarThLoss: "لاس٪",
+                radarBestLabel: "کانفیگ بهترین آی‌پی", radarBestNote: "پورت برتر: {port}"
+            },
+            en: {
+                dir: "ltr", greet: "Hello ", badgeActive: "Active", badgeInactive: "Inactive",
+                badgePaused: "Paused", badgeExpired: "Expired", badgeLimit: "Limit Exceeded", badgeDailyLimit: "Daily Limit Exceeded",
+                detailUserIdLabel: "User ID",
+                daysUnit: "Days", remainingLabel: "Remaining", titleLimit: "Total Limit", titleTotal: "Total Usage",
+                titleDownload: "Daily Usage",
+                detailTotal: "Total Usage", detailRemaining: "Remaining", detailRemainingVolume: "Remaining Volume", detailLastConnect: "Connection IP",
+                actionRenew: "Renew", actionCopy: "Copy Sub Link", actionCopied: "Copied!",
+                actionQr: "QR Code", actionConfig: "Copy Config", copyAllBtn: "Copy All Configs",
+                navDashboard: "<i class='fa-solid fa-house'></i>Dashboard", navDownload: "<i class='fa-solid fa-download'></i>App",
+                dlScreenTitle: "Download Clients", dlSubtitle: "Official Store Client", btnDl: "Get App",
+                tabAndroid: "Android", tabIos: "iPhone / iPad", tabDesktop: "Win / Mac",
+                expiredText: "Expired", unlimitedText: "Unlimited", emptyConfigs: "Empty", copyBtnText: "Copy", showQrBtn: "Show QR",
+                lastConnectUnknown: "--", onlineText: "Online", offlineText: "Offline",
+                promoText: "Need to <span>buy</span> or <span>renew</span> your subscription?<br>Contact support.",
+                promoTelegram: "Telegram",
+                actionRadar: "Radar",
+                radarTitle: "Clean IP Radar", radarHint: "Runs entirely in your browser",
+                radarStart: "Start Scan", radarStop: "Stop", radarStatusReady: "Ready to scan",
+                radarStatusScan: "Scanning... {done} of {total} - found: {found}",
+                radarStatusDone: "Scan finished - {found} healthy IPs found",
+                radarStatusNoPort: "Select at least one port",
+                radarStatusNoResult: "No healthy IP found",
+                radarStatusNoConfig: "No vless config found in this subscription",
+                radarThPing: "Ping", radarThJitter: "Jitter", radarThLoss: "Loss%",
+                radarBestLabel: "Best IP config", radarBestNote: "Winning port: {port}"
+            },
+            tr: {
+                dir: "ltr", greet: "Merhaba ", badgeActive: "Aktif", badgeInactive: "Pasif",
+                badgePaused: "Duraklatıldı", badgeExpired: "Süresi Doldu", badgeLimit: "Kota Doldu", badgeDailyLimit: "Günlük Kota Doldu",
+                detailUserIdLabel: "Kullanıcı ID",
+                daysUnit: "Gün", remainingLabel: "Kalan", titleLimit: "Toplam Kota", titleTotal: "Toplam",
+                titleDownload: "Günlük Kullanım",
+                detailTotal: "Toplam", detailRemaining: "Kalan", detailRemainingVolume: "Kalan Hacim", detailLastConnect: "Bağlantı IP'si",
+                actionRenew: "Yenile", actionCopy: "Sub Linki Kopyala", actionCopied: "Kopyalandı!",
+                actionQr: "QR Kodu", actionConfig: "Konfig Kopyala", copyAllBtn: "Tüm Konfigleri Kopyala",
+                navDashboard: "<i class='fa-solid fa-house'></i>Panel", navDownload: "<i class='fa-solid fa-download'></i>Uygulama",
+                dlScreenTitle: "Uygulamaları İndir", dlSubtitle: "Resmi Mağaza İstemcisi", btnDl: "İndir",
+                tabAndroid: "Android", tabIos: "iPhone / iPad", tabDesktop: "Win / Mac",
+                expiredText: "Süresi Doldu", unlimitedText: "Sınırsız", emptyConfigs: "Boş", copyBtnText: "Kopyala", showQrBtn: "QR Göster",
+                lastConnectUnknown: "--", onlineText: "Çevrimiçi", offlineText: "Çevrimdışı",
+                promoText: "Aboneliğinizi <span>satın</span> veya <span>yenile</span> mi gerekiyor?<br>Destek ile iletişime geçin.",
+                promoTelegram: "Telegram",
+                actionRadar: "Radar",
+                radarTitle: "Temiz IP Radarı", radarHint: "Tamamen tarayıcınızda çalışır",
+                radarStart: "Taramayı Başlat", radarStop: "Durdur", radarStatusReady: "Taramaya hazır",
+                radarStatusScan: "Taranıyor... {done} / {total} - bulunan: {found}",
+                radarStatusDone: "Tarama bitti - {found} sağlıklı IP bulundu",
+                radarStatusNoPort: "En az bir port seçin",
+                radarStatusNoResult: "Sağlıklı IP bulunamadı",
+                radarStatusNoConfig: "Bu abonelikte vless konfigi bulunamadı",
+                radarThPing: "Gecikme", radarThJitter: "Jitter", radarThLoss: "Kayıp%",
+                radarBestLabel: "En iyi IP konfigi", radarBestNote: "Kazanan port: {port}"
+            },
+            ar: {
+                dir: "rtl", greet: "أهلاً ", badgeActive: "نشط", badgeInactive: "غير نشط",
+                badgePaused: "متوقف", badgeExpired: "منتهي", badgeLimit: "تجاوز الحد", badgeDailyLimit: "تجاوز الحد اليومي",
+                detailUserIdLabel: "معرّف المستخدم",
+                daysUnit: "يوم", remainingLabel: "المتبقي", titleLimit: "الحجم الكلي", titleTotal: "الإجمالي",
+                titleDownload: "الاستخدام اليومي",
+                detailTotal: "الإجمالي", detailRemaining: "المتبقي", detailRemainingVolume: "الحجم المتبقي", detailLastConnect: "عنوان IP",
+                actionRenew: "تجديد", actionCopy: "نسخ رابط الساب", actionCopied: "تم النسخ!",
+                actionQr: "رمز QR", actionConfig: "نسخ التكوين", copyAllBtn: "نسخ كل التكوينات",
+                navDashboard: "<i class='fa-solid fa-house'></i>الرئيسية", navDownload: "<i class='fa-solid fa-download'></i>التطبيق",
+                dlScreenTitle: "تحميل التطبيقات", dlSubtitle: "عميل المتجر الرسمي", btnDl: "تحميل",
+                tabAndroid: "أندروید", tabIos: "آيفون / آيباد", tabDesktop: "ویندوز / ماک",
+                expiredText: "منتهي", unlimitedText: "غير محدود", emptyConfigs: "خالي", copyBtnText: "نسخ", showQrBtn: "عرض QR",
+                lastConnectUnknown: "--", onlineText: "متصل", offlineText: "غير متصل",
+                promoText: "هل تحتاج إلى <span>شراء</span> أو <span>تجديد</span> اشتراكك؟<br>اتصل بالدعم.",
+                promoTelegram: "تيليجرام",
+                actionRadar: "الرادار",
+                radarTitle: "رادار الآي‌بي النظيف", radarHint: "يعمل بالكامل داخل متصفحك",
+                radarStart: "بدء الفحص", radarStop: "إيقاف", radarStatusReady: "جاهز للفحص",
+                radarStatusScan: "جارٍ الفحص... {done} من {total} - تم العثور: {found}",
+                radarStatusDone: "انتهى الفحص - تم العثور على {found} آي‌بي سليم",
+                radarStatusNoPort: "اختر منفذًا واحدًا على الأقل",
+                radarStatusNoResult: "لم يتم العثور على آي‌بي سليم",
+                radarStatusNoConfig: "لا يوجد تكوين vless في هذا الاشتراك",
+                radarThPing: "التأخير", radarThJitter: "التذبذب", radarThLoss: "الفقد٪",
+                radarBestLabel: "تكوين أفضل آي‌بي", radarBestNote: "المنفذ الفائز: {port}"
+            }
+        };
+
+        // ===== توابع اصلی =====
+        function isUserOnline() {
+            return isServerConnected;
+        }
+
+        function renderAll() {
+            renderPanelData();
+            renderActionMenus();
+            updateOnlineStatus();
+            updatePageTitle();
+        }
+
+        function getColorForPercentage(percent) {
+            if (percent >= 50) return 'var(--accent)';
+            if (percent >= 20) return 'var(--warn)';
+            return 'var(--alert)';
+        }
+
+        function getRingColorForState(statusCode, percentRemaining) {
+            if (statusCode !== 'active') return 'var(--alert)';
+            return getColorForPercentage(percentRemaining);
+        }
+
+        function getStatusOverrideText(statusCode, data) {
+            switch (statusCode) {
+                case 'expired': return data.expiredText;
+                case 'paused': return data.badgePaused;
+                case 'limit': return data.badgeLimit;
+                case 'dailyLimit': return data.badgeDailyLimit;
+                default: return null;
+            }
+        }
+
+        function isUnlimitedGB(value) {
+            return value === 9999;
+        }
+
+        function calculateDaysLeftFromExpiryText(expiryText) {
+            if (!expiryText || expiryText.trim() === '') return null;
+            const parsed = new Date(expiryText);
+            if (isNaN(parsed.getTime())) return undefined;
+            const now = new Date();
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const startOfExpiry = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+            return Math.round((startOfExpiry - startOfToday) / (1000 * 60 * 60 * 24));
+        }
+
+        function renderPanelData() {
+            const data = locales[currentLang] || locales.fa;
+
+            const username = sanaeiClientData.username;
+            const isOnline = isUserOnline();
+            const usernameClass = isOnline ? 'username-text online' : 'username-text';
+            document.getElementById("user-name").innerHTML = \`
+                \${waveIconHTML}
+                <span class="greeting-text">\${data.greet}</span>
+                <span class="\${usernameClass}">\${username}</span>
+            \`;
+
+            const statusOverrideText = getStatusOverrideText(sanaeiClientData.statusCode, data);
+            const rawExpiryText = (sanaeiClientData.expiryDateText || '').trim();
+
+            document.getElementById("expire-date").innerText = rawExpiryText || data.unlimitedText;
+
+            if (statusOverrideText) {
+                document.getElementById("live-days-count").innerHTML = \`<span style="font-size:22px; color:var(--alert);">\${statusOverrideText}</span>\`;
+            } else {
+                const daysLeft = calculateDaysLeftFromExpiryText(rawExpiryText);
+                if (daysLeft === null) {
+                    document.getElementById("live-days-count").innerHTML = \`<span style="font-size:22px;">\${data.unlimitedText}</span>\`;
+                } else if (daysLeft === undefined) {
+                    document.getElementById("live-days-count").innerHTML = \`<span class="en-font" style="font-size:18px;">\${rawExpiryText}</span>\`;
+                } else if (daysLeft < 0) {
+                    document.getElementById("live-days-count").innerHTML = \`<span style="font-size:22px; color:var(--alert);">\${data.expiredText}</span>\`;
+                } else {
+                    document.getElementById("live-days-count").innerHTML = \`\${daysLeft} <span id="days-label">\${data.daysUnit}</span>\`;
+                }
+            }
+
+            const totalLimitGB = sanaeiClientData.totalLimitGB;
+            const totalUsedGB = sanaeiClientData.totalUsedGB;
+            const dailyUsedGB = sanaeiClientData.dailyUsedGB;
+            const totalLimitIsUnlimited = totalLimitGB <= 0 || isUnlimitedGB(totalLimitGB);
+
+            document.getElementById("stat-limit").innerText = totalLimitIsUnlimited ? data.unlimitedText : (totalUsedGB.toFixed(2) === "0.00" && totalLimitGB === 0 ? data.unlimitedText : totalLimitGB + " GB");
+            document.getElementById("stat-total-val").innerText = totalUsedGB + " GB";
+            document.getElementById("stat-dl-val").innerText = dailyUsedGB + " GB";
+
+            document.getElementById("detail-total-value").innerText = totalUsedGB + " GB";
+
+            let percentRemaining = 100;
+            let remainingVolume = totalLimitGB - totalUsedGB;
+            if (!totalLimitIsUnlimited) {
+                let percentUsage = (totalUsedGB / totalLimitGB) * 100;
+                percentRemaining = Math.round(100 - percentUsage);
+                if (percentRemaining < 0) percentRemaining = 0;
+                if (percentRemaining > 100) percentRemaining = 100;
+            }
+            document.getElementById("detail-remaining-value").innerText = percentRemaining + '%';
+
+            if (!totalLimitIsUnlimited && !isUnlimitedGB(Math.round(remainingVolume))) {
+                document.getElementById("detail-remaining-volume").innerText = remainingVolume > 0 ? (remainingVolume.toFixed(2) + " GB") : '0 GB';
+            } else {
+                document.getElementById("detail-remaining-volume").innerText = data.unlimitedText;
+            }
+
+            document.getElementById("detail-last-connect-value").innerText = sanaeiClientData.clientIp || data.lastConnectUnknown;
+
+            const percentTextEl = document.getElementById("live-percent-display");
+            if (totalLimitIsUnlimited) {
+                percentTextEl.textContent = "∞";
+            } else {
+                percentTextEl.textContent = percentRemaining + "%";
+            }
+            percentTextEl.style.color = (sanaeiClientData.statusCode === 'active') ? '' : 'var(--alert)';
+
+            const ringColor = getRingColorForState(sanaeiClientData.statusCode, percentRemaining);
+            const ringPercent = totalLimitIsUnlimited ? 100 : percentRemaining;
+            document.getElementById("sub-progress-circle").style.background = \`conic-gradient(\${ringColor} 0% \${ringPercent}%, var(--ring-track) \${ringPercent}% 100%)\`;
+            updateStatusUI();
+        }
+
+        function updateOnlineStatus() {
+            const data = locales[currentLang] || locales.fa;
+            const dot = document.getElementById('online-status-dot');
+            const statusText = document.getElementById('online-status-text');
+            const usernameElement = document.querySelector('.username-text');
+            const profileImg = document.getElementById('profile-img');
+
+            const isOnline = isUserOnline();
+
+            if (isOnline && isServerConnected) {
+                dot.classList.add('online');
+                statusText.innerText = data.onlineText;
+                statusText.classList.remove('offline');
+                if (usernameElement) usernameElement.classList.add('online');
+                profileImg.classList.add('online');
+            } else {
+                dot.classList.remove('online');
+                statusText.innerText = data.offlineText;
+                statusText.classList.add('offline');
+                if (usernameElement) usernameElement.classList.remove('online');
+                profileImg.classList.remove('online');
+            }
+        }
+
+        function updateStatusUI() {
+            const data = locales[currentLang] || locales.fa;
+            const card = document.getElementById("main-sub-card");
+            const badgeText = document.getElementById("badge-text");
+            const iconMark = document.getElementById("status-icon-mark");
+
+            const statusMap = {
+                active: { text: data.badgeActive, icon: "fa-solid fa-check", disconnected: false },
+                paused: { text: data.badgePaused, icon: "fa-solid fa-pause", disconnected: true },
+                expired: { text: data.badgeExpired, icon: "fa-solid fa-xmark", disconnected: true },
+                limit: { text: data.badgeLimit, icon: "fa-solid fa-triangle-exclamation", disconnected: true },
+                dailyLimit: { text: data.badgeDailyLimit, icon: "fa-solid fa-triangle-exclamation", disconnected: true }
+            };
+            const s = statusMap[sanaeiClientData.statusCode] || statusMap.active;
+
+            card.classList.toggle("disconnected", s.disconnected);
+            badgeText.innerText = s.text;
+            iconMark.className = s.icon;
+        }
+
+        function updatePageTitle() {
+            const titleEl = document.getElementById('page-title');
+            const username = sanaeiClientData.username || 'VPN Dashboard';
+            titleEl.textContent = username;
+        }
+
+        function parseConfigLink(rawLink) {
+            const result = { protocol: 'unknown', remark: '', host: '', port: '', link: rawLink };
+            try {
+                const schemeMatch = rawLink.match(/^([a-zA-Z0-9]+):\\/\\//);
+                if (!schemeMatch) return result;
+                result.protocol = schemeMatch[1].toLowerCase();
+
+                if (result.protocol === 'vmess') {
+                    const b64 = rawLink.replace(/^vmess:\\/\\//, '');
+                    const json = JSON.parse(decodeBase64Unicode(b64));
+                    result.remark = json.ps || '';
+                    result.host = json.add || '';
+                    result.port = json.port || '';
+                } else {
+                    const u = new URL(rawLink);
+                    result.remark = decodeURIComponent((u.hash || '').replace(/^#/, ''));
+                    result.host = u.hostname || '';
+                    result.port = u.port || '';
+                }
+            } catch (e) { /* ignore */ }
+            return result;
+        }
+
+        function getProtocolDetails(link) {
+            const parsed = parseConfigLink(link);
+            if (parsed.protocol === 'vmess') {
+                try {
+                    const b64 = link.replace(/^vmess:\\/\\//, '');
+                    const json = JSON.parse(decodeBase64Unicode(b64));
+                    const net = json.net || 'tcp';
+                    const security = json.tls === 'tls' ? 'tls' : (json.tls === 'reality' ? 'reality' : 'none');
+                    return { parts: [parsed.protocol, net, security], full: \`\${parsed.protocol}+\${net}+\${security}\` };
+                } catch (e) { return { parts: [parsed.protocol], full: parsed.protocol }; }
+            } else if (parsed.protocol === 'vless' || parsed.protocol === 'trojan') {
+                try {
+                    const u = new URL(link);
+                    const type = u.searchParams.get('type') || 'tcp';
+                    const security = u.searchParams.get('security') || 'none';
+                    return { parts: [parsed.protocol, type, security], full: \`\${parsed.protocol}+\${type}+\${security}\` };
+                } catch (e) { return { parts: [parsed.protocol], full: parsed.protocol }; }
+            } else if (parsed.protocol === 'ss') {
+                try {
+                    const b64 = link.replace(/^ss:\\/\\//, '').split('#')[0];
+                    const decoded = atob(b64);
+                    const parts = decoded.split(':');
+                    const method = parts[0] || 'unknown';
+                    return { parts: ['ss', method], full: \`ss+\${method}\` };
+                } catch (e) { return { parts: [parsed.protocol], full: parsed.protocol }; }
+            } else if (parsed.protocol === 'hysteria2' || parsed.protocol === 'hysteria') {
+                try {
+                    const u = new URL(link);
+                    const security = u.searchParams.get('insecure') === '0' ? 'secure' : 'insecure';
+                    return { parts: [parsed.protocol, security], full: \`\${parsed.protocol}+\${security}\` };
+                } catch (e) { return { parts: [parsed.protocol], full: parsed.protocol }; }
+            }
+            return { parts: [parsed.protocol], full: parsed.protocol };
+        }
+
+        function extractCountryInfo(parsedConfig) {
+            const remark = (parsedConfig.remark || parsedConfig.host || "").trim();
+            const textWithoutFlagEmojis = remark.replace(/[\\u{1F1E0}-\\u{1F1FF}]/gu, '').trim();
+            const dashParts = textWithoutFlagEmojis.split(/[-–—]/).map(p => p.trim()).filter(p => p);
+            const pipeParts = textWithoutFlagEmojis.split('|').map(p => p.trim()).filter(p => p);
+            const colonParts = textWithoutFlagEmojis.split(':').map(p => p.trim()).filter(p => p);
+
+            let countryName = "";
+            let cityName = "";
+
+            if (dashParts.length >= 2) {
+                countryName = dashParts[0];
+                cityName = dashParts[1];
+            } else if (pipeParts.length >= 2) {
+                countryName = pipeParts[0];
+                cityName = pipeParts[1];
+            } else if (colonParts.length >= 2) {
+                countryName = colonParts[0];
+                cityName = colonParts[1];
+            } else {
+                countryName = textWithoutFlagEmojis || parsedConfig.host || "Unknown";
+                cityName = parsedConfig.host || "";
+            }
+
+            let countryCode = "";
+            if (remark) {
+                const flagMatch = remark.match(/[\\u{1F1E0}-\\u{1F1FF}]{2}/gu);
+                if (flagMatch) {
+                    const codePoints = [...flagMatch[0]];
+                    countryCode = String.fromCodePoint(
+                        codePoints[0].codePointAt(0) - 0x1F1E6 + 0x61,
+                        codePoints[1].codePointAt(0) - 0x1F1E6 + 0x61
+                    );
+                }
+            }
+
+            if (!countryCode && countryName) {
+                try {
+                    const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
+                    const commonCodes = ['de', 'nl', 'fr', 'gb', 'us', 'ca', 'tr', 'ae', 'sg', 'jp',
+                        'fi', 'se', 'no', 'ch', 'it', 'es', 'pt', 'pl', 'ru', 'ua',
+                        'ir', 'cn', 'hk', 'tw', 'kr', 'in', 'br', 'ar', 'au', 'at',
+                        'be', 'dk', 'gr', 'ie', 'il', 'mx', 'nz', 'za'
+                    ];
+                    const lowerCountry = countryName.toLowerCase();
+                    for (const code of commonCodes) {
+                        if (regionNames.of(code).toLowerCase() === lowerCountry) {
+                            countryCode = code;
+                            break;
+                        }
+                    }
+                } catch (e) {
+                    countryCode = countryName.substring(0, 2).toLowerCase();
+                }
+            }
+
+            if (!countryCode || countryCode.length !== 2) countryCode = 'unknown';
+            return {
+                countryName: countryName || "Unknown",
+                countryCode: countryCode,
+                cityName: cityName || parsedConfig.host || "",
+                host: parsedConfig.host || ""
+            };
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return "0 B";
+            if (bytes < 0 || bytes === undefined || bytes === null) return "---";
+            const k = 1024;
+            const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+        }
+
+        // ===== مودال QR کد یک کانفیگ =====
+        function showConfigQrModal(link, remark) {
+            const overlay = document.getElementById('configQrOverlay');
+            const img = document.getElementById('configQrImage');
+            const remarkEl = document.getElementById('configQrRemark');
+            remarkEl.textContent = remark || '';
+            img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(link);
+            overlay.classList.add('show');
+        }
+
+        function closeConfigQrModal() {
+            const overlay = document.getElementById('configQrOverlay');
+            overlay.classList.remove('show');
+        }
+
+        function renderActionMenus() {
+            const data = locales[currentLang] || locales.fa;
+            const links = sanaeiClientData.links || [];
+
+            const qrContainer = document.getElementById("list-qr-ips");
+            const configContainer = document.getElementById("list-config-ips");
+
+            function buildProtocolBadge(protocolDetails) {
+                const parts = protocolDetails.parts || [];
+                if (parts.length === 0) return '';
+                return parts.map((part, idx) => {
+                    let cls = '';
+                    if (parts.length >= 3) {
+                        if (idx === 0) cls = 'proto-part-1';
+                        else if (idx === 1) cls = 'proto-part-2';
+                        else cls = 'proto-part-3';
+                    } else if (parts.length === 2) {
+                        if (idx === 0) cls = 'proto-part-1';
+                        else cls = 'proto-part-2';
+                    } else {
+                        cls = 'proto-part-1';
+                    }
+                    return \`<span class="\${cls}">\${part}</span>\`;
+                }).join('<span style="color: rgba(255,255,255,0.4); margin: 0 1px;">+</span>');
+            }
+
+            function buildQrItem(parsed) {
+                const flagInfo = extractCountryInfo(parsed);
+                const flagUrl = flagInfo.countryCode !== 'unknown' ? \`https://flagcdn.com/w80/\${flagInfo.countryCode}.png\` : '';
+                const flagHtml = flagUrl
+                    ? \`<div class="action-mini-flag" style="background-image: url('\${flagUrl}');"></div>\`
+                    : \`<div class="action-mini-flag" style="background: #2C2C3E; display: flex; align-items: center; justify-content: center; color: #6c6c8c;"><i class="fa-solid fa-globe"></i></div>\`;
+
+                const protocolDetails = getProtocolDetails(parsed.link);
+                const item = document.createElement("div");
+                item.className = "ip-row-item";
+                item.innerHTML = \`
+                    <div class="ip-details-left">
+                        \${flagHtml}
+                        <div class="ip-meta-block">
+                            <div class="ip-address-text en-font">\${parsed.remark || parsed.host}</div>
+                            <div>
+                                <span class="ip-protocol-badge-box en-font">\${buildProtocolBadge(protocolDetails)}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <button class="ip-copy-btn ip-show-qr-btn" data-config-link="\${encodeURIComponent(parsed.link)}" data-config-remark="\${encodeURIComponent(parsed.remark || parsed.host)}">
+                        <i class="fa-solid fa-qrcode"></i> \${data.showQrBtn}
+                    </button>
+                \`;
+
+                const qrBtn = item.querySelector('.ip-show-qr-btn');
+                qrBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const link = decodeURIComponent(this.getAttribute('data-config-link'));
+                    const remark = decodeURIComponent(this.getAttribute('data-config-remark'));
+                    showConfigQrModal(link, remark);
+                });
+
+                return item;
+            }
+
+            function buildConfigItem(parsed) {
+                const flagInfo = extractCountryInfo(parsed);
+                const flagUrl = flagInfo.countryCode !== 'unknown' ? \`https://flagcdn.com/w80/\${flagInfo.countryCode}.png\` : '';
+                const flagHtml = flagUrl
+                    ? \`<div class="action-mini-flag" style="background-image: url('\${flagUrl}');"></div>\`
+                    : \`<div class="action-mini-flag" style="background: #2C2C3E; display: flex; align-items: center; justify-content: center; color: #6c6c8c;"><i class="fa-solid fa-globe"></i></div>\`;
+
+                const protocolDetails = getProtocolDetails(parsed.link);
+                const item = document.createElement("div");
+                item.className = "ip-row-item";
+                item.innerHTML = \`
+                    <div class="ip-details-left">
+                        \${flagHtml}
+                        <div class="ip-meta-block">
+                            <div class="ip-address-text en-font">\${parsed.remark || parsed.host}</div>
+                            <div>
+                                <span class="ip-protocol-badge-box en-font">\${buildProtocolBadge(protocolDetails)}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <button class="ip-copy-btn" data-config-text="\${encodeURIComponent(parsed.link)}">
+                        <i class="fa-solid fa-copy"></i> \${data.copyBtnText}
+                    </button>
+                \`;
+
+                const copyBtn = item.querySelector('.ip-copy-btn');
+                copyBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const textToCopy = decodeURIComponent(this.getAttribute('data-config-text'));
+                    navigator.clipboard.writeText(textToCopy).then(() => {
+                        this.innerHTML = \`<i class="fa-solid fa-check"></i> \${data.actionCopied}\`;
+                        this.style.background = "#22C55E";
+                        this.style.color = "#fff";
+                        setTimeout(() => {
+                            this.innerHTML = \`<i class="fa-solid fa-copy"></i> \${data.copyBtnText}\`;
+                            this.style.background = "";
+                            this.style.color = "";
+                        }, 2000);
+                    });
+                });
+
+                return item;
+            }
+
+            qrContainer.innerHTML = "";
+            configContainer.innerHTML = "";
+
+            if (links.length === 0) {
+                qrContainer.innerHTML = \`<span style="color:#6c6c8c;" id="qr-empty-msg">\${data.emptyConfigs}</span>\`;
+                configContainer.innerHTML = \`<span style="color:#6c6c8c;" id="config-empty-msg">\${data.emptyConfigs}</span>\`;
+            } else {
+                const copyAllBtn = document.createElement("button");
+                copyAllBtn.className = "copy-all-btn";
+                copyAllBtn.innerHTML = \`<i class="fa-solid fa-copy"></i> \${data.copyAllBtn}\`;
+                copyAllBtn.addEventListener('click', function() {
+                    const allLinks = links.join('\\n');
+                    navigator.clipboard.writeText(allLinks).then(() => {
+                        this.innerHTML = \`<i class="fa-solid fa-check"></i> \${data.actionCopied}\`;
+                        this.style.background = "#22C55E";
+                        setTimeout(() => {
+                            this.innerHTML = \`<i class="fa-solid fa-copy"></i> \${data.copyAllBtn}\`;
+                            this.style.background = "";
+                        }, 2000);
+                    });
+                });
+                configContainer.appendChild(copyAllBtn);
+
+                links.forEach(rawLink => {
+                    const parsed = parseConfigLink(rawLink);
+                    qrContainer.appendChild(buildQrItem(parsed));
+                    configContainer.appendChild(buildConfigItem(parsed));
+                });
+            }
+        }
+
+        // ===== زبان و UI =====
+        function selectLanguage(lang) {
+            currentLang = lang;
+            const data = locales[lang] || locales.fa;
+            document.getElementById("lang-text").innerText = lang.toUpperCase();
+            document.getElementById("html-root").setAttribute("dir", data.dir);
+
+            document.getElementById("remaining-label").innerText = data.remainingLabel;
+            document.getElementById("title-limit").innerText = data.titleLimit;
+            document.getElementById("title-total").innerText = data.titleTotal;
+            document.getElementById("title-download").innerText = data.titleDownload;
+
+            document.getElementById("detail-total-label").innerText = data.detailTotal;
+            document.getElementById("detail-remaining-label").innerText = data.detailRemaining;
+            document.getElementById("detail-remaining-volume-label").innerText = data.detailRemainingVolume;
+            document.getElementById("detail-last-connect-label").innerText = data.detailLastConnect;
+
+            document.getElementById("action-renew").innerText = data.actionRenew;
+            document.getElementById("action-copy").innerText = data.actionCopy;
+            document.getElementById("action-qr").innerText = data.actionQr;
+            document.getElementById("action-config").innerText = data.actionConfig;
+            document.getElementById("action-radar").innerText = data.actionRadar;
+            document.getElementById("radar-title").innerText = data.radarTitle;
+            document.getElementById("radar-hint").innerText = data.radarHint;
+            document.getElementById("radar-th-ping").innerText = data.radarThPing;
+            document.getElementById("radar-th-jitter").innerText = data.radarThJitter;
+            document.getElementById("radar-th-loss").innerText = data.radarThLoss;
+            document.getElementById("radar-best-label").innerText = data.radarBestLabel;
+            document.getElementById("radar-copy-label").innerText = data.copyBtnText;
+            if (!radarRunning) {
+                document.getElementById("radar-start-label").innerText = data.radarStart;
+                document.getElementById("radar-status").innerText = data.radarStatusReady;
+            }
+            document.getElementById("download-screen-title").innerText = data.dlScreenTitle;
+            document.getElementById("lbl-tab-android").innerText = data.tabAndroid;
+            document.getElementById("lbl-tab-ios").innerText = data.tabIos;
+            document.getElementById("lbl-tab-desktop").innerText = data.tabDesktop;
+
+            document.querySelector('.promo-text').innerHTML = data.promoText;
+            const promoBtns = document.querySelectorAll('.promo-btn');
+            if (promoBtns.length >= 1) {
+                promoBtns[0].innerHTML = \`<i class="fa-brands fa-telegram"></i> \${data.promoTelegram}\`;
+            }
+
+            document.getElementById("nav-dashboard").innerHTML = \`<i class='fa-solid fa-house'></i>\${data.navDashboard.replace(/<.*?>/g, '')}\`;
+            document.getElementById("nav-download").innerHTML = \`<i class='fa-solid fa-download'></i>\${data.navDownload.replace(/<.*?>/g, '')}\`;
+
+            renderAll();
+        }
+
+        // ===== رویدادها =====
+        document.getElementById("btn-copy-sub").addEventListener("click", function(e) {
+            e.stopPropagation();
+            const data = locales[currentLang] || locales.fa;
+            const linkToCopy = sanaeiClientData.subUrl || window.location.href;
+
+            document.getElementById("dropdown-qr-container").classList.remove("show");
+            document.getElementById("dropdown-config-container").classList.remove("show");
+
+            navigator.clipboard.writeText(linkToCopy).then(() => {
+                const labelNode = document.getElementById("action-copy");
+                labelNode.innerText = data.actionCopied;
+                labelNode.style.color = "#22C55E";
+                setTimeout(() => {
+                    labelNode.innerText = data.actionCopy;
+                    labelNode.style.color = "";
+                }, 2000);
+            });
+        });
+
+        document.getElementById("btn-toggle-qr").addEventListener("click", function(e) {
+            e.stopPropagation();
+            document.getElementById("dropdown-config-container").classList.remove("show");
+            document.getElementById("dropdown-radar-container").classList.remove("show");
+            document.getElementById("dropdown-qr-container").classList.toggle("show");
+        });
+
+        document.getElementById("btn-toggle-config").addEventListener("click", function(e) {
+            e.stopPropagation();
+            document.getElementById("dropdown-qr-container").classList.remove("show");
+            document.getElementById("dropdown-radar-container").classList.remove("show");
+            document.getElementById("dropdown-config-container").classList.toggle("show");
+        });
+
+        // ===== رادار آی‌پی تمیز (کاملاً سمت مرورگر) =====
+        const CF_RANGES = [['104.16.', 0, 255], ['104.17.', 0, 255], ['104.18.', 0, 255], ['104.19.', 0, 255], ['104.20.', 0, 255], ['104.21.', 0, 255], ['104.22.', 0, 255], ['104.24.', 0, 255], ['104.25.', 0, 255], ['104.26.', 0, 255], ['104.27.', 0, 255], ['162.159.', 0, 255], ['172.64.', 0, 255], ['172.66.', 0, 255], ['172.67.', 0, 255], ['188.114.', 96, 111], ['141.101.', 64, 127]];
+        const RADAR_PORTS = [443, 8443, 2053, 2083, 2087, 2096];
+        const RADAR_TIMEOUT = 2000;
+        const RADAR_PROBES = 3;
+        const RADAR_CONCURRENCY = 12;
+        const RADAR_IP_COUNT = 140;
+        const RADAR_KEEP = 8;
+
+        let radarRunning = false;
+        let radarCancelRequested = false;
+
+        function randCfIp() {
+            var r = CF_RANGES[Math.floor(Math.random() * CF_RANGES.length)];
+            var c = r[1] + Math.floor(Math.random() * (r[2] - r[1] + 1));
+            return r[0] + c + '.' + Math.floor(Math.random() * 256);
+        }
+
+        // هم onload و هم onerror یعنی «هاست جواب داد»؛ ما دسترسی و تأخیر را می‌سنجیم نه موفقیت تصویر.
+        function pingIp(ip, port, timeout) {
+            return new Promise(function(res) {
+                var t0 = performance.now();
+                var done = false;
+                var img = new Image();
+                function fin(ok) {
+                    if (done) return;
+                    done = true;
+                    img.onerror = img.onload = null;
+                    res(ok ? Math.round(performance.now() - t0) : null);
+                }
+                var timer = setTimeout(function() { fin(false); }, timeout);
+                img.onerror = function() { clearTimeout(timer); fin(true); };
+                img.onload = function() { clearTimeout(timer); fin(true); };
+                img.src = 'https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?' + Math.random();
+            });
+        }
+
+        function radarSelectedPorts() {
+            return Array.from(document.querySelectorAll('#radar-ports .radar-port-chip.active'))
+                .map(function(el) { return parseInt(el.getAttribute('data-port'), 10); });
+        }
+
+        async function radarProbeIp(ip, ports) {
+            for (let i = 0; i < ports.length; i++) {
+                const port = ports[i];
+                const samples = [];
+                for (let p = 0; p < RADAR_PROBES; p++) {
+                    if (radarCancelRequested) return null;
+                    const rtt = await pingIp(ip, port, RADAR_TIMEOUT);
+                    if (rtt !== null) samples.push(rtt);
+                }
+                if (samples.length === 0) continue;
+                const avg = Math.round(samples.reduce(function(a, b) { return a + b; }, 0) / samples.length);
+                const jitter = Math.max.apply(null, samples) - Math.min.apply(null, samples);
+                const loss = Math.round((1 - samples.length / RADAR_PROBES) * 100);
+                return { ip: ip, port: port, avg: avg, jitter: jitter, loss: loss, score: avg + jitter * 0.5 + loss * 20 };
+            }
+            return null;
+        }
+
+        function radarRenderResults(list) {
+            const tbody = document.getElementById('radar-results-body');
+            tbody.innerHTML = '';
+            list.forEach(function(r, idx) {
+                const tr = document.createElement('tr');
+                if (idx === 0) tr.className = 'radar-row-best';
+                tr.innerHTML = '<td>' + (idx + 1) + '</td>' +
+                    '<td class="en-font">' + r.ip + '<span class="radar-port-tag">:' + r.port + '</span></td>' +
+                    '<td class="en-font">' + r.avg + ' ms</td>' +
+                    '<td class="en-font">' + r.jitter + '</td>' +
+                    '<td class="en-font">' + r.loss + '%</td>';
+                tbody.appendChild(tr);
+            });
+            document.getElementById('radar-table-wrap').classList.toggle('show', list.length > 0);
+        }
+
+        function radarFindVlessLink() {
+            const links = sanaeiClientData.links || [];
+            for (let i = 0; i < links.length; i++) {
+                if (/^vless:\\/\\//i.test(links[i])) return links[i];
+            }
+            return null;
+        }
+
+        function radarBuildBestConfig(best) {
+            const data = locales[currentLang] || locales.fa;
+            const noteEl = document.getElementById('radar-best-note');
+            document.getElementById('radar-best').classList.add('show');
+            document.getElementById('radar-best-link').value = '';
+
+            const sourceLink = radarFindVlessLink();
+            if (!sourceLink) {
+                noteEl.textContent = data.radarStatusNoConfig;
+                return;
+            }
+            const uuidMatch = sourceLink.match(/^vless:\\/\\/([^@]+)@/i);
+            const queryStart = sourceLink.indexOf('?');
+            if (!uuidMatch || queryStart < 0) {
+                noteEl.textContent = data.radarStatusNoConfig;
+                return;
+            }
+            const uuid = uuidMatch[1];
+            const afterQuery = sourceLink.slice(queryStart + 1);
+            const hashIdx = afterQuery.indexOf('#');
+            const query = hashIdx >= 0 ? afterQuery.slice(0, hashIdx) : afterQuery;
+
+            const parsed = parseConfigLink(sourceLink);
+            const baseName = (parsed.remark || sanaeiClientData.username || 'Sub').trim();
+            const newLink = 'vless://' + uuid + '@' + best.ip + ':' + best.port + '?' + query + '#' + encodeURIComponent(baseName + ' - Radar');
+
+            document.getElementById('radar-best-link').value = newLink;
+            noteEl.textContent = data.radarBestNote.replace('{port}', best.port);
+        }
+
+        async function radarRun() {
+            const data = locales[currentLang] || locales.fa;
+            const statusEl = document.getElementById('radar-status');
+            const startBtn = document.getElementById('radar-start-btn');
+
+            if (radarRunning) {
+                radarCancelRequested = true;
+                return;
+            }
+
+            const ports = radarSelectedPorts();
+            if (ports.length === 0) {
+                statusEl.textContent = data.radarStatusNoPort;
+                return;
+            }
+
+            radarRunning = true;
+            radarCancelRequested = false;
+            startBtn.classList.add('running');
+            document.getElementById('radar-start-label').textContent = data.radarStop;
+            document.getElementById('radar-best').classList.remove('show');
+            document.getElementById('radar-best-note').textContent = '';
+            document.getElementById('radar-results-body').innerHTML = '';
+            document.getElementById('radar-table-wrap').classList.remove('show');
+            document.getElementById('radar-progress-bar').style.width = '0%';
+            statusEl.textContent = data.radarStatusScan.replace('{done}', '0').replace('{total}', RADAR_IP_COUNT).replace('{found}', '0');
+
+            const ips = [];
+            for (let i = 0; i < RADAR_IP_COUNT; i++) ips.push(randCfIp());
+
+            const results = [];
+            let cursor = 0;
+            let doneCount = 0;
+
+            async function worker() {
+                while (cursor < ips.length) {
+                    if (radarCancelRequested) return;
+                    const ip = ips[cursor++];
+                    const res = await radarProbeIp(ip, ports);
+                    if (res) results.push(res);
+                    doneCount++;
+                    document.getElementById('radar-progress-bar').style.width = Math.round(doneCount / ips.length * 100) + '%';
+                    statusEl.textContent = data.radarStatusScan
+                        .replace('{done}', doneCount)
+                        .replace('{total}', ips.length)
+                        .replace('{found}', results.length);
+                }
+            }
+
+            const workers = [];
+            for (let w = 0; w < RADAR_CONCURRENCY; w++) workers.push(worker());
+            await Promise.all(workers);
+
+            results.sort(function(a, b) { return a.score - b.score; });
+            const top = results.slice(0, RADAR_KEEP);
+            radarRenderResults(top);
+
+            if (top.length > 0) {
+                statusEl.textContent = data.radarStatusDone.replace('{found}', results.length);
+                radarBuildBestConfig(top[0]);
+            } else {
+                statusEl.textContent = data.radarStatusNoResult;
+            }
+
+            radarRunning = false;
+            radarCancelRequested = false;
+            startBtn.classList.remove('running');
+            document.getElementById('radar-start-label').textContent = data.radarStart;
+        }
+
+        document.getElementById("btn-radar").addEventListener("click", function(e) {
+            e.stopPropagation();
+            document.getElementById("dropdown-qr-container").classList.remove("show");
+            document.getElementById("dropdown-config-container").classList.remove("show");
+            document.getElementById("dropdown-radar-container").classList.toggle("show");
+        });
+
+        document.getElementById("radar-start-btn").addEventListener("click", function(e) {
+            e.stopPropagation();
+            radarRun();
+        });
+
+        document.querySelectorAll('#radar-ports .radar-port-chip').forEach(function(chip) {
+            chip.addEventListener('click', function(e) {
+                e.stopPropagation();
+                this.classList.toggle('active');
+            });
+        });
+
+        document.getElementById("radar-copy-btn").addEventListener("click", function(e) {
+            e.stopPropagation();
+            const data = locales[currentLang] || locales.fa;
+            const value = document.getElementById('radar-best-link').value;
+            if (!value) return;
+            const label = document.getElementById('radar-copy-label');
+            navigator.clipboard.writeText(value).then(() => {
+                label.textContent = data.actionCopied;
+                this.style.background = "#22C55E";
+                this.style.color = "#fff";
+                setTimeout(() => {
+                    label.textContent = data.copyBtnText;
+                    this.style.background = "";
+                    this.style.color = "";
+                }, 2000);
+            });
+        });
+
+        function navigateToScreen(screenName) {
+            document.querySelectorAll('.app-screen').forEach(scr => scr.classList.remove('active-screen'));
+            document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+
+            if (screenName === 'dashboard') {
+                document.getElementById('screen-dashboard').classList.add('active-screen');
+                document.getElementById('nav-dashboard').classList.add('active');
+            } else if (screenName === 'download') {
+                document.getElementById('screen-download-apps').classList.add('active-screen');
+                document.getElementById('nav-download').classList.add('active');
+                switchDownloadTab('android');
+            }
+        }
+
+        function switchDownloadTab(os) {
+            document.querySelectorAll('.os-tab-btn').forEach(btn => btn.classList.remove('active-tab'));
+            document.getElementById(\`os-tab-\${os}\`).classList.add('active-tab');
+
+            const currentLocale = locales[currentLang] || locales.fa;
+            const data = appDownloadLinks[os];
+
+            document.getElementById('title-client1').innerText = data.c1.name;
+            document.getElementById('btn-dl-client1').href = data.c1.url;
+            document.getElementById('sub-client1').innerText = currentLocale.dlSubtitle;
+
+            document.getElementById('title-client2').innerText = data.c2.name;
+            document.getElementById('btn-dl-client2').href = data.c2.url;
+            document.getElementById('sub-client2').innerText = currentLocale.dlSubtitle;
+
+            document.getElementById('title-client3').innerText = data.c3.name;
+            document.getElementById('btn-dl-client3').href = data.c3.url;
+            document.getElementById('sub-client3').innerText = currentLocale.dlSubtitle;
+
+            const client4Card = document.getElementById('client-card-4');
+            if (data.c4) {
+                client4Card.style.display = '';
+                document.getElementById('title-client4').innerText = data.c4.name;
+                document.getElementById('btn-dl-client4').href = data.c4.url;
+                document.getElementById('sub-client4').innerText = currentLocale.dlSubtitle;
+            } else {
+                client4Card.style.display = 'none';
+            }
+
+            document.querySelectorAll('.client-download-btn').forEach(btn => {
+                btn.innerText = currentLocale.btnDl;
+            });
+        }
+
+        // ===== راه‌اندازی اولیه =====
+        document.addEventListener("DOMContentLoaded", () => {
+            selectLanguage(currentLang);
+            loadConfigsFromRawEndpoint();
+            loadClientIp();
+        });
+
+        const langToggleBtn = document.getElementById("lang-toggle-btn");
+        const langDropdown = document.getElementById("lang-dropdown");
+        langToggleBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            langDropdown.classList.toggle("show");
+        });
+
+        document.addEventListener("click", () => {
+            langDropdown.classList.remove("show");
+            document.getElementById("dropdown-qr-container").classList.remove("show");
+            document.getElementById("dropdown-config-container").classList.remove("show");
+            document.getElementById("dropdown-radar-container").classList.remove("show");
+        });
+
+        const themeToggle = document.getElementById("theme-toggle");
+        const themeIcon = document.getElementById("theme-icon");
+        themeToggle.addEventListener("click", () => {
+            document.body.classList.toggle("light-mode");
+            themeIcon.className = document.body.classList.contains("light-mode") ? "fa-solid fa-sun" : "fa-solid fa-moon";
+        });
+    </script>
+</body>
+</html>
+`;
 
 async function loadUI(env, force) {
   const st = await load(env);

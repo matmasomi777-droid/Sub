@@ -11,14 +11,14 @@
         parseVlessLink باید همان سرور را بدهد.
      ۶) رادارِ مرورگری در ui/user.html (کاملاً سمتِ کلاینت).
      ۷) نسخه ۳٫۰٫۰ / ساخت ۲۰۲۶٫۰۸٫۳۰.
-     ۸) USER_PAGE در worker.js همان داشبوردِ کاملِ origin/main است.
+     ۸) USER_PAGE در worker.js همان داشبوردِ کامل است: همان ui/user.html
+        (و نه یک صفحه‌ی دیگر) و یک سندِ کامل است، نه یک استاب.
 
    همان الگوی بقیه‌ی مجموعه‌ها: منبع با readFileSync خوانده می‌شود، توابعِ
    داخلیِ worker.js از worker.test.mjs می‌آیند (ساخته‌ی build.mjs) و بخشی
    از ادعاها روی APIِ واقعی با D1 واقعی (SQLite) اجرا می‌شود.
    ══════════════════════════════════════════════════════════════════════ */
 import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { makeD1 } from './d1.mjs';
 import { makeCtx } from './mocks.mjs';
 import * as W from './worker.test.mjs';
@@ -350,32 +350,52 @@ eq('BUILD is 2026.08.30', versionOf('BUILD'), '2026.08.30');
 console.log('\n── ۸) USER_PAGE همان داشبوردِ کامل است ──');
 
 /* لفظِ USER_PAGE یک قالبِ طولانی است؛ از «const USER_PAGE = `» تا نخستین
-   بک‌تیکِ خاتمه (که با \ گریز نگرفته باشد) برداشته می‌شود. */
+   بک‌تیکِ خاتمه برداشته می‌شود. پویش یک‌گذره است تا «\\» (بک‌اسلشِ گریزشده)
+   با «\`» (بک‌تیکِ گریزشده) اشتباه گرفته نشود. */
 const userPageOf = (src) => {
   const head = 'const USER_PAGE = `';
   const i = src.indexOf(head);
   if (i < 0) return null;
   const start = i + head.length;
   let j = start;
-  for (;;) {
-    j = src.indexOf('`', j);
-    if (j < 0) return null;
-    if (src[j - 1] !== '\\') break;
-    j++;
+  while (j < src.length) {
+    if (src[j] === '\\') { j += 2; continue; }
+    if (src[j] === '`') break;
+    j += 1;
   }
+  if (j >= src.length) return null;
   return src.slice(start, j);
 };
-const pageNow = userPageOf(WK);
-ok('the worker embeds a USER_PAGE fallback', !!pageNow, pageNow ? pageNow.length + ' chars' : '');
-const mainSrc = execFileSync('git', ['show', 'origin/main:worker.js'], { maxBuffer: 64 * 1024 * 1024 }).toString('utf8');
-const pageMain = userPageOf(mainSrc);
-ok('origin/main also has a USER_PAGE fallback', !!pageMain, pageMain ? pageMain.length + ' chars' : '');
-ok('the fallback is byte-identical to origin/main',
-  !!pageNow && !!pageMain && Buffer.from(pageNow, 'utf8').equals(Buffer.from(pageMain, 'utf8')),
-  pageNow && pageMain ? (pageNow.length + ' vs ' + pageMain.length + ' chars') : 'missing');
-ok('it is the whole dashboard, not a stub',
-  !!pageNow && pageNow.length > 40000 && /<\!DOCTYPE html>/.test(pageNow) && /radar|رادار/.test(pageNow),
-  pageNow ? String(pageNow.length) : '');
+/* همان متنی که مرورگر می‌بیند: گریزهای قالب دوباره به نویسه برمی‌گردند */
+const unescapeTpl = (raw) => {
+  let out = '', k = 0;
+  while (k < raw.length) {
+    if (raw[k] !== '\\') { out += raw[k]; k += 1; continue; }
+    out += raw[k + 1];
+    k += 2;
+  }
+  return out;
+};
+const pageRaw = userPageOf(WK);
+ok('the worker embeds a USER_PAGE fallback', !!pageRaw, pageRaw ? pageRaw.length + ' chars' : '');
+const pageNow = pageRaw ? unescapeTpl(pageRaw) : null;
+
+/* اصلِ ماجرا اینجاست: USER_PAGE همان چیزی است که وقتی گرفتنِ صفحه از
+   گیت‌هاب شکست می‌خورد به کاربر داده می‌شود. اگر با ui/user.html یکی
+   نباشد، کاربر بی‌خبر یک صفحه‌ی دیگر — کوچک‌تر و ناقص — می‌گیرد. پس
+   بی‌هیچ مقایسه‌ای با شاخه‌ی دیگر، مستقیم با خودِ فایل سنجیده می‌شود: */
+ok('USER_PAGE is byte-identical to ui/user.html',
+  !!pageNow && Buffer.from(pageNow, 'utf8').equals(Buffer.from(UH, 'utf8')),
+  pageNow ? (pageNow.length + ' vs ' + UH.length + ' chars') : 'missing');
+/* یک ${ گریز‌نخورده یعنی قالب هنگامِ اجرا درز می‌کند و صفحه ناقص می‌ماند */
+ok('no unescaped ${} is left to interpolate at runtime',
+  !!pageRaw && !/(^|[^\\])\$\{/.test(pageRaw));
+/* «کامل بودن» یعنی یک سندِ واقعی با نشانه‌های داشبورد — نه فقط یک عدد */
+ok('it is a whole html document, not a stub',
+  !!pageNow && pageNow.startsWith('<!DOCTYPE html>') && pageNow.trimEnd().endsWith('</html>'),
+  pageNow ? (pageNow.slice(0, 15) + ' … ' + pageNow.trimEnd().slice(-7)) : '');
+ok('it carries the dashboard markers (actions-grid و radar-sweep)',
+  !!pageNow && pageNow.includes('actions-grid') && pageNow.includes('radar-sweep'));
 
 console.log('\n' + pass + '/' + (pass + fail) + ' checks passed');
 if (fail) { console.log('T18 V3-REVISION TESTS FAILED'); process.exit(1); }
