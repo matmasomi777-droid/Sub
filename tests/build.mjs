@@ -21,11 +21,10 @@ src += `\nexport { vlessHeader, usageInit, usageDelta, usageReset, usageRead, us
   banEnsure, banAdd, banRemove, banList, banCheck, banSweep, banSource,
   validateBackup, applyBackup, BACKUP_ROOT_KEYS, SETTING_KEYS,
   dayKey, load, save, seed, DEF, flushDB, CONN_TTL, CONN_ACTIVITY_MS, CONN_EVICTS,
-  EXIT_SECURITIES, EXIT_TRANSPORTS, MAX_RADAR_CONCURRENCY, MAX_RADAR_COUNT, EXIT_STATS, EXIT_LAST_ERR,
+  EXIT_SECURITIES, EXIT_TRANSPORTS, EXIT_STATS, EXIT_LAST_ERR,
   normalizeExit, exitIssues, exitsOf, exitById, resolveExit, exitRoutingEnabled,
   ipv6ToBytes, vlessAddons, vlessRequestHeader, wsFrame, makeWsUnwrap, openExitSocket, testExit,
-  parseVlessLink, EXIT_LINK_ERR, VLESS_QUERY_MAP, EXIT_FIELDS,
-  radarConfig, cidrToRange, radarCandidates, probeIp, probeViaExit, radarScan, applyCleanIps };\n`;
+  parseVlessLink, EXIT_LINK_ERR, VLESS_QUERY_MAP, EXIT_FIELDS };\n`;
 
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, src);

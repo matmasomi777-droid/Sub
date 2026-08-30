@@ -18,7 +18,7 @@ ROOT="$(cd .. && pwd)"
 node build.mjs "$ROOT/worker.js" >/dev/null || exit 1
 
 fail=0
-for t in t1-counting t2-e2e t3-iplimit t4-api t6-d1-tunnel t7-traffic-api t8-health-diag t9-leak t10-tunnel-leak t11-ttl-evict t12-ui-security t13-disguise t14-v3-backend t15-exit-radar t16-v3-ui t17-v3-ui-stage4 t18-v3-revision; do
+for t in t1-counting t2-e2e t3-iplimit t4-api t6-d1-tunnel t7-traffic-api t8-health-diag t9-leak t10-tunnel-leak t11-ttl-evict t12-ui-security t13-disguise t14-v3-backend t15-vless-exits t16-v3-ui t17-v3-ui-stage4 t18-v3-revision; do
   printf '\n════════ %s ════════\n' "$t"
   out=$(node "$t.mjs" 2>&1 | grep -v ExperimentalWarning | grep -v 'trace-warnings')
   printf '%s\n' "$out"
