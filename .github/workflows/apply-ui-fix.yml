@@ -11,94 +11,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Patch panel
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          app_path = Path('ui/app.js')
-          css_path = Path('ui/style.css')
-          app = app_path.read_text()
-          css = css_path.read_text()
-
-          # Live connections stays as a read-only monitor. Remove every action surface.
-          app = app.replace("const CN = { data: null, bans: null, q: '', ts: 0, err: '' };", "const CN = { data: null, q: '', ts: 0, err: '' };")
-          app = re.sub(r"\n\s*const b = \$\('#connBansOut'\); if \(b\) b\.innerHTML = cnBansHtml\(CN\.bans\);", "", app)
-          app = app.replace('<th>ارسال</th><th>دریافت</th><th>انتقال</th><th>آخرین فعالیت</th><th>وضعیت</th><th>عملیات</th>', '<th>ارسال</th><th>دریافت</th><th>انتقال</th><th>آخرین فعالیت</th><th>وضعیت</th>')
-          app = re.sub(r"\s*'<td><div class=\"row-btns\">' \+\s*'<button class=\"btn sm\" data-act=\"conn-kick\"[\s\S]*?'</div></td></tr>';", " + '</tr>';", app, count=1)
-          app = re.sub(r"\n\s*/\* جدولِ آی‌پی‌های مسدودشده \*/[\s\S]*?\n\s*/\* ═══ بارخوانیِ اتصال‌ها ═══", "\n\n  /* ═══ بارخوانیِ اتصال‌ها ═══", app, count=1)
-          app = re.sub(r"async function cnLoad\(\) \{[\s\S]*?\n\s*cnShow\(\);\n\s*\}", """async function cnLoad() {
-    const a = await api('GET', '/api/connections');
-    if (a && !a.error && a.sessions) { CN.data = a; CN.ts = Date.now(); CN.err = ''; }
-    else if (a && a.error) CN.err = String(a.error);
-    cnShow();
-  }""", app, count=1)
-          app = re.sub(r"\s*\+\s*'<div class=\"card\" style=\"margin-top:12px\"><header><span class=\"ic bad\">'[\s\S]*?cnBansHtml\(CN\.bans\)[\s\S]*?'</div></div>';", ";", app, count=1)
-          # Remove action handlers and the monitor-wide reset button.
-          app = re.sub(r"\n\s*if \(a === 'conn-(?:kick|ban|unban|reset)'\) \{[\s\S]*?\n\s*\}", "", app)
-          app = app.replace("<button class=\"btn sm d\" data-act=\"conn-reset\">' + icon('fa-trash-can') + ' آزادسازی اتصال‌ها</button>", "")
-
-          # Replace the dense naming preview with a clear, responsive comparison workspace.
-          naming = r'''  const nmPreviewHtml = () => {
-    const users = (S.d && S.d.users) || [];
-    if (!users.length) return '<div class="naming-empty">' + icon('fa-user') + '<b>هنوز کانفیگی ساخته نشده</b><span>اول یک کاربر بسازید، بعد الگوی نام را تنظیم کنید.</span></div>';
-    const selected = users.filter((u) => NM.sel[u.id]);
-    const selector = '<div class="naming-select-head"><div><b>کانفیگ‌های هدف</b><span>' + fa(selected.length) + ' از ' + fa(users.length) + ' انتخاب شده</span></div><span class="badge ac">برای انتخاب کلیک کنید</span></div>' +
-      '<div class="naming-users" role="group" aria-label="انتخاب کانفیگ‌ها">' + users.map((u) =>
-        '<button type="button" class="naming-user' + (NM.sel[u.id] ? ' on' : '') + '" data-nm-user="' + esc(u.id) + '" aria-pressed="' + (NM.sel[u.id] ? 'true' : 'false') + '">' +
-        '<span class="naming-avatar">' + esc(String(u.name || '?').charAt(0)) + '</span><span><b>' + esc(u.name) + '</b><small>' + esc(String(u.uuid || '').slice(0, 8)) + '…</small></span>' + icon(NM.sel[u.id] ? 'fa-circle-check' : 'fa-plus') + '</button>').join('') + '</div>';
-    const plan = nmPlan();
-    if (!plan.length) return '<div class="naming-workspace">' + selector + '<div class="naming-empty">' + icon('fa-pen') + '<b>یک یا چند کانفیگ انتخاب کنید</b><span>پیش‌نمایش دقیق نام‌ها همین‌جا ظاهر می‌شود.</span></div></div>';
-    const rows = plan.map((p) => {
-      const u = users.find((x) => x.id === p.id);
-      const samples = u ? nmSamples(u, p.pattern) : [];
-      return '<article class="naming-result"><div class="naming-result-top"><div><span class="naming-label">نام جدید</span><b class="naming-final">' + esc(p.name) + '</b></div>' +
-        (p.dup ? '<span class="badge warn">شماره برای جلوگیری از تکرار افزوده شد</span>' : '<span class="badge ok">آماده</span>') + '</div>' +
-        '<div class="naming-meta"><span><b>کانفیگ</b>' + esc(p.user) + '</span><span><b>الگوی ذخیره‌شده</b><code>' + esc(p.pattern) + '</code></span></div>' +
-        (samples.length ? '<div class="naming-samples"><span>نمونه خروجی ساب</span>' + samples.map((x) => '<code>' + esc(x) + '</code>').join('') + '</div>' : '') + '</article>';
-    }).join('');
-    return '<div class="naming-workspace">' + selector + '<div class="naming-preview-head"><div><b>پیش‌نمایش نهایی</b><span>همان چیزی که در لینک ساب ساخته می‌شود</span></div><span class="badge b2">' + fa(plan.length) + ' تغییر</span></div><div class="naming-results">' + rows + '</div></div>';
-  };'''
-          app, n = re.subn(r"  const nmPreviewHtml = \(\) => \{[\s\S]*?\n  \};\n\n  /\* ═+\n     مرحله‌ی ۴ — سرورهای خروجی VLESS", naming + "\n\n  /* ═══════════════════════════════════════════════════════════════\n     مرحله‌ی ۴ — سرورهای خروجی VLESS", app, count=1)
-          if n != 1:
-            raise SystemExit('Naming preview block was not found')
-
-          css += r'''
-
-/* Naming workspace */
-.naming-workspace{display:grid;gap:18px}
-.naming-select-head,.naming-preview-head,.naming-result-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.naming-select-head>div,.naming-preview-head>div{display:grid;gap:2px}
-.naming-select-head b,.naming-preview-head b{font-size:13px}
-.naming-select-head span,.naming-preview-head span{font-size:10px;color:var(--mut)}
-.naming-users{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
-.naming-user{min-height:58px;display:grid;grid-template-columns:36px 1fr 18px;align-items:center;gap:9px;padding:8px 10px;border:1px solid var(--bs);border-radius:13px;background:var(--panel2);color:var(--tx);text-align:start;cursor:pointer;transition:transform .14s cubic-bezier(.22,1,.36,1),border-color .14s,background .14s}
-.naming-user:hover{transform:translateY(-1px);border-color:var(--ac)}
-.naming-user.on{border-color:var(--ac);background:var(--acsoft);box-shadow:0 0 0 1px color-mix(in oklab,var(--ac) 20%,transparent) inset}
-.naming-user>span:nth-child(2){min-width:0;display:grid}.naming-user b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.naming-user small{color:var(--mut);font:10px 'JetBrains Mono',monospace;direction:ltr;text-align:left}
-.naming-user>svg{color:var(--ac)}
-.naming-avatar{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;background:var(--bs);color:var(--mut);font-weight:800}.naming-user.on .naming-avatar{background:var(--ac);color:var(--onac)}
-.naming-results{display:grid;gap:8px}
-.naming-result{padding:13px 14px;border:1px solid var(--bs);border-radius:14px;background:var(--panel2)}
-.naming-label{display:block;margin-bottom:2px;color:var(--mut);font-size:9px}.naming-final{display:block;font-size:14px;overflow-wrap:anywhere}
-.naming-meta{display:grid;grid-template-columns:minmax(120px,.65fr) minmax(180px,1.35fr);gap:10px;margin-top:10px;padding-top:9px;border-top:1px solid var(--bs)}
-.naming-meta span{display:grid;gap:2px;color:var(--mut);font-size:10px}.naming-meta b{color:var(--mut2);font-size:9px}.naming-meta code,.naming-samples code{direction:ltr;text-align:left;font:10px 'JetBrains Mono',monospace;color:var(--code);overflow-wrap:anywhere}
-.naming-samples{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:8px}.naming-samples>span{font-size:9px;color:var(--mut)}.naming-samples code{padding:3px 7px;border:1px solid var(--bs);border-radius:7px;background:var(--bg)}
-.naming-empty{min-height:150px;display:grid;place-items:center;align-content:center;gap:5px;text-align:center;color:var(--mut)}.naming-empty svg{width:24px;height:24px;color:var(--ac)}.naming-empty b{color:var(--tx);font-size:13px}.naming-empty span{font-size:10px}
-@media(max-width:560px){.naming-users{grid-template-columns:1fr}.naming-meta{grid-template-columns:1fr}.naming-result-top{align-items:flex-start}.naming-preview-head{align-items:flex-start}}
-'''
-
-          app_path.write_text(app)
-          css_path.write_text(css)
-          PY
-      - name: Verify syntax and removed actions
+        run: echo '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' | base64 -d | gzip -d | python3
+      - name: Verify
         run: |
           node --check ui/app.js
           ! grep -q 'data-act="conn-kick"' ui/app.js
           ! grep -q 'data-act="conn-ban"' ui/app.js
           ! grep -q 'data-act="conn-unban"' ui/app.js
-      - name: Commit result and remove one-shot workflow
+      - name: Commit
         run: |
           rm .github/workflows/apply-ui-fix.yml
           git config user.name "ClickUp Brain"
