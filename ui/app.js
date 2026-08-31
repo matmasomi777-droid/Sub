@@ -42,10 +42,9 @@
      داده در state نگه داشته می‌شود، نه در DOM: به‌روزرسانیِ دوره‌ای و
      جابه‌جایی بین بخش‌ها جدول را خالی نمی‌کند — فقط یک بارخوانیِ موفق
      جای داده‌ی قبلی را می‌گیرد (خطا یا قطعیِ لحظه‌ای چیزی را پاک نمی‌کند). */
-  const CN = { data: null, bans: null, q: '', ts: 0, err: '' };
+  const CN = { data: null, q: '', ts: 0, err: '' };
   const cnShow = () => {
     const o = $('#connOut'); if (o) o.innerHTML = cnHtml(CN.data);
-    const b = $('#connBansOut'); if (b) b.innerHTML = cnBansHtml(CN.bans);
     /* خلاصه و نشانگرِ وضعیت هم همان لحظه به‌روز می‌شوند — وگرنه عددهای
        بالای صفحه روی همان صفرِ رندرِ اول می‌ماندند */
     const st = $('#connStats'); if (st) st.innerHTML = cnStatsHtml();
@@ -529,25 +528,13 @@
   };
   const nmPreviewHtml = () => {
     const users = (S.d && S.d.users) || [];
-    if (!users.length) return '<div class="empty">هنوز کانفیگی ساخته نشده است</div>';
-    const chips = '<div class="hint" style="margin-bottom:6px">کانفیگ‌هایی که الگو روی آن‌ها اعمال می‌شود:</div>' +
-      '<div class="chips" style="margin-bottom:10px">' + users.map((u) =>
-        '<button type="button" class="chip" data-nm-user="' + esc(u.id) + '" style="' +
-        (NM.sel[u.id] ? 'background:var(--ac);border-color:var(--ac);color:#fff' : 'opacity:.5') + '">' +
-        esc(u.name) + '</button>').join('') + '</div>';
+    if (!users.length) return '<div class="naming-empty">' + icon('fa-user') + '<b>هنوز کانفیگی ساخته نشده</b><span>اول یک کاربر بسازید، بعد الگوی نام را تنظیم کنید.</span></div>';
+    const selected = users.filter((u) => NM.sel[u.id]);
+    const selector = '<div class="naming-select-head"><div><b>کانفیگ‌های هدف</b><span>' + fa(selected.length) + ' از ' + fa(users.length) + ' انتخاب شده</span></div><span class="badge ac">برای انتخاب کلیک کنید</span></div>' + '<div class="naming-users">' + users.map((u) => '<button type="button" class="naming-user' + (NM.sel[u.id] ? ' on' : '') + '" data-nm-user="' + esc(u.id) + '" aria-pressed="' + (NM.sel[u.id] ? 'true' : 'false') + '"><span class="naming-avatar">' + esc(String(u.name || '?').charAt(0)) + '</span><span><b>' + esc(u.name) + '</b><small>' + esc(String(u.uuid || '').slice(0, 8)) + '…</small></span>' + icon(NM.sel[u.id] ? 'fa-circle-check' : 'fa-plus') + '</button>').join('') + '</div>';
     const plan = nmPlan();
-    if (!plan.length) return chips + '<div class="empty">هیچ کانفیگی انتخاب نشده — روی نامِ کانفیگ‌ها در بالا کلیک کنید</div>';
-    return chips + '<div class="list">' + plan.map((p) => {
-      const u = users.find((x) => x.id === p.id);
-      const samples = u ? nmSamples(u, p.pattern) : [];
-      return '<div class="row-item">' + icon('fa-pen') +
-      '<div class="grow"><b>' + esc(p.name) + '</b>' +
-      (p.dup ? ' <span class="badge warn">تکراری — شماره افزوده شد</span>' : '') +
-      '<div class="mono cell-sub">' + esc(p.user) + ' • الگو: ' + esc(p.pattern) + '</div>' +
-      (samples.length ? '<div class="hint" style="margin-top:3px">نمونه‌ی نام‌ها در ساب: ' +
-        samples.map((x) => '<span class="mono">' + esc(x) + '</span>').join(' • ') + '</div>' : '') +
-      '</div></div>';
-    }).join('') + '</div>';
+    if (!plan.length) return '<div class="naming-workspace">' + selector + '<div class="naming-empty">' + icon('fa-pen') + '<b>یک یا چند کانفیگ انتخاب کنید</b><span>پیش‌نمایش دقیق نام‌ها همین‌جا ظاهر می‌شود.</span></div></div>';
+    const rows = plan.map((x) => { const u=users.find((v)=>v.id===x.id), samples=u?nmSamples(u,x.pattern):[]; return '<article class="naming-result"><div class="naming-result-top"><div><span class="naming-label">نام جدید</span><b class="naming-final">'+esc(x.name)+'</b></div>'+(x.dup?'<span class="badge warn">شماره برای جلوگیری از تکرار افزوده شد</span>':'<span class="badge ok">آماده</span>')+'</div><div class="naming-meta"><span><b>کانفیگ</b>'+esc(x.user)+'</span><span><b>الگوی ذخیره‌شده</b><code>'+esc(x.pattern)+'</code></span></div>'+(samples.length?'<div class="naming-samples"><span>نمونه خروجی ساب</span>'+samples.map((v)=>'<code>'+esc(v)+'</code>').join('')+'</div>':'')+'</article>'; }).join('');
+    return '<div class="naming-workspace">'+selector+'<div class="naming-preview-head"><div><b>پیش‌نمایش نهایی</b><span>همان چیزی که در لینک ساب ساخته می‌شود</span></div><span class="badge b2">'+fa(plan.length)+' تغییر</span></div><div class="naming-results">'+rows+'</div></div>';
   };
 
   /* ═══════════════════════════════════════════════════════════════
@@ -1091,7 +1078,7 @@
       ' • <span class="hint">جدول هر ۱۰ ثانیه به‌روز می‌شود؛ داده‌ی قبلی تا رسیدنِ پاسخِ تازه سر جایش می‌ماند.</span></div>' +
       '<div style="max-height:460px;overflow:auto" class="tbl-wrap"><table>' +
       '<thead><tr><th>کانفیگ (یوزر)</th><th>آی‌پی</th><th>کشور</th><th>شروع</th><th>مدت اتصال</th>' +
-      '<th>ارسال</th><th>دریافت</th><th>انتقال</th><th>آخرین فعالیت</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>' +
+      '<th>ارسال</th><th>دریافت</th><th>انتقال</th><th>آخرین فعالیت</th><th>وضعیت</th></tr></thead><tbody>' +
       r.sessions.map((s) => {
         const nm = s.user || (s.known === false ? 'کانفیگ حذف‌شده' : '—');
         const started = s.startedAt ? new Date(s.startedAt).toLocaleTimeString('fa-IR', { hour12: false }) : '—';
@@ -1108,37 +1095,7 @@
           '<td class="mono">' + (s.idleSec === null || s.idleSec === undefined ? '—' : durFa(s.idleSec) + ' پیش') + '</td>' +
           '<td>' + (s.idle
             ? '<span class="badge warn">' + icon('fa-triangle-exclamation') + ' بی‌فعالیت</span>'
-            : '<span class="badge ok">' + icon('fa-circle-check') + ' فعال</span>') + '</td>' +
-          '<td><div class="row-btns">' +
-          '<button class="btn sm" data-act="conn-kick" data-conn="' + esc(s.connId || '') + '" data-ip="' + esc(s.ip || '') + '" data-uuid="' + esc(s.uuid || '') + '" data-name="' + esc(nm) + '" title="قطع موقتِ فقط همین نشست — کاربر می‌تواند دوباره وصل شود">' + icon('fa-scissors') + ' قطع موقت</button>' +
-          '<button class="btn sm d" data-act="conn-ban" data-h="0" data-ip="' + esc(s.ip || '') + '" data-uuid="' + esc(s.uuid || '') + '" data-name="' + esc(nm) + '" title="مسدودسازیِ دائم این آی‌پی">' + icon('fa-ban') + ' مسدود دائم</button>' +
-          '<button class="btn sm d" data-act="conn-ban" data-h="1" data-ip="' + esc(s.ip || '') + '" data-uuid="' + esc(s.uuid || '') + '" data-name="' + esc(nm) + '" title="مسدودسازیِ ۱ ساعته">' + icon('fa-ban') + ' ۱ ساعت</button>' +
-          '<button class="btn sm d" data-act="conn-ban" data-h="24" data-ip="' + esc(s.ip || '') + '" data-uuid="' + esc(s.uuid || '') + '" data-name="' + esc(nm) + '" title="مسدودسازیِ ۲۴ ساعته">' + icon('fa-ban') + ' ۲۴ ساعت</button>' +
-          '</div></td></tr>';
-      }).join('') +
-      '</tbody></table></div>';
-  }
-
-  /* جدولِ آی‌پی‌های مسدودشده */
-  function cnBansHtml(list) {
-    if (!list) return '<div class="empty">در حال بارگیری…</div>';
-    if (!list.length) return '<div class="empty">هیچ آی‌پی‌ای مسدود نیست.</div>';
-    return '<div style="max-height:320px;overflow:auto" class="tbl-wrap"><table>' +
-      '<thead><tr><th>آی‌پی</th><th>کانفیگ</th><th>مانده / نوع</th><th>علت</th><th>زمان ثبت</th><th>عملیات</th></tr></thead><tbody>' +
-      list.map((b) => {
-        const u = (S.d && S.d.users || []).find((x) => String(x.uuid) === String(b.uuid || ''));
-        return '<tr>' +
-          '<td class="mono">' + esc(b.ip) + '</td>' +
-          '<td>' + (u ? '<span class="cell-main">' + esc(u.name) + '</span>' : (b.uuid ? '<span class="cell-sub mono">' + esc(String(b.uuid).slice(0, 13)) + '…</span>' : '<span class="cell-sub">همه</span>')) + '</td>' +
-          '<td>' + (b.permanent
-            ? '<span class="badge bad">' + icon('fa-ban') + ' دائم</span>'
-            : b.expired
-              ? '<span class="badge">' + icon('fa-circle-check') + ' منقضی شده</span>'
-              : '<span class="badge warn">' + icon('fa-triangle-exclamation') + ' ' + durFa(b.remainingSec) + '</span>') + '</td>' +
-          '<td class="cell-sub">' + esc(b.reason || '—') + '</td>' +
-          '<td class="cell-sub">' + (b.createdAt ? ago(b.createdAt) : '—') + '</td>' +
-          '<td><button class="btn sm s" data-act="conn-unban" data-ip="' + esc(b.ip) + '">' + icon('fa-check') + ' رفع مسدودی</button></td>' +
-          '</tr>';
+            : '<span class="badge ok">' + icon('fa-circle-check') + ' فعال</span>') + '</td>' + + '</tr>';
       }).join('') +
       '</tbody></table></div>';
   }
@@ -1147,13 +1104,9 @@
      فقط پاسخِ سالم جای داده‌ی قبلی را می‌گیرد: اگر سرور لحظه‌ای پاسخ ندهد،
      جدول همان داده‌ی قبلی را نشان می‌دهد تا نپرد. */
   async function cnLoad() {
-    const [a, b] = await Promise.all([
-      api('GET', '/api/connections'),
-      api('GET', '/api/connections/bans'),
-    ]);
+    const a = await api('GET', '/api/connections');
     if (a && !a.error && a.sessions) { CN.data = a; CN.ts = Date.now(); CN.err = ''; }
     else if (a && a.error) CN.err = String(a.error);
-    if (b && !b.error && Array.isArray(b.bans)) CN.bans = b.bans;
     cnShow();
   }
 
@@ -1170,52 +1123,7 @@
       '<div class="acts"><div class="search" style="width:210px" id="connSearchBox">' +
       '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>' +
       '<input id="connSearch" placeholder="جستجوی نام کانفیگ، UUID، آی‌پی…" value="' + esc(CN.q || '') + '"></div></div></header>' +
-      '<div class="bd"><div id="connOut">' + cnHtml(CN.data) + '</div></div></div>' +
-      '<div class="card" style="margin-top:12px"><header><span class="ic bad">' + icon('fa-ban') + '</span>' +
-      '<div><h3>آی‌پی‌های مسدودشده</h3><p>مسدودیِ دائم تا رفعِ دستی؛ مسدودیِ زمان‌دار خودبه‌خود آزاد می‌شود</p></div>' +
-      '<div class="acts"><button class="btn sm" data-act="conn-load">' + icon('fa-rotate') + ' بارخوانی</button></div></header>' +
-      '<div class="bd"><div id="connBansOut">' + cnBansHtml(CN.bans) + '</div></div></div>';
-  }
-
-  function monitorView() {
-    const st = S.d.stats || {}, u = S.d.users, r = S.range;
-    const ser = (r === 'm' ? st.monthly : r === 'y' ? st.yearly : st.daily) || st.daily || Array(14).fill(.3);
-    return '<div class="page-head"><div><h1>مانیتورینگ و آمار</h1><p>مصرف روزانه/ماهانه/سالانه، اتصال‌های فعال و سلامت سرویس</p></div>' +
-      '<div class="seg">' + [['d', 'روزانه'], ['m', 'ماهانه'], ['y', 'سالانه']].map(([k, l]) => '<button data-act="range" data-v="' + k + '" class="' + (r === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div></div>' +
-      '<div class="grid g4">' +
-      '<div class="stat"><div class="lbl">آپلود کل</div><div class="val">' + bytes(u.reduce((a, x) => a + (x.up || 0), 0)) + '</div><div class="sub">' + fa(u.length) + ' کاربر</div></div>' +
-      '<div class="stat"><div class="lbl">دانلود کل</div><div class="val">' + bytes(u.reduce((a, x) => a + (x.down || 0), 0)) + '</div><div class="sub">اتصال فعال: ' + fa(st.connections || 0) + '</div></div>' +
-      '<div class="stat"><div class="lbl">درخواست‌ها</div><div class="val">' + n(st.requests || 0) + '</div><div class="sub">uptime ' + fa(Math.floor((Date.now() - S.d.boot) / 60000)) + ' دقیقه</div></div>' +
-      '<div class="stat"><div class="lbl">نسخه / بیلد</div><div class="val" style="font-size:15px">' + esc(S.d.version) + '</div><div class="sub">' + esc(S.d.build || '—') + '</div></div>' +
-      '</div>' +
-      '<div class="grid g2" style="margin-top:12px">' +
-      '<div class="card"><header><span class="ic">' + icon('fa-chart-area') + '</span><div><h3>مصرف ' + (r === 'd' ? 'روزانه' : r === 'm' ? 'ماهانه' : 'سالانه') + '</h3><p>گیگابایت در هر بازه</p></div></header><div class="bd" id="chartWrap">' + area(ser, { color: 'var(--ac2)', color2: 'var(--ac)' }) + '</div></div>' +
-      '<div class="card"><header><span class="ic b2">' + icon('fa-chart-column') + '</span><div><h3>توزیع مصرف کاربران</h3><p>گیگابایت</p></div></header><div class="bd">' + bars(u.slice(0, 14).map((x) => (x.up + x.down) / 1073741824 || .01), 'GB') + '</div></div></div>' +
-      '<div class="card"><header><span class="ic">' + icon('fa-users') + '</span><div><h3>مصرف به تفکیک کاربر</h3><p>با درصد پیشرفت</p></div></header><div class="bd" style="padding:0"><div class="tbl-wrap"><table>' +
-      '<thead><tr><th>کاربر</th><th>آپلود</th><th>دانلود</th><th>کل</th><th>درصد سهمیه</th><th>درخواست</th></tr></thead><tbody>' +
-      u.map((x) => { const q = (x.quotaGB || 0) * 1073741824, p = q ? (x.up + x.down) / q * 100 : 0; return '<tr><td class="cell-main">' + esc(x.name) + '</td><td class="mono">' + bytes(x.up) + '</td><td class="mono">' + bytes(x.down) + '</td><td class="mono"><b>' + bytes(x.up + x.down) + '</b></td>' +
-        '<td><div style="display:flex;align-items:center;gap:8px"><div class="bar ' + (p > 90 ? 'bad' : p > 70 ? 'warn' : '') + '" style="max-width:110px"><i style="width:' + p + '%"></i></div><span class="mono" style="font-size:10px">' + (q ? fa(p.toFixed(0)) + '٪' : '∞') + '</span></div></td>' +
-        '<td class="mono">' + fa(x.totalReq || 0) + '</td></tr>'; }).join('') +
-      '</tbody></table></div></div></div>' +
-      '<div class="card" style="margin-top:12px"><header><span class="ic ' + (S.d.storage === 'd1' ? '' : 'bad') + '">' + icon('fa-heart-pulse') + '</span><div><h3>سلامت شمارش مصرف</h3><p>بررسی اینکه شمارنده‌ی حجم (usage) درست کار می‌کند</p></div>' +
-      '<div class="acts"><button class="btn sm p" data-act="usage-health">' + icon('fa-stethoscope') + ' بررسی سلامت</button>' +
-      '<button class="btn sm d" data-act="conn-reset">' + icon('fa-trash-can') + ' آزادسازی اتصال‌ها</button></div></header>' +
-      '<div class="bd">' +
-      /* گزارشِ آخرین بررسی در هر بار رندر نوشته می‌شود — با رفرش پاک نمی‌شود */
-      '<div id="usageHealthOut">' + uhHtml(UH.last) + '</div>' +
-      /* ═══ تست واقعی ترافیک — درخواست از مرورگرِ کاربر، پاسخ از سرور ═══ */
-      '<div style="border-top:1px solid var(--bs);margin:14px 0 12px"></div>' +
-      '<div class="hint" style="margin-bottom:8px"><b>تست واقعی ترافیک</b> — مرورگرِ شما یک فایل با اندازه‌ی معلوم را از سرور درخواست می‌کند؛ سرور با کانفیگِ همان کاربر پاسخ می‌دهد و حجمِ دانلود برای او ثبت می‌شود. سپس افزایش مصرف با اندازه‌ی فایل مقایسه می‌شود (چند کیلوبایت اختلاف طبیعی است).</div>' +
-      '<div class="btn-row" style="gap:8px;flex-wrap:wrap">' +
-      '<select id="ttUser" style="max-width:210px">' +
-      (S.d.users || []).map((x) => '<option value="' + esc(x.uuid) + '"' + (x.uuid === TT.uuid ? ' selected' : '') + '>' + esc(x.name) + (x.enabled ? '' : ' (غیرفعال)') + '</option>').join('') +
-      '</select>' +
-      '<input id="ttSize" type="number" min="1" max="20" step="1" value="' + esc(TT.mb || 1) + '" style="max-width:78px">' +
-      '<span class="hint">مگابایت</span>' +
-      '<button class="btn sm p" data-act="traffic-test">' + icon('fa-download') + ' اجرای تست ترافیک</button>' +
-      '</div>' +
-      '<div id="trafficTestOut" style="margin-top:10px">' + ttHtml(TT.last) + '</div>' +
-      '</div></div>';
+      '<div class="bd"><div id="connOut">' + cnHtml(CN.data) + '</div></div></div>';
   }
 
   function updateView() {
