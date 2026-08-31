@@ -1,0 +1,108 @@
+name: Apply requested UI cleanup
+on:
+  push:
+    paths:
+      - .github/workflows/apply-ui-fix.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch panel
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          app_path = Path('ui/app.js')
+          css_path = Path('ui/style.css')
+          app = app_path.read_text()
+          css = css_path.read_text()
+
+          # Live connections stays as a read-only monitor. Remove every action surface.
+          app = app.replace("const CN = { data: null, bans: null, q: '', ts: 0, err: '' };", "const CN = { data: null, q: '', ts: 0, err: '' };")
+          app = re.sub(r"\n\s*const b = \$\('#connBansOut'\); if \(b\) b\.innerHTML = cnBansHtml\(CN\.bans\);", "", app)
+          app = app.replace('<th>ارسال</th><th>دریافت</th><th>انتقال</th><th>آخرین فعالیت</th><th>وضعیت</th><th>عملیات</th>', '<th>ارسال</th><th>دریافت</th><th>انتقال</th><th>آخرین فعالیت</th><th>وضعیت</th>')
+          app = re.sub(r"\s*'<td><div class=\"row-btns\">' \+\s*'<button class=\"btn sm\" data-act=\"conn-kick\"[\s\S]*?'</div></td></tr>';", " + '</tr>';", app, count=1)
+          app = re.sub(r"\n\s*/\* جدولِ آی‌پی‌های مسدودشده \*/[\s\S]*?\n\s*/\* ═══ بارخوانیِ اتصال‌ها ═══", "\n\n  /* ═══ بارخوانیِ اتصال‌ها ═══", app, count=1)
+          app = re.sub(r"async function cnLoad\(\) \{[\s\S]*?\n\s*cnShow\(\);\n\s*\}", """async function cnLoad() {
+    const a = await api('GET', '/api/connections');
+    if (a && !a.error && a.sessions) { CN.data = a; CN.ts = Date.now(); CN.err = ''; }
+    else if (a && a.error) CN.err = String(a.error);
+    cnShow();
+  }""", app, count=1)
+          app = re.sub(r"\s*\+\s*'<div class=\"card\" style=\"margin-top:12px\"><header><span class=\"ic bad\">'[\s\S]*?cnBansHtml\(CN\.bans\)[\s\S]*?'</div></div>';", ";", app, count=1)
+          # Remove action handlers and the monitor-wide reset button.
+          app = re.sub(r"\n\s*if \(a === 'conn-(?:kick|ban|unban|reset)'\) \{[\s\S]*?\n\s*\}", "", app)
+          app = app.replace("<button class=\"btn sm d\" data-act=\"conn-reset\">' + icon('fa-trash-can') + ' آزادسازی اتصال‌ها</button>", "")
+
+          # Replace the dense naming preview with a clear, responsive comparison workspace.
+          naming = r'''  const nmPreviewHtml = () => {
+    const users = (S.d && S.d.users) || [];
+    if (!users.length) return '<div class="naming-empty">' + icon('fa-user') + '<b>هنوز کانفیگی ساخته نشده</b><span>اول یک کاربر بسازید، بعد الگوی نام را تنظیم کنید.</span></div>';
+    const selected = users.filter((u) => NM.sel[u.id]);
+    const selector = '<div class="naming-select-head"><div><b>کانفیگ‌های هدف</b><span>' + fa(selected.length) + ' از ' + fa(users.length) + ' انتخاب شده</span></div><span class="badge ac">برای انتخاب کلیک کنید</span></div>' +
+      '<div class="naming-users" role="group" aria-label="انتخاب کانفیگ‌ها">' + users.map((u) =>
+        '<button type="button" class="naming-user' + (NM.sel[u.id] ? ' on' : '') + '" data-nm-user="' + esc(u.id) + '" aria-pressed="' + (NM.sel[u.id] ? 'true' : 'false') + '">' +
+        '<span class="naming-avatar">' + esc(String(u.name || '?').charAt(0)) + '</span><span><b>' + esc(u.name) + '</b><small>' + esc(String(u.uuid || '').slice(0, 8)) + '…</small></span>' + icon(NM.sel[u.id] ? 'fa-circle-check' : 'fa-plus') + '</button>').join('') + '</div>';
+    const plan = nmPlan();
+    if (!plan.length) return '<div class="naming-workspace">' + selector + '<div class="naming-empty">' + icon('fa-pen') + '<b>یک یا چند کانفیگ انتخاب کنید</b><span>پیش‌نمایش دقیق نام‌ها همین‌جا ظاهر می‌شود.</span></div></div>';
+    const rows = plan.map((p) => {
+      const u = users.find((x) => x.id === p.id);
+      const samples = u ? nmSamples(u, p.pattern) : [];
+      return '<article class="naming-result"><div class="naming-result-top"><div><span class="naming-label">نام جدید</span><b class="naming-final">' + esc(p.name) + '</b></div>' +
+        (p.dup ? '<span class="badge warn">شماره برای جلوگیری از تکرار افزوده شد</span>' : '<span class="badge ok">آماده</span>') + '</div>' +
+        '<div class="naming-meta"><span><b>کانفیگ</b>' + esc(p.user) + '</span><span><b>الگوی ذخیره‌شده</b><code>' + esc(p.pattern) + '</code></span></div>' +
+        (samples.length ? '<div class="naming-samples"><span>نمونه خروجی ساب</span>' + samples.map((x) => '<code>' + esc(x) + '</code>').join('') + '</div>' : '') + '</article>';
+    }).join('');
+    return '<div class="naming-workspace">' + selector + '<div class="naming-preview-head"><div><b>پیش‌نمایش نهایی</b><span>همان چیزی که در لینک ساب ساخته می‌شود</span></div><span class="badge b2">' + fa(plan.length) + ' تغییر</span></div><div class="naming-results">' + rows + '</div></div>';
+  };'''
+          app, n = re.subn(r"  const nmPreviewHtml = \(\) => \{[\s\S]*?\n  \};\n\n  /\* ═+\n     مرحله‌ی ۴ — سرورهای خروجی VLESS", naming + "\n\n  /* ═══════════════════════════════════════════════════════════════\n     مرحله‌ی ۴ — سرورهای خروجی VLESS", app, count=1)
+          if n != 1:
+            raise SystemExit('Naming preview block was not found')
+
+          css += r'''
+
+/* Naming workspace */
+.naming-workspace{display:grid;gap:18px}
+.naming-select-head,.naming-preview-head,.naming-result-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.naming-select-head>div,.naming-preview-head>div{display:grid;gap:2px}
+.naming-select-head b,.naming-preview-head b{font-size:13px}
+.naming-select-head span,.naming-preview-head span{font-size:10px;color:var(--mut)}
+.naming-users{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
+.naming-user{min-height:58px;display:grid;grid-template-columns:36px 1fr 18px;align-items:center;gap:9px;padding:8px 10px;border:1px solid var(--bs);border-radius:13px;background:var(--panel2);color:var(--tx);text-align:start;cursor:pointer;transition:transform .14s cubic-bezier(.22,1,.36,1),border-color .14s,background .14s}
+.naming-user:hover{transform:translateY(-1px);border-color:var(--ac)}
+.naming-user.on{border-color:var(--ac);background:var(--acsoft);box-shadow:0 0 0 1px color-mix(in oklab,var(--ac) 20%,transparent) inset}
+.naming-user>span:nth-child(2){min-width:0;display:grid}.naming-user b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.naming-user small{color:var(--mut);font:10px 'JetBrains Mono',monospace;direction:ltr;text-align:left}
+.naming-user>svg{color:var(--ac)}
+.naming-avatar{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;background:var(--bs);color:var(--mut);font-weight:800}.naming-user.on .naming-avatar{background:var(--ac);color:var(--onac)}
+.naming-results{display:grid;gap:8px}
+.naming-result{padding:13px 14px;border:1px solid var(--bs);border-radius:14px;background:var(--panel2)}
+.naming-label{display:block;margin-bottom:2px;color:var(--mut);font-size:9px}.naming-final{display:block;font-size:14px;overflow-wrap:anywhere}
+.naming-meta{display:grid;grid-template-columns:minmax(120px,.65fr) minmax(180px,1.35fr);gap:10px;margin-top:10px;padding-top:9px;border-top:1px solid var(--bs)}
+.naming-meta span{display:grid;gap:2px;color:var(--mut);font-size:10px}.naming-meta b{color:var(--mut2);font-size:9px}.naming-meta code,.naming-samples code{direction:ltr;text-align:left;font:10px 'JetBrains Mono',monospace;color:var(--code);overflow-wrap:anywhere}
+.naming-samples{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:8px}.naming-samples>span{font-size:9px;color:var(--mut)}.naming-samples code{padding:3px 7px;border:1px solid var(--bs);border-radius:7px;background:var(--bg)}
+.naming-empty{min-height:150px;display:grid;place-items:center;align-content:center;gap:5px;text-align:center;color:var(--mut)}.naming-empty svg{width:24px;height:24px;color:var(--ac)}.naming-empty b{color:var(--tx);font-size:13px}.naming-empty span{font-size:10px}
+@media(max-width:560px){.naming-users{grid-template-columns:1fr}.naming-meta{grid-template-columns:1fr}.naming-result-top{align-items:flex-start}.naming-preview-head{align-items:flex-start}}
+'''
+
+          app_path.write_text(app)
+          css_path.write_text(css)
+          PY
+      - name: Verify syntax and removed actions
+        run: |
+          node --check ui/app.js
+          ! grep -q 'data-act="conn-kick"' ui/app.js
+          ! grep -q 'data-act="conn-ban"' ui/app.js
+          ! grep -q 'data-act="conn-unban"' ui/app.js
+      - name: Commit result and remove one-shot workflow
+        run: |
+          rm .github/workflows/apply-ui-fix.yml
+          git config user.name "ClickUp Brain"
+          git config user.email "actions@users.noreply.github.com"
+          git add ui/app.js ui/style.css .github/workflows/apply-ui-fix.yml
+          git commit -m "fix: rebuild config naming UI and remove live connection actions"
+          git push
