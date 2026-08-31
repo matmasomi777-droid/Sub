@@ -4,30 +4,32 @@
    • بدون toggle و فیلد خشک — رابط مدرن با اسلایدر، تب، کارت و آکاردئون
    ═══════════════════════════════════════════════════════════════ */
 :root{
-  --bg:#090C11; --grid:rgba(255,255,255,.03);
-  --panel:rgba(18,22,31,.78); --panel2:rgba(14,18,26,.9); --panel3:#10141C;
-  --bd:rgba(255,255,255,.09); --bs:rgba(255,255,255,.05);
+  --bg:#0A0B14; --grid:rgba(129,140,248,.045);
+  --panel:rgba(19,21,38,.72); --panel2:rgba(15,17,31,.92); --panel3:#12141F;
+  --bd:rgba(129,140,248,.16); --bs:rgba(129,140,248,.07);
   /* متن — کنتراست بالا برای خوانایی در تم تاریک */
-  --tx:#F2F5F9; --mut:#9AA5B8; --mut2:#6E7A8E;
-  --ac:#2DD4BF; --ac2:#6BA3FF; --ac3:#B79BFA;
-  --ok:#4ADE9C; --warn:#F8B25C; --bad:#F87878;
-  --acsoft:rgba(45,212,191,.12); --ac2soft:rgba(76,141,255,.13); --ac3soft:rgba(167,139,250,.13);
-  --onac:#04120c;
-  --code:#8fe6d8;
-  --shadow:0 24px 60px -32px rgba(0,0,0,.8);
-  --r:18px;
+  --tx:#F3F4FB; --mut:#9BA3C2; --mut2:#6C7494;
+  --ac:#818CF8; --ac2:#22D3EE; --ac3:#E879F9;
+  --ok:#34D399; --warn:#FBBF24; --bad:#FB7185;
+  --acsoft:rgba(129,140,248,.13); --ac2soft:rgba(34,211,238,.11); --ac3soft:rgba(232,121,249,.11);
+  --onac:#0B0D1C;
+  --code:#A5B4FC;
+  --shadow:0 24px 70px -30px rgba(0,0,0,.85);
+  --grad:linear-gradient(135deg,#6366F1 0%,#8B5CF6 45%,#22D3EE 100%);
+  --r:20px;
 }
 html[data-theme="light"]{
-  --bg:#EEF1F6; --grid:rgba(16,21,32,.04);
-  --panel:rgba(255,255,255,.88); --panel2:rgba(255,255,255,.97); --panel3:#fff;
-  --bd:rgba(16,21,32,.11); --bs:rgba(16,21,32,.06);
-  --tx:#0D1219; --mut:#5A6577; --mut2:#828D9E;
-  --ac:#0B8F82; --ac2:#2557D6; --ac3:#6D28D9;
-  --ok:#0B8A62; --warn:#B4741F; --bad:#C73636;
-  --acsoft:rgba(11,143,130,.09); --ac2soft:rgba(37,87,214,.09); --ac3soft:rgba(109,40,217,.09);
-  --onac:#04120c;
-  --code:#0d6b5c;
-  --shadow:0 20px 50px -30px rgba(16,21,32,.3);
+  --bg:#F1F2FA; --grid:rgba(79,70,229,.05);
+  --panel:rgba(255,255,255,.85); --panel2:rgba(255,255,255,.97); --panel3:#fff;
+  --bd:rgba(49,46,129,.13); --bs:rgba(49,46,129,.07);
+  --tx:#111327; --mut:#5B6180; --mut2:#8389A6;
+  --ac:#4F46E5; --ac2:#0891B2; --ac3:#A21CAF;
+  --ok:#059669; --warn:#B45309; --bad:#E11D48;
+  --acsoft:rgba(79,70,229,.08); --ac2soft:rgba(8,145,178,.08); --ac3soft:rgba(162,28,175,.08);
+  --onac:#fff;
+  --code:#4338CA;
+  --shadow:0 20px 50px -30px rgba(49,46,129,.35);
+  --grad:linear-gradient(135deg,#4F46E5 0%,#7C3AED 45%,#0891B2 100%);
 }
 *,*::before,*::after{box-sizing:border-box}
 html,body{height:100%;margin:0}
@@ -71,10 +73,10 @@ svg.ic{width:15px;height:15px;flex:none;display:inline-block;vertical-align:-.15
   position:sticky;top:0;height:100vh;overflow:auto;z-index:40}
 /* در تم تاریک، سایدبار کمی روشن‌تر از پس‌زمینه تا متمایز شود */
 html[data-theme="dark"] .sidebar,html:not([data-theme="light"]) .sidebar{
-  background:linear-gradient(180deg,rgba(20,25,35,.95),rgba(13,17,24,.95));
+  background:linear-gradient(180deg,rgba(24,26,48,.96),rgba(14,15,29,.96));
 }
 html[data-theme="light"] .sidebar{
-  background:linear-gradient(180deg,#ffffff,#F7F9FC);
+  background:linear-gradient(180deg,#ffffff,#F5F6FC);
 }
 .main{flex:1;min-width:0;display:flex;flex-direction:column}
 .topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
@@ -87,7 +89,8 @@ html[data-theme="light"] .sidebar{
 /* ═══════════ برند و ناوبری ═══════════ */
 .brand{display:flex;align-items:center;gap:10px;padding:2px 6px}
 .brand-mark{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;
-  background:linear-gradient(135deg,var(--ac),var(--ac2));color:var(--onac);font-size:16px}
+  background:var(--grad);color:var(--onac);font-size:16px;
+  box-shadow:0 6px 18px -6px color-mix(in oklab,var(--ac) 55%,transparent)}
 .brand-mark svg.ic{stroke:var(--onac);width:18px;height:18px}
 .brand-txt b{display:block;font-size:15px;line-height:1.3}
 .brand-txt span{font-size:10px;color:var(--mut)}
@@ -102,7 +105,7 @@ html[data-theme="light"] .sidebar{
 .nav-item:hover{background:var(--bs);opacity:1}
 .nav-item.on{background:linear-gradient(135deg,var(--acsoft),transparent);color:var(--ac);opacity:1;font-weight:700}
 .nav-item.on svg.ic{opacity:1;color:var(--ac)}
-.nav-item.on::before{content:'';position:absolute;inset-inline-end:-12px;top:20%;bottom:20%;width:3px;border-radius:9px;background:var(--ac)}
+.nav-item.on::before{content:'';position:absolute;inset-inline-end:-12px;top:20%;bottom:20%;width:3px;border-radius:9px;background:var(--grad)}
 .nav-item .cnt{margin-inline-start:auto;font-size:9px;padding:2px 6px;border-radius:99px;background:var(--bs);color:var(--mut);opacity:1}
 .side-foot{border:1px solid var(--bs);border-radius:14px;padding:10px;background:var(--panel)}
 .sf-row{display:flex;justify-content:space-between;font-size:10.5px;color:var(--mut);padding:2px}
@@ -138,10 +141,15 @@ html[data-theme="light"] .sidebar{
 
 /* ═══════════ کارت ═══════════ */
 .card{background:var(--panel);border:1px solid var(--bd);border-radius:var(--r);
-  backdrop-filter:blur(16px);margin-bottom:14px;overflow:hidden;box-shadow:var(--shadow)}
-.card>header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:13px 16px;border-bottom:1px solid var(--bs)}
+  backdrop-filter:blur(16px);margin-bottom:14px;overflow:hidden;box-shadow:var(--shadow);
+  transition:border-color .2s}
+.card:hover{border-color:color-mix(in oklab,var(--ac) 22%,var(--bd))}
+.card>header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:14px 16px;
+  border-bottom:1px solid var(--bs);
+  background:linear-gradient(180deg,color-mix(in oklab,var(--ac) 5%,transparent),transparent)}
 .card>header .ic{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;
-  background:linear-gradient(135deg,var(--acsoft),var(--ac2soft));color:var(--ac);border:1px solid color-mix(in oklab,var(--ac) 18%,transparent)}
+  background:var(--grad);color:var(--onac);border:0;
+  box-shadow:0 6px 16px -6px color-mix(in oklab,var(--ac) 55%,transparent)}
 .card>header .ic svg.ic{width:15px;height:15px}
 .card>header h3{margin:0;font-size:14px;font-weight:800}
 .card>header p{margin:1px 0 0;font-size:11px;color:var(--mut)}
@@ -152,7 +160,8 @@ html[data-theme="light"] .sidebar{
 .g3{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
 .g4{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
 .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
-.page-head h1{margin:0;font-size:20px;font-weight:800;letter-spacing:-.02em}
+.page-head h1{margin:0;font-size:20px;font-weight:800;letter-spacing:-.02em;
+  background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;display:inline-block}
 .page-head p{margin:3px 0 0;font-size:12px;color:var(--mut)}
 
 /* ═══════════ آمار ═══════════ */
@@ -186,8 +195,9 @@ html[data-theme="light"] .sidebar{
 .btn svg.ic{width:12px;height:12px}
 .btn:hover{border-color:var(--ac);color:var(--ac)}
 .btn:active{transform:scale(.97)}
-.btn.p{background:linear-gradient(135deg,var(--ac),var(--ac2));border-color:transparent;color:var(--onac);font-weight:700}
-.btn.p:hover{filter:brightness(1.1);color:var(--onac)}
+.btn.p{background:var(--grad);border-color:transparent;color:var(--onac);font-weight:700;
+  box-shadow:0 6px 16px -6px color-mix(in oklab,var(--ac) 55%,transparent)}
+.btn.p:hover{filter:brightness(1.12);color:var(--onac)}
 .btn.s{background:var(--acsoft);border-color:color-mix(in oklab,var(--ac) 25%,transparent);color:var(--ac)}
 .btn.d,.btn.danger{border-color:color-mix(in oklab,var(--bad) 40%,transparent);color:var(--bad)}
 .btn.ghost{background:transparent;border-color:transparent;color:var(--mut)}
@@ -256,7 +266,7 @@ html[data-theme="light"] .sidebar{
 .sw{width:36px;height:20px;border-radius:99px;border:1px solid var(--bd);
   background:color-mix(in oklab,var(--mut) 20%,transparent);position:relative;flex:none;cursor:pointer;transition:.2s}
 .sw i{position:absolute;top:2px;inset-inline-start:2px;width:14px;height:14px;border-radius:99px;background:#fff;transition:.2s}
-.sw.on{background:linear-gradient(135deg,var(--ac),var(--ac2));border-color:transparent}
+.sw.on{background:var(--grad);border-color:transparent}
 .sw.on i{inset-inline-start:18px}
 .sw.bad.on{background:var(--bad);border-color:transparent}
 
@@ -365,7 +375,8 @@ pre.code .hd{display:flex;align-items:center;justify-content:space-between;gap:6
 .sub-user{display:flex;align-items:center;gap:11px;min-width:0}
 .sub-ava{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;
   font-size:17px;font-weight:800;color:var(--onac);
-  background:linear-gradient(135deg,var(--ac),var(--ac2));flex:none}
+  background:var(--grad);flex:none;
+  box-shadow:0 6px 18px -6px color-mix(in oklab,var(--ac) 55%,transparent)}
 .sub-user b{display:block;font-size:14.5px;line-height:1.3}
 .sub-user .cell-sub{font-size:9.5px}
 /* لینک + دکمه‌ها */
@@ -411,8 +422,14 @@ pre.code .hd{display:flex;align-items:center;justify-content:space-between;gap:6
 /* ═══════════ ورود ═══════════ */
 body.auth .topbar,body.auth .sidebar,body.auth .foot,body.auth .scrim{display:none!important}
 body.auth{padding:0}
-.login{min-height:100vh;display:grid;place-items:center;padding:16px}
-.login .box{max-width:400px}
+.login{min-height:100vh;display:grid;place-items:center;padding:16px;position:relative;overflow:hidden}
+.login::before{content:'';position:absolute;width:520px;height:520px;border-radius:50%;
+  background:radial-gradient(circle,color-mix(in oklab,var(--ac) 18%,transparent),transparent 70%);
+  top:-180px;inset-inline-end:-120px;pointer-events:none;filter:blur(10px)}
+.login::after{content:'';position:absolute;width:420px;height:420px;border-radius:50%;
+  background:radial-gradient(circle,color-mix(in oklab,var(--ac2) 14%,transparent),transparent 70%);
+  bottom:-160px;inset-inline-start:-100px;pointer-events:none;filter:blur(10px)}
+.login .box{max-width:400px;position:relative;z-index:1}
 
 /* ═══════════ متفرقه ═══════════ */
 .log{display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--bs);font-size:11px}

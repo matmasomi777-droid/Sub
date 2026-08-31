@@ -459,21 +459,43 @@
     out = out.replace(new RegExp(NM_SEP + '+$'), '');
     return out.trim();
   };
-  /* نودِ نمونه برای پیش‌نمایش — نخستین آی‌پی پاکِ تنظیمات (قالب: ip#نام‌شهر) */
-  const nmNode = () => {
-    const l = ((S.d && S.d.settings && S.d.settings.cleanIPs) || [])[0] || '';
-    const parts = String(l).split('#');
-    return { ip: parts[0] || '104.17.1.1', name: parts[1] || 'فرانکفورت' };
+  /* نودِ نمونه برای پیش‌نمایش — نخستین آی‌پی پاکِ همان کاربر (وگرنه تنظیمات) */
+  const nmUserEntries = (u) => {
+    const Sd = (S.d && S.d.settings) || {};
+    const raw = ((u && u.cleanIPs && u.cleanIPs.length) ? u.cleanIPs : (Sd.cleanIPs || []));
+    const ips = raw.map((l) => { const p = String(l).split('#'); return { ip: p[0] || '', name: p[1] || p[0] || '' }; })
+      .filter((x) => x.ip);
+    if (!ips.length) ips.push({ ip: '104.17.1.1', name: 'فرانکفورت' });
+    const ports = portList((u && u.ports && u.ports.length) ? u.ports : Sd.ports);
+    if (!ports.length) ports.push(443);
+    return { ips, ports };
   };
   const nmVars = (u, index) => {
-    const nd = nmNode();
-    const ports = portList(S.d && S.d.settings ? S.d.settings.ports : []);
+    const { ips, ports } = nmUserEntries(u);
     return {
       prefix: (S.d && getP(S.d.settings, 'sub.namePrefix')) || '',
       user: (u && u.name) || '', proto: 'VLESS',
-      port: String(ports[0] || 443), ip: nd.ip, node: nd.name,
+      port: String(ports[0] || 443), ip: ips[0].ip, node: ips[0].name,
       index: (index === '' || index === undefined) ? '' : String(index), mark: '',
     };
+  };
+  /* چند نامِ نمونه با همان منطقِ ورکر (هر ورودی × همه‌ی پورت‌ها) تا
+     پیش‌نمایش با خروجیِ واقعیِ ساب یکی باشد */
+  const nmSamples = (u, pattern) => {
+    const { ips, ports } = nmUserEntries(u);
+    const out = [];
+    let n = 0;
+    for (const e of ips) {
+      for (const port of ports) {
+        const v = nmVars(u, n + 1);
+        v.port = String(port); v.ip = e.ip; v.node = e.name;
+        const nm = nmRender(pattern, v);
+        if (nm && out.indexOf(nm) < 0) out.push(nm);
+        n++;
+        if (out.length >= 4) return out;
+      }
+    }
+    return out;
   };
   const nmPat = () => { const e = $('#nmPat'); return e ? String(e.value == null ? '' : e.value) : String(NM.pat || ''); };
   const nmStart = () => { const e = $('#nmStart'); return Math.max(1, Number(e ? e.value : NM.start) || 1); };
@@ -515,11 +537,17 @@
         esc(u.name) + '</button>').join('') + '</div>';
     const plan = nmPlan();
     if (!plan.length) return chips + '<div class="empty">هیچ کانفیگی انتخاب نشده — روی نامِ کانفیگ‌ها در بالا کلیک کنید</div>';
-    return chips + '<div class="list">' + plan.map((p) =>
-      '<div class="row-item">' + icon('fa-pen') +
+    return chips + '<div class="list">' + plan.map((p) => {
+      const u = users.find((x) => x.id === p.id);
+      const samples = u ? nmSamples(u, p.pattern) : [];
+      return '<div class="row-item">' + icon('fa-pen') +
       '<div class="grow"><b>' + esc(p.name) + '</b>' +
       (p.dup ? ' <span class="badge warn">تکراری — شماره افزوده شد</span>' : '') +
-      '<div class="mono cell-sub">' + esc(p.user) + ' • الگو: ' + esc(p.pattern) + '</div></div></div>').join('') + '</div>';
+      '<div class="mono cell-sub">' + esc(p.user) + ' • الگو: ' + esc(p.pattern) + '</div>' +
+      (samples.length ? '<div class="hint" style="margin-top:3px">نمونه‌ی نام‌ها در ساب: ' +
+        samples.map((x) => '<span class="mono">' + esc(x) + '</span>').join(' • ') + '</div>' : '') +
+      '</div></div>';
+    }).join('') + '</div>';
   };
 
   /* ═══════════════════════════════════════════════════════════════
@@ -1409,7 +1437,8 @@
       return '<div class="acc open"><div class="acc-h" data-acc>' + icon('fa-tower-broadcast') + '<span>پورت‌ها</span>' +
         '<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>' +
         '<div class="acc-b"><div class="bd" style="padding:0 12px 12px">' +
-        '<div class="hint" style="margin-bottom:8px">پورت‌هایی که کلاینت از راهِ آن‌ها به ورکر وصل می‌شود — فقط پورت‌های پشتیبانی‌شده‌ی کلاودفلر نشان داده می‌شوند.</div>' +
+        '<div class="hint" style="margin-bottom:8px">پورت‌هایی که کلاینت از راهِ آن‌ها به ورکر وصل می‌شود — فقط پورت‌های پشتیبانی‌شده‌ی کلاودفلر نشان داده می‌شوند. ' +
+        'برای هر پورتِ فعال، یک کانفیگِ جداگانه در اشتراک ساخته می‌شود؛ بعد از تغییر، «ذخیره» را بزنید و ساب را دوباره بگیرید.</div>' +
         '<div class="chips" id="portChips">' + PORTS_ALL.map((p) => portChip(p, cur.indexOf(p) >= 0)).join('') + '</div>' +
         '<input type="hidden" id="portsVal" data-p="ports" data-t="ports" value="' + esc(cur.join(',')) + '">' +
         '<div class="btn-row" style="margin-top:10px;gap:6px;flex-wrap:wrap">' +
@@ -2732,6 +2761,7 @@
         { p: 'mode', l: 'حالت پروتکل', t: 'sel', o: ['inherit', 'alpha', 'beta', 'both'], lbls: { inherit: 'از پنل', alpha: 'Alpha — VLESS', beta: 'Beta — Trojan', both: 'Both' } },
         { p: 'fakeMode', l: 'کانفیگ‌های فیک', t: 'sel', o: ['inherit', 'custom', 'off'], lbls: { inherit: 'از پنل', custom: 'اختصاصی', off: 'خاموش' } },
         { p: 'namePrefix', l: 'پیشوند نام کانفیگ', t: 'text', h: 'خالی = پیش‌فرض پنل' },
+        { p: 'namePattern', l: 'الگوی نام اختصاصی', t: 'text', mono: 1, h: 'مثل {user}-{port} — خالی یعنی از استراتژی/الگوی پنل • توکن‌ها: {user} {proto} {port} {ip} {node} {index} {prefix} {mark}' },
         { p: 'nameStrategy', l: 'استراتژی نام', t: 'sel', o: ['inherit', 'default', 'user-port', 'type-user-port', 'host-port-user', 'ip'],
           lbls: { inherit: 'از پنل', default: 'پیش‌فرض', 'user-port': 'کاربر-پورت', 'type-user-port': 'پروتکل-کاربر-پورت', 'host-port-user': 'هاست-پورت-کاربر', ip: 'فقط IP' } },
         { p: 'ports', l: 'پورت‌های اختصاصی', t: 'text', mono: 1, h: 'خالی = پورت‌های پنل' },

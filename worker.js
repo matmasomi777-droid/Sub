@@ -1060,6 +1060,16 @@ async function connAcquireInner(env, uuid, ip, limit, connId) {
     }
   } catch (e) { connErr('ban', e); }   /* خطای فهرستِ سیاه هرگز پذیرش را باز نمی‌کند */
 
+  /* ── ۰.۵) نشستِ قطع‌شده — اجرای «قطع اتصال» از پنل ──
+     همان connIdِ نشستِ قطع‌شده در بازه‌ی ممنوعیت دوباره پذیرفته نمی‌شود؛
+     اتصالِ دوباره‌ی کاربر با connIdِ تازه آزاد است (بن، کار را مسدود می‌کند). */
+  try {
+    if (await kickCheck(env, uuid, ip, id)) {
+      CONN_DENIES++;
+      return { ok: false, ips: 0, conns: 0, limit, enforced: true, reason: 'kicked', storage: backendOf(env) };
+    }
+  } catch (e) { connErr('kick-check', e); }
+
   /* ── ۱) Durable Object — مرجعِ جهانی؛ تصمیم را همین‌جا می‌گیریم ── */
   if (backend === 'do') {
     try {
@@ -1168,29 +1178,140 @@ async function connRelease(env, uuid, ip, connId) {
   return left;
 }
 
-/** قطعِ دستی از پنل — یک اتصالِ مشخص یا همه‌ی اتصال‌های یک آی‌پی.
-    از همان مسیرِ آزادسازیِ عادی می‌رود، پس آی‌پی بلافاصله آزاد می‌شود. */
+/* ═══════════════════════════════════════════════════════════════════════════
+   رجیستریِ «قطع‌شده‌ها» — اجرای واقعیِ دکمه‌ی قطع اتصال
+   ───────────────────────────────────────────────────────────────────────────
+   باگِ قبلی: connKick فقط سهمیه را آزاد می‌کرد. اتصالِ زنده‌ی کلاینت به
+   کار خودش ادامه می‌داد (connRefresh آن را دوباره پذیرفتنی می‌کرد) و در
+   نتیجه ردیفِ قطع‌شده بلافاصله در جدول ظاهر می‌شد — انگار هیچ‌کدام از
+   عملیات‌ها کار نمی‌کنند.
+   راه‌حل: هر نشستِ قطع‌شده تا KICK_TTL در فهرستِ ممنوع می‌ماند؛
+   connRefresh نشستِ زنده را می‌بندد و connAcquire همان connId را در
+   بازه‌ی ممنوعیت نمی‌پذیرد. اتصالِ دوباره با connIdِ تازه آزاد است —
+   «قطع» یعنی نشستِ فعلی می‌میرد، نه مسدودسازیِ کاربر (برای آن بن هست).
+   لایه‌ها: حافظه (فوری) → DO (/kick، سراسری) → D1 (جدول kicks) → KV
+   ═══════════════════════════════════════════════════════════════════════════ */
+const KICK_TTL = 90000;                  /* ۹۰ ثانیه پنجره‌ی ممنوعیتِ نشستِ قطع‌شده */
+const KICKS = new Map();                 /* کلید -> until (حافظه‌ی همین isolate) */
+const KICK_CACHE_MS = 3000;
+let KICK_CACHE = { at: 0, list: [] };
+let KICK_READY = null;
+const kickKey = (uuid, ip, connId) => [String(uuid || ''), String(ip || ''), String(connId || '')].join('|');
+const KV_KICK = (k) => 'kk:' + k;
+
+async function kickEnsure(env) {
+  if (KICK_READY !== null) return KICK_READY;
+  if (!env || !env.DB) { KICK_READY = false; return false; }
+  try {
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS kicks (
+      k TEXT PRIMARY KEY,
+      until INTEGER
+    )`).run();
+    KICK_READY = true;
+  } catch (e) { KICK_READY = false; }
+  return KICK_READY;
+}
+
+/** ثبتِ یک قطع — روی همه‌ی لایه‌ها */
+async function kickAdd(env, uuid, ip, connId) {
+  const k = kickKey(uuid, ip, connId);
+  const until = Date.now() + KICK_TTL;
+  KICKS.set(k, until);
+  if (env && env.DB) {
+    try {
+      if (await kickEnsure(env)) {
+        await env.DB.prepare('INSERT INTO kicks (k, until) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET until = excluded.until')
+          .bind(k, until).run();
+      }
+    } catch (e) { connErr('D1-kick-add', e); }
+  }
+  if (env && env.KV) {
+    try { await env.KV.put(KV_KICK(k), String(until), { expirationTtl: Math.ceil(KICK_TTL / 1000) }); }
+    catch (e) { connErr('KV-kick-add', e); }
+  }
+  if (env && env.LIMITER) {
+    try { await limiterRpc(env, '/kick', { uuid: uuid || '', ip: ip || '', connId: connId || '', until }); }
+    catch (e) { connErr('DO-kick', e); }
+  }
+}
+
+/** آیا این نشست (uuid/ip/connId — هر مؤلفه ممکن است wildcard باشد) قطع شده؟ */
+async function kickCheck(env, uuid, ip, connId) {
+  const now = Date.now();
+  const hit = (list) => {
+    for (const x of list) {
+      if (x.until && x.until <= now) continue;
+      if (x.uuid && x.uuid !== String(uuid || '')) continue;
+      if (x.ip && x.ip !== String(ip || '')) continue;
+      if (x.connId && x.connId !== String(connId || '')) continue;
+      return true;
+    }
+    return false;
+  };
+  const mem = [];
+  KICKS.forEach((until, k) => {
+    const p = k.split('|');
+    mem.push({ uuid: p[0], ip: p[1], connId: p[2], until });
+    if (until <= now) KICKS.delete(k);
+  });
+  if (hit(mem)) return true;
+  if (!env || (!env.DB && !env.KV)) return false;
+  if (!KICK_CACHE.at || now - KICK_CACHE.at > KICK_CACHE_MS) {
+    const list = [];
+    if (env.DB) {
+      try {
+        if (await kickEnsure(env)) {
+          await env.DB.prepare('DELETE FROM kicks WHERE until <= ?').bind(now).run();
+          const r = await env.DB.prepare('SELECT k, until FROM kicks LIMIT 500').all();
+          for (const x of ((r && r.results) || [])) {
+            const p = String(x.k).split('|');
+            list.push({ uuid: p[0], ip: p[1], connId: p[2], until: Number(x.until) || 0 });
+          }
+        }
+      } catch (e) { connErr('D1-kick-read', e); }
+    }
+    if (env.KV) {
+      try {
+        const l = await env.KV.list({ prefix: 'kk:' });
+        for (const kk of ((l && l.keys) || [])) {
+          const p = String(kk.name).slice(3).split('|');
+          list.push({ uuid: p[0], ip: p[1], connId: p[2], until: Number(await env.KV.get(kk.name)) || 0 });
+        }
+      } catch (e) { connErr('KV-kick-read', e); }
+    }
+    KICK_CACHE = { at: now, list };
+  }
+  return hit(KICK_CACHE.list);
+}
+
+/** قطعِ دستی از پنل — یک اتصالِ مشخص یا همه‌ی اتصال‌های یک آی‌پی/کاربر.
+    علاوه بر آزادسازیِ سهمیه، نشست در رجیستریِ قطع‌شده‌ها ثبت می‌شود تا
+    refresh اتصالِ زنده را واقعاً ببندد و acquire دوباره نپذیرد. */
 async function connKick(env, uuid, ip, connId) {
   const u = uuid ? String(uuid) : '';
   const i = ip ? String(ip) : '';
-  const ids = [];
-  if (connId) ids.push(String(connId));
-  else if (u || i) {
-    /* شناسه‌ها از همان نمایِ زنده خوانده می‌شوند — مستقل از بک‌اند.
-       فقط آی‌پی هم کافی است (مسدودسازی باید همه‌ی نشست‌های آن آی‌پی را ببندد) */
-    for (const r of (await liveRowsOf(env))) {
-      if (u && r.uuid !== u) continue;
-      if (i && r.ip !== i) continue;
-      ids.push(r.connId);
-    }
+  /* نشست‌ها از همان نمایِ زنده خوانده می‌شوند و uuid/ip واقعیِ هر ردیف
+     استفاده می‌شود — قبلاً با uuid/ip خالی فراخوانی می‌شد و ردیفِ
+     Durable Object آزاد نمی‌شد و در جدول باقی می‌ماند. */
+  const targets = [];
+  for (const r of (await liveRowsOf(env))) {
+    if (u && r.uuid !== u) continue;
+    if (i && r.ip !== i) continue;
+    if (connId && r.connId !== String(connId)) continue;
+    if (!r.connId) continue;
+    targets.push({ uuid: r.uuid, ip: r.ip, connId: r.connId });
   }
+  if (connId && !targets.length) targets.push({ uuid: u, ip: i, connId: String(connId) });
   let n = 0;
-  for (const id of ids) {
-    if (!id) continue;
-    try { await connRelease(env, u, i, id); n++; } catch (e) { connErr('kick', e); }
+  for (const t of targets) {
+    try {
+      await connRelease(env, t.uuid, t.ip, t.connId);
+      await kickAdd(env, t.uuid, t.ip, t.connId);
+      n++;
+    } catch (e) { connErr('kick', e); }
   }
   if (env && env.DB) { try { await metaSweep(env); } catch (e) {} }
-  return { ok: true, kicked: n, ids };
+  return { ok: true, kicked: n, ids: targets.map((t) => t.connId) };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1512,14 +1633,16 @@ async function liveRowsOf(env) {
 
 /** تمدیدِ ردیفِ موجود — اتصالی که ترافیک دارد توسط پاک‌سازی برداشته نشود */
 async function sessionTouch(env, uuid, ip, connId) {
-  if (!uuid || !ip || !connId) return;
+  if (!uuid || !ip || !connId) return null;
   const now = Date.now();
   const um = CONNS.get(uuid);
   if (um) { const m = um.get(ip); if (m && m.has(connId)) m.set(connId, now); }
   if (env && env.LIMITER) {
-    try { await limiterRpc(env, '/touch', { uuid, ip, connId, now }); }
-    catch (e) { connErr('DO', e); }
-    return;
+    try {
+      const r = await limiterRpc(env, '/touch', { uuid, ip, connId, now });
+      return r || null;                    /* { kicked:true } → connRefresh اتصال را می‌بندد */
+    } catch (e) { connErr('DO', e); }
+    return null;
   }
   if (env && env.DB) {
     try { await d1Touch(env, uuid, ip, connId); } catch (e) { connErr('D1', e); }
@@ -1563,6 +1686,12 @@ async function connRefresh(env, uuid, ip, connId, limit, alive) {
     if (ban) return { ok: false, banned: true, ban, reason: 'ip-banned', storage: backendOf(env) };
   } catch (e) { connErr('ban-refresh', e); }
 
+  /* ۰.۵) قطعِ دستی از پنل — اجرای واقعیِ دکمه‌ی «قطع اتصال».
+     نشستِ قطع‌شده تا KICK_TTL دوباره پذیرفته نمی‌شود و همین‌جا بسته می‌شود. */
+  try {
+    if (await kickCheck(env, uuid, ip, connId)) return { ok: false, reason: 'kicked', storage: backendOf(env) };
+  } catch (e) { connErr('kick-refresh', e); }
+
   /* ۱) D1 — مرجعِ استقرارِ واقعی: اول بررسی می‌کنیم ردیف هست یا نه */
   if (env && env.DB) {
     try {
@@ -1580,7 +1709,8 @@ async function connRefresh(env, uuid, ip, connId, limit, alive) {
   }
   /* ۲) بقیهٔ بک‌اندها — همان تمدیدِ قدیمی، بدون هیچ درجی */
   if (!stillAlive()) return { ok: false, reason: 'released' };
-  await sessionTouch(env, uuid, ip, connId);
+  const tr = await sessionTouch(env, uuid, ip, connId);
+  if (tr && tr.kicked) return { ok: false, reason: 'kicked', storage: backendOf(env) };
   return { ok: true, reason: 'refreshed' };
 }
 
@@ -2275,19 +2405,27 @@ async function buildList(u, s, url, cf) {
   const protos = protoList(s, u);
   const limit = Number(u.maxConfigs) || Number(s.sub.nodeLimit) || 0;
   const out = [];
+  /* هر پورتِ انتخاب‌شده باید در خروجی بیاید — قبلاً پورت فقط تابعِ اندیسِ
+     ورودی بود (ports[i % ports.length]) و اگر تعداد ورودی‌ها کمتر از
+     پورت‌ها بود، بیشترِ پورت‌های انتخابی هرگز استفاده نمی‌شدند. حالا برای
+     هر ورودی روی همه‌ی پورت‌ها می‌چرخیم. */
   const perProto = s.multiSplit ? Math.max(1, Math.floor((limit || entries.length * ports.length) / protos.length)) : Infinity;
+  let n = 0;
   for (const k of protos) {
     let c = 0;
     for (let i = 0; i < entries.length && c < perProto; i++) {
-      const port = ports[i % ports.length];
-      out.push({ kind: k, uri: await uri(k, u, s, entries[i], port, i, host), entry: entries[i], port });
-      c++;
+      for (let p = 0; p < ports.length && c < perProto; p++) {
+        const port = ports[p];
+        out.push({ kind: k, uri: await uri(k, u, s, entries[i], port, n, host), entry: entries[i], port });
+        n++; c++;
+      }
     }
   }
   for (const k of ['ss', 'vmess']) {
     if (!s.protocols[k]) continue;
-    const e = entries[out.length % entries.length], port = ports[out.length % ports.length];
-    out.push({ kind: k, uri: await uri(k, u, s, e, port, out.length, host), entry: e, port });
+    const e = entries[n % entries.length], port = ports[n % ports.length];
+    out.push({ kind: k, uri: await uri(k, u, s, e, port, n, host), entry: e, port });
+    n++;
   }
   return limit ? out.slice(0, limit) : out;
 }
@@ -2382,21 +2520,37 @@ function fakeCfg(u, s) {
 }
 
 /* ── قالب‌های اشتراک ── */
+/* نامِ هر کانفیگ از همان label() الگوها می‌آید تا نام‌گذاریِ پنل در همه‌ی
+   قالب‌ها (Base64، Clash، sing-box، v2ray) یکسان دیده شود — قبلاً این
+   قالب‌ها نام را نادیده می‌گرفتند و همیشه «پیشوند-شماره» می‌گذاشتند.
+   چون Clash نامِ تکراری را قبول نمی‌کند، در صورت تکرار شماره اضافه می‌شود. */
+function configName(list, c, u, s, i, used) {
+  const mark = c.kind === 'trojan' ? 'β' : c.kind === 'vmess' ? 'VMess' : c.kind === 'ss' ? 'SS' : '';
+  let nm = String(label(s, c.entry, c.port, mark, u, i) || '').trim();
+  if (!nm) nm = `${s.sub.namePrefix || 'cfg'}-${i + 1}`;
+  if (used) {
+    if (used.has(nm)) { let k = 2; while (used.has(nm + ' ' + k)) k++; nm = nm + ' ' + k; }
+    used.add(nm);
+  }
+  return nm;
+}
 function clashYaml(list, u, s, url) {
   const host = s.host || url.hostname;
+  const used = new Set();
+  const names = list.map((c, i) => configName(list, c, u, s, i, used));
   const proxies = list.map((c, i) => {
-    const base = { name: `${s.sub.namePrefix}-${i + 1}`, type: c.kind === 'trojan' ? 'trojan' : c.kind === 'vmess' ? 'vmess' : c.kind === 'ss' ? 'ss' : 'vless', server: c.entry.ip, port: c.port, udp: true, ...(c.kind === 'vless' ? { uuid: u.uuid } : c.kind === 'trojan' ? { password: u.secret } : { cipher: '2022-blake3-aes-128-gcm', password: u.secret }) };
+    const base = { name: names[i], type: c.kind === 'trojan' ? 'trojan' : c.kind === 'vmess' ? 'vmess' : c.kind === 'ss' ? 'ss' : 'vless', server: c.entry.ip, port: c.port, udp: true, ...(c.kind === 'vless' ? { uuid: u.uuid } : c.kind === 'trojan' ? { password: u.secret } : { cipher: '2022-blake3-aes-128-gcm', password: u.secret }) };
     if (s.tls && c.kind !== 'ss') { base.tls = true; base.servername = s.sni || host; base['skip-cert-verify'] = !!s.allowInsecure; base['client-fingerprint'] = s.fingerprint === 'randomized' ? 'chrome' : s.fingerprint; }
     if (c.kind === 'vmess') { base.uuid = u.uuid; base.alterId = 0; base.cipher = 'auto'; }
     if (s.transport === 'ws') base['ws-opts'] = { path: plainPath(s, i, u.uuid), headers: { Host: host } };
     if (s.transport === 'grpc') { base.network = 'grpc'; base['grpc-opts'] = { 'grpc-service-name': s.grpcService }; }
     return '  - ' + JSON.stringify(base);
   });
-  const groups = s.sub.countryGroups ? countryGroups(list, s.sub.namePrefix) : [];
+  const groups = s.sub.countryGroups ? countryGroups(list, names) : [];
   const lines = [
     `# ${s.panel.name} — Clash/Mihomo`, 'mixed-port: 7890', 'allow-lan: false', 'mode: rule', 'log-level: warning',
     'dns:', '  enable: true', '  nameserver:', `    - ${s.sub.doh}`, 'proxies:', ...proxies, 'proxy-groups:',
-    '  - name: "🚀 پروکسی"', '    type: select', '    proxies:', ...list.map((_, i) => `      - "${s.sub.namePrefix}-${i + 1}"`).concat(groups.map((g) => `      - "${g.name}"`)),
+    '  - name: "🚀 پروکسی"', '    type: select', '    proxies:', ...names.map((nm) => `      - "${nm}"`).concat(groups.map((g) => `      - "${g.name}"`)),
     ...groups.flatMap((g) => ['  - name: "' + g.name + '"', '    type: urltest', '    proxies:', ...g.items.map((x) => `      - "${x}"`)]),
     'rules:', ...(s.sub.bypassIR ? ['  - GEOIP,IR,DIRECT', '  - DOMAIN-SUFFIX,ir,DIRECT'] : []),
     ...(s.sub.blockAds ? ['  - GEOSITE,category-ads-all,REJECT'] : []), ...(s.sub.blockAdult ? ['  - GEOSITE,category-porn,REJECT'] : []),
@@ -2405,20 +2559,22 @@ function clashYaml(list, u, s, url) {
   ];
   return lines.join('\n');
 }
-function countryGroups(list, prefix) {
+function countryGroups(list, names) {
   const map = {};
-  list.forEach((c, i) => { const g = geo(c.entry.ip); (map[g.name] = map[g.name] || []).push(`${prefix}-${i + 1}`); });
+  list.forEach((c, i) => { const g = geo(c.entry.ip); (map[g.name] = map[g.name] || []).push(names[i]); });
   return Object.entries(map).map(([name, items]) => ({ name, items }));
 }
 function metaJson(list, u, s, url) {
   const host = s.host || url.hostname;
-  const proxies = list.map((c, i) => ({ name: `${s.sub.namePrefix}-${i + 1}`, type: c.kind === 'trojan' ? 'trojan' : c.kind === 'vmess' ? 'vmess' : c.kind === 'ss' ? 'ss' : 'vless', server: c.entry.ip, port: c.port, udp: true, ...(c.kind === 'vless' ? { uuid: u.uuid } : { password: u.secret }), ...(s.tls && c.kind !== 'ss' ? { tls: true, servername: s.sni || host, 'skip-cert-verify': !!s.allowInsecure, 'client-fingerprint': s.fingerprint } : {}), ...(s.transport === 'ws' ? { 'ws-opts': { path: plainPath(s, i, u.uuid), headers: { Host: host } } } : {}), ...(s.transport === 'grpc' ? { network: 'grpc', 'grpc-opts': { 'grpc-service-name': s.grpcService } } : {}) }));
+  const used = new Set();
+  const proxies = list.map((c, i) => ({ name: configName(list, c, u, s, i, used), type: c.kind === 'trojan' ? 'trojan' : c.kind === 'vmess' ? 'vmess' : c.kind === 'ss' ? 'ss' : 'vless', server: c.entry.ip, port: c.port, udp: true, ...(c.kind === 'vless' ? { uuid: u.uuid } : { password: u.secret }), ...(s.tls && c.kind !== 'ss' ? { tls: true, servername: s.sni || host, 'skip-cert-verify': !!s.allowInsecure, 'client-fingerprint': s.fingerprint } : {}), ...(s.transport === 'ws' ? { 'ws-opts': { path: plainPath(s, i, u.uuid), headers: { Host: host } } } : {}), ...(s.transport === 'grpc' ? { network: 'grpc', 'grpc-opts': { 'grpc-service-name': s.grpcService } } : {}) }));
   return JSON.stringify({ 'mixed-port': 7890, mode: 'rule', 'log-level': 'warning', dns: { enable: true, nameserver: [s.sub.doh] }, proxies, 'proxy-groups': [{ name: '🚀 پروکسی', type: 'select', proxies: [...proxies.map((p) => p.name), 'DIRECT'] }], rules: [...(s.sub.bypassIR ? ['GEOIP,IR,DIRECT'] : []), ...(s.sub.blockAds ? ['GEOSITE,category-ads-all,REJECT'] : []), ...s.sub.rules, 'MATCH,🚀 پروکسی'] }, null, 2);
 }
 function singboxJson(list, u, s, url) {
   const host = s.host || url.hostname;
+  const used = new Set();
   const obs = list.map((c, i) => ({
-    tag: 'sg-' + i, type: c.kind === 'trojan' ? 'trojan' : c.kind === 'vmess' ? 'vmess' : c.kind === 'ss' ? 'shadowsocks' : 'vless',
+    tag: configName(list, c, u, s, i, used), type: c.kind === 'trojan' ? 'trojan' : c.kind === 'vmess' ? 'vmess' : c.kind === 'ss' ? 'shadowsocks' : 'vless',
     server: c.entry.ip, server_port: c.port,
     ...(c.kind === 'vless' ? { uuid: u.uuid } : { password: u.secret }),
     ...(c.kind === 'vmess' ? { uuid: u.uuid, security: 'auto' } : {}),
@@ -7714,6 +7870,20 @@ export class ConnLimiter {
     this.state = state;
     /* حافظه‌ی داخلِ شیء — بین فراخوانی‌ها زنده می‌ماند (تنها یک نمونه وجود دارد) */
     this.users = new Map();          // uuid -> Map<ip, Map<connId, ts>>
+    this.kicks = new Map();          // 'uuid|ip|connId' -> until (نشست‌های قطع‌شده از پنل)
+  }
+
+  /** آیا این نشست در بازه‌ی ممنوعیتِ «قطع» است؟ مؤلفه‌ی خالیِ کلید = wildcard */
+  isKicked(uuid, ip, connId, now) {
+    for (const [k, until] of this.kicks) {
+      if (until <= now) { this.kicks.delete(k); continue; }
+      const p = k.split('|');
+      if (p[0] && p[0] !== String(uuid || '')) continue;
+      if (p[1] && p[1] !== String(ip || '')) continue;
+      if (p[2] && p[2] !== String(connId || '')) continue;
+      return true;
+    }
+    return false;
   }
 
   /** حذفِ ورودی‌های مرده؛ می‌گرداند: Map<ip, تعداد اتصال‌های زنده> */
@@ -7743,6 +7913,9 @@ export class ConnLimiter {
 
     if (url.pathname === '/acquire') {
       if (!uuid || !ip) return j({ ok: true, ips: 0, conns: 0, limit, enforced: false, reason: 'missing-identity' });
+      if (this.isKicked(uuid, ip, String(b.connId || ''), now)) {
+        return j({ ok: false, ips: 0, conns: 0, limit, enforced: true, storage: 'do', reason: 'kicked' });
+      }
       let um = this.users.get(uuid);
       if (!um) { um = new Map(); this.users.set(uuid, um); }
       const ips = this.prune(uuid, now);
@@ -7775,11 +7948,21 @@ export class ConnLimiter {
     }
 
     if (url.pathname === '/touch') {
+      if (this.isKicked(uuid, ip, String(b.connId || ''), now)) {
+        return j({ ok: false, kicked: true, storage: 'do', reason: 'kicked' });
+      }
       const um = this.users.get(uuid);
       if (um) {
         const m = um.get(ip);
         if (m && b.connId && m.has(String(b.connId))) m.set(String(b.connId), now);
       }
+      return j({ ok: true });
+    }
+
+    /* ثبتِ نشستِ قطع‌شده از پنل — تا پایانِ until همان connId پذیرفته/تمدید نمی‌شود */
+    if (url.pathname === '/kick') {
+      const k = [uuid, ip, String(b.connId || '')].join('|');
+      this.kicks.set(k, Number(b.until) || now + 90000);
       return j({ ok: true });
     }
 
