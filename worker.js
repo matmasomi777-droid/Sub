@@ -1192,6 +1192,7 @@ async function connRelease(env, uuid, ip, connId) {
    لایه‌ها: حافظه (فوری) → DO (/kick، سراسری) → D1 (جدول kicks) → KV
    ═══════════════════════════════════════════════════════════════════════════ */
 const KICK_TTL = 90000;                  /* ۹۰ ثانیه پنجره‌ی ممنوعیتِ نشستِ قطع‌شده */
+const KICK_POLL_MS = 8000;               /* فاصله‌ی نظرسنجیِ سبکِ قطع برای نشست‌های باز */
 const KICKS = new Map();                 /* کلید -> until (حافظه‌ی همین isolate) */
 const KICK_CACHE_MS = 3000;
 let KICK_CACHE = { at: 0, list: [] };
@@ -7483,6 +7484,35 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
       return;
     }
     connAcquired = true;
+
+    /* ═══ نظرسنجیِ سبکِ «قطعِ دستی» — اجرای فوریِ دکمه‌ی قطع حتی روی نشستِ بیکار ═══
+       تمدید فقط با فعالیت انجام می‌شود؛ اگر کلاینت بی‌ترافیک باشد، connRefresh
+       هرگز صدا زده نمی‌شود و نشستِ قطع‌شده از پنل باز می‌ماند. این حلقه فقط
+       وضعیتِ «قطع‌شده» را می‌خواند (بدون هیچ نوشتنی) و در صورتِ قطع، سوکت را
+       می‌بندد. هزینه: برای بک‌اندِ DO یک RPC سبکِ درون‌حافظه‌ای؛ برای D1/KV
+       خواندنِ kickCheck که در هر isolate حداکثر یک بار در هر ۳ ثانیه کش می‌شود. */
+    let kickTimer = null;
+    const kickWatch = () => {
+      if (closed || connReleased || !connAcquired || !user) return;
+      if (ctx && ctx.waitUntil) ctx.waitUntil((async () => {
+        if (closed || connReleased || !connAcquired || !user) return;
+        let kicked = false;
+        try {
+          if (env && env.LIMITER) {
+            const r = await limiterRpc(env, '/touch', { uuid: user.uuid, ip, connId, now: Date.now() });
+            kicked = !!(r && r.kicked);
+          } else {
+            kicked = await kickCheck(env, user.uuid, ip, connId);
+          }
+        } catch (e) {}
+        if (kicked && !closed) {
+          try { ws.close(1013, 'kicked by panel'); } catch (e) {}
+          await finish();
+        }
+      })());
+      if (!closed) kickTimer = setTimeout(kickWatch, KICK_POLL_MS);
+    };
+    kickWatch();
 
     pendReqs++;
     const respHeader = info.isTrojan ? new Uint8Array(0) : new Uint8Array([info.version || 0, 0]);
