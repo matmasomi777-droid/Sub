@@ -2307,6 +2307,7 @@ const UI_SRC = {
   css: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/style.css',
   js: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/app.js',
   user: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/user.html',
+  userNew: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/new-subscription',
 };
 let USER_HTML = null;
 
@@ -4084,12 +4085,13 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 promoText: "آیا نیاز به <span>خرید</span> یا <span>تمدید ساب</span> دارید؟<br>با پشتیبانی تماس بگیرید.",
                 promoTelegram: "تلگرام",
                 actionRadar: "رادار",
-                radarTitle: "رادار آی‌پی تمیز", radarHint: "کاملاً در مرورگر شما اجرا می‌شود",
+                radarTitle: "رادار آی‌پی تمیز", radarHint: "کاملاً در مرورگر شما اجرا می‌شود — اسکن روی پورت‌های کانفیگ",
                 radarStart: "شروع اسکن", radarStop: "توقف", radarStatusReady: "آماده برای اسکن",
                 radarStatusScan: "در حال اسکن... {done} از {total} - یافت‌شده: {found}",
                 radarStatusDone: "پایان اسکن - {found} آی‌پی سالم یافت شد",
                 radarStatusNoResult: "آی‌پی سالمی یافت نشد",
                 radarStatusNoConfig: "کانفیگ vless در این ساب یافت نشد",
+                radarStatusNoTlsPort: "هیچ پورت TLS قابل‌اسکنی در کانفیگ‌ها یافت نشد",
                 radarThPing: "تأخیر", radarThJitter: "جیتر", radarThLoss: "لاس٪",
                 radarBestLabel: "کانفیگ بهترین آی‌پی", radarBestNote: "پورت برتر: {port}"
             },
@@ -4110,12 +4112,13 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 promoText: "Need to <span>buy</span> or <span>renew</span> your subscription?<br>Contact support.",
                 promoTelegram: "Telegram",
                 actionRadar: "Radar",
-                radarTitle: "Clean IP Radar", radarHint: "Runs entirely in your browser",
+                radarTitle: "Clean IP Radar", radarHint: "Runs entirely in your browser — scans config ports",
                 radarStart: "Start Scan", radarStop: "Stop", radarStatusReady: "Ready to scan",
                 radarStatusScan: "Scanning... {done} of {total} - found: {found}",
                 radarStatusDone: "Scan finished - {found} healthy IPs found",
                 radarStatusNoResult: "No healthy IP found",
                 radarStatusNoConfig: "No vless config found in this subscription",
+                radarStatusNoTlsPort: "No probeable TLS port found in configs",
                 radarThPing: "Ping", radarThJitter: "Jitter", radarThLoss: "Loss%",
                 radarBestLabel: "Best IP config", radarBestNote: "Winning port: {port}"
             },
@@ -4136,12 +4139,13 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 promoText: "Aboneliğinizi <span>satın</span> veya <span>yenile</span> mi gerekiyor?<br>Destek ile iletişime geçin.",
                 promoTelegram: "Telegram",
                 actionRadar: "Radar",
-                radarTitle: "Temiz IP Radarı", radarHint: "Tamamen tarayıcınızda çalışır",
+                radarTitle: "Temiz IP Radarı", radarHint: "Tamamen tarayıcınızda çalışır — yapılandırma portlarını tarar",
                 radarStart: "Taramayı Başlat", radarStop: "Durdur", radarStatusReady: "Taramaya hazır",
                 radarStatusScan: "Taranıyor... {done} / {total} - bulunan: {found}",
                 radarStatusDone: "Tarama bitti - {found} sağlıklı IP bulundu",
                 radarStatusNoResult: "Sağlıklı IP bulunamadı",
                 radarStatusNoConfig: "Bu abonelikte vless konfigi bulunamadı",
+                radarStatusNoTlsPort: "Yapılandırmalarda taranabilir TLS portu bulunamadı",
                 radarThPing: "Gecikme", radarThJitter: "Jitter", radarThLoss: "Kayıp%",
                 radarBestLabel: "En iyi IP konfigi", radarBestNote: "Kazanan port: {port}"
             },
@@ -4162,12 +4166,13 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 promoText: "هل تحتاج إلى <span>شراء</span> أو <span>تجديد</span> اشتراكك؟<br>اتصل بالدعم.",
                 promoTelegram: "تيليجرام",
                 actionRadar: "الرادار",
-                radarTitle: "رادار الآي‌بي النظيف", radarHint: "يعمل بالكامل داخل متصفحك",
+                radarTitle: "رادار الآي‌بي النظيف", radarHint: "يعمل بالكامل داخل متصفحك — يفحص منافذ الإعدادات",
                 radarStart: "بدء الفحص", radarStop: "إيقاف", radarStatusReady: "جاهز للفحص",
                 radarStatusScan: "جارٍ الفحص... {done} من {total} - تم العثور: {found}",
                 radarStatusDone: "انتهى الفحص - تم العثور على {found} آي‌بي سليم",
                 radarStatusNoResult: "لم يتم العثور على آي‌بي سليم",
                 radarStatusNoConfig: "لا يوجد تكوين vless في هذا الاشتراك",
+                radarStatusNoTlsPort: "لم يتم العثور على منفذ TLS قابل للفحص في الإعدادات",
                 radarThPing: "التأخير", radarThJitter: "التذبذب", radarThLoss: "الفقد٪",
                 radarBestLabel: "تكوين أفضل آي‌بي", radarBestNote: "المنفذ الفائز: {port}"
             }
@@ -4732,30 +4737,36 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         // هم onload و هم onerror یعنی «هاست جواب داد»؛ ما دسترسی و تأخیر را می‌سنجیم نه موفقیت تصویر.
         function pingIp(ip, port, timeout) {
             return new Promise(function(res) {
-                var t0 = performance.now();
-                var done = false;
-                var img = new Image();
-                function fin(ok) {
+                const t0 = performance.now();
+                let done = false;
+                const fin = function(ok) {
                     if (done) return;
                     done = true;
-                    img.onerror = img.onload = null;
                     res(ok ? Math.round(performance.now() - t0) : null);
-                }
-                var timer = setTimeout(function() { fin(false); }, timeout);
-                img.onerror = function() { clearTimeout(timer); fin(true); };
-                img.onload = function() { clearTimeout(timer); fin(true); };
-                img.src = 'https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?' + Math.random();
+                };
+                const ctrl = new AbortController();
+                const timer = setTimeout(function() { ctrl.abort(); fin(false); }, timeout);
+                /* fetch با mode:'no-cors' — برخلاف Image که خطای SSL و رَفضِ اتصال را
+                   هم «پاسخ» حساب می‌کرد و همه‌ی آی‌پی‌ها را زنده نشان می‌داد، اینجا
+                   هر خطای واقعی شبکه reject می‌شود و فقط پاسخِ واقعیِ CDN اندازه‌گیری می‌شود */
+                fetch('https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random(),
+                    { mode: 'no-cors', cache: 'no-store', signal: ctrl.signal })
+                    .then(function() { clearTimeout(timer); fin(true); })
+                    .catch(function() { clearTimeout(timer); fin(false); });
             });
         }
 
-        /* انتخاب پورت حذف شد — اسکن همیشه روی پورت‌های خودِ کانفیگ‌های ساب انجام می‌شود */
+        /* انتخاب پورت حذف شد — اسکن همیشه روی پورت‌های خودِ کانفیگ‌های ساب انجام می‌شود.
+           فقط پورت‌های TLS قابل‌اسکن‌اند: پروب مرورگر https است و پورت‌های غیر-TLS
+           با خطای SSL بلافاصله «پاسخ» می‌دهند و نتیجه را کاملاً خراب می‌کنند. */
+        const RADAR_TLS_PORTS = [443, 2053, 2083, 2087, 2096, 8443];
         function radarConfigPorts() {
             const ports = [];
             const links = sanaeiClientData.links || [];
             links.forEach(function(link) {
                 const parsed = parseConfigLink(link);
                 const p = parseInt(parsed.port, 10);
-                if (parsed.protocol === 'vless' && p > 0 && ports.indexOf(p) < 0) ports.push(p);
+                if (p > 0 && RADAR_TLS_PORTS.indexOf(p) >= 0 && ports.indexOf(p) < 0) ports.push(p);
             });
             return ports;
         }
@@ -4844,7 +4855,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
 
             const ports = radarConfigPorts();
             if (ports.length === 0) {
-                statusEl.textContent = data.radarStatusNoConfig;
+                statusEl.textContent = data.radarStatusNoTlsPort || data.radarStatusNoConfig;
                 return;
             }
 
@@ -5015,9 +5026,11 @@ async function loadUI(env, force) {
     const [html, css, js] = await Promise.all([get(UI_SRC.html, 'index.html'), get(UI_SRC.css, 'style.css'), get(UI_SRC.js, 'app.js')]);
     if (!html.includes('<!--APPJS-->') || !html.includes('<!--STYLESHEET-->')) throw new Error('index.html نامعتبر است');
 
-    /* صفحه‌ی کاربر (user.html) از همان مخزن — اگر نبود، نسخه‌ی داخلی استفاده می‌شود */
+    /* صفحه‌ی کاربر: اول تمپلیت جدید (new-subscription) — اگر نبود، ui/user.html،
+       و در نهایت نسخه‌ی داخلی */
     if (!USER_HTML || force) {
-      try { USER_HTML = await get(UI_SRC.user, 'user.html'); } catch (e) { USER_HTML = null; }
+      try { USER_HTML = await get(UI_SRC.userNew, 'new-subscription'); } catch (e) { USER_HTML = null; }
+      if (!USER_HTML) { try { USER_HTML = await get(UI_SRC.user, 'user.html'); } catch (e) { USER_HTML = null; } }
     }
 
     /* پیش‌اسکریپت: نمایش خطا روی صفحه + ذخیره‌سازی امن (اگر sessionStorage مسدود باشد) */
@@ -6037,6 +6050,11 @@ function renderUserPage(u, st, url, dailyUsed) {
     __LIMIT_TOTAL_GB__: String(u.quotaGB ? u.quotaGB : 9999),
     __DAILY_GB__: String(gb(dailyUsed)),
     __LIMIT_DAILY_GB__: String(u.dailyQuotaMB ? (u.dailyQuotaMB / 1024).toFixed(2) : 9999),
+    /* برای تمپلیت new-subscription — همان فرمت‌های تمپلیت سانا‌ای (bytes/ثانیه) */
+    __USED_BYTES__: String(Math.round(used)),
+    __LIMIT_BYTES__: String(q),
+    __EXPIRE_SECONDS__: u.expiryAt ? String(Math.floor(u.expiryAt / 1000)) : '0',
+    __LAST_ONLINE_MS__: String(u.lastSeen || 0),
     __SYNC_NORMAL__: base,
     __SYNC_NORMAL_BASE64__: base + '?format=base64',
     __SYNC_RAW__: base + '?format=raw',
