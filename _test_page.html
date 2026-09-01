@@ -1310,7 +1310,7 @@
                 با پشتیبانی تماس بگیرید.
             </div>
             <div class="promo-buttons" style="justify-content: center;">
-                <a href="__TG_CHANNEL__" target="_blank" class="promo-btn telegram" id="promo-support-link">
+                <a href="https://t.me/test" target="_blank" class="promo-btn telegram" id="promo-support-link">
                     <i class="fa-brands fa-telegram"></i> تلگرام
                 </a>
             </div>
@@ -1482,25 +1482,25 @@
         // همه‌جای سایت (کارت تبلیغاتی، دکمه تمدید، پاپ‌آپ نوتیفیکیشن)
         // از همین یک متغیر استفاده می‌کنن
         // ================================================================
-        // لینک تلگرام پشتیبانی از پنل تزریق می‌شود (__TG_CHANNEL__ در worker.js)
-        const SUPPORT_TELEGRAM_URL = "__TG_CHANNEL__";
+        // لینک تلگرام پشتیبانی از پنل تزریق می‌شود (https://t.me/test در worker.js)
+        const SUPPORT_TELEGRAM_URL = "https://t.me/test";
 
         // ===== داده‌های دریافتی از پنل (worker.js — جایگزین تمپلیت Go) =====
         // Placeholderهای پنل با همان فرمتِ تمپلیت (bytes/ثانیه) مقداردهی می‌شوند؛
         // fetchLiveSubscriptionData همین‌ها را با هدر subscription-userinfo زنده به‌روز می‌کند.
         const sanaeiTemplateData = {
-            enabled: ("__STATUS_CODE__" === "active"),
-            statusCode: "__STATUS_CODE__",
-            expireSeconds: parseInt("__EXPIRE_SECONDS__", 10) || 0,
-            downloadByte: parseInt("__USED_BYTES__", 10) || 0,
+            enabled: ("active" === "active"),
+            statusCode: "active",
+            expireSeconds: parseInt("1830192000", 10) || 0,
+            downloadByte: parseInt("2684354560", 10) || 0,
             uploadByte: 0,
-            totalByte: parseInt("__LIMIT_BYTES__", 10) || 0,
-            subUrl: "__SYNC_NORMAL__",
-            subTitle: "__PANEL_NAME__",
-            subSupportUrl: "__TG_CHANNEL__",
-            lastOnline: parseInt("__LAST_ONLINE_MS__", 10) || 0,
-            emails: ["__USER_NAME__"],
-            links: []
+            totalByte: parseInt("10737418240", 10) || 0,
+            subUrl: "http://127.0.0.1:8899/sub/t1",
+            subTitle: "TestPanel",
+            subSupportUrl: "https://t.me/test",
+            lastOnline: parseInt("1788289083862", 10) || 0,
+            emails: ["testuser"],
+            links: ["vless://b831381d-6324-4d53-ad4f-8cda48b30811@104.16.0.1:443?encryption=none&security=tls&sni=example.com&fp=chrome&type=ws&host=example.com&path=%2F#Germany-1"]
         };
 
         // ===== متغیرهای سراسری =====
