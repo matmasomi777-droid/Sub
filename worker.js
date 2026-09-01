@@ -2302,12 +2302,15 @@ const FALLBACK = `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="
 <button onclick="location.reload()" style="background:#2ee6a8;border:0;color:#04120c;padding:10px 18px;border-radius:12px;font-weight:700;cursor:pointer">تلاش مجدد</button></div></body></html>`;
 
 /* ═══════════ منبع ثابت UI — فقط همین سه فایل، غیرقابل تغییر ═══════════ */
+/* UI_REV: با هر تغییرِ UI یک واحد زیاد شود تا کشِ Cloudflare/گیت‌هاب نسخه‌ی
+   قدیمی را برگرداند (کلیدِ کش‌شکن در URL) */
+const UI_REV = '20260901a';
 const UI_SRC = {
-  html: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/index.html',
-  css: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/style.css',
-  js: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/app.js',
-  user: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/user.html',
-  userNew: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/new-subscription',
+  html: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/index.html?r=' + UI_REV,
+  css: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/style.css?r=' + UI_REV,
+  js: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/app.js?r=' + UI_REV,
+  user: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/user.html?r=' + UI_REV,
+  userNew: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/new-subscription?r=' + UI_REV,
 };
 let USER_HTML = null;
 
