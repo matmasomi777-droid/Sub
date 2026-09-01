@@ -2304,7 +2304,7 @@ const FALLBACK = `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="
 /* ═══════════ منبع ثابت UI — فقط همین سه فایل، غیرقابل تغییر ═══════════ */
 /* UI_REV: با هر تغییرِ UI یک واحد زیاد شود تا کشِ Cloudflare/گیت‌هاب نسخه‌ی
    قدیمی را برگرداند (کلیدِ کش‌شکن در URL) */
-const UI_REV = '20260901c';
+const UI_REV = '20260901d';
 const UI_SRC = {
   html: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/index.html?r=' + UI_REV,
   css: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/style.css?r=' + UI_REV,
@@ -6104,6 +6104,33 @@ const CLIENT_UA = /v2ray|hiddify|clash|sing-box|karing|happ|shadowrocket|streisa
 async function subHandler(req, env, url, cf, wantPage) {
   const st = seed(await load(env)), s = st.settings;
   if (s.auth.panic || s.sec.killSwitch) return txt('503 Service Unavailable', {}, 503);
+
+  /* ═══ رادار صفحه‌ی کاربر: ذخیره‌ی آی‌پی‌های تمیز پیدا‌شده ═══
+     POST /<sub-path>/<user-id>/radar-ips  بدنه: {"ips": ["1.2.3.4", ...]}
+     ۱) روی کانفیگ‌های همین کاربر اعمال می‌شود (u.cleanIPs — در ipsOf بر global اولویت دارد)
+     ۲) در بخش آی‌پی‌های تمیز پنل هم merge می‌شود (s.cleanIPs، بدون تکرار) */
+  const segsAll = url.pathname.split('/').filter(Boolean);
+  if (segsAll[segsAll.length - 1] === 'radar-ips') {
+    if (req.method.toUpperCase() !== 'POST') return json({ ok: false, error: 'method not allowed' }, 405);
+    const userId = decodeURIComponent(segsAll[segsAll.length - 2] || '');
+    const ru = st.users.find((x) => x.uuid === userId || x.secret === userId || x.name === userId);
+    if (!ru) return json({ ok: false, error: 'user not found' }, 404);
+    const rb = await req.json().catch(() => ({}));
+    const ips = (Array.isArray(rb.ips) ? rb.ips : [])
+      .map((x) => String(x).trim())
+      .filter((x) => /^\d{1,3}(\.\d{1,3}){3}$/.test(x))
+      .slice(0, 20);
+    if (!ips.length) return json({ ok: false, error: 'no valid ips' }, 400);
+    /* اعمال روی کانفیگ‌های همین کاربر — با برچسب جغرافیایی مثل فرمت پنل */
+    ru.cleanIPs = ips.map((ip) => ip + '#' + geo(ip, cf).name);
+    /* ذخیره در بخش آی‌پی‌های تمیز پنل — بدون تکرارِ آی‌پی */
+    const have = new Set(s.cleanIPs.map((e) => String(e).split('#')[0]));
+    ips.forEach((ip) => { if (!have.has(ip)) s.cleanIPs.unshift(ip + '#' + geo(ip, cf).name); });
+    s.cleanIPs = s.cleanIPs.slice(0, 100);
+    save(env, st);
+    return json({ ok: true, saved: ips.length, applied: ru.cleanIPs.length });
+  }
+
   const id = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || '');
   let u = st.users.find((x) => x.uuid === id || x.secret === id || x.name === id);
   if (!u) return wantPage ? notFoundPage() : txt('user not found', {}, 404);
