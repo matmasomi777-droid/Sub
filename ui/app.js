@@ -42,10 +42,9 @@
      داده در state نگه داشته می‌شود، نه در DOM: به‌روزرسانیِ دوره‌ای و
      جابه‌جایی بین بخش‌ها جدول را خالی نمی‌کند — فقط یک بارخوانیِ موفق
      جای داده‌ی قبلی را می‌گیرد (خطا یا قطعیِ لحظه‌ای چیزی را پاک نمی‌کند). */
-  const CN = { data: null, bans: null, q: '', ts: 0, err: '' };
+  const CN = { data: null, q: '', ts: 0, err: '' };
   const cnShow = () => {
     const o = $('#connOut'); if (o) o.innerHTML = cnHtml(CN.data);
-    const b = $('#connBansOut'); if (b) b.innerHTML = cnBansHtml(CN.bans);
     /* خلاصه و نشانگرِ وضعیت هم همان لحظه به‌روز می‌شوند — وگرنه عددهای
        بالای صفحه روی همان صفرِ رندرِ اول می‌ماندند */
     const st = $('#connStats'); if (st) st.innerHTML = cnStatsHtml();
@@ -76,9 +75,11 @@
     const i = $('#bkInfo'); if (i) i.innerHTML = bkInfoHtml();
     const e = $('#bkErr'); if (e) e.innerHTML = bkErrHtml();
   };
-  /* نام‌گذاریِ گروهی — الگو، شروعِ شماره‌گذاری و انتخابِ کانفیگ‌ها بین
-     بازسازی‌ها حفظ می‌شوند (تا ذخیره‌ی تنظیمات پیش‌نمایش را نپراند) */
-  const NM = { pat: '', start: 1, sel: {} };
+  /* نام‌گذاریِ گروهی — الگو و انتخابِ کانفیگ‌ها بین بازسازی‌ها حفظ می‌شوند
+     (تا ذخیره‌ی تنظیمات پیش‌نمایش را نپراند). init یعنی «انتخاب‌ها دست
+     خورده‌اند»؛ تا وقتی دست‌نخورده باشند، همه‌ی کانفیگ‌ها پیش‌فرضاً
+     انتخاب‌اند تا پیش‌نمایش از همان ابتدا چیزی نشان بدهد. */
+  const NM = { pat: '', sel: {}, init: false };
   const nmShow = () => { const o = $('#nmPreview'); if (o) o.innerHTML = nmPreviewHtml(); };
 
   /* ═══════ رندرِ گزارشِ «بررسی سلامت شمارش مصرف» ═══════
@@ -427,7 +428,7 @@
   const NAME_TOKENS = [
     { k: 'prefix', l: 'پیشوند' }, { k: 'user', l: 'کاربر' }, { k: 'proto', l: 'پروتکل' },
     { k: 'port', l: 'پورت' }, { k: 'ip', l: 'آی‌پی نود' }, { k: 'node', l: 'نام نود (شهر)' },
-    { k: 'index', l: 'شماره' }, { k: 'mark', l: 'نشان' },
+    { k: 'index', l: 'شماره‌ی کانفیگ' }, { k: 'mark', l: 'نشان' },
   ];
   const NAME_TPL = [
     { l: 'شهر-شماره', p: '{node}-{index}' },
@@ -480,74 +481,94 @@
     };
   };
   /* چند نامِ نمونه با همان منطقِ ورکر (هر ورودی × همه‌ی پورت‌ها) تا
-     پیش‌نمایش با خروجیِ واقعیِ ساب یکی باشد */
+     پیش‌نمایش با خروجیِ واقعیِ ساب یکی باشد. شماره هم همان شمارنده‌ای است
+     که ورکر در label() می‌گذارد: یکمین کانفیگِ ساب شماره‌ی ۱ را می‌گیرد. */
   const nmSamples = (u, pattern) => {
     const { ips, ports } = nmUserEntries(u);
     const out = [];
     let n = 0;
     for (const e of ips) {
       for (const port of ports) {
-        const v = nmVars(u, n + 1);
+        n++;
+        const v = nmVars(u, n);
         v.port = String(port); v.ip = e.ip; v.node = e.name;
         const nm = nmRender(pattern, v);
         if (nm && out.indexOf(nm) < 0) out.push(nm);
-        n++;
         if (out.length >= 4) return out;
       }
     }
     return out;
   };
-  const nmPat = () => { const e = $('#nmPat'); return e ? String(e.value == null ? '' : e.value) : String(NM.pat || ''); };
-  const nmStart = () => { const e = $('#nmStart'); return Math.max(1, Number(e ? e.value : NM.start) || 1); };
+  const nmPat = () => {
+    const e = $('#nmPat');
+    if (e) return String(e.value == null ? '' : e.value);
+    return String((S.d && getP(S.d.settings, 'sub.namePattern')) || NM.pat || '');
+  };
+  /* انتخاب‌شده‌ها — تا وقتی کاربر دستی چیزی را برنگزیده، همه انتخاب‌اند */
+  const nmSelUsers = () => {
+    const users = (S.d && S.d.users) || [];
+    if (!NM.init) { users.forEach((u) => { NM.sel[u.id] = true; }); NM.init = true; }
+    return users.filter((u) => NM.sel[u.id]);
+  };
   /**
    * برنامه‌ی اعمالِ الگو. پیش‌نمایش و اعمالِ واقعی هر دو از همین تابع
    * می‌خوانند، پس آنچه دیده می‌شود دقیقاً همان است که ذخیره می‌شود.
-   * شماره‌گذاری خودکار است و نامِ تکراری به‌جای خطا شماره می‌گیرد.
+   *
+   * ⚠️ {index} در الگوی ذخیره‌شده دست‌نخورده می‌ماند: شماره را ورکر در
+   * لحظه‌ی ساختِ ساب می‌گذارد (۱، ۲، ۳ … برای کانفیگ‌های همان کاربر). قبلاً
+   * اینجا شماره‌ی ترتیبِ کاربر در الگو حک می‌شد و در نتیجه همه‌ی کانفیگ‌های
+   * یک کاربر یک شماره می‌گرفتند و نام‌هایشان تکراری می‌شد.
    */
   const nmPlan = () => {
-    const users = (S.d && S.d.users) || [];
-    const sel = users.filter((u) => NM.sel[u.id]);
+    const sel = nmSelUsers();
     if (!sel.length) return [];
-    const pat = nmPat(), start = nmStart();
-    /* نام‌های کانفیگ‌هایی که انتخاب نشده‌اند (اگر الگوی اختصاصی دارند) محفوظ‌اند */
-    const used = new Set();
-    users.filter((u) => !NM.sel[u.id]).forEach((u) => {
-      const p = String(u.namePattern || '').trim();
-      if (p) used.add(nmRender(p, nmVars(u, '')));
-    });
-    let k = start;
-    return sel.map((u) => {
-      const pattern = /\{index\}/.test(pat) ? pat.replace(/\{index\}/g, String(k)) : (pat ? pat + '-' + k : String(k));
-      const base = nmRender(pattern, nmVars(u, k)) || ('کانفیگ-' + k);
-      let name = base, dup = false, extra = 0;
-      while (used.has(name)) { extra++; dup = true; name = base + '-' + (k + extra); }
-      const finalPat = dup ? pattern + '-' + (k + extra) : pattern;
-      used.add(name);
-      k++;
-      return { id: u.id, user: u.name, pattern: finalPat, name, dup };
-    });
+    const pat = nmPat();
+    return sel.map((u) => ({
+      id: u.id, user: u.name, pattern: pat,
+      /* نامِ نخستین کانفیگِ سابِ این کاربر */
+      name: nmRender(pat, nmVars(u, 1)),
+    }));
   };
   const nmPreviewHtml = () => {
     const users = (S.d && S.d.users) || [];
     if (!users.length) return '<div class="empty">هنوز کانفیگی ساخته نشده است</div>';
+    const sel = nmSelUsers();
     const chips = '<div class="hint" style="margin-bottom:6px">کانفیگ‌هایی که الگو روی آن‌ها اعمال می‌شود:</div>' +
       '<div class="chips" style="margin-bottom:10px">' + users.map((u) =>
         '<button type="button" class="chip" data-nm-user="' + esc(u.id) + '" style="' +
         (NM.sel[u.id] ? 'background:var(--ac);border-color:var(--ac);color:#fff' : 'opacity:.5') + '">' +
         esc(u.name) + '</button>').join('') + '</div>';
-    const plan = nmPlan();
-    if (!plan.length) return chips + '<div class="empty">هیچ کانفیگی انتخاب نشده — روی نامِ کانفیگ‌ها در بالا کلیک کنید</div>';
-    return chips + '<div class="list">' + plan.map((p) => {
-      const u = users.find((x) => x.id === p.id);
-      const samples = u ? nmSamples(u, p.pattern) : [];
+    if (!sel.length) return chips + '<div class="empty">هیچ کانفیگی انتخاب نشده — روی نامِ کانفیگ‌ها در بالا کلیک کنید</div>';
+    const pat = nmPat();
+    return chips + '<div class="list">' + sel.map((u) => {
+      const samples = nmSamples(u, pat);
       return '<div class="row-item">' + icon('fa-pen') +
-      '<div class="grow"><b>' + esc(p.name) + '</b>' +
-      (p.dup ? ' <span class="badge warn">تکراری — شماره افزوده شد</span>' : '') +
-      '<div class="mono cell-sub">' + esc(p.user) + ' • الگو: ' + esc(p.pattern) + '</div>' +
-      (samples.length ? '<div class="hint" style="margin-top:3px">نمونه‌ی نام‌ها در ساب: ' +
+      '<div class="grow"><b>' + esc(u.name) + '</b>' +
+      '<div class="mono cell-sub">الگو: ' + esc(pat) + '</div>' +
+      (samples.length ? '<div class="hint" style="margin-top:3px">نامِ کانفیگ‌ها در ساب: ' +
         samples.map((x) => '<span class="mono">' + esc(x) + '</span>').join(' • ') + '</div>' : '') +
       '</div></div>';
     }).join('') + '</div>';
+  };
+  /* نوشتنِ الگو در فیلد و به‌روزرسانیِ پیش‌نمایش — بدون رندرِ دوباره‌ی صفحه */
+  const nmSetPattern = (p) => {
+    const el = $('#nmPat');
+    if (el) { el.value = p; el.focus(); try { el.setSelectionRange(p.length, p.length); } catch (e) {} }
+    NM.pat = p;
+    nmShow();
+  };
+  /* درجِ توکن در محلِ کرسر، نه در انتهای الگو */
+  const nmInsert = (txt) => {
+    const el = $('#nmPat');
+    if (!el) return;
+    const st = el.selectionStart == null ? el.value.length : el.selectionStart;
+    const en = el.selectionEnd == null ? el.value.length : el.selectionEnd;
+    el.value = el.value.slice(0, st) + txt + el.value.slice(en);
+    NM.pat = el.value;
+    nmShow();
+    el.focus();
+    const p = st + txt.length;
+    try { el.setSelectionRange(p, p); } catch (e) {}
   };
 
   /* ═══════════════════════════════════════════════════════════════
@@ -1091,11 +1112,13 @@
       ' • <span class="hint">جدول هر ۱۰ ثانیه به‌روز می‌شود؛ داده‌ی قبلی تا رسیدنِ پاسخِ تازه سر جایش می‌ماند.</span></div>' +
       '<div style="max-height:460px;overflow:auto" class="tbl-wrap"><table>' +
       '<thead><tr><th>کانفیگ (یوزر)</th><th>آی‌پی</th><th>کشور</th><th>شروع</th><th>مدت اتصال</th>' +
-      '<th>ارسال</th><th>دریافت</th><th>انتقال</th><th>آخرین فعالیت</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>' +
+      '<th>ارسال</th><th>دریافت</th><th>انتقال</th><th>آخرین فعالیت</th><th>وضعیت</th></tr></thead><tbody>' +
       r.sessions.map((s) => {
         const nm = s.user || (s.known === false ? 'کانفیگ حذف‌شده' : '—');
         const started = s.startedAt ? new Date(s.startedAt).toLocaleTimeString('fa-IR', { hour12: false }) : '—';
         const hit = cnHit(s);
+        /* ستونِ «عملیات» (قطعِ موقت / مسدودسازی) حذف شده — این جدول فقط نمایشی
+           است و هیچ عملی روی نشستِ زنده‌ی کاربر انجام نمی‌دهد. */
         return '<tr data-hit="' + hit + '" data-q="' + esc(cnKey(s)) + '"' + (hit ? '' : ' class="hide"') + '>' +
           '<td><div class="cell-main">' + esc(nm) + '</div><div class="cell-sub mono">' + esc(String(s.uuid || '').slice(0, 13)) + '…</div></td>' +
           '<td class="mono">' + esc(s.ip || '—') + '</td>' +
@@ -1109,35 +1132,6 @@
           '<td>' + (s.idle
             ? '<span class="badge warn">' + icon('fa-triangle-exclamation') + ' بی‌فعالیت</span>'
             : '<span class="badge ok">' + icon('fa-circle-check') + ' فعال</span>') + '</td>' +
-          '<td><div class="row-btns">' +
-          '<button class="btn sm" data-act="conn-kick" data-conn="' + esc(s.connId || '') + '" data-ip="' + esc(s.ip || '') + '" data-uuid="' + esc(s.uuid || '') + '" data-name="' + esc(nm) + '" title="قطع موقتِ فقط همین نشست — کاربر می‌تواند دوباره وصل شود">' + icon('fa-scissors') + ' قطع موقت</button>' +
-          '<button class="btn sm d" data-act="conn-ban" data-h="0" data-ip="' + esc(s.ip || '') + '" data-uuid="' + esc(s.uuid || '') + '" data-name="' + esc(nm) + '" title="مسدودسازیِ دائم این آی‌پی">' + icon('fa-ban') + ' مسدود دائم</button>' +
-          '<button class="btn sm d" data-act="conn-ban" data-h="1" data-ip="' + esc(s.ip || '') + '" data-uuid="' + esc(s.uuid || '') + '" data-name="' + esc(nm) + '" title="مسدودسازیِ ۱ ساعته">' + icon('fa-ban') + ' ۱ ساعت</button>' +
-          '<button class="btn sm d" data-act="conn-ban" data-h="24" data-ip="' + esc(s.ip || '') + '" data-uuid="' + esc(s.uuid || '') + '" data-name="' + esc(nm) + '" title="مسدودسازیِ ۲۴ ساعته">' + icon('fa-ban') + ' ۲۴ ساعت</button>' +
-          '</div></td></tr>';
-      }).join('') +
-      '</tbody></table></div>';
-  }
-
-  /* جدولِ آی‌پی‌های مسدودشده */
-  function cnBansHtml(list) {
-    if (!list) return '<div class="empty">در حال بارگیری…</div>';
-    if (!list.length) return '<div class="empty">هیچ آی‌پی‌ای مسدود نیست.</div>';
-    return '<div style="max-height:320px;overflow:auto" class="tbl-wrap"><table>' +
-      '<thead><tr><th>آی‌پی</th><th>کانفیگ</th><th>مانده / نوع</th><th>علت</th><th>زمان ثبت</th><th>عملیات</th></tr></thead><tbody>' +
-      list.map((b) => {
-        const u = (S.d && S.d.users || []).find((x) => String(x.uuid) === String(b.uuid || ''));
-        return '<tr>' +
-          '<td class="mono">' + esc(b.ip) + '</td>' +
-          '<td>' + (u ? '<span class="cell-main">' + esc(u.name) + '</span>' : (b.uuid ? '<span class="cell-sub mono">' + esc(String(b.uuid).slice(0, 13)) + '…</span>' : '<span class="cell-sub">همه</span>')) + '</td>' +
-          '<td>' + (b.permanent
-            ? '<span class="badge bad">' + icon('fa-ban') + ' دائم</span>'
-            : b.expired
-              ? '<span class="badge">' + icon('fa-circle-check') + ' منقضی شده</span>'
-              : '<span class="badge warn">' + icon('fa-triangle-exclamation') + ' ' + durFa(b.remainingSec) + '</span>') + '</td>' +
-          '<td class="cell-sub">' + esc(b.reason || '—') + '</td>' +
-          '<td class="cell-sub">' + (b.createdAt ? ago(b.createdAt) : '—') + '</td>' +
-          '<td><button class="btn sm s" data-act="conn-unban" data-ip="' + esc(b.ip) + '">' + icon('fa-check') + ' رفع مسدودی</button></td>' +
           '</tr>';
       }).join('') +
       '</tbody></table></div>';
@@ -1147,34 +1141,26 @@
      فقط پاسخِ سالم جای داده‌ی قبلی را می‌گیرد: اگر سرور لحظه‌ای پاسخ ندهد،
      جدول همان داده‌ی قبلی را نشان می‌دهد تا نپرد. */
   async function cnLoad() {
-    const [a, b] = await Promise.all([
-      api('GET', '/api/connections'),
-      api('GET', '/api/connections/bans'),
-    ]);
+    const a = await api('GET', '/api/connections');
     if (a && !a.error && a.sessions) { CN.data = a; CN.ts = Date.now(); CN.err = ''; }
     else if (a && a.error) CN.err = String(a.error);
-    if (b && !b.error && Array.isArray(b.bans)) CN.bans = b.bans;
     cnShow();
   }
 
   function connsView() {
     return '<div class="page-head"><div><h1>اتصال‌های زنده</h1>' +
-      '<p>نشست‌های در جریان روی همان مرجعی که سقفِ آی‌پی روی آن حساب می‌شود</p></div>' +
+      '<p>نشست‌های در جریان روی همان مرجعی که سقفِ آی‌پی روی آن حساب می‌شود — فقط نمایشی</p></div>' +
       '<div class="btn-row">' +
       '<span id="connBadge" style="display:inline-flex">' + cnBadgeHtml() + '</span>' +
       '<button class="btn sm" data-act="conn-load">' + icon('fa-rotate') + ' بارخوانی</button>' +
       '</div></div>' +
       '<div id="connStats">' + cnStatsHtml() + '</div>' +
       '<div class="card" style="margin-top:12px"><header><span class="ic">' + icon('fa-activity') + '</span>' +
-      '<div><h3>نشست‌های در جریان</h3><p>قطعِ موقت فقط همین نشست را می‌بندد؛ مسدودسازی روی آی‌پی اعمال می‌شود</p></div>' +
+      '<div><h3>نشست‌های در جریان</h3><p>این جدول فقط برای دیدن است؛ هیچ عملی روی نشستِ زنده انجام نمی‌شود</p></div>' +
       '<div class="acts"><div class="search" style="width:210px" id="connSearchBox">' +
       '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>' +
       '<input id="connSearch" placeholder="جستجوی نام کانفیگ، UUID، آی‌پی…" value="' + esc(CN.q || '') + '"></div></div></header>' +
-      '<div class="bd"><div id="connOut">' + cnHtml(CN.data) + '</div></div></div>' +
-      '<div class="card" style="margin-top:12px"><header><span class="ic bad">' + icon('fa-ban') + '</span>' +
-      '<div><h3>آی‌پی‌های مسدودشده</h3><p>مسدودیِ دائم تا رفعِ دستی؛ مسدودیِ زمان‌دار خودبه‌خود آزاد می‌شود</p></div>' +
-      '<div class="acts"><button class="btn sm" data-act="conn-load">' + icon('fa-rotate') + ' بارخوانی</button></div></header>' +
-      '<div class="bd"><div id="connBansOut">' + cnBansHtml(CN.bans) + '</div></div></div>';
+      '<div class="bd"><div id="connOut">' + cnHtml(CN.data) + '</div></div></div>';
   }
 
   function monitorView() {
@@ -1198,8 +1184,7 @@
         '<td class="mono">' + fa(x.totalReq || 0) + '</td></tr>'; }).join('') +
       '</tbody></table></div></div></div>' +
       '<div class="card" style="margin-top:12px"><header><span class="ic ' + (S.d.storage === 'd1' ? '' : 'bad') + '">' + icon('fa-heart-pulse') + '</span><div><h3>سلامت شمارش مصرف</h3><p>بررسی اینکه شمارنده‌ی حجم (usage) درست کار می‌کند</p></div>' +
-      '<div class="acts"><button class="btn sm p" data-act="usage-health">' + icon('fa-stethoscope') + ' بررسی سلامت</button>' +
-      '<button class="btn sm d" data-act="conn-reset">' + icon('fa-trash-can') + ' آزادسازی اتصال‌ها</button></div></header>' +
+      '<div class="acts"><button class="btn sm p" data-act="usage-health">' + icon('fa-stethoscope') + ' بررسی سلامت</button></div></header>' +
       '<div class="bd">' +
       /* گزارشِ آخرین بررسی در هر بار رندر نوشته می‌شود — با رفرش پاک نمی‌شود */
       '<div id="usageHealthOut">' + uhHtml(UH.last) + '</div>' +
@@ -1486,7 +1471,7 @@
         '<label class="f"><span>الگوی نام (کاملاً دلخواه)</span><input id="nmPat" data-p="sub.namePattern" class="mono" value="' + esc(pat) + '">' +
         '<div class="hint" style="margin-top:5px">هر متنی با هر طولی — نه محدودیتِ الگو دارد و نه سقفِ کاراکتر</div></label>' +
         '</div>' +
-        '<div class="hint" style="margin-top:8px">متغیرها (برای درج کلیک کنید):</div>' +
+        '<div class="hint" style="margin-top:8px">متغیرها (در محلِ کرسر درج می‌شوند):</div>' +
         '<div class="chips" style="margin-top:5px">' + NAME_TOKENS.map((t) =>
           '<button type="button" class="chip" data-nm-var="' + t.k + '"><span class="mono">{' + t.k + '}</span> ' + esc(t.l) + '</button>').join('') + '</div>' +
         '<div class="hint" style="margin-top:10px">الگوهای آماده:</div>' +
@@ -1494,14 +1479,14 @@
           '<button type="button" class="chip" data-nm-tpl="' + esc(t.rnd ? 'rnd' : t.p) + '">' + esc(t.l) + '</button>').join('') + '</div>' +
         '<div id="nmPreview" style="margin-top:10px">' + nmPreviewHtml() + '</div>' +
         '<div class="btn-row" style="margin-top:8px;gap:6px;flex-wrap:wrap">' +
-        '<input id="nmStart" type="number" min="1" value="' + esc(NM.start) + '" style="max-width:78px">' +
-        '<span class="hint">شروعِ شماره‌گذاری</span>' +
         '<button class="btn sm p" data-act="nm-apply">' + icon('fa-check') + ' اعمال روی انتخاب‌شده‌ها</button>' +
         '<button class="btn sm ghost" data-act="nm-sel-all">' + icon('fa-check') + ' انتخابِ همه</button>' +
         '<button class="btn sm ghost" data-act="nm-sel-none">' + icon('fa-xmark') + ' هیچ‌کدام</button>' +
         '</div>' +
-        '<div class="hint" style="margin-top:6px">شماره‌گذاری خودکار است: هر کانفیگِ انتخاب‌شده یک شماره می‌گیرد و اگر نامی تکراری شود، ' +
-        'به‌جای خطا خودکار شماره به آن افزوده می‌شود.</div>' +
+        '<div class="hint" style="margin-top:6px">شماره‌گذاری خودکار است و در خودِ ساب انجام می‌شود: ' +
+        '<span class="mono">{index}</span> شماره‌ی هر کانفیگ در اشتراکِ همان کاربر است (۱، ۲، ۳ …)، ' +
+        'پس یک الگو برای همه‌ی کانفیگ‌های یک کاربر کافی است و نام‌ها تکراری نمی‌شوند. ' +
+        'اگر دو کانفیگ باز هم هم‌نام شوند، ورکر خودکار به دومی شماره می‌افزاید.</div>' +
         '</div></div></div>';
     };
 
@@ -1750,6 +1735,34 @@
       return;
     }
 
+    /* ═══════ نام‌گذاریِ کانفیگ‌ها — چیپ‌ها ═══════
+       این سه دسته data-act ندارند (دکمه‌یِ فرم نیستند، فقط پیش‌نمایش را
+       عوض می‌کنند) برای همین باید پیش از نگهبانِ [data-act] بررسی شوند؛
+       وگرنه کلیک‌شان اصلاً دیده نمی‌شد و کلِ بخش از کار می‌افتاد. */
+    const nv = e.target.closest('[data-nm-var]');
+    if (nv) {
+      e.preventDefault(); e.stopPropagation();
+      nmInsert('{' + String(nv.dataset.nmVar || '') + '}');
+      return;
+    }
+    const nt = e.target.closest('[data-nm-tpl]');
+    if (nt) {
+      e.preventDefault(); e.stopPropagation();
+      const v = String(nt.dataset.nmTpl || '');
+      /* «تصادفی» یعنی یکی از الگوهای آماده به‌شکل تصادفی انتخاب شود */
+      const list = NAME_TPL.filter((x) => !x.rnd);
+      nmSetPattern((!v || v === 'rnd') ? list[Math.floor(Math.random() * list.length)].p : v);
+      return;
+    }
+    const nu = e.target.closest('[data-nm-user]');
+    if (nu) {
+      e.preventDefault(); e.stopPropagation();
+      NM.init = true;
+      NM.sel[String(nu.dataset.nmUser)] = !NM.sel[String(nu.dataset.nmUser)];
+      nmShow();
+      return;
+    }
+
     /* آکاردئون */
     const ach = e.target.closest('[data-acc]');
     if (ach) { e.preventDefault(); e.stopPropagation(); ach.parentElement.classList.toggle('open'); return; }
@@ -1893,36 +1906,10 @@
       else if (a === 'fmt') { S.fmt = v; render(); }
       else if (a === 'range') { S.range = v; render(); }
       else if (a === 'loglv') { S.tab.log = v; render(); }
-      /* ═══════ اتصال‌های زنده ═══════ */
+      /* ═══════ اتصال‌های زنده — فقط بارخوانی ═══════
+         عملیاتِ روی نشستِ زنده (قطعِ موقت، مسدودسازیِ آی‌پی، آزادسازی) کاملاً
+         حذف شده است؛ تنها کاری که اینجا می‌ماند خواندنِ جدول است. */
       else if (a === 'conn-load') { busy(t, 'بارخوانی'); await cnLoad(); free(t); }
-      else if (a === 'conn-kick') {
-        const nm = t.dataset.name || t.dataset.uuid || 'این کانفیگ';
-        if (!confirm('نشستِ «' + nm + '» از آی‌پی ' + t.dataset.ip + ' قطع شود؟\nکاربر می‌تواند بلافاصله دوباره وصل شود.')) return;
-        busy(t, 'قطع…');
-        const r = await api('POST', '/api/connections/kick', { connId: t.dataset.conn, uuid: t.dataset.uuid, ip: t.dataset.ip });
-        free(t);
-        toast(r.ok ? (r.msg || 'اتصال قطع شد') : (r.error || 'انجام نشد'), r.ok ? 'ok' : 'err');
-        await cnLoad();
-      }
-      else if (a === 'conn-ban') {
-        const h = Number(t.dataset.h || 0);
-        const nm = t.dataset.name || '';
-        const kind = h ? fa(h) + ' ساعت' : 'دائم';
-        if (!confirm('آی‌پی ' + t.dataset.ip + (nm ? ' (کانفیگ «' + nm + '»)' : '') + ' به‌صورت ' + kind + ' مسدود شود؟\nنشست‌های در جریانِ همین آی‌پی هم بسته می‌شوند.')) return;
-        busy(t, 'مسدودسازی…');
-        const r = await api('POST', '/api/connections/ban', { ip: t.dataset.ip, uuid: t.dataset.uuid, hours: h, reason: 'از پنل — مسدودی ' + (h ? h + ' ساعته' : 'دائم') });
-        free(t);
-        toast(r.ok ? (r.msg || 'آی‌پی مسدود شد') : (r.error || 'انجام نشد'), r.ok ? 'ok' : 'err');
-        await cnLoad();
-      }
-      else if (a === 'conn-unban') {
-        if (!confirm('مسدودیِ آی‌پی ' + t.dataset.ip + ' برداشته شود؟')) return;
-        busy(t, 'رفع مسدودی…');
-        const r = await api('POST', '/api/connections/unban', { ip: t.dataset.ip });
-        free(t);
-        toast(r.ok ? (r.msg || 'مسدودی برداشته شد') : (r.error || 'انجام نشد'), r.ok ? 'ok' : 'err');
-        await cnLoad();
-      }
       else if (a === 'save-config') {
         busy(t, 'ذخیره');
         /* همه‌ی فیلدها از DOM خوانده می‌شوند — شامل تلگرام */
@@ -2063,23 +2050,6 @@
         /* نتیجه ذخیره و سپس رندر می‌شود — uhHtml از state/localStorage می‌خواند
            پس با هر بار بازسازیِ صفحه همین گزارش دوباره نمایش داده می‌شود. */
         uhSave(r);
-        uhShow();
-      }
-      else if (a === 'conn-reset') {
-        /* ═══ آزادسازیِ دستی ═══
-           اگر ردیفی در جدولِ اتصال‌های زنده جامانده باشد، یک آی‌پی برای همیشه
-           قفل می‌ماند. این دکمه جدول را خالی می‌کند تا فوراً بتوان از آی‌پیِ
-           جدید وصل شد — بدون دستکاریِ پایگاه‌داده.
-           گزارشِ قبلی پاک نمی‌شود: فقط یک بررسیِ تازه جای آن را می‌گیرد،
-           برای همین بلافاصله «بررسی سلامت» دوباره اجرا و ذخیره می‌شود. */
-        busy(t, 'آزادسازی…');
-        const r = await api('POST', '/api/action', { act: 'conn-reset' });
-        free(t);
-        toast(r.ok ? (r.msg || 'اتصال‌ها آزاد شد') : (r.error || 'انجام نشد'), r.ok ? 'ok' : 'err');
-        try {
-          const r2 = await api('POST', '/api/action', { act: 'usage-health' });
-          if (r2 && (r2.checks || r2.users)) { uhSave(r2); }
-        } catch (e) {}
         uhShow();
       }
       else if (a === 'usage-health-clear') {
@@ -2271,32 +2241,17 @@
       /* ═════════════════════════════════════════════════════════════
          مرحله‌ی ۴ — نام‌گذاریِ کانفیگ‌ها
          ═════════════════════════════════════════════════════════════ */
-      else if (a === 'nm-var') {
-        const pat = $('#nmPat'); if (!pat) return;
-        pat.value = String(pat.value) + '{' + v + '}';
-        NM.pat = pat.value;
-        nmShow(); pat.focus();
-      }
-      else if (a === 'nm-tpl') {
-        /* «تصادفی» یعنی یکی از الگوهای آماده به‌شکل تصادفی انتخاب شود */
-        const list = NAME_TPL.filter((x) => !x.rnd);
-        const pick = (!v || v === 'rnd') ? list[Math.floor(Math.random() * list.length)].p : v;
-        NM.pat = pick;
-        const pat = $('#nmPat'); if (pat) pat.value = pick;
-        nmShow();
-      }
-      else if (a === 'nm-user') { NM.sel[v] = !NM.sel[v]; nmShow(); }
-      else if (a === 'nm-sel-all') { ((S.d && S.d.users) || []).forEach((u) => { NM.sel[u.id] = true; }); nmShow(); }
-      else if (a === 'nm-sel-none') { NM.sel = {}; nmShow(); }
+      else if (a === 'nm-sel-all') { NM.init = true; ((S.d && S.d.users) || []).forEach((u) => { NM.sel[u.id] = true; }); nmShow(); }
+      else if (a === 'nm-sel-none') { NM.init = true; NM.sel = {}; nmShow(); }
       else if (a === 'nm-apply') {
         const plan = nmPlan();
         if (!plan.length) { toast('هیچ کانفیگی انتخاب نشده — روی نامِ کانفیگ‌ها در بالا کلیک کنید', 'err'); return; }
-        NM.pat = nmPat(); NM.start = nmStart();
+        NM.pat = nmPat();
         if (!confirm(fa(plan.length) + ' کانفیگ با این الگو نام‌گذاری شود؟\nکاربران باید اشتراک‌شان را دوباره بگیرند.')) return;
         busy(t, 'در حال اعمال');
         let done = 0, failed = 0;
-        /* الگو برای هر کانفیگ جداگانه ذخیره می‌شود: شماره‌ی هر کدام در خودِ
-           الگو نشسته، پس نمی‌شود همه را با یک درخواست فرستاد */
+        /* الگو برای هر کانفیگ جداگانه ذخیره می‌شود تا بعداً بشود آن را
+           برای یک کاربرِ خاص عوض کرد، پس نمی‌شود همه را با یک درخواست فرستاد */
         for (const p of plan) {
           const r = await api('POST', '/api/users', { id: p.id, op: 'update', patch: { namePattern: p.pattern } });
           if (r && r.ok) done++; else failed++;
@@ -2427,12 +2382,9 @@
     /* به‌روزرسانی زنده‌ی پیش‌نمایش کانفیگ‌های فیک */
     if (e.target.classList.contains('fk-name') || e.target.classList.contains('fk-pos')) refreshPreview();
     if (e.target.type === 'range') { const b = e.target.parentElement.querySelector('b'); if (b) b.textContent = e.target.value + (b.textContent.match(/[^\d۰-۹]+$/) || [''])[0]; }
-    /* پیش‌نمایشِ زنده‌ی نام‌گذاری — هر تغییر در الگو یا شروعِ شماره‌گذاری
-       همان لحظه پیش‌نمایش را می‌سازد، بدون رندرِ دوباره‌ی کل صفحه */
-    if (e.target.id === 'nmPat' || e.target.id === 'nmStart') {
-      NM.pat = nmPat(); NM.start = nmStart();
-      nmShow();
-    }
+    /* پیش‌نمایشِ زنده‌ی نام‌گذاری — هر تغییر در الگو همان لحظه پیش‌نمایش را
+       می‌سازد، بدون رندرِ دوباره‌ی کل صفحه */
+    if (e.target.id === 'nmPat') { NM.pat = nmPat(); nmShow(); }
   });
 
   document.addEventListener('keydown', (e) => {
