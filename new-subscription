@@ -1111,7 +1111,9 @@
             display: none;
             align-items: center;
             justify-content: center;
-            z-index: 300;
+            /* باید از دراپ‌داون‌های QR/کانفیگ (z-index:9998) بالاتر باشد وگرنه
+               مودال پشت کادر باز‌شده گیر می‌کند */
+            z-index: 10000;
             padding: 20px;
         }
         .qr-big-overlay.show { display: flex; }
