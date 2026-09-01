@@ -119,11 +119,9 @@ const DEF = () => ({
   uiLoaded: 0,
   stats: {
     requests: 0, connections: 0,
-    daily: Array.from({ length: 24 }, (_, i) => 0.2 + Math.abs(Math.sin(i / 3)) * 0.6),
-    monthly: Array.from({ length: 30 }, (_, i) => 0.3 + Math.abs(Math.sin(i / 4)) * 0.5),
-    yearly: Array.from({ length: 12 }, (_, i) => 0.35 + Math.abs(Math.cos(i / 2)) * 0.45),
-    reqSeries: Array.from({ length: 24 }, () => Math.random() * 0.6 + 0.2),
-    trafficSeries: Array.from({ length: 24 }, (_, i) => 0.3 + Math.abs(Math.sin(i / 3.2)) * 0.5),
+    /* سری‌های نمودار دیگر مقادیر نمایشی فیک نیستند — در /api/state از
+       جدول تاریخچه‌ی مصرف (usage_history) ساخته می‌شوند */
+    daily: [], monthly: [], yearly: [], reqSeries: [], trafficSeries: [],
   },
 });
 
@@ -244,7 +242,7 @@ function backendOf(env) {
 }
 const KV_U = (uuid) => 'u:' + uuid;
 const KV_S = (uuid, ip) => 's:' + uuid + ':' + ip;
-const emptyUsage = () => ({ up: 0, down: 0, reqs: 0, last_seen: null, day: null, day_up: 0, day_down: 0 });
+const emptyUsage = () => ({ up: 0, down: 0, reqs: 0, last_seen: null, day: null, day_up: 0, day_down: 0, day_reqs: 0 });
 
 async function kvGetJson(env, key) {
   try { const raw = await env.KV.get(key); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
@@ -253,16 +251,22 @@ async function kvPutJson(env, key, val) {
   try { await env.KV.put(key, JSON.stringify(val)); return true; } catch (e) { return false; }
 }
 
-/** اعمال یک افزایش روی رکورد مصرف (همه‌ی بک‌اندها یکسان) */
+/** اعمال یک افزایش روی رکورد مصرف (همه‌ی بک‌اندها یکسان)
+ *  اگر سطل روزانه‌ی قبلی متعلق به روزی دیگر باشد، پیش از ریست برمی‌گردانده
+ *  می‌شود تا برای نمودارها در «تاریخچه» ثبت شود — مقدار قبلی را برمی‌گرداند. */
 function applyDelta(c, dUp, dDown, dReqs, day) {
+  const closedDay = (c.day && c.day !== day)
+    ? { day: c.day, up: c.day_up || 0, down: c.day_down || 0, reqs: c.day_reqs || 0 }
+    : null;
   c.up = (c.up || 0) + dUp;
   c.down = (c.down || 0) + dDown;
   c.reqs = (c.reqs || 0) + dReqs;
   c.last_seen = Date.now();
-  if (c.day !== day) { c.day = day; c.day_up = 0; c.day_down = 0; }   /* سطل روزانه */
+  if (c.day !== day) { c.day = day; c.day_up = 0; c.day_down = 0; c.day_reqs = 0; }   /* سطل روزانه */
   c.day_up = (c.day_up || 0) + dUp;
   c.day_down = (c.day_down || 0) + dDown;
-  return c;
+  c.day_reqs = (c.day_reqs || 0) + dReqs;
+  return closedDay;
 }
 
 /** خواندن از D1 — یک خط SQL */
@@ -331,9 +335,16 @@ async function usageEnsure(env) {
     /* ایندکس برای پاک‌سازی سریع */
     await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_sessions_active ON sessions(last_active)').run();
     /* سطل روزانه برای سهمیه‌ی روزانه — نصب‌های قدیمی این ستون‌ها را ندارند */
-    for (const col of ['day TEXT', 'day_up INTEGER NOT NULL DEFAULT 0', 'day_down INTEGER NOT NULL DEFAULT 0']) {
+    for (const col of ['day TEXT', 'day_up INTEGER NOT NULL DEFAULT 0', 'day_down INTEGER NOT NULL DEFAULT 0', 'day_reqs INTEGER NOT NULL DEFAULT 0']) {
       try { await env.DB.prepare('ALTER TABLE usage ADD COLUMN ' + col).run(); } catch (e) { /* از قبل هست */ }
     }
+    /* تاریخچه‌ی مصرف برای نمودارها — روزهای بسته‌شده (روزشده در usageDelta هنگام تعویض روز) */
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS usage_history (
+      day TEXT PRIMARY KEY,
+      up INTEGER NOT NULL DEFAULT 0,
+      down INTEGER NOT NULL DEFAULT 0,
+      reqs INTEGER NOT NULL DEFAULT 0
+    )`).run();
     USAGE_LAST_ERR = null;
     return true;
   } catch (e) {
@@ -1384,7 +1395,10 @@ async function usageDelta(env, uuid, dUp, dDown, dReqs, _retry) {
 
   /* ── حافظه (بدون هیچ بایندینگی) — موقت، فقط تا زنده بودن isolate ── */
   if (kind === 'mem') {
-    const c = applyDelta(MEM_USAGE.get(uuid) || emptyUsage(), dUp, dDown, dReqs, day);
+    const prev = MEM_USAGE.get(uuid);
+    const c = prev || emptyUsage();
+    const closed = applyDelta(c, dUp, dDown, dReqs, day);
+    if (closed) memHistAdd(closed.day, closed.up, closed.down, closed.reqs);
     MEM_USAGE.set(uuid, c);
     USAGE_CACHE.ts = 0;
     return true;
@@ -1392,24 +1406,35 @@ async function usageDelta(env, uuid, dUp, dDown, dReqs, _retry) {
   /* ── KV: خواندن → افزایش → نوشتن (ماندگار، تقریبی در اوج ترافیک) ── */
   if (kind === 'kv') {
     const c = (await kvGetJson(env, KV_U(uuid))) || emptyUsage();
-    applyDelta(c, dUp, dDown, dReqs, day);
+    const closed = applyDelta(c, dUp, dDown, dReqs, day);
     const ok = await kvPutJson(env, KV_U(uuid), c);
+    if (ok && closed) await kvHistAdd(env, closed.day, closed.up, closed.down, closed.reqs);
     USAGE_CACHE.ts = 0;
     if (ok) USAGE_LAST_ERR = null; else { USAGE_FAILS++; USAGE_LAST_ERR = 'نوشتن در KV ناموفق بود — دسترسی namespace را بررسی کنید'; }
     return ok;
   }
   try {
-    await env.DB.prepare(`INSERT INTO usage (uuid, up, down, reqs, last_seen, day, day_up, day_down)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(uuid) DO UPDATE SET
-        up = up + excluded.up,
-        down = down + excluded.down,
-        reqs = reqs + excluded.reqs,
-        last_seen = excluded.last_seen,
-        day_up   = CASE WHEN usage.day = excluded.day THEN usage.day_up + excluded.day_up ELSE excluded.day_up END,
-        day_down = CASE WHEN usage.day = excluded.day THEN usage.day_down + excluded.day_down ELSE excluded.day_down END,
-        day = excluded.day`)
-      .bind(uuid, dUp, dDown, dReqs, Date.now(), day, dUp, dDown).run();
+    /* روزِ بسته‌شده قبل از بازنویسی سطل به تاریخچه منتقل می‌شود — batch تراکنشی
+       است، پس در تلاشِ دوباره هیچ‌وقت دوبار ثبت نمی‌شود */
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO usage_history (day, up, down, reqs)
+        SELECT day, day_up, day_down, COALESCE(day_reqs, 0) FROM usage
+        WHERE uuid = ? AND day IS NOT NULL AND day <> ?
+        ON CONFLICT(day) DO UPDATE SET up = up + excluded.up, down = down + excluded.down, reqs = reqs + excluded.reqs`)
+        .bind(uuid, day),
+      env.DB.prepare(`INSERT INTO usage (uuid, up, down, reqs, last_seen, day, day_up, day_down, day_reqs)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(uuid) DO UPDATE SET
+          up = up + excluded.up,
+          down = down + excluded.down,
+          reqs = reqs + excluded.reqs,
+          last_seen = excluded.last_seen,
+          day_up   = CASE WHEN usage.day = excluded.day THEN usage.day_up + excluded.day_up ELSE excluded.day_up END,
+          day_down = CASE WHEN usage.day = excluded.day THEN usage.day_down + excluded.day_down ELSE excluded.day_down END,
+          day_reqs = CASE WHEN usage.day = excluded.day THEN COALESCE(usage.day_reqs, 0) + excluded.day_reqs ELSE excluded.day_reqs END,
+          day = excluded.day`)
+        .bind(uuid, dUp, dDown, dReqs, Date.now(), day, dUp, dDown, dReqs),
+    ]);
     USAGE_CACHE.ts = 0;                   // کش را بی‌اعتبار کن
     return true;
   } catch (e) {
@@ -1451,6 +1476,80 @@ async function usageReset(env, uuid, _retry) {
 }
 
 /** خواندن مصرف همه‌ی کاربران — با کش ۴ ثانیه‌ای */
+/* ═══════════ تاریخچه‌ی مصرف برای نمودارها (روزهای بسته‌شده) ═══════════
+   قبلاً سری‌های daily/monthly/trafficSeries مقادیر سینوسیِ فیک بودند و هیچ
+   نموداری واقعیت را نشان نمی‌داد. حالا هنگام تعویض روز، سطل روزانه‌ی قبلی
+   به تاریخچه منتقل می‌شود (D1: جدول usage_history، KV/Mem: همین ساختار) و
+   سری‌ها در /api/state از همین تاریخچه ساخته می‌شوند. */
+const MEM_HISTORY = new Map();       // day -> {up, down, reqs}
+const KV_HIST_KEY = 'usage_history';
+const HIST_KEEP_DAYS = 120;
+
+function histMerge(map, day, up, down, reqs) {
+  const cur = map.get(day) || { up: 0, down: 0, reqs: 0 };
+  cur.up += up; cur.down += down; cur.reqs += reqs;
+  map.set(day, cur);
+  while (map.size > HIST_KEEP_DAYS) {
+    const oldest = [...map.keys()].sort()[0];
+    map.delete(oldest);
+  }
+}
+function memHistAdd(day, up, down, reqs) { histMerge(MEM_HISTORY, day, up, down, reqs); }
+async function kvHistAdd(env, day, up, down, reqs) {
+  try {
+    const m = new Map(Object.entries((await kvGetJson(env, KV_HIST_KEY)) || {}));
+    histMerge(m, day, up, down, reqs);
+    const obj = {};
+    m.forEach((v, k) => { obj[k] = v; });
+    await kvPutJson(env, KV_HIST_KEY, obj);
+  } catch (e) { /* تاریخچه حیاتی نیست — مصرف اصلی مستقل از این نوشتن است */ }
+}
+
+/** خواندن تاریخچه — آرایه‌ی {day, up, down, reqs} به‌جز روزِ جاری
+ *  (سطلِ امروز زنده است و از خودِ usage خوانده می‌شود) */
+async function usageHistory(env) {
+  const kind = backendOf(env);
+  if (kind === 'mem') {
+    return [...MEM_HISTORY.entries()].map(([day, v]) => ({ day, up: v.up || 0, down: v.down || 0, reqs: v.reqs || 0 }));
+  }
+  if (kind === 'kv') {
+    const obj = (await kvGetJson(env, KV_HIST_KEY)) || {};
+    return Object.entries(obj).map(([day, v]) => ({ day, up: (v && v.up) || 0, down: (v && v.down) || 0, reqs: (v && v.reqs) || 0 }));
+  }
+  try {
+    const r = await env.DB.prepare('SELECT day, up, down, reqs FROM usage_history').all();
+    return (r.results || []).map((x) => ({ day: x.day, up: x.up || 0, down: x.down || 0, reqs: x.reqs || 0 }));
+  } catch (e) { return []; }
+}
+
+/** ساخت سری‌های نمودار از تاریخچه + سطل زنده‌ی امروز — واحد: گیگابایت */
+function buildChartSeries(hist, todayRow) {
+  const all = hist.slice();
+  if (todayRow && (todayRow.up || todayRow.down || todayRow.reqs)) all.push(todayRow);
+  const byDay = new Map(all.map((r) => [r.day, r]));
+  const dayIso = (back) => new Date(Date.now() - back * 86400000).toISOString().slice(0, 10);
+  const gb = (r) => r ? +(((r.up || 0) + (r.down || 0)) / 1073741824).toFixed(3) : 0;
+  const daily = [], reqSeries = [];
+  for (let i = 23; i >= 0; i--) {
+    const r = byDay.get(dayIso(i));
+    daily.push(gb(r));
+    reqSeries.push(r ? (r.reqs || 0) : 0);
+  }
+  const monthly = [];
+  for (let i = 29; i >= 0; i--) monthly.push(gb(byDay.get(dayIso(i))));
+  const byMonth = new Map();
+  all.forEach((r) => {
+    const k = String(r.day).slice(0, 7);
+    byMonth.set(k, (byMonth.get(k) || 0) + (r.up || 0) + (r.down || 0));
+  });
+  const yearly = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(); d.setUTCMonth(d.getUTCMonth() - i);
+    yearly.push(+((byMonth.get(d.toISOString().slice(0, 7)) || 0) / 1073741824).toFixed(3));
+  }
+  return { daily, monthly, yearly, trafficSeries: daily, reqSeries };
+}
+
 async function usageRead(env) {
   const kind = backendOf(env);
   if (kind === 'mem') {
@@ -1458,7 +1557,7 @@ async function usageRead(env) {
     const m = new Map();
     MEM_USAGE.forEach((c, uuid) => m.set(uuid, {
       up: c.up || 0, down: c.down || 0, reqs: c.reqs || 0, lastSeen: c.last_seen,
-      day: c.day || null, dayUp: c.day === dayKey() ? (c.day_up || 0) : 0, dayDown: c.day === dayKey() ? (c.day_down || 0) : 0,
+      day: c.day || null, dayUp: c.day === dayKey() ? (c.day_up || 0) : 0, dayDown: c.day === dayKey() ? (c.day_down || 0) : 0, dayReqs: c.day === dayKey() ? (c.day_reqs || 0) : 0,
     }));
     USAGE_CACHE = { ts: Date.now(), data: m };
     return m;
@@ -1474,7 +1573,7 @@ async function usageRead(env) {
         const uuid = String(k.name).slice(2);
         m.set(uuid, {
           up: c.up || 0, down: c.down || 0, reqs: c.reqs || 0, lastSeen: c.last_seen,
-          day: c.day || null, dayUp: c.day === dayKey() ? (c.day_up || 0) : 0, dayDown: c.day === dayKey() ? (c.day_down || 0) : 0,
+          day: c.day || null, dayUp: c.day === dayKey() ? (c.day_up || 0) : 0, dayDown: c.day === dayKey() ? (c.day_down || 0) : 0, dayReqs: c.day === dayKey() ? (c.day_reqs || 0) : 0,
         });
       }
       USAGE_CACHE = { ts: Date.now(), data: m };
@@ -1483,11 +1582,11 @@ async function usageRead(env) {
   }
   if (Date.now() - USAGE_CACHE.ts < USAGE_CACHE_TTL) return USAGE_CACHE.data;
   try {
-    const { results } = await env.DB.prepare('SELECT uuid, up, down, reqs, last_seen, day, day_up, day_down FROM usage').all();
+    const { results } = await env.DB.prepare('SELECT uuid, up, down, reqs, last_seen, day, day_up, day_down, day_reqs FROM usage').all();
     const m = new Map();
     (results || []).forEach((r) => m.set(r.uuid, {
       up: r.up || 0, down: r.down || 0, reqs: r.reqs || 0, lastSeen: r.last_seen,
-      day: r.day || null, dayUp: (r.day === dayKey() ? (r.day_up || 0) : 0), dayDown: (r.day === dayKey() ? (r.day_down || 0) : 0),
+      day: r.day || null, dayUp: (r.day === dayKey() ? (r.day_up || 0) : 0), dayDown: (r.day === dayKey() ? (r.day_down || 0) : 0), dayReqs: (r.day === dayKey() ? (r.day_reqs || 0) : 0),
     }));
     USAGE_CACHE = { ts: Date.now(), data: m };
     return m;
@@ -1508,22 +1607,23 @@ async function usageFresh(env, uuid) {
     const c = MEM_USAGE.get(uuid);
     if (!c) return { up: 0, down: 0, reqs: 0, lastSeen: null, dayUp: 0, dayDown: 0 };
     return { up: c.up || 0, down: c.down || 0, reqs: c.reqs || 0, lastSeen: c.last_seen || null,
-      dayUp: c.day === dayKey() ? (c.day_up || 0) : 0, dayDown: c.day === dayKey() ? (c.day_down || 0) : 0 };
+      dayUp: c.day === dayKey() ? (c.day_up || 0) : 0, dayDown: c.day === dayKey() ? (c.day_down || 0) : 0, dayReqs: c.day === dayKey() ? (c.day_reqs || 0) : 0 };
   }
   if (kind === 'kv') {
     const c = await kvGetJson(env, KV_U(uuid));
     if (!c) return { up: 0, down: 0, reqs: 0, lastSeen: null, dayUp: 0, dayDown: 0 };
     return { up: c.up || 0, down: c.down || 0, reqs: c.reqs || 0, lastSeen: c.last_seen || null,
-      dayUp: c.day === dayKey() ? (c.day_up || 0) : 0, dayDown: c.day === dayKey() ? (c.day_down || 0) : 0 };
+      dayUp: c.day === dayKey() ? (c.day_up || 0) : 0, dayDown: c.day === dayKey() ? (c.day_down || 0) : 0, dayReqs: c.day === dayKey() ? (c.day_reqs || 0) : 0 };
   }
   try {
-    const r = await env.DB.prepare('SELECT up, down, reqs, last_seen, day, day_up, day_down FROM usage WHERE uuid = ?').bind(uuid).first();
+    const r = await env.DB.prepare('SELECT up, down, reqs, last_seen, day, day_up, day_down, day_reqs FROM usage WHERE uuid = ?').bind(uuid).first();
     if (!r) return { up: 0, down: 0, reqs: 0, lastSeen: null, dayUp: 0, dayDown: 0 };
     const today = dayKey();
     return {
       up: r.up || 0, down: r.down || 0, reqs: r.reqs || 0, lastSeen: r.last_seen || null,
       dayUp: r.day === today ? (r.day_up || 0) : 0,
       dayDown: r.day === today ? (r.day_down || 0) : 0,
+      dayReqs: r.day === today ? (r.day_reqs || 0) : 0,
     };
   } catch (e) { return { up: 0, down: 0, reqs: 0, lastSeen: null, dayUp: 0, dayDown: 0 }; }
 }
@@ -3220,19 +3320,6 @@ const USER_PAGE = `<!DOCTYPE html>
         .radar-head { display: flex; flex-direction: column; gap: 2px; padding: 2px 4px; }
         .radar-title { font-size: 13px; font-weight: 700; color: var(--text); }
         .radar-hint { font-size: 10px; color: var(--text-muted); }
-        .radar-ports { display: flex; flex-wrap: wrap; gap: 6px; }
-        .radar-port-chip {
-            background: var(--surface-alt);
-            border: 1px solid var(--border);
-            color: var(--text-muted);
-            border-radius: 999px;
-            padding: 4px 12px;
-            font-size: 11px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .radar-port-chip.active { background: rgba(var(--accent-rgb), 0.15); border-color: rgba(var(--accent-rgb), 0.4); color: var(--accent); }
         .radar-start-btn {
             background: rgba(var(--accent-rgb), 0.15);
             border: 1px solid rgba(var(--accent-rgb), 0.3);
@@ -3636,54 +3723,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
     </div>
 
     <div id="screen-dashboard" class="app-screen active-screen">
-        <!-- رادار آی‌پی تمیز — کارتِ کاملِ بالای صفحه؛ برای دیدنش دکمه‌ای لازم نیست -->
-        <div class="radar-card" id="radar-card">
-            <div class="radar-head">
-                <span class="radar-title" id="radar-title">رادار آی‌پی تمیز</span>
-                <span class="radar-hint" id="radar-hint">کاملاً در مرورگر شما اجرا می‌شود</span>
-            </div>
-            <div class="radar-ports" id="radar-ports">
-                <span class="radar-port-chip active" data-port="443">443</span>
-                <span class="radar-port-chip" data-port="8443">8443</span>
-                <span class="radar-port-chip" data-port="2053">2053</span>
-                <span class="radar-port-chip" data-port="2083">2083</span>
-                <span class="radar-port-chip" data-port="2087">2087</span>
-                <span class="radar-port-chip" data-port="2096">2096</span>
-            </div>
-            <button class="radar-start-btn" id="radar-start-btn">
-                <i class="fa-solid fa-satellite-dish"></i> <span id="radar-start-label">شروع اسکن</span>
-            </button>
-            <div class="radar-progress-track">
-                <div class="radar-progress-bar" id="radar-progress-bar"></div>
-            </div>
-            <div class="radar-status" id="radar-status">آماده برای اسکن</div>
-            <div class="radar-table-wrap" id="radar-table-wrap">
-                <table class="radar-table">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>IP</th>
-                            <th id="radar-th-ping">تأخیر</th>
-                            <th id="radar-th-jitter">جیتر</th>
-                            <th id="radar-th-loss">لاس٪</th>
-                        </tr>
-                    </thead>
-                    <tbody id="radar-results-body"></tbody>
-                </table>
-            </div>
-            <div class="radar-best" id="radar-best">
-                <div class="radar-best-label" id="radar-best-label">کانفیگ بهترین آی‌پی</div>
-                <div class="radar-best-row">
-                    <input type="text" class="radar-best-input en-font" id="radar-best-link" readonly value="">
-                    <button class="ip-copy-btn" id="radar-copy-btn">
-                        <i class="fa-solid fa-copy"></i> <span id="radar-copy-label">کپی</span>
-                    </button>
-                </div>
-                <div class="radar-best-note" id="radar-best-note"></div>
-            </div>
-        </div>
 
-        <!-- کارت اشتراک -->
         <div class="subscription-card" id="main-sub-card">
             <div class="status-right">
                 <div class="active-badge">
@@ -3741,6 +3781,44 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 <a href="__TG_CHANNEL__" target="_blank" class="promo-btn telegram">
                     <i class="fa-brands fa-telegram"></i> تلگرام
                 </a>
+            </div>
+        </div>
+
+        <div class="radar-card" id="radar-card">
+            <div class="radar-head">
+                <span class="radar-title" id="radar-title">رادار آی‌پی تمیز</span>
+                <span class="radar-hint" id="radar-hint">کاملاً در مرورگر شما اجرا می‌شود — اسکن روی پورت‌های کانفیگ</span>
+            </div>
+            <button class="radar-start-btn" id="radar-start-btn">
+                <i class="fa-solid fa-satellite-dish"></i> <span id="radar-start-label">شروع اسکن</span>
+            </button>
+            <div class="radar-progress-track">
+                <div class="radar-progress-bar" id="radar-progress-bar"></div>
+            </div>
+            <div class="radar-status" id="radar-status">آماده برای اسکن</div>
+            <div class="radar-table-wrap" id="radar-table-wrap">
+                <table class="radar-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>IP</th>
+                            <th id="radar-th-ping">تأخیر</th>
+                            <th id="radar-th-jitter">جیتر</th>
+                            <th id="radar-th-loss">لاس٪</th>
+                        </tr>
+                    </thead>
+                    <tbody id="radar-results-body"></tbody>
+                </table>
+            </div>
+            <div class="radar-best" id="radar-best">
+                <div class="radar-best-label" id="radar-best-label">کانفیگ بهترین آی‌پی</div>
+                <div class="radar-best-row">
+                    <input type="text" class="radar-best-input en-font" id="radar-best-link" readonly value="">
+                    <button class="ip-copy-btn" id="radar-copy-btn">
+                        <i class="fa-solid fa-copy"></i> <span id="radar-copy-label">کپی</span>
+                    </button>
+                </div>
+                <div class="radar-best-note" id="radar-best-note"></div>
             </div>
         </div>
 
@@ -4010,7 +4088,6 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStart: "شروع اسکن", radarStop: "توقف", radarStatusReady: "آماده برای اسکن",
                 radarStatusScan: "در حال اسکن... {done} از {total} - یافت‌شده: {found}",
                 radarStatusDone: "پایان اسکن - {found} آی‌پی سالم یافت شد",
-                radarStatusNoPort: "حداقل یک پورت را انتخاب کنید",
                 radarStatusNoResult: "آی‌پی سالمی یافت نشد",
                 radarStatusNoConfig: "کانفیگ vless در این ساب یافت نشد",
                 radarThPing: "تأخیر", radarThJitter: "جیتر", radarThLoss: "لاس٪",
@@ -4037,7 +4114,6 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStart: "Start Scan", radarStop: "Stop", radarStatusReady: "Ready to scan",
                 radarStatusScan: "Scanning... {done} of {total} - found: {found}",
                 radarStatusDone: "Scan finished - {found} healthy IPs found",
-                radarStatusNoPort: "Select at least one port",
                 radarStatusNoResult: "No healthy IP found",
                 radarStatusNoConfig: "No vless config found in this subscription",
                 radarThPing: "Ping", radarThJitter: "Jitter", radarThLoss: "Loss%",
@@ -4064,7 +4140,6 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStart: "Taramayı Başlat", radarStop: "Durdur", radarStatusReady: "Taramaya hazır",
                 radarStatusScan: "Taranıyor... {done} / {total} - bulunan: {found}",
                 radarStatusDone: "Tarama bitti - {found} sağlıklı IP bulundu",
-                radarStatusNoPort: "En az bir port seçin",
                 radarStatusNoResult: "Sağlıklı IP bulunamadı",
                 radarStatusNoConfig: "Bu abonelikte vless konfigi bulunamadı",
                 radarThPing: "Gecikme", radarThJitter: "Jitter", radarThLoss: "Kayıp%",
@@ -4091,7 +4166,6 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStart: "بدء الفحص", radarStop: "إيقاف", radarStatusReady: "جاهز للفحص",
                 radarStatusScan: "جارٍ الفحص... {done} من {total} - تم العثور: {found}",
                 radarStatusDone: "انتهى الفحص - تم العثور على {found} آي‌بي سليم",
-                radarStatusNoPort: "اختر منفذًا واحدًا على الأقل",
                 radarStatusNoResult: "لم يتم العثور على آي‌بي سليم",
                 radarStatusNoConfig: "لا يوجد تكوين vless في هذا الاشتراك",
                 radarThPing: "التأخير", radarThJitter: "التذبذب", radarThLoss: "الفقد٪",
@@ -4674,9 +4748,16 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             });
         }
 
-        function radarSelectedPorts() {
-            return Array.from(document.querySelectorAll('#radar-ports .radar-port-chip.active'))
-                .map(function(el) { return parseInt(el.getAttribute('data-port'), 10); });
+        /* انتخاب پورت حذف شد — اسکن همیشه روی پورت‌های خودِ کانفیگ‌های ساب انجام می‌شود */
+        function radarConfigPorts() {
+            const ports = [];
+            const links = sanaeiClientData.links || [];
+            links.forEach(function(link) {
+                const parsed = parseConfigLink(link);
+                const p = parseInt(parsed.port, 10);
+                if (parsed.protocol === 'vless' && p > 0 && ports.indexOf(p) < 0) ports.push(p);
+            });
+            return ports;
         }
 
         async function radarProbeIp(ip, ports) {
@@ -4761,9 +4842,9 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 return;
             }
 
-            const ports = radarSelectedPorts();
+            const ports = radarConfigPorts();
             if (ports.length === 0) {
-                statusEl.textContent = data.radarStatusNoPort;
+                statusEl.textContent = data.radarStatusNoConfig;
                 return;
             }
 
@@ -4826,13 +4907,6 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         document.getElementById("radar-start-btn").addEventListener("click", function(e) {
             e.stopPropagation();
             radarRun();
-        });
-
-        document.querySelectorAll('#radar-ports .radar-port-chip').forEach(function(chip) {
-            chip.addEventListener('click', function(e) {
-                e.stopPropagation();
-                this.classList.toggle('active');
-            });
         });
 
         document.getElementById("radar-copy-btn").addEventListener("click", function(e) {
@@ -5066,7 +5140,15 @@ async function apiHandler(req, env, url, ctx) {
     }
     st.users = usersWithUsage;
     st.stats.requests++;
-    return json({ ...st, storage: backendOf(env), version: VERSION, build: BUILD, boot: BOOT, settings: { ...st.settings, auth: { ...st.settings.auth, password: undefined, totpSecret: st.settings.auth.totpSecret ? '•••••' : '' } } });
+    /* سری‌های نمودار از تاریخچه‌ی واقعی مصرف + سطل زنده‌ی امروز ساخته می‌شوند —
+       قبلاً موج‌های سینوسیِ ثابتِ نمایشی بودند */
+    const todayKey = dayKey();
+    let tUp = 0, tDown = 0, tReqs = 0;
+    usage.forEach((row) => {
+      if (row.day === todayKey) { tUp += row.dayUp || 0; tDown += row.dayDown || 0; tReqs += row.dayReqs || 0; }
+    });
+    const series = buildChartSeries(await usageHistory(env), { day: todayKey, up: tUp, down: tDown, reqs: tReqs });
+    return json({ ...st, stats: { ...st.stats, ...series }, storage: backendOf(env), version: VERSION, build: BUILD, boot: BOOT, settings: { ...st.settings, auth: { ...st.settings.auth, password: undefined, totpSecret: st.settings.auth.totpSecret ? '•••••' : '' } } });
   }
 
   if (route === 'settings' && (m === 'PUT' || m === 'POST')) {

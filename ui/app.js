@@ -299,7 +299,10 @@
   const busy = (el, label) => { if (el) { el.disabled = true; el.dataset.old = el.innerHTML; el.innerHTML = icon('fa-spinner fa-spin') + ' ' + label; } };
   const free = (el) => { if (el && el.dataset.old) { el.disabled = false; el.innerHTML = el.dataset.old; delete el.dataset.old; } };
 
-  /* ─────────── نمودار سطحی (SVG دقیق با تولتیپ) ─────────── */
+  /* ─────────── نمودار سطحی (SVG دقیق با تولتیپ) ───────────
+     ⚠️ viewBox با preserveAspectRatio="none" کشیده می‌شود؛ هر متنی یا
+     دایره‌ای داخل SVG کج و به‌شکل بیضی رندر می‌شد. برچسب‌های محور و نقطه‌ی
+     هاور عمداً HTML هستند تا با کشِ نمودار distort نشوند. */
   function area(data, opt = {}) {
     const W = 600, H = 180, pad = { t: 12, r: 8, b: 20, l: 8 };
     const d = (data && data.length ? data : [0]).map((x) => Number(x) || 0);
@@ -313,44 +316,53 @@
     const c = opt.color || 'var(--ac)', c2 = opt.color2 || 'var(--ac2)';
     const id = 'g' + Math.random().toString(36).slice(2, 7);
     const grid = [0, .25, .5, .75, 1].map((g) => '<line class="gl" x1="' + pad.l + '" y1="' + (pad.t + ih * g) + '" x2="' + (W - pad.r) + '" y2="' + (pad.t + ih * g) + '"/>').join('');
-    const labels = [0, .5, 1].map((g) => '<text class="ax" x="' + pad.l + '" y="' + (pad.t + ih * g - 3) + '">' + (mx * (1 - g)).toFixed(mx < 10 ? 1 : 0) + '</text>').join('');
+    const labels = [1, .5, 0].map((g) => '<span class="chart-y" style="top:' + (((pad.t + ih * (1 - g)) / H) * 100).toFixed(2) + '%">' + fa((mx * g).toFixed(mx < 10 ? 1 : 0)) + '</span>').join('');
     const svg = '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' +
       '<defs><linearGradient id="f' + id + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + c + '" stop-opacity=".34"/><stop offset="1" stop-color="' + c + '" stop-opacity="0"/></linearGradient>' +
       '<linearGradient id="s' + id + '" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="' + c2 + '"/><stop offset="1" stop-color="' + c + '"/></linearGradient></defs>' +
-      grid + labels +
+      grid +
       '<path class="ar" d="' + areaD + '" fill="url(#f' + id + ')"/>' +
       '<path class="ln" d="' + line + '" stroke="url(#s' + id + ')"/>' +
-      '<circle class="pt" r="3.5" cx="-20" cy="-20"/><line class="hv" x1="0" y1="0" x2="0" y2="0" style="display:none"/></svg>';
-    return '<div style="position:relative">' + svg + '<div class="chart-tip" style="display:none"></div></div>';
+      '<line class="hv" x1="0" y1="0" x2="0" y2="0" style="display:none"/></svg>';
+    return '<div class="chart-wrap" data-unit="' + esc(opt.unit || '') + '">' + svg + labels +
+      '<div class="chart-dot" style="display:none"></div>' +
+      '<div class="chart-tip" style="display:none"></div></div>';
   }
   /* اتصال تولتیپ به همه‌ی نمودارها */
   function bindCharts(root, series) {
     $$('.chart', root).forEach((svg) => {
       const d = (series && series.length ? series : []).map((x) => Number(x) || 0);
       if (!d.length) return;
-      const wrap = svg.parentElement, tip = wrap.querySelector('.chart-tip');
-      const pt = svg.querySelector('.pt'), hv = svg.querySelector('.hv');
+      const wrap = svg.parentElement, tip = wrap.querySelector('.chart-tip'), dot = wrap.querySelector('.chart-dot');
+      const hv = svg.querySelector('.hv');
+      const unit = wrap.getAttribute('data-unit') || '';
+      const W = 600, H = 180, pad = { t: 12, r: 8, b: 20, l: 8 };
+      const mx = Math.max(...d, 0.001), iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
       const on = (e) => {
         const r = svg.getBoundingClientRect();
-        const rel = (e.clientX - r.left) / r.width;
-        const i = Math.max(0, Math.min(d.length - 1, Math.round(rel * (d.length - 1))));
-        const mx = Math.max(...d, 0.001), W = 600, H = 180, pad = { t: 12, r: 8, b: 20, l: 8 };
-        const x = pad.l + (i / Math.max(1, d.length - 1)) * (W - pad.l - pad.r);
-        const y = pad.t + (H - pad.t - pad.b) - (d[i] / mx) * (H - pad.t - pad.b);
-        pt.setAttribute('cx', x); pt.setAttribute('cy', y);
+        /* اندیس از مختصات واقعیِ نمودار — با احتساب padding، وگرنه نقطه‌ی
+           انتخاب‌شده نسبت به نشانگر جابه‌جا می‌افتاد */
+        const vx = ((e.clientX - r.left) / r.width) * W;
+        const i = Math.max(0, Math.min(d.length - 1, Math.round(((vx - pad.l) / iw) * (d.length - 1))));
+        const x = pad.l + (i / Math.max(1, d.length - 1)) * iw;
+        const y = pad.t + ih - (d[i] / mx) * ih;
+        /* موقعیت پیکسلی واقعی — ارتفاعِ CSS (۱۷۰px) با viewBox (۱۸۰) یکی نیست */
+        const px = (x / W) * r.width, py = (y / H) * r.height;
+        dot.style.display = 'block'; dot.style.left = px + 'px'; dot.style.top = py + 'px';
         hv.setAttribute('x1', x); hv.setAttribute('x2', x); hv.setAttribute('y1', pad.t); hv.setAttribute('y2', H - pad.b); hv.style.display = '';
         tip.style.display = 'block';
-        tip.style.left = ((x / W) * 100) + '%';
-        tip.style.top = ((y / H) * 100) + '%';
-        tip.textContent = 'نقطه ' + fa(i + 1) + ' • ' + fa(d[i].toFixed(2));
+        tip.style.left = px + 'px';
+        tip.style.top = py + 'px';
+        tip.textContent = 'نقطه ' + fa(i + 1) + ' • ' + fa(d[i].toFixed(2)) + unit;
       };
       svg.addEventListener('mousemove', on);
-      svg.addEventListener('mouseleave', () => { tip.style.display = 'none'; pt.setAttribute('cx', -20); hv.style.display = 'none'; });
+      svg.addEventListener('mouseleave', () => { tip.style.display = 'none'; dot.style.display = 'none'; hv.style.display = 'none'; });
     });
   }
   const bars = (data, unit) => { const d = data.length ? data : [0]; const mx = Math.max(...d, 0.001); return '<div class="bars">' + d.map((v, i) => '<div data-tip="' + fa(Number(v).toFixed(2)) + (unit || '') + ' • ' + fa(i + 1) + '" style="height:' + Math.max(3, (Number(v) / mx) * 92) + 'px"></div>').join('') + '</div>'; };
   const ring = (p, l, c) => { const r = 40, cc = 2 * Math.PI * r, v = Math.max(0, Math.min(100, p)); return '<div class="ring"><svg width="100" height="100"><circle cx="50" cy="50" r="' + r + '" fill="none" stroke="var(--bs)" stroke-width="9"/><circle cx="50" cy="50" r="' + r + '" fill="none" stroke="' + (c || 'var(--ac)') + '" stroke-width="9" stroke-linecap="round" stroke-dasharray="' + cc + '" stroke-dashoffset="' + (cc - (v / 100) * cc) + '" style="transition:.7s"/></svg><div class="c">' + fa(v.toFixed(0)) + '٪<span>' + esc(l) + '</span></div></div>'; };
-  const spark = (d) => { const w = 70, h = 20, m = Math.max(...d, .001); const p = d.map((v, i) => (i ? 'L' : 'M') + (i / (d.length - 1)) * w + ',' + (h - (v / m) * (h - 2) - 1)).join(' '); return '<svg width="' + w + '" height="' + h + '"><path d="' + p + '" fill="none" stroke="var(--ac)" stroke-width="1.5"/></svg>'; };
+  /* با یک نقطه (یا داده‌ی خالی) تقسیم بر صفر مسیر «MNaN» می‌ساخت و اسپارک خاموش می‌شد */
+  const spark = (d) => { if (!d || d.length < 2) return ''; const w = 70, h = 20, dd = d.map(Number), m = Math.max(...dd, .001); const p = dd.map((v, i) => (i ? 'L' : 'M') + ((i / (dd.length - 1)) * w).toFixed(2) + ',' + (h - (v / m) * (h - 2) - 1).toFixed(2)).join(' '); return '<svg width="' + w + '" height="' + h + '"><path d="' + p + '" fill="none" stroke="var(--ac)" stroke-width="1.5"/></svg>'; };
 
   /* ─────────── فرم‌ساز ─────────── */
   function field(f, val) {
@@ -891,7 +903,7 @@
       '<div class="stat"><div class="lbl">' + icon('fa-tower-broadcast') + ' گره‌ها</div><div class="val">' + fa(s.cleanIPs.length) + '</div><div class="sub">' + fa(s.ports.length) + ' پورت • ' + fa(s.proxyIPs.length) + ' پروکسی</div></div>' +
       '</div>' +
       '<div class="grid g2" style="margin-top:12px">' +
-      '<div class="card"><header><span class="ic">' + icon('fa-chart-line') + '</span><div><h3>جریان ترافیک</h3><p>۲۴ بازه‌ی اخیر — موس را روی نمودار ببرید</p></div></header><div class="bd" id="chartWrap">' + area(ser) + '</div></div>' +
+      '<div class="card"><header><span class="ic">' + icon('fa-chart-line') + '</span><div><h3>جریان ترافیک</h3><p>۲۴ روز اخیر (گیگابایت) — موس را روی نمودار ببرید</p></div></header><div class="bd" id="chartWrap">' + area(ser, { unit: ' GB' }) + '</div></div>' +
       '<div class="card"><header><span class="ic b2">' + icon('fa-ranking-star') + '</span><div><h3>بیشترین مصرف‌کنندگان</h3><p>۶ کاربر اول</p></div></header><div class="bd">' +
       (top.map((u) => { const q = (u.quotaGB || 0) * 1073741824, pc = q ? (u.up + u.down) / q * 100 : 0; return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' +
         '<span class="dot ' + (u.enabled ? 'on' : 'bad') + '"></span>' +
@@ -1199,7 +1211,7 @@
       '<div class="stat"><div class="lbl">نسخه / بیلد</div><div class="val" style="font-size:15px">' + esc(S.d.version) + '</div><div class="sub">' + esc(S.d.build || '—') + '</div></div>' +
       '</div>' +
       '<div class="grid g2" style="margin-top:12px">' +
-      '<div class="card"><header><span class="ic">' + icon('fa-chart-area') + '</span><div><h3>مصرف ' + (r === 'd' ? 'روزانه' : r === 'm' ? 'ماهانه' : 'سالانه') + '</h3><p>گیگابایت در هر بازه</p></div></header><div class="bd" id="chartWrap">' + area(ser, { color: 'var(--ac2)', color2: 'var(--ac)' }) + '</div></div>' +
+      '<div class="card"><header><span class="ic">' + icon('fa-chart-area') + '</span><div><h3>مصرف ' + (r === 'd' ? 'روزانه' : r === 'm' ? 'ماهانه' : 'سالانه') + '</h3><p>گیگابایت در هر بازه</p></div></header><div class="bd" id="chartWrap">' + area(ser, { color: 'var(--ac2)', color2: 'var(--ac)', unit: ' GB' }) + '</div></div>' +
       '<div class="card"><header><span class="ic b2">' + icon('fa-chart-column') + '</span><div><h3>توزیع مصرف کاربران</h3><p>گیگابایت</p></div></header><div class="bd">' + bars(u.slice(0, 14).map((x) => (x.up + x.down) / 1073741824 || .01), 'GB') + '</div></div></div>' +
       '<div class="card"><header><span class="ic">' + icon('fa-users') + '</span><div><h3>مصرف به تفکیک کاربر</h3><p>با درصد پیشرفت</p></div></header><div class="bd" style="padding:0"><div class="tbl-wrap"><table>' +
       '<thead><tr><th>کاربر</th><th>آپلود</th><th>دانلود</th><th>کل</th><th>درصد سهمیه</th><th>درخواست</th></tr></thead><tbody>' +

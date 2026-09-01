@@ -301,10 +301,16 @@ tbody tr:hover{background:var(--acsoft)}
 .bar.bad>i{background:linear-gradient(90deg,var(--bad),var(--warn))}
 
 /* ═══════════ نمودار ═══════════ */
+.chart-wrap{position:relative}
 .chart{display:block;width:100%;height:170px;overflow:visible}
-.chart .gl{stroke:var(--bs);stroke-width:1}
+.chart .gl{stroke:var(--bs);stroke-width:1;vector-effect:non-scaling-stroke}
 .chart .ln{fill:none;stroke-width:2.5;stroke-linecap:round;vector-effect:non-scaling-stroke}
 .chart .hv{stroke:var(--ac);stroke-width:1;stroke-dasharray:3 3;vector-effect:non-scaling-stroke}
+/* برچسب محور و نقطه‌ی هاور HTML هستند — متن/دایره داخل SVG با کشِ viewBox کج می‌شد */
+.chart-y{position:absolute;left:4px;transform:translateY(-50%);font-size:9px;color:var(--mut);
+  font-family:'JetBrains Mono',monospace;pointer-events:none;line-height:1}
+.chart-dot{position:absolute;width:7px;height:7px;border-radius:99px;background:var(--ac);
+  border:2px solid var(--panel3);transform:translate(-50%,-50%);pointer-events:none;z-index:4;box-shadow:0 0 6px rgba(0,0,0,.35)}
 .chart-tip{position:absolute;transform:translate(-50%,-140%);background:var(--panel3);border:1px solid var(--bd);
   border-radius:9px;padding:3px 8px;font-size:10px;white-space:nowrap;pointer-events:none;box-shadow:var(--shadow);z-index:5}
 .bars{display:flex;align-items:flex-end;gap:2px;height:88px}
