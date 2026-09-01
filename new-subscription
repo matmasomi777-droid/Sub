@@ -92,44 +92,6 @@
 
         img { max-width: 100%; }
 
-        @media (max-width: 480px) {
-            .subscription-card { padding: 20px 16px; }
-            .progress-circle { width: 104px; height: 104px; }
-            .days-left { font-size: 32px; }
-        }
-
-        @media (max-width: 420px) {
-            body { padding: 16px 12px 100px 12px; }
-            .subscription-card { padding: 18px 14px; gap: 10px; }
-            .days-left { font-size: 27px; }
-            .expire-date { font-size: 11px; }
-            .progress-circle { width: 94px; height: 94px; }
-            .progress-text .percent { font-size: 19px; }
-            .stats-card { flex-wrap: wrap; padding: 14px 8px; row-gap: 14px; }
-            .stat-item { flex: 0 0 50%; }
-            .stat-divider { display: none; }
-            .stat-title { font-size: 10px; }
-            .stat-value { font-size: 13px; }
-            .actions-grid { gap: 8px; }
-            .action-card { padding: 15px 2px; }
-            .action-label { font-size: 10px; }
-            .user-name { min-width: 0; }
-            .username-text { display: inline-block; max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
-            .ip-copy-btn { padding: 6px 8px; font-size: 10px; }
-            .ip-address-text { font-size: 12px; }
-            .action-dropdown-container { padding: 12px; }
-            .action-dropdown-menu { padding: 12px; max-height: 82vh; }
-            .radar-best-row { flex-wrap: wrap; }
-            .radar-table { font-size: 10px; }
-        }
-
-        @media (max-width: 360px) {
-            body { padding: 14px 8px 100px 8px; }
-            .days-left { font-size: 24px; }
-            .progress-circle { width: 84px; height: 84px; }
-            .progress-text .percent { font-size: 17px; }
-            .qr-big-img { width: 200px; height: 200px; }
-        }
 
         html[dir="ltr"] body { direction: ltr; }
         html[dir="rtl"] body { direction: rtl; }
@@ -1140,6 +1102,102 @@
         body.light-mode .active-badge { color: var(--text); }
         body.light-mode .days-left { color: var(--text); }
         body.light-mode .expire-date { color: var(--text-muted) !important; }
+        /* ===== نمایشگر بزرگ QR ===== */
+        .qr-big-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .65);
+            backdrop-filter: blur(3px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 300;
+            padding: 20px;
+        }
+        .qr-big-overlay.show { display: flex; }
+        .qr-big-box {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 18px;
+            width: 100%;
+            max-width: 340px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            box-shadow: var(--box-shadow-light);
+        }
+        .qr-big-head { width: 100%; display: flex; align-items: center; justify-content: space-between; }
+        .qr-big-title { font-size: 13px; font-weight: 700; color: var(--text); }
+        .qr-big-close {
+            background: var(--surface-alt);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            border-radius: 10px;
+            width: 32px;
+            height: 32px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+        .qr-big-close:hover { color: var(--text); }
+        .qr-big-img { width: 248px; height: 248px; background: #fff; border-radius: 14px; padding: 12px; box-sizing: content-box; }
+        .qr-big-remark { font-size: 12px; color: var(--text-muted); text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        /* ===== ریسپانسیو (انتهای استایل تا بر قوانین پایه غلبه کند) ===== */
+        @media (min-width: 640px) {
+            body { max-width: 640px; }
+            .details-grid { grid-template-columns: repeat(4, 1fr); }
+            .subscription-card { padding: 26px; }
+            .days-left { font-size: 38px; }
+        }
+
+        @media (min-width: 1024px) {
+            body { max-width: 760px; }
+            .subscription-card { padding: 30px; }
+        }
+
+        @media (max-width: 480px) {
+            .subscription-card { padding: 20px 16px; }
+            .progress-circle { width: 104px; height: 104px; }
+            .days-left { font-size: 32px; }
+        }
+
+        @media (max-width: 420px) {
+            body { padding: 16px 12px 100px 12px; }
+            .subscription-card { padding: 18px 14px; gap: 10px; }
+            .days-left { font-size: 27px; }
+            .expire-date { font-size: 11px; }
+            .progress-circle { width: 94px; height: 94px; }
+            .progress-text .percent { font-size: 19px; }
+            .stats-card { flex-wrap: wrap; padding: 14px 8px; row-gap: 14px; }
+            .stat-item { flex: 0 0 50%; }
+            .stat-divider { display: none; }
+            .stat-title { font-size: 10px; }
+            .stat-value { font-size: 13px; }
+            .actions-grid { gap: 8px; }
+            .action-card { padding: 15px 2px; }
+            .action-label { font-size: 10px; }
+            .user-name { min-width: 0; }
+            .username-text { display: inline-block; max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+            .ip-copy-btn { padding: 6px 8px; font-size: 10px; }
+            .ip-address-text { font-size: 12px; }
+            .action-dropdown-container { padding: 12px; }
+            .action-dropdown-menu { padding: 12px; max-height: 82vh; }
+            .radar-best-row { flex-wrap: wrap; }
+            .radar-table { font-size: 10px; }
+        }
+
+        @media (max-width: 360px) {
+            body { padding: 14px 8px 100px 8px; }
+            .days-left { font-size: 24px; }
+            .progress-circle { width: 84px; height: 84px; }
+            .progress-text .percent { font-size: 17px; }
+            .qr-big-img { width: 190px; height: 190px; }
+        }
     </style>
 </head>
 <body>
