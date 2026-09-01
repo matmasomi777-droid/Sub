@@ -409,9 +409,9 @@
             isolation: isolate;
             overflow: hidden;
             background:
-                radial-gradient(circle at 50% 42%, rgba(39, 31, 89, .95) 0 52%, transparent 53%),
-                conic-gradient(from -90deg, #b05cff 0 calc(var(--remaining-percent) * 1%), #5d7cff calc(var(--remaining-percent) * 1%) calc(var(--remaining-percent) * 1% + 4%), rgba(255,255,255,.08) 0 100%);
-            box-shadow: 0 0 34px rgba(123, 78, 255, .22), inset 0 0 24px rgba(255,255,255,.04);
+                radial-gradient(circle at 50% 42%, rgba(9, 12, 17, .95) 0 52%, transparent 53%),
+                conic-gradient(from -90deg, var(--accent-2) 0 calc(var(--remaining-percent) * 1%), var(--accent) calc(var(--remaining-percent) * 1%) calc(var(--remaining-percent) * 1% + 4%), rgba(255,255,255,.08) 0 100%);
+            box-shadow: 0 0 34px rgba(var(--accent-2-rgb), .22), inset 0 0 24px rgba(255,255,255,.04);
             transition: --remaining-percent .75s cubic-bezier(.2,.8,.2,1), box-shadow .35s ease;
         }
         .progress-circle::before {
@@ -419,9 +419,9 @@
             position: absolute;
             inset: 7px;
             border-radius: 50%;
-            background: linear-gradient(180deg, rgba(10,14,29,.97), rgba(15,13,37,.98));
-            border: 1px solid rgba(181,123,255,.22);
-            box-shadow: inset 0 0 24px rgba(89,68,255,.1);
+            background: linear-gradient(180deg, rgba(9,12,17,.97), rgba(18,22,31,.98));
+            border: 1px solid rgba(var(--accent-rgb), .25);
+            box-shadow: inset 0 0 24px rgba(var(--accent-2-rgb), .12);
             z-index: 0;
         }
         .progress-circle::after {
@@ -429,7 +429,7 @@
             position: absolute;
             inset: -8px;
             border-radius: 50%;
-            border: 1px dashed rgba(143,104,255,.26);
+            border: 1px dashed rgba(var(--accent-rgb), .26);
             animation: liquidOrbit 16s linear infinite;
             pointer-events: none;
         }
@@ -439,7 +439,7 @@
             border-radius: 50%;
             overflow: hidden;
             z-index: 1;
-            background: radial-gradient(circle at 50% 28%, rgba(142,90,255,.14), rgba(10,12,30,.9) 68%);
+            background: radial-gradient(circle at 50% 28%, rgba(var(--accent-rgb), .14), rgba(9,12,17,.9) 68%);
         }
         .liquid-fill {
             position: absolute;
@@ -448,9 +448,9 @@
             height: 120%;
             top: calc(100% - (var(--remaining-percent) * 1%));
             min-height: 18%;
-            background: linear-gradient(180deg, #bd66ff 0%, #7650ff 42%, #405cff 100%);
+            background: linear-gradient(180deg, var(--accent) 0%, #2AA0CE 42%, var(--accent-2) 100%);
             border-radius: 42% 48% 0 0;
-            box-shadow: 0 -8px 24px rgba(170,85,255,.45), inset 0 12px 18px rgba(255,255,255,.1);
+            box-shadow: 0 -8px 24px rgba(var(--accent-rgb), .35), inset 0 12px 18px rgba(255,255,255,.1);
             transition: top .8s cubic-bezier(.2,.8,.2,1);
             animation: liquidFloat 3.8s ease-in-out infinite alternate;
         }
@@ -463,7 +463,7 @@
             width: 116%;
             height: 20px;
             border-radius: 50%;
-            background: rgba(205,148,255,.52);
+            background: rgba(var(--accent-rgb), .5);
             filter: blur(.4px);
             animation: liquidWave 3.2s ease-in-out infinite alternate;
         }
@@ -472,7 +472,7 @@
             left: 4%;
             width: 104%;
             height: 13px;
-            background: rgba(93,141,255,.56);
+            background: rgba(var(--accent-2-rgb), .5);
             animation-duration: 2.6s;
             animation-direction: alternate-reverse;
         }
@@ -483,7 +483,7 @@
             height: 5px;
             border-radius: 50%;
             background: rgba(255,255,255,.55);
-            box-shadow: 0 0 8px rgba(203,161,255,.9);
+            box-shadow: 0 0 8px rgba(var(--accent-rgb), .7);
             animation: bubbleRise 3.5s ease-in infinite;
         }
         .liquid-bubble.b1 { left: 28%; bottom: 20%; animation-delay: -.8s; }
@@ -507,11 +507,11 @@
             margin-left: -3.5px;
             border-radius: 50%;
             background: #fff;
-            box-shadow: 0 0 10px 3px rgba(181,100,255,.95);
+            box-shadow: 0 0 10px 3px rgba(var(--accent-rgb), .95);
         }
         .progress-text { position: relative; z-index: 5; text-align: center; text-shadow: 0 2px 10px rgba(0,0,0,.8); }
         .progress-text .percent { font-size: 22px; font-weight: 700; color: #fff; font-family: 'JetBrains Mono', monospace; }
-        .progress-text .label { font-size: 9px; color: #cbbcf4; display: block; margin-top: 2px; }
+        .progress-text .label { font-size: 9px; color: var(--text-muted); display: block; margin-top: 2px; }
         .subscription-card.disconnected .progress-circle { filter: grayscale(.65); opacity: .7; }
         .subscription-card.disconnected .radar-sweep,
         .subscription-card.disconnected .liquid-fill { animation-play-state: paused; }
@@ -1111,40 +1111,6 @@
         }
         .client-download-btn:hover { background-color: var(--accent); color: #06110F; }
 
-        /* ===== کارت طراح ===== */
-        .designer-card {
-            background-color: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            padding: 10px 14px;
-            margin-top: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            box-shadow: var(--box-shadow-light);
-        }
-        .designer-info { display: flex; align-items: center; gap: 8px; }
-        .designer-text-label { font-size: 11px; color: var(--text-muted); font-weight: 500; }
-        .designer-name-title {
-            font-size: 12px;
-            font-weight: 700;
-            color: var(--accent);
-            font-family: 'JetBrains Mono', monospace;
-            cursor: pointer;
-            transition: color 0.2s;
-            text-decoration: none;
-        }
-        .designer-name-title:hover { color: var(--accent-2); }
-        .designer-tg-btn {
-            font-size: 15px;
-            color: var(--text-muted);
-            text-decoration: none;
-            transition: all 0.25s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .designer-tg-btn:hover { color: var(--accent); transform: scale(1.1); }
 
         /* ===== ناوبری پایین ===== */
         .bottom-nav {
@@ -1180,7 +1146,73 @@
             border-radius: 16px;
             color: var(--accent);
         }
-    </style>
+        /* ===== رادار آی‌پی تمیز — کارتِ کامل و همیشه‌نما (بدون دکمه‌ی باز کردن) ===== */
+        .radar-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 10px 25px var(--shadow);
+            padding: 16px;
+            margin-bottom: 16px;
+            width: 100%;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            justify-content: flex-start;
+            gap: 10px;
+            text-align: right;
+        }
+        html[dir="ltr"] .radar-card { text-align: left; }
+        .radar-head { display: flex; flex-direction: column; gap: 2px; padding: 2px 4px; }
+        .radar-title { font-size: 13px; font-weight: 700; color: var(--text); }
+        .radar-hint { font-size: 10px; color: var(--text-muted); }
+        .radar-start-btn {
+            background: rgba(var(--accent-rgb), 0.15);
+            border: 1px solid rgba(var(--accent-rgb), 0.3);
+            color: var(--text);
+            padding: 8px 14px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        .radar-start-btn:hover { background: var(--accent); color: #06110F; }
+        .radar-start-btn.running { background: rgba(var(--warn-rgb), 0.15); border-color: rgba(var(--warn-rgb), 0.35); color: var(--warn); }
+        .radar-progress-track { width: 100%; height: 6px; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+        .radar-progress-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.2s; }
+        .radar-status { font-size: 11px; color: var(--text-muted); padding: 0 4px; min-height: 14px; }
+        .radar-table-wrap { width: 100%; overflow-x: auto; display: none; }
+        .radar-table-wrap.show { display: block; }
+        .radar-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        .radar-table th { color: var(--text-muted); font-weight: 600; text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+        html[dir="ltr"] .radar-table th { text-align: left; }
+        .radar-table td { color: var(--text); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+        .radar-table tbody tr:last-child td { border-bottom: none; }
+        .radar-table tr.radar-row-best td { background: rgba(var(--accent-rgb), 0.12); color: var(--accent); font-weight: 700; }
+        .radar-port-tag { color: var(--text-muted); font-size: 10px; }
+        .radar-best { display: none; flex-direction: column; gap: 6px; width: 100%; }
+        .radar-best.show { display: flex; }
+        .radar-best-label { font-size: 11px; color: var(--text-muted); padding: 0 4px; }
+        .radar-best-row { display: flex; gap: 6px; align-items: center; width: 100%; }
+        .radar-best-input {
+            flex: 1; min-width: 0;
+            background: var(--surface-alt);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font-size: 10px;
+            padding: 7px 10px;
+            direction: ltr;
+            text-overflow: ellipsis;
+        }
+        .radar-best-input:focus { outline: none; border-color: rgba(var(--accent-rgb), 0.4); }
+        .radar-best-note { font-size: 10px; color: var(--text-muted); padding: 0 4px; }    </style>
 </head>
 <body>
 
@@ -1319,9 +1351,48 @@
                 با پشتیبانی تماس بگیرید.
             </div>
             <div class="promo-buttons" style="justify-content: center;">
-                <a href="https://t.me/Masih_psn" target="_blank" class="promo-btn telegram" id="promo-support-link">
+                <a href="__TG_CHANNEL__" target="_blank" class="promo-btn telegram" id="promo-support-link">
                     <i class="fa-brands fa-telegram"></i> تلگرام
                 </a>
+            </div>
+        </div>
+
+        <!-- رادار آی‌پی تمیز — سه ردیف پایین‌تر از کارت‌های اصلی؛ اسکن روی پورت‌های کانفیگ انجام می‌شود -->
+        <div class="radar-card" id="radar-card">
+            <div class="radar-head">
+                <span class="radar-title" id="radar-title">رادار آی‌پی تمیز</span>
+                <span class="radar-hint" id="radar-hint">کاملاً در مرورگر شما اجرا می‌شود — اسکن روی پورت‌های کانفیگ</span>
+            </div>
+            <button class="radar-start-btn" id="radar-start-btn">
+                <i class="fa-solid fa-satellite-dish"></i> <span id="radar-start-label">شروع اسکن</span>
+            </button>
+            <div class="radar-progress-track">
+                <div class="radar-progress-bar" id="radar-progress-bar"></div>
+            </div>
+            <div class="radar-status" id="radar-status">آماده برای اسکن</div>
+            <div class="radar-table-wrap" id="radar-table-wrap">
+                <table class="radar-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>IP</th>
+                            <th id="radar-th-ping">تأخیر</th>
+                            <th id="radar-th-jitter">جیتر</th>
+                            <th id="radar-th-loss">لاس٪</th>
+                        </tr>
+                    </thead>
+                    <tbody id="radar-results-body"></tbody>
+                </table>
+            </div>
+            <div class="radar-best" id="radar-best">
+                <div class="radar-best-label" id="radar-best-label">کانفیگ بهترین آی‌پی</div>
+                <div class="radar-best-row">
+                    <input type="text" class="radar-best-input en-font" id="radar-best-link" readonly value="">
+                    <button class="ip-copy-btn" id="radar-copy-btn">
+                        <i class="fa-solid fa-copy"></i> <span id="radar-copy-label">کپی</span>
+                    </button>
+                </div>
+                <div class="radar-best-note" id="radar-best-note"></div>
             </div>
         </div>
 
@@ -1397,16 +1468,6 @@
             </div>
         </div>
 
-        <!-- کارت طراح -->
-        <div class="designer-card">
-            <div class="designer-info">
-                <span class="designer-text-label" id="designer-lbl">سازنده تم:</span>
-                <a href="https://t.me/Masih_psn" target="_blank" class="designer-name-title en-font">@Masih_psn</a>
-            </div>
-            <a class="designer-tg-btn" href="https://t.me/Masih_psn" target="_blank" title="Telegram">
-                <i class="fa-brands fa-telegram"></i>
-            </a>
-        </div>
     </div>
 
     <div id="screen-download-apps" class="app-screen">
@@ -1474,26 +1535,24 @@
         // همه‌جای سایت (کارت تبلیغاتی، دکمه تمدید، پاپ‌آپ نوتیفیکیشن)
         // از همین یک متغیر استفاده می‌کنن
         // ================================================================
-        const SUPPORT_TELEGRAM_ID = "Masih_psn";
-        const SUPPORT_TELEGRAM_URL = `https://t.me/${SUPPORT_TELEGRAM_ID}`;
+        // لینک تلگرام پشتیبانی از پنل تزریق می‌شود (__TG_CHANNEL__ در worker.js)
+        const SUPPORT_TELEGRAM_URL = "__TG_CHANNEL__";
 
-        // ===== داده‌های دریافتی از پنل =====
+        // ===== داده‌های دریافتی از پنل (worker.js — جایگزین تمپلیت Go) =====
+        // Placeholderهای پنل با همان فرمتِ تمپلیت (bytes/ثانیه) مقداردهی می‌شوند؛
+        // fetchLiveSubscriptionData همین‌ها را با هدر subscription-userinfo زنده به‌روز می‌کند.
         const sanaeiTemplateData = {
-            sId: "{{ .sId }}",
-            enabled: {{ .enabled }},
-            expireSeconds: {{ .expire }},
-            downloadByte: {{ .downloadByte }},
-            uploadByte: {{ .uploadByte }},
-            totalByte: {{ .totalByte }},
-            subUrl: "{{ .subUrl }}",
-            subJsonUrl: "{{ .subJsonUrl }}",
-            subClashUrl: "{{ .subClashUrl }}",
-            subTitle: "{{ .subTitle }}",
-            subSupportUrl: "{{ .subSupportUrl }}",
-            datepicker: "{{ .datepicker }}",
-            lastOnline: {{ .lastOnline }},
-            emails: [{{ range $i, $e := .emails }}{{ if $i }},{{ end }}"{{ $e }}"{{ end }}],
-            links: [{{ range $i, $l := .links }}{{ if $i }},{{ end }}"{{ $l }}"{{ end }}]
+            enabled: ("__STATUS_CODE__" === "active"),
+            expireSeconds: parseInt("__EXPIRE_SECONDS__", 10) || 0,
+            downloadByte: parseInt("__USED_BYTES__", 10) || 0,
+            uploadByte: 0,
+            totalByte: parseInt("__LIMIT_BYTES__", 10) || 0,
+            subUrl: "__SYNC_NORMAL__",
+            subTitle: "__PANEL_NAME__",
+            subSupportUrl: "__TG_CHANNEL__",
+            lastOnline: parseInt("__LAST_ONLINE_MS__", 10) || 0,
+            emails: ["__USER_NAME__"],
+            links: []
         };
 
         // ===== متغیرهای سراسری =====
@@ -1592,7 +1651,7 @@
                 navDashboard: "<i class='fa-solid fa-house'></i>داشبورد", navDownload: "<i class='fa-solid fa-download'></i>دانلود برنامه",
                 dlScreenTitle: "دانلود برنامه ها", dlSubtitle: "کلاینت رسمی فروشگاه", btnDl: "دانلود",
                 tabAndroid: "اندروید", tabIos: "آیفون / آیپد", tabDesktop: "ویندوز / مک",
-                designerLbl: "سازنده تم:", expiredText: "منقضی", unlimitedText: "نامحدود", emptyConfigs: "خالی", copyBtnText: "کپی",
+                expiredText: "منقضی", unlimitedText: "نامحدود", emptyConfigs: "خالی", copyBtnText: "کپی",
                 lastConnectUnknown: "--", onlineText: "آنلاین", offlineText: "آفلاین",
                 promoText: "آیا نیاز به <span>خرید</span> یا <span>تمدید ساب</span> دارید؟<br>با پشتیبانی تماس بگیرید.",
                 promoTelegram: "تلگرام",
@@ -1601,6 +1660,15 @@
                 notificationDismiss: "خیر",
                 notificationSupport: "پشتیبانی",
                 pingChecking: "در حال بررسی...", pingTimeout: "بدون پاسخ", bestPingLabel: "بهترین پینگ:",
+                radarTitle: "رادار آی‌پی تمیز", radarHint: "کاملاً در مرورگر شما اجرا می‌شود — اسکن روی پورت‌های کانفیگ",
+                radarStart: "شروع اسکن", radarStop: "توقف", radarStatusReady: "آماده برای اسکن",
+                radarStatusScan: "در حال اسکن... {done} از {total} - یافت‌شده: {found}",
+                radarStatusDone: "پایان اسکن - {found} آی‌پی سالم یافت شد",
+                radarStatusNoTlsPort: "هیچ پورت TLS قابل‌اسکنی در کانفیگ‌ها یافت نشد",
+                radarStatusNoResult: "آی‌پی سالمی یافت نشد",
+                radarStatusNoConfig: "کانفیگ vless در این ساب یافت نشد",
+                radarThPing: "تأخیر", radarThJitter: "جیتر", radarThLoss: "لاس٪",
+                radarBestLabel: "کانفیگ بهترین آی‌پی", radarBestNote: "پورت برتر: {port}",
                 qrModalTitle: "QR Code", configModalTitle: "کپی کانفیگ"
             },
             en: {
@@ -1613,7 +1681,7 @@
                 navDashboard: "<i class='fa-solid fa-house'></i>Dashboard", navDownload: "<i class='fa-solid fa-download'></i>App",
                 dlScreenTitle: "Download Clients", dlSubtitle: "Official Store Client", btnDl: "Get App",
                 tabAndroid: "Android", tabIos: "iPhone / iPad", tabDesktop: "Win / Mac",
-                designerLbl: "Theme Developer:", expiredText: "Expired", unlimitedText: "Unlimited", emptyConfigs: "Empty", copyBtnText: "Copy",
+                expiredText: "Expired", unlimitedText: "Unlimited", emptyConfigs: "Empty", copyBtnText: "Copy",
                 lastConnectUnknown: "--", onlineText: "Online", offlineText: "Offline",
                 promoText: "Need to <span>buy</span> or <span>renew</span> your subscription?<br>Contact support.",
                 promoTelegram: "Telegram",
@@ -1622,6 +1690,15 @@
                 notificationDismiss: "No",
                 notificationSupport: "Support",
                 pingChecking: "Checking...", pingTimeout: "No response", bestPingLabel: "Best Ping:",
+                radarTitle: "Clean IP Radar", radarHint: "Runs entirely in your browser — scans config ports",
+                radarStart: "Start Scan", radarStop: "Stop", radarStatusReady: "Ready to scan",
+                radarStatusScan: "Scanning... {done} of {total} - found: {found}",
+                radarStatusDone: "Scan finished - {found} healthy IPs found",
+                radarStatusNoTlsPort: "No probeable TLS port found in configs",
+                radarStatusNoResult: "No healthy IP found",
+                radarStatusNoConfig: "No vless config found in this subscription",
+                radarThPing: "Ping", radarThJitter: "Jitter", radarThLoss: "Loss%",
+                radarBestLabel: "Best IP config", radarBestNote: "Winning port: {port}",
                 qrModalTitle: "QR Code", configModalTitle: "Copy Config"
             },
             tr: {
@@ -1634,7 +1711,7 @@
                 navDashboard: "<i class='fa-solid fa-house'></i>Panel", navDownload: "<i class='fa-solid fa-download'></i>Uygulama",
                 dlScreenTitle: "Uygulamaları İndir", dlSubtitle: "Resmi Mağaza İstemcisi", btnDl: "İndir",
                 tabAndroid: "Android", tabIos: "iPhone / iPad", tabDesktop: "Win / Mac",
-                designerLbl: "Tema Geliştirici:", expiredText: "Süresi Doldu", unlimitedText: "Sınırsız", emptyConfigs: "Boş", copyBtnText: "Kopyala",
+                expiredText: "Süresi Doldu", unlimitedText: "Sınırsız", emptyConfigs: "Boş", copyBtnText: "Kopyala",
                 lastConnectUnknown: "--", onlineText: "Çevrimiçi", offlineText: "Çevrimdışı",
                 promoText: "Aboneliğinizi <span>satın</span> veya <span>yenile</span> mi gerekiyor?<br>Destek ile iletişime geçin.",
                 promoTelegram: "Telegram",
@@ -1643,6 +1720,15 @@
                 notificationDismiss: "Hayır",
                 notificationSupport: "Destek",
                 pingChecking: "Kontrol ediliyor...", pingTimeout: "Yanıt yok", bestPingLabel: "En İyi Ping:",
+                radarTitle: "Temiz IP Radarı", radarHint: "Tamamen tarayıcınızda çalışır — yapılandırma portlarını tarar",
+                radarStart: "Taramayı Başlat", radarStop: "Durdur", radarStatusReady: "Taramaya hazır",
+                radarStatusScan: "Taranıyor... {done} / {total} - bulunan: {found}",
+                radarStatusDone: "Tarama bitti - {found} sağlıklı IP bulundu",
+                radarStatusNoTlsPort: "Yapılandırmalarda taranabilir TLS portu bulunamadı",
+                radarStatusNoResult: "Sağlıklı IP bulunamadı",
+                radarStatusNoConfig: "Bu abonelikte vless konfigi bulunamadı",
+                radarThPing: "Gecikme", radarThJitter: "Jitter", radarThLoss: "Kayıp%",
+                radarBestLabel: "En iyi IP konfigi", radarBestNote: "Kazanan port: {port}",
                 qrModalTitle: "QR Kodu", configModalTitle: "Konfig Kopyala"
             },
             ar: {
@@ -1655,7 +1741,7 @@
                 navDashboard: "<i class='fa-solid fa-house'></i>الرئيسية", navDownload: "<i class='fa-solid fa-download'></i>التطبيق",
                 dlScreenTitle: "تحميل التطبيقات", dlSubtitle: "عميل المتجر الرسمي", btnDl: "تحميل",
                 tabAndroid: "أندروید", tabIos: "آيفون / آيباد", tabDesktop: "ویندوز / ماک",
-                designerLbl: "مطور القالب:", expiredText: "منتهي", unlimitedText: "غير محدود", emptyConfigs: "خالي", copyBtnText: "نسخ",
+                expiredText: "منتهي", unlimitedText: "غير محدود", emptyConfigs: "خالي", copyBtnText: "نسخ",
                 lastConnectUnknown: "--", onlineText: "متصل", offlineText: "غير متصل",
                 promoText: "هل تحتاج إلى <span>شراء</span> أو <span>تجديد</span> اشتراكك؟<br>اتصل بالدعم.",
                 promoTelegram: "تيليجرام",
@@ -1664,6 +1750,15 @@
                 notificationDismiss: "لا",
                 notificationSupport: "الدعم",
                 pingChecking: "جارٍ الفحص...", pingTimeout: "لا استجابة", bestPingLabel: "أفضل بينغ:",
+                radarTitle: "رادار الآي‌بي النظيف", radarHint: "يعمل بالكامل داخل متصفحك — يفحص منافذ الإعدادات",
+                radarStart: "بدء الفحص", radarStop: "إيقاف", radarStatusReady: "جاهز للفحص",
+                radarStatusScan: "جارٍ الفحص... {done} من {total} - تم العثور: {found}",
+                radarStatusDone: "انتهى الفحص - تم العثور على {found} آي‌بي سليم",
+                radarStatusNoTlsPort: "لم يتم العثور على منفذ TLS قابل للفحص في الإعدادات",
+                radarStatusNoResult: "لا يوجد آي‌بي سليم",
+                radarStatusNoConfig: "لا يوجد تكوين vless في هذا الاشتراك",
+                radarThPing: "زمن الاستجابة", radarThJitter: "الاهتزاز", radarThLoss: "الفقد٪",
+                radarBestLabel: "تكوين أفضل آي‌بي", radarBestNote: "المنفذ الفائز: {port}",
                 qrModalTitle: "رمز QR", configModalTitle: "نسخ التكوين"
             }
         };
@@ -2336,10 +2431,21 @@
             document.getElementById("lbl-tab-android").innerText = data.tabAndroid;
             document.getElementById("lbl-tab-ios").innerText = data.tabIos;
             document.getElementById("lbl-tab-desktop").innerText = data.tabDesktop;
-            document.getElementById("designer-lbl").innerText = data.designerLbl;
             document.getElementById("qr-modal-title").innerText = data.qrModalTitle;
             document.getElementById("config-modal-title").innerText = data.configModalTitle;
             document.getElementById("best-ping-label").innerText = data.bestPingLabel;
+
+            document.getElementById("radar-title").innerText = data.radarTitle;
+            document.getElementById("radar-hint").innerText = data.radarHint;
+            document.getElementById("radar-th-ping").innerText = data.radarThPing;
+            document.getElementById("radar-th-jitter").innerText = data.radarThJitter;
+            document.getElementById("radar-th-loss").innerText = data.radarThLoss;
+            document.getElementById("radar-best-label").innerText = data.radarBestLabel;
+            document.getElementById("radar-copy-label").innerText = data.copyBtnText;
+            if (!radarRunning) {
+                document.getElementById("radar-start-label").innerText = data.radarStart;
+                document.getElementById("radar-status").innerText = data.radarStatusReady;
+            }
 
             document.querySelector('.promo-text').innerHTML = data.promoText;
             const promoBtns = document.querySelectorAll('.promo-btn');
@@ -2422,6 +2528,225 @@
                 btn.innerText = currentLocale.btnDl;
             });
         }
+
+        const RADAR_TIMEOUT = 2000;
+        const RADAR_PROBES = 3;
+        const RADAR_CONCURRENCY = 12;
+        const RADAR_IP_COUNT = 140;
+        const RADAR_KEEP = 8;
+
+        let radarRunning = false;
+        let radarCancelRequested = false;
+
+        function randCfIp() {
+            var r = CF_RANGES[Math.floor(Math.random() * CF_RANGES.length)];
+            var c = r[1] + Math.floor(Math.random() * (r[2] - r[1] + 1));
+            return r[0] + c + '.' + Math.floor(Math.random() * 256);
+        }
+
+        // هم onload و هم onerror یعنی «هاست جواب داد»؛ ما دسترسی و تأخیر را می‌سنجیم نه موفقیت تصویر.
+        function pingIp(ip, port, timeout) {
+            return new Promise(function(res) {
+                const t0 = performance.now();
+                let done = false;
+                const fin = function(ok) {
+                    if (done) return;
+                    done = true;
+                    res(ok ? Math.round(performance.now() - t0) : null);
+                };
+                const ctrl = new AbortController();
+                const timer = setTimeout(function() { ctrl.abort(); fin(false); }, timeout);
+                /* fetch با mode:'no-cors' — برخلاف Image که خطای SSL و رَفضِ اتصال را
+                   هم «پاسخ» حساب می‌کرد و همه‌ی آی‌پی‌ها را زنده نشان می‌داد، اینجا
+                   هر خطای واقعی شبکه reject می‌شود و فقط پاسخِ واقعیِ CDN اندازه‌گیری می‌شود */
+                fetch('https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random(),
+                    { mode: 'no-cors', cache: 'no-store', signal: ctrl.signal })
+                    .then(function() { clearTimeout(timer); fin(true); })
+                    .catch(function() { clearTimeout(timer); fin(false); });
+            });
+        }
+
+        /* انتخاب پورت حذف شد — اسکن همیشه روی پورت‌های خودِ کانفیگ‌های ساب انجام می‌شود.
+           فقط پورت‌های TLS قابل‌اسکن‌اند: پروب مرورگر https است و پورت‌های غیر-TLS
+           با خطای SSL بلافاصله «پاسخ» می‌دهند و نتیجه را کاملاً خراب می‌کنند. */
+        const RADAR_TLS_PORTS = [443, 2053, 2083, 2087, 2096, 8443];
+        function radarConfigPorts() {
+            const ports = [];
+            const links = sanaeiClientData.links || [];
+            links.forEach(function(link) {
+                const parsed = parseConfigLink(link);
+                const p = parseInt(parsed.port, 10);
+                if (p > 0 && RADAR_TLS_PORTS.indexOf(p) >= 0 && ports.indexOf(p) < 0) ports.push(p);
+            });
+            return ports;
+        }
+
+        async function radarProbeIp(ip, ports) {
+            for (let i = 0; i < ports.length; i++) {
+                const port = ports[i];
+                const samples = [];
+                for (let p = 0; p < RADAR_PROBES; p++) {
+                    if (radarCancelRequested) return null;
+                    const rtt = await pingIp(ip, port, RADAR_TIMEOUT);
+                    if (rtt !== null) samples.push(rtt);
+                }
+                if (samples.length === 0) continue;
+                const avg = Math.round(samples.reduce(function(a, b) { return a + b; }, 0) / samples.length);
+                const jitter = Math.max.apply(null, samples) - Math.min.apply(null, samples);
+                const loss = Math.round((1 - samples.length / RADAR_PROBES) * 100);
+                return { ip: ip, port: port, avg: avg, jitter: jitter, loss: loss, score: avg + jitter * 0.5 + loss * 20 };
+            }
+            return null;
+        }
+
+        function radarRenderResults(list) {
+            const tbody = document.getElementById('radar-results-body');
+            tbody.innerHTML = '';
+            list.forEach(function(r, idx) {
+                const tr = document.createElement('tr');
+                if (idx === 0) tr.className = 'radar-row-best';
+                tr.innerHTML = '<td>' + (idx + 1) + '</td>' +
+                    '<td class="en-font">' + r.ip + '<span class="radar-port-tag">:' + r.port + '</span></td>' +
+                    '<td class="en-font">' + r.avg + ' ms</td>' +
+                    '<td class="en-font">' + r.jitter + '</td>' +
+                    '<td class="en-font">' + r.loss + '%</td>';
+                tbody.appendChild(tr);
+            });
+            document.getElementById('radar-table-wrap').classList.toggle('show', list.length > 0);
+        }
+
+        function radarFindVlessLink() {
+            const links = sanaeiClientData.links || [];
+            for (let i = 0; i < links.length; i++) {
+                if (/^vless:\/\//i.test(links[i])) return links[i];
+            }
+            return null;
+        }
+
+        function radarBuildBestConfig(best) {
+            const data = locales[currentLang] || locales.fa;
+            const noteEl = document.getElementById('radar-best-note');
+            document.getElementById('radar-best').classList.add('show');
+            document.getElementById('radar-best-link').value = '';
+
+            const sourceLink = radarFindVlessLink();
+            if (!sourceLink) {
+                noteEl.textContent = data.radarStatusNoConfig;
+                return;
+            }
+            const uuidMatch = sourceLink.match(/^vless:\/\/([^@]+)@/i);
+            const queryStart = sourceLink.indexOf('?');
+            if (!uuidMatch || queryStart < 0) {
+                noteEl.textContent = data.radarStatusNoConfig;
+                return;
+            }
+            const uuid = uuidMatch[1];
+            const afterQuery = sourceLink.slice(queryStart + 1);
+            const hashIdx = afterQuery.indexOf('#');
+            const query = hashIdx >= 0 ? afterQuery.slice(0, hashIdx) : afterQuery;
+
+            const parsed = parseConfigLink(sourceLink);
+            const baseName = (parsed.remark || sanaeiClientData.username || 'Sub').trim();
+            const newLink = 'vless://' + uuid + '@' + best.ip + ':' + best.port + '?' + query + '#' + encodeURIComponent(baseName + ' - Radar');
+
+            document.getElementById('radar-best-link').value = newLink;
+            noteEl.textContent = data.radarBestNote.replace('{port}', best.port);
+        }
+
+        async function radarRun() {
+            const data = locales[currentLang] || locales.fa;
+            const statusEl = document.getElementById('radar-status');
+            const startBtn = document.getElementById('radar-start-btn');
+
+            if (radarRunning) {
+                radarCancelRequested = true;
+                return;
+            }
+
+            const ports = radarConfigPorts();
+            if (ports.length === 0) {
+                statusEl.textContent = data.radarStatusNoTlsPort || data.radarStatusNoConfig;
+                return;
+            }
+
+            radarRunning = true;
+            radarCancelRequested = false;
+            startBtn.classList.add('running');
+            document.getElementById('radar-start-label').textContent = data.radarStop;
+            document.getElementById('radar-best').classList.remove('show');
+            document.getElementById('radar-best-note').textContent = '';
+            document.getElementById('radar-results-body').innerHTML = '';
+            document.getElementById('radar-table-wrap').classList.remove('show');
+            document.getElementById('radar-progress-bar').style.width = '0%';
+            statusEl.textContent = data.radarStatusScan.replace('{done}', '0').replace('{total}', RADAR_IP_COUNT).replace('{found}', '0');
+
+            const ips = [];
+            for (let i = 0; i < RADAR_IP_COUNT; i++) ips.push(randCfIp());
+
+            const results = [];
+            let cursor = 0;
+            let doneCount = 0;
+
+            async function worker() {
+                while (cursor < ips.length) {
+                    if (radarCancelRequested) return;
+                    const ip = ips[cursor++];
+                    const res = await radarProbeIp(ip, ports);
+                    if (res) results.push(res);
+                    doneCount++;
+                    document.getElementById('radar-progress-bar').style.width = Math.round(doneCount / ips.length * 100) + '%';
+                    statusEl.textContent = data.radarStatusScan
+                        .replace('{done}', doneCount)
+                        .replace('{total}', ips.length)
+                        .replace('{found}', results.length);
+                }
+            }
+
+            const workers = [];
+            for (let w = 0; w < RADAR_CONCURRENCY; w++) workers.push(worker());
+            await Promise.all(workers);
+
+            results.sort(function(a, b) { return a.score - b.score; });
+            const top = results.slice(0, RADAR_KEEP);
+            radarRenderResults(top);
+
+            if (top.length > 0) {
+                statusEl.textContent = data.radarStatusDone.replace('{found}', results.length);
+                radarBuildBestConfig(top[0]);
+            } else {
+                statusEl.textContent = data.radarStatusNoResult;
+            }
+
+            radarRunning = false;
+            radarCancelRequested = false;
+            startBtn.classList.remove('running');
+            document.getElementById('radar-start-label').textContent = data.radarStart;
+        }
+
+        /* دکمه‌ی باز کردنِ رادار حذف شده — کارت همیشه نمایان است */
+
+        document.getElementById("radar-start-btn").addEventListener("click", function(e) {
+            e.stopPropagation();
+            radarRun();
+        });
+
+        document.getElementById("radar-copy-btn").addEventListener("click", function(e) {
+            e.stopPropagation();
+            const data = locales[currentLang] || locales.fa;
+            const value = document.getElementById('radar-best-link').value;
+            if (!value) return;
+            const label = document.getElementById('radar-copy-label');
+            navigator.clipboard.writeText(value).then(() => {
+                label.textContent = data.actionCopied;
+                this.style.background = "#22C55E";
+                this.style.color = "#fff";
+                setTimeout(() => {
+                    label.textContent = data.copyBtnText;
+                    this.style.background = "";
+                    this.style.color = "";
+                }, 2000);
+            });
+        });
 
         // ===== راه‌اندازی اولیه =====
         document.addEventListener("DOMContentLoaded", () => {
