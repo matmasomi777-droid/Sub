@@ -1049,27 +1049,6 @@ async function connAcquireInner(env, uuid, ip, limit, connId) {
   CONN_ACQUIRES++;
   const backend = limiterBackend(env);
 
-  /* ── ۰) فهرستِ سیاه — قبل از هر تصمیمِ دیگری ──
-     آی‌پیِ مسدودشده نه سهمیه می‌گیرد و نه به لایه‌ی بعد می‌رسد؛ این بررسی
-     جلوی همه‌ی بک‌اندها است تا «مسدود شد» در هر استقراری یک معنا بدهد. */
-  try {
-    const ban = await banCheck(env, ip, uuid);
-    if (ban) {
-      CONN_DENIES++;
-      return { ok: false, ips: 0, conns: 0, limit, enforced: true, banned: true, ban, reason: 'ip-banned', storage: backendOf(env) };
-    }
-  } catch (e) { connErr('ban', e); }   /* خطای فهرستِ سیاه هرگز پذیرش را باز نمی‌کند */
-
-  /* ── ۰.۵) نشستِ قطع‌شده — اجرای «قطع اتصال» از پنل ──
-     همان connIdِ نشستِ قطع‌شده در بازه‌ی ممنوعیت دوباره پذیرفته نمی‌شود؛
-     اتصالِ دوباره‌ی کاربر با connIdِ تازه آزاد است (بن، کار را مسدود می‌کند). */
-  try {
-    if (await kickCheck(env, uuid, ip, id)) {
-      CONN_DENIES++;
-      return { ok: false, ips: 0, conns: 0, limit, enforced: true, reason: 'kicked', storage: backendOf(env) };
-    }
-  } catch (e) { connErr('kick-check', e); }
-
   /* ── ۱) Durable Object — مرجعِ جهانی؛ تصمیم را همین‌جا می‌گیریم ── */
   if (backend === 'do') {
     try {
@@ -1178,403 +1157,6 @@ async function connRelease(env, uuid, ip, connId) {
   return left;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   رجیستریِ «قطع‌شده‌ها» — اجرای واقعیِ دکمه‌ی قطع اتصال
-   ───────────────────────────────────────────────────────────────────────────
-   باگِ قبلی: connKick فقط سهمیه را آزاد می‌کرد. اتصالِ زنده‌ی کلاینت به
-   کار خودش ادامه می‌داد (connRefresh آن را دوباره پذیرفتنی می‌کرد) و در
-   نتیجه ردیفِ قطع‌شده بلافاصله در جدول ظاهر می‌شد — انگار هیچ‌کدام از
-   عملیات‌ها کار نمی‌کنند.
-   راه‌حل: هر نشستِ قطع‌شده تا KICK_TTL در فهرستِ ممنوع می‌ماند؛
-   connRefresh نشستِ زنده را می‌بندد و connAcquire همان connId را در
-   بازه‌ی ممنوعیت نمی‌پذیرد. اتصالِ دوباره با connIdِ تازه آزاد است —
-   «قطع» یعنی نشستِ فعلی می‌میرد، نه مسدودسازیِ کاربر (برای آن بن هست).
-   لایه‌ها: حافظه (فوری) → DO (/kick، سراسری) → D1 (جدول kicks) → KV
-   ═══════════════════════════════════════════════════════════════════════════ */
-const KICK_TTL = 90000;                  /* ۹۰ ثانیه پنجره‌ی ممنوعیتِ نشستِ قطع‌شده */
-const KICK_POLL_MS = 8000;               /* فاصله‌ی نظرسنجیِ سبکِ قطع برای نشست‌های باز */
-const KICKS = new Map();                 /* کلید -> until (حافظه‌ی همین isolate) */
-const KICK_CACHE_MS = 3000;
-let KICK_CACHE = { at: 0, list: [] };
-let KICK_READY = null;
-const kickKey = (uuid, ip, connId) => [String(uuid || ''), String(ip || ''), String(connId || '')].join('|');
-const KV_KICK = (k) => 'kk:' + k;
-
-async function kickEnsure(env) {
-  if (KICK_READY !== null) return KICK_READY;
-  if (!env || !env.DB) { KICK_READY = false; return false; }
-  try {
-    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS kicks (
-      k TEXT PRIMARY KEY,
-      until INTEGER
-    )`).run();
-    KICK_READY = true;
-  } catch (e) { KICK_READY = false; }
-  return KICK_READY;
-}
-
-/** ثبتِ یک قطع — روی همه‌ی لایه‌ها */
-async function kickAdd(env, uuid, ip, connId) {
-  const k = kickKey(uuid, ip, connId);
-  const until = Date.now() + KICK_TTL;
-  KICKS.set(k, until);
-  if (env && env.DB) {
-    try {
-      if (await kickEnsure(env)) {
-        await env.DB.prepare('INSERT INTO kicks (k, until) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET until = excluded.until')
-          .bind(k, until).run();
-      }
-    } catch (e) { connErr('D1-kick-add', e); }
-  }
-  if (env && env.KV) {
-    try { await env.KV.put(KV_KICK(k), String(until), { expirationTtl: Math.ceil(KICK_TTL / 1000) }); }
-    catch (e) { connErr('KV-kick-add', e); }
-  }
-  if (env && env.LIMITER) {
-    try { await limiterRpc(env, '/kick', { uuid: uuid || '', ip: ip || '', connId: connId || '', until }); }
-    catch (e) { connErr('DO-kick', e); }
-  }
-}
-
-/** آیا این نشست (uuid/ip/connId — هر مؤلفه ممکن است wildcard باشد) قطع شده؟ */
-async function kickCheck(env, uuid, ip, connId) {
-  const now = Date.now();
-  const hit = (list) => {
-    for (const x of list) {
-      if (x.until && x.until <= now) continue;
-      if (x.uuid && x.uuid !== String(uuid || '')) continue;
-      if (x.ip && x.ip !== String(ip || '')) continue;
-      if (x.connId && x.connId !== String(connId || '')) continue;
-      return true;
-    }
-    return false;
-  };
-  const mem = [];
-  KICKS.forEach((until, k) => {
-    const p = k.split('|');
-    mem.push({ uuid: p[0], ip: p[1], connId: p[2], until });
-    if (until <= now) KICKS.delete(k);
-  });
-  if (hit(mem)) return true;
-  if (!env || (!env.DB && !env.KV)) return false;
-  if (!KICK_CACHE.at || now - KICK_CACHE.at > KICK_CACHE_MS) {
-    const list = [];
-    if (env.DB) {
-      try {
-        if (await kickEnsure(env)) {
-          await env.DB.prepare('DELETE FROM kicks WHERE until <= ?').bind(now).run();
-          const r = await env.DB.prepare('SELECT k, until FROM kicks LIMIT 500').all();
-          for (const x of ((r && r.results) || [])) {
-            const p = String(x.k).split('|');
-            list.push({ uuid: p[0], ip: p[1], connId: p[2], until: Number(x.until) || 0 });
-          }
-        }
-      } catch (e) { connErr('D1-kick-read', e); }
-    }
-    if (env.KV) {
-      try {
-        const l = await env.KV.list({ prefix: 'kk:' });
-        for (const kk of ((l && l.keys) || [])) {
-          const p = String(kk.name).slice(3).split('|');
-          list.push({ uuid: p[0], ip: p[1], connId: p[2], until: Number(await env.KV.get(kk.name)) || 0 });
-        }
-      } catch (e) { connErr('KV-kick-read', e); }
-    }
-    KICK_CACHE = { at: now, list };
-  }
-  return hit(KICK_CACHE.list);
-}
-
-/** قطعِ دستی از پنل — یک اتصالِ مشخص یا همه‌ی اتصال‌های یک آی‌پی/کاربر.
-    علاوه بر آزادسازیِ سهمیه، نشست در رجیستریِ قطع‌شده‌ها ثبت می‌شود تا
-    refresh اتصالِ زنده را واقعاً ببندد و acquire دوباره نپذیرد. */
-async function connKick(env, uuid, ip, connId) {
-  const u = uuid ? String(uuid) : '';
-  const i = ip ? String(ip) : '';
-  /* نشست‌ها از همان نمایِ زنده خوانده می‌شوند و uuid/ip واقعیِ هر ردیف
-     استفاده می‌شود — قبلاً با uuid/ip خالی فراخوانی می‌شد و ردیفِ
-     Durable Object آزاد نمی‌شد و در جدول باقی می‌ماند. */
-  const targets = [];
-  for (const r of (await liveRowsOf(env))) {
-    if (u && r.uuid !== u) continue;
-    if (i && r.ip !== i) continue;
-    if (connId && r.connId !== String(connId)) continue;
-    if (!r.connId) continue;
-    targets.push({ uuid: r.uuid, ip: r.ip, connId: r.connId });
-  }
-  if (connId && !targets.length) targets.push({ uuid: u, ip: i, connId: String(connId) });
-  let n = 0;
-  for (const t of targets) {
-    try {
-      await connRelease(env, t.uuid, t.ip, t.connId);
-      await kickAdd(env, t.uuid, t.ip, t.connId);
-      n++;
-    } catch (e) { connErr('kick', e); }
-  }
-  if (env && env.DB) { try { await metaSweep(env); } catch (e) {} }
-  return { ok: true, kicked: n, ids: targets.map((t) => t.connId) };
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   فهرستِ سیاهِ آی‌پی (مسدودسازیِ دائم و زمان‌دار)
-   ───────────────────────────────────────────────────────────────────────────
-   همان زنجیره‌ی ذخیره‌سازیِ بقیه‌ی پروژه (D1 → KV → حافظه) و نه یک نگاشتِ
-   جداگانه، وگرنه «مسدود شده» در یک لایه بود و «رد شد» در لایه‌ای دیگر.
-     • D1   : جدولِ ip_bans — ماندگار و سراسری (استقرارِ واقعی)
-     • KV   : کلیدِ b:<ip> با expirationTtl — ماندگار، تقریبی
-     • حافظه: فقط همین isolate — بدون تضمین، اما همیشه در دسترس
-   منقضی‌شده‌ها هنگامِ خواندن نادیده گرفته می‌شوند و بعداً پاک می‌شوند؛
-   هیچ تایمر یا ضربانی برای این کار راه نمی‌افتد.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-const KV_BAN = (ip) => 'b:' + ip;
-const BANS = new Map();                  /* آی‌پی -> { until, reason, uuid, createdAt } (حافظه) */
-const BAN_CACHE_MS = 3000;               /* تازه‌ترین فهرست — فقط برای مسیرِ داغِ پذیرش */
-let BAN_CACHE = { at: 0, list: [] };
-let BAN_READY = null;
-
-async function banEnsure(env) {
-  if (BAN_READY !== null) return BAN_READY;
-  if (!env || !env.DB) { BAN_READY = false; return false; }
-  try {
-    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS ip_bans (
-      ip TEXT PRIMARY KEY,
-      uuid TEXT,
-      until INTEGER,
-      reason TEXT,
-      created_at INTEGER,
-      created_by TEXT
-    )`).run();
-    BAN_READY = true;
-  } catch (e) { BAN_READY = false; }
-  return BAN_READY;
-}
-
-/** خواندنِ تازه — فهرستِ سیاهِ نمایش‌داده‌شده همیشه همین است (بدون کش) */
-async function banList(env) {
-  const now = Date.now();
-  const out = [];
-  const push = (ip, uuid, until, reason, createdAt, createdBy) => {
-    out.push({
-      ip: String(ip), uuid: uuid ? String(uuid) : '',
-      until: until ? Number(until) : 0,
-      permanent: !until,
-      /* منقضی‌شده هنوز در فهرست دیده می‌شود تا کاربر بفهمد چرا آزاد شده */
-      expired: !!until && Number(until) <= now,
-      remainingSec: until ? Math.max(0, Math.round((Number(until) - now) / 1000)) : null,
-      reason: reason ? String(reason) : '',
-      createdAt: createdAt ? Number(createdAt) : null,
-      createdBy: createdBy ? String(createdBy) : '',
-    });
-  };
-  if (env && env.DB) {
-    try {
-      if (await banEnsure(env)) {
-        const r = await env.DB.prepare('SELECT ip, uuid, until, reason, created_at, created_by FROM ip_bans ORDER BY created_at DESC LIMIT 500').all();
-        for (const x of ((r && r.results) || [])) push(x.ip, x.uuid, x.until, x.reason, x.created_at, x.created_by);
-      }
-    } catch (e) { connErr('D1-ban-list', e); }
-  }
-  if (env && env.KV) {
-    try {
-      const list = await env.KV.list({ prefix: 'b:' });
-      for (const k of ((list && list.keys) || [])) {
-        const ip = String(k.name).slice(2);
-        if (out.some((x) => x.ip === ip)) continue;
-        const v = await kvGetJson(env, k.name);
-        if (!v) continue;
-        push(ip, v.uuid, v.until, v.reason, v.createdAt, v.createdBy);
-      }
-    } catch (e) { connErr('KV-ban-list', e); }
-  }
-  BANS.forEach((v, ip) => {
-    if (out.some((x) => x.ip === ip)) return;
-    push(ip, v.uuid, v.until, v.reason, v.createdAt, v.createdBy);
-  });
-  return { ok: true, ts: now, source: banSource(env), bans: out.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)) };
-}
-
-/** کدام لایه فهرستِ سیاه را نگه می‌دارد */
-function banSource(env) {
-  if (env && env.DB) return 'd1';
-  if (env && env.KV) return 'kv';
-  return 'memory';
-}
-
-/**
- * افزودن/به‌روزرسانیِ یک مسدودی.
- * hours: عددِ ساعت (مثل ۱ یا ۲۴) یا ۰/خالی برای مسدودیِ دائم.
- */
-async function banAdd(env, ip, opt) {
-  const o = opt || {};
-  const clean = String(ip || '').trim();
-  if (!clean) return { ok: false, error: 'آی‌پی مشخص نشده است' };
-  const hours = Number(o.hours) || 0;
-  const until = hours > 0 ? Date.now() + Math.round(hours * 3600 * 1000) : 0;
-  const rec = {
-    until,
-    uuid: o.uuid ? String(o.uuid).trim() : '',
-    reason: o.reason ? String(o.reason).slice(0, 200) : '',
-    createdAt: Date.now(),
-    createdBy: o.createdBy ? String(o.createdBy).slice(0, 64) : '',
-  };
-  const wrote = [];
-
-  if (env && env.DB) {
-    try {
-      if (await banEnsure(env)) {
-        await env.DB.prepare(
-          `INSERT INTO ip_bans (ip, uuid, until, reason, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)
-           ON CONFLICT(ip) DO UPDATE SET
-             uuid = excluded.uuid, until = excluded.until, reason = excluded.reason,
-             created_at = excluded.created_at, created_by = excluded.created_by`
-        ).bind(clean, rec.uuid || null, until || null, rec.reason || null, rec.createdAt, rec.createdBy || null).run();
-        wrote.push('d1');
-      }
-    } catch (e) { connErr('D1-ban-add', e); }
-  }
-  if (env && env.KV) {
-    try {
-      const ttl = until ? Math.max(60, Math.ceil((until - Date.now()) / 1000)) : undefined;
-      const val = JSON.stringify(rec);
-      if (ttl) await env.KV.put(KV_BAN(clean), val, { expirationTtl: ttl });
-      else await env.KV.put(KV_BAN(clean), val);
-      wrote.push('kv');
-    } catch (e) { connErr('KV-ban-add', e); }
-  }
-  BANS.set(clean, rec);                   /* حافظه — همیشه، تا همین isolate هم رد کند */
-  BAN_CACHE.at = 0;                       /* بی‌اعتبار کردنِ کشِ مسیرِ پذیرش */
-  return {
-    ok: true, ip: clean, until, permanent: !until, hours,
-    expiresAt: until || null, wrote, source: banSource(env),
-  };
-}
-
-/** رفعِ مسدودی — روی همه‌ی لایه‌ها (ماندن در یکی یعنی هنوز رد می‌شود) */
-async function banRemove(env, ip) {
-  const clean = String(ip || '').trim();
-  if (!clean) return { ok: false, error: 'آی‌پی مشخص نشده است' };
-  let removed = false;
-  if (env && env.DB) {
-    try {
-      if (await banEnsure(env)) {
-        const r = await env.DB.prepare('DELETE FROM ip_bans WHERE ip = ?').bind(clean).run();
-        if (r && r.meta && Number(r.meta.changes) > 0) removed = true;
-      }
-    } catch (e) { connErr('D1-ban-del', e); }
-  }
-  if (env && env.KV) {
-    try { await env.KV.delete(KV_BAN(clean)); removed = true; } catch (e) { connErr('KV-ban-del', e); }
-  }
-  if (BANS.delete(clean)) removed = true;
-  BAN_CACHE.at = 0;
-  return { ok: true, ip: clean, removed, source: banSource(env) };
-}
-
-/**
- * آیا این آی‌پی مسدود است؟ — مسیرِ داغ (هر پذیرش و هر تمدید)
- * برای اینکه هر تمدیدِ مبتنی بر فعالیت یک کوئری اضافه به D1 نزند، فهرست حداکثر
- * BAN_CACHE_MS ثانیه کش می‌شود؛ افزودن/برداشتنِ مسدودی کش را باطل می‌کند.
- * کش فقط «مسدود نیست» را تا ۳ ثانیه دیر می‌بیند و هرگز یک آی‌پیِ مسدود را آزاد
- * نمی‌گذارد ماندن بیش از حد مجاز — و تازه‌ترین فهرست برای نمایش همیشه تازه است.
- */
-async function banCheck(env, ip, uuid) {
-  const clean = String(ip || '').trim();
-  if (!clean) return null;
-  const now = Date.now();
-  if (!BAN_CACHE.at || now - BAN_CACHE.at > BAN_CACHE_MS) {
-    let list = [];
-    if (env && env.DB) {
-      try {
-        if (await banEnsure(env)) {
-          const r = await env.DB.prepare('SELECT ip, uuid, until, reason FROM ip_bans').all();
-          list = (r && r.results) || [];
-        }
-      } catch (e) { connErr('D1-ban-read', e); }
-    } else if (env && env.KV) {
-      try {
-        const l = await env.KV.list({ prefix: 'b:' });
-        for (const k of ((l && l.keys) || [])) {
-          const v = await kvGetJson(env, k.name);
-          if (v) list.push({ ip: String(k.name).slice(2), uuid: v.uuid, until: v.until, reason: v.reason });
-        }
-      } catch (e) { connErr('KV-ban-read', e); }
-    }
-    BANS.forEach((v, k) => { if (!list.some((x) => String(x.ip) === k)) list.push({ ip: k, uuid: v.uuid, until: v.until, reason: v.reason }); });
-    BAN_CACHE = { at: now, list };
-  }
-  for (const b of BAN_CACHE.list) {
-    if (String(b.ip) !== clean) continue;
-    if (b.until && Number(b.until) <= now) continue;          /* منقضی شده */
-    if (b.uuid && uuid && String(b.uuid) !== String(uuid)) continue;  /* مربوط به کاربرِ دیگری است */
-    return { banned: true, reason: b.reason || '', until: Number(b.until) || 0, permanent: !b.until };
-  }
-  return null;
-}
-
-/** پاک‌سازیِ مسدودی‌های منقضی‌شده — هنگامِ نمایش صدا زده می‌شود، بدون تایمر */
-async function banSweep(env) {
-  const now = Date.now();
-  if (env && env.DB) {
-    try { if (await banEnsure(env)) await env.DB.prepare('DELETE FROM ip_bans WHERE until IS NOT NULL AND until <= ?').bind(now).run(); }
-    catch (e) { /* اختیاری */ }
-  }
-  BANS.forEach((v, ip) => { if (v && v.until && v.until <= now) BANS.delete(ip); });
-}
-
-/** پاک‌سازیِ کاملِ «اتصال‌های زنده» — روی هر سه بک‌اند.
-    ⚠️ قبلاً فقط جدولِ D1 خالی می‌شد؛ در استقرارِ با wrangler مرجعِ تصمیم شیءِ
-    ماندگار (LIMITER) است و در استقرارِ بدونِ پایگاه‌داده کلیدهای KV. دکمهٔ
-    «آزادسازی اتصال‌ها» در آن استقرارها هیچ کاری نمی‌کرد و تنها راهِ خروج
-    دستکاریِ دستیِ پایگاه‌داده بود. */
-async function connReset(env, uuid) {
-  const removed = { d1: 0, do: 0, kv: 0, mem: 0 };
-  const u = uuid ? String(uuid) : '';
-  /* ۱) D1 — مرجعِ بیشتر استقرارها (فقط D1 بایند است) */
-  if (env && env.DB) {
-    try {
-      await liveEnsure(env);
-      const cnt = u
-        ? await env.DB.prepare('SELECT COUNT(*) AS n FROM conns WHERE uuid = ?').bind(u).all()
-        : await env.DB.prepare('SELECT COUNT(*) AS n FROM conns').all();
-      removed.d1 = Number((cnt && cnt.results && cnt.results[0] && cnt.results[0].n) || 0);
-      if (u) await env.DB.prepare('DELETE FROM conns WHERE uuid = ?').bind(u).run();
-      else await env.DB.prepare('DELETE FROM conns').run();
-    } catch (e) { connErr('D1-reset', e); }
-  }
-  /* ۲) شیءِ ماندگار — مرجعِ استقرارهای wrangler */
-  if (env && env.LIMITER) {
-    try {
-      const r = await limiterRpc(env, '/reset', { uuid: u });
-      removed.do = Number((r && r.removed) || 0);
-    } catch (e) { connErr('DO-reset', e); }
-  }
-  /* ۳) KV — مرجعِ استقرارهای بدونِ پایگاه‌داده */
-  if (env && env.KV) {
-    try {
-      let cursor = undefined, guard = 0;
-      const prefix = u ? 'c:' + u + ':' : 'c:';
-      do {
-        const list = await env.KV.list(cursor ? { prefix, cursor } : { prefix });
-        for (const k of ((list && list.keys) || [])) {
-          await env.KV.delete(k.name);
-          removed.kv++;
-        }
-        cursor = list && !list.list_complete ? list.cursor : undefined;
-      } while (cursor && ++guard < 50);      /* جلوگیری از حلقهٔ بی‌انتها */
-    } catch (e) { connErr('KV-reset', e); }
-  }
-  /* ۴) آینهٔ حافظهٔ همین isolate */
-  try {
-    if (u) { const um = CONNS.get(u); if (um) { um.forEach((m) => { removed.mem += m.size; }); CONNS.delete(u); } }
-    else { CONNS.forEach((um) => um.forEach((m) => { removed.mem += m.size; })); CONNS.clear(); }
-  } catch (e) {}
-  /* ۵) جزئیاتِ نمایش — ردیف‌های بی‌صاحب پاک می‌شوند (یتیم‌ها هرگز نمایش داده نمی‌شدند) */
-  try { await metaSweep(env); } catch (e) {}
-  removed.total = removed.d1 + removed.do + removed.kv + removed.mem;
-  return removed;
-}
-
 /** ردیف‌های زنده با سن‌شان — از مرجعِ تصمیم خوانده می‌شود تا کارتِ سلامت
     دروغ نگوید (اگر شیءِ ماندگار بایند باشد، جدولِ D1 خالی است). */
 async function liveRowsOf(env) {
@@ -1620,8 +1202,7 @@ async function liveRowsOf(env) {
   }
   /* حافظهٔ همین isolate — مرجعِ استقرارِ بدونِ هیچ بایندینگی.
      ⚠️ این شاخه قبلاً وجود نداشت: در استقرارِ بدونِ DB/KV/LIMITER خروجی همیشه
-     خالی بود، پس «قطعِ موقت» (connKick) هیچ اتصالی پیدا نمی‌کرد در حالی که
-     نمای زنده همان اتصال‌ها را نشان می‌داد. */
+     خالی بود و نمای زنده با واقعیت نمی‌خواند. */
   CONNS.forEach((um, uuid) => {
     if (!um) return;
     um.forEach((m, ip) => {
@@ -1641,7 +1222,7 @@ async function sessionTouch(env, uuid, ip, connId) {
   if (env && env.LIMITER) {
     try {
       const r = await limiterRpc(env, '/touch', { uuid, ip, connId, now });
-      return r || null;                    /* { kicked:true } → connRefresh اتصال را می‌بندد */
+      return r || null;
     } catch (e) { connErr('DO', e); }
     return null;
   }
@@ -1678,21 +1259,6 @@ async function connRefresh(env, uuid, ip, connId, limit, alive) {
   if (!uuid || !ip || !connId) return null;
   const stillAlive = () => !alive || alive();
 
-  /* ۰) مسدودیِ تازه — اتصالی که همین حالا از پنل مسدود شده باید بسته شود،
-     نه اینکه تا پایانِ TTL سر جایش بماند. چون تمدید بر اساسِ فعالیت است،
-     این بررسی همان لحظه‌ای اثر می‌کند که اتصال بعدی‌اش بایتی رد کند —
-     و به هیچ تایمری احتیاج ندارد. برگرداندنِ ok:false تونل را مؤدبانه می‌بندد. */
-  try {
-    const ban = await banCheck(env, ip, uuid);
-    if (ban) return { ok: false, banned: true, ban, reason: 'ip-banned', storage: backendOf(env) };
-  } catch (e) { connErr('ban-refresh', e); }
-
-  /* ۰.۵) قطعِ دستی از پنل — اجرای واقعیِ دکمه‌ی «قطع اتصال».
-     نشستِ قطع‌شده تا KICK_TTL دوباره پذیرفته نمی‌شود و همین‌جا بسته می‌شود. */
-  try {
-    if (await kickCheck(env, uuid, ip, connId)) return { ok: false, reason: 'kicked', storage: backendOf(env) };
-  } catch (e) { connErr('kick-refresh', e); }
-
   /* ۱) D1 — مرجعِ استقرارِ واقعی: اول بررسی می‌کنیم ردیف هست یا نه */
   if (env && env.DB) {
     try {
@@ -1710,8 +1276,7 @@ async function connRefresh(env, uuid, ip, connId, limit, alive) {
   }
   /* ۲) بقیهٔ بک‌اندها — همان تمدیدِ قدیمی، بدون هیچ درجی */
   if (!stillAlive()) return { ok: false, reason: 'released' };
-  const tr = await sessionTouch(env, uuid, ip, connId);
-  if (tr && tr.kicked) return { ok: false, reason: 'kicked', storage: backendOf(env) };
+  await sessionTouch(env, uuid, ip, connId);
   return { ok: true, reason: 'refreshed' };
 }
 
@@ -5549,7 +5114,7 @@ async function apiHandler(req, env, url, ctx) {
   }
 
   /* ═══════════════════════════════════════════════════════════════════════
-     اتصال‌های زنده • قطعِ موقت • مسدودسازیِ آی‌پی
+     اتصال‌های زنده (فقط خواندنی)
      ───────────────────────────────────────────────────────────────────────
      همه‌ی این مسیرها از همان مرجعی می‌خوانند که محدودساز روی آن تصمیم
      می‌گیرد (liveRowsDetailed)، پس عددِ گزارش با واقعیتِ رد شدن یکی است.
@@ -5558,86 +5123,6 @@ async function apiHandler(req, env, url, ctx) {
   if (route === 'connections' && m === 'GET') {
     if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
     return json(await liveSessions(env, st));
-  }
-
-  if (route === 'connections/kick' && m === 'POST') {
-    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
-    const b = await req.json().catch(() => ({}));
-    const uuid = String((b && b.uuid) || '').trim();
-    const ip = String((b && b.ip) || '').trim();
-    const connId = String((b && b.connId) || '').trim();
-    if (!uuid && !connId) return json({ error: 'کاربر یا شناسه‌ی اتصال مشخص نشده است' }, 400);
-    const r = await connKick(env, uuid, ip, connId);
-    addLog(st, 'warn', 'core', 'قطع موقت اتصال',
-      [uuid.slice(0, 8), ip].filter(Boolean).join(' • ') + ' • ' + fa(r.kicked) + ' مورد');
-    await save(env, st);
-    return json({
-      ...r,
-      msg: r.kicked
-        ? fa(r.kicked) + ' اتصال قطع شد — سهمیه آزاد است و کاربر می‌تواند دوباره وصل شود'
-        : 'هیچ اتصالِ زنده‌ای با این نشانی پیدا نشد (احتمالاً خودبه‌خود آزاد شده است)',
-    });
-  }
-
-  /* مسدودسازی — دائم (hours=0) یا زمان‌دار (مثل ۱ یا ۲۴ ساعت).
-     بلافاصله بعد از ثبت، نشست‌های در جریانِ همان آی‌پی هم بسته می‌شوند؛
-     اثرِ آن بر اتصال‌های بعدی در connAcquire و بر اتصالِ فعلی در connRefresh
-     (تمدیدِ مبتنی بر فعالیت) اعمال می‌شود — بدون هیچ تایمری. */
-  if (route === 'connections/ban' && m === 'POST') {
-    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
-    const b = await req.json().catch(() => ({}));
-    const ip = String((b && b.ip) || '').trim();
-    if (!ip) return json({ error: 'آی‌پی برای مسدود کردن مشخص نشده است' }, 400);
-
-    const raw = (b && b.hours !== undefined && b.hours !== null && b.hours !== '') ? b.hours : 0;
-    const hours = Number(raw);
-    if (!isFinite(hours) || hours < 0) {
-      return json({ error: 'مدتِ مسدودسازی باید عددِ ساعت (مثل ۱ یا ۲۴) یا ۰ برای مسدودیِ دائم باشد' }, 400);
-    }
-    const res = await banAdd(env, ip, {
-      uuid: (b && b.uuid) ? String(b.uuid).trim() : '',
-      hours: Math.round(hours * 100) / 100,
-      reason: (b && b.reason) ? String(b.reason) : '',
-      createdBy: ipOf(req),
-    });
-    if (!res.ok) return json({ error: res.error }, 400);
-
-    /* نشست‌های فعلیِ این آی‌پی را هم می‌بندیم — «مسدود شد» نباید تا قطع شدنِ
-       خودشان صبر کند */
-    const kicked = await connKick(env, '', ip, '');
-    addLog(st, 'warn', 'core', res.permanent ? 'مسدودسازیِ دائم آی‌پی' : 'مسدودسازیِ موقت آی‌پی',
-      ip + (res.permanent ? ' • دائم' : ' • ' + fa(res.hours) + ' ساعت') + ' • ' + fa(kicked.kicked) + ' اتصال بسته شد');
-    await save(env, st);
-    return json({
-      ...res,
-      kicked: kicked.kicked,
-      msg: res.permanent
-        ? 'آی‌پی ' + ip + ' برای همیشه مسدود شد'
-        : 'آی‌پی ' + ip + ' تا ' + fa(res.hours) + ' ساعت دیگر مسدود شد',
-    });
-  }
-
-  if (route === 'connections/unban' && m === 'POST') {
-    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
-    const b = await req.json().catch(() => ({}));
-    const ip = String((b && b.ip) || '').trim();
-    if (!ip) return json({ error: 'آی‌پی برای رفعِ مسدودی مشخص نشده است' }, 400);
-    const res = await banRemove(env, ip);
-    addLog(st, 'success', 'core', 'رفع مسدودی آی‌پی', ip);
-    await save(env, st);
-    return json({
-      ...res,
-      msg: res.removed
-        ? 'مسدودیِ آی‌پی ' + ip + ' برداشته شد — حالا می‌تواند دوباره وصل شود'
-        : 'این آی‌پی در فهرستِ سیاه نبود',
-    });
-  }
-
-  if (route === 'connections/bans' && m === 'GET') {
-    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
-    /* منقضی‌شده‌ها اول پاک می‌شوند تا فهرست فقط مسدودی‌های جاری را نشان بدهد */
-    await banSweep(env);
-    return json(await banList(env));
   }
 
   /* ═══════════════════════════════════════════════════════════════════════
@@ -6178,51 +5663,11 @@ async function apiHandler(req, env, url, ctx) {
       await save(env, st);
       return json({ ok: true, current: cur, latest, newer, msg: a === 'update-check' ? (newer ? 'نسخه‌ی جدید موجود است: ' + latest : 'در آخرین نسخه هستید') : a === 'update-deploy' ? 'استقرار انجام شد' : 'بازگشت انجام شد' });
     }
-    /* ═══ آزادسازیِ دستیِ اتصال‌ها ═══
-       اگر به هر دلیلی ردیفی در جدول/شیءِ اتصال‌های زنده جامانده باشد، یک آی‌پی
-       برای همیشه قفل می‌ماند. این عملیات روی هر سه مرجع (D1 • شیءِ ماندگار • KV)
-       و آینهٔ حافظه پاک‌سازی می‌کند تا کاربر بتواند فوراً از آی‌پیِ جدید وصل
-       شود — بدون نیاز به دستکاریِ پایگاه‌داده. */
-    if (a === 'conn-reset') {
-      const uuid = String((b && b.uuid) || '').trim();
-      const removed = await connReset(env, uuid);
-      const parts = [];
-      if (removed.d1) parts.push(fa(removed.d1) + ' ردیف از پایگاه‌داده');
-      if (removed.do) parts.push(fa(removed.do) + ' اتصال از شیءِ ماندگار');
-      if (removed.kv) parts.push(fa(removed.kv) + ' کلید از KV');
-      if (removed.mem) parts.push(fa(removed.mem) + ' از حافظهٔ این isolate');
-      addLog(st, 'info', 'core', 'آزادسازی اتصال‌ها', (uuid ? 'کاربر ' + uuid.slice(0, 8) : 'همه') + ' • ' + fa(removed.total) + ' مورد');
-      await save(env, st);
-      return json({
-        ok: true, removed: removed.total, byBackend: removed,
-        msg: removed.total
-          ? (parts.join(' • ') + ' آزاد شد — حالا می‌توانید از آی‌پیِ جدید وصل شوید')
-          : 'هیچ اتصالِ زنده‌ای ثبت نبود (جدول از قبل خالی است) — پس هیچ آی‌پی‌ای قفل نیست'
-      });
-    }
 
     /* ═══ نمای زنده‌ی اتصال‌ها — «چه کسی، از کدام آی‌پی، چند اتصال» ═══
        ثبتِ ردیف از اِعمالِ سقف جداست: حتی با سقفِ صفر (نامحدود) هم اتصال‌ها
        ثبت می‌شوند تا این بخش واقعاً چیزی نشان بدهد. */
     if (a === 'live') return json(await liveView(env, st));
-
-    /* ═══ قطعِ دستیِ یک آی‌پی/اتصال از پنل ═══ */
-    if (a === 'conn-kick') {
-      const uuid = String((b && b.uuid) || '').trim();
-      const ip = String((b && b.ip) || '').trim();
-      const connId = String((b && b.connId) || '').trim();
-      if (!uuid && !connId) return json({ error: 'کاربر یا شناسه‌ی اتصال مشخص نشده' }, 400);
-      const r = await connKick(env, uuid, ip, connId);
-      addLog(st, 'warn', 'core', 'قطع دستی اتصال', [uuid.slice(0, 8), ip].filter(Boolean).join(' • ') + ' • ' + fa(r.kicked) + ' مورد');
-      await save(env, st);
-      return json({
-        ...r,
-        msg: r.kicked
-          ? fa(r.kicked) + ' اتصال قطع شد — آن آی‌پی همین حالا آزاد است'
-          : 'هیچ اتصالِ زنده‌ای با این نشانی پیدا نشد (احتمالاً خودبه‌خود آزاد شده)'
-      });
-    }
-
     if (a === 'usage-health') {
       /* ═══ سلامت شمارش مصرف (volume counting health check) ═══
          بررسی می‌کند: کدام بایندینگ ذخیره‌سازی در دسترس است؟، جدول usage
@@ -6480,7 +5925,7 @@ async function apiHandler(req, env, url, ctx) {
   return json({
     error: 'not found',
     routes: ['/api/login', '/api/health', '/api/state', '/api/settings', '/api/users', '/api/keys', '/api/panels', '/api/action',
-      '/api/connections', '/api/connections/kick', '/api/connections/ban', '/api/connections/unban', '/api/connections/bans',
+      '/api/connections', /* فقط خواندنی — عملیات روی نشستِ زنده حذف شده است */
       '/api/password', '/api/backup', '/api/restore'],
   }, 404);
 }
@@ -7485,35 +6930,6 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
     }
     connAcquired = true;
 
-    /* ═══ نظرسنجیِ سبکِ «قطعِ دستی» — اجرای فوریِ دکمه‌ی قطع حتی روی نشستِ بیکار ═══
-       تمدید فقط با فعالیت انجام می‌شود؛ اگر کلاینت بی‌ترافیک باشد، connRefresh
-       هرگز صدا زده نمی‌شود و نشستِ قطع‌شده از پنل باز می‌ماند. این حلقه فقط
-       وضعیتِ «قطع‌شده» را می‌خواند (بدون هیچ نوشتنی) و در صورتِ قطع، سوکت را
-       می‌بندد. هزینه: برای بک‌اندِ DO یک RPC سبکِ درون‌حافظه‌ای؛ برای D1/KV
-       خواندنِ kickCheck که در هر isolate حداکثر یک بار در هر ۳ ثانیه کش می‌شود. */
-    let kickTimer = null;
-    const kickWatch = () => {
-      if (closed || connReleased || !connAcquired || !user) return;
-      if (ctx && ctx.waitUntil) ctx.waitUntil((async () => {
-        if (closed || connReleased || !connAcquired || !user) return;
-        let kicked = false;
-        try {
-          if (env && env.LIMITER) {
-            const r = await limiterRpc(env, '/touch', { uuid: user.uuid, ip, connId, now: Date.now() });
-            kicked = !!(r && r.kicked);
-          } else {
-            kicked = await kickCheck(env, user.uuid, ip, connId);
-          }
-        } catch (e) {}
-        if (kicked && !closed) {
-          try { ws.close(1013, 'kicked by panel'); } catch (e) {}
-          await finish();
-        }
-      })());
-      if (!closed) kickTimer = setTimeout(kickWatch, KICK_POLL_MS);
-    };
-    kickWatch();
-
     pendReqs++;
     const respHeader = info.isTrojan ? new Uint8Array(0) : new Uint8Array([info.version || 0, 0]);
     /* شمارش آپلود بسته‌ی اول — فقط همین‌جا، تا retry دوباره‌شماری نکند */
@@ -7900,20 +7316,6 @@ export class ConnLimiter {
     this.state = state;
     /* حافظه‌ی داخلِ شیء — بین فراخوانی‌ها زنده می‌ماند (تنها یک نمونه وجود دارد) */
     this.users = new Map();          // uuid -> Map<ip, Map<connId, ts>>
-    this.kicks = new Map();          // 'uuid|ip|connId' -> until (نشست‌های قطع‌شده از پنل)
-  }
-
-  /** آیا این نشست در بازه‌ی ممنوعیتِ «قطع» است؟ مؤلفه‌ی خالیِ کلید = wildcard */
-  isKicked(uuid, ip, connId, now) {
-    for (const [k, until] of this.kicks) {
-      if (until <= now) { this.kicks.delete(k); continue; }
-      const p = k.split('|');
-      if (p[0] && p[0] !== String(uuid || '')) continue;
-      if (p[1] && p[1] !== String(ip || '')) continue;
-      if (p[2] && p[2] !== String(connId || '')) continue;
-      return true;
-    }
-    return false;
   }
 
   /** حذفِ ورودی‌های مرده؛ می‌گرداند: Map<ip, تعداد اتصال‌های زنده> */
@@ -7943,9 +7345,6 @@ export class ConnLimiter {
 
     if (url.pathname === '/acquire') {
       if (!uuid || !ip) return j({ ok: true, ips: 0, conns: 0, limit, enforced: false, reason: 'missing-identity' });
-      if (this.isKicked(uuid, ip, String(b.connId || ''), now)) {
-        return j({ ok: false, ips: 0, conns: 0, limit, enforced: true, storage: 'do', reason: 'kicked' });
-      }
       let um = this.users.get(uuid);
       if (!um) { um = new Map(); this.users.set(uuid, um); }
       const ips = this.prune(uuid, now);
@@ -7978,21 +7377,11 @@ export class ConnLimiter {
     }
 
     if (url.pathname === '/touch') {
-      if (this.isKicked(uuid, ip, String(b.connId || ''), now)) {
-        return j({ ok: false, kicked: true, storage: 'do', reason: 'kicked' });
-      }
       const um = this.users.get(uuid);
       if (um) {
         const m = um.get(ip);
         if (m && b.connId && m.has(String(b.connId))) m.set(String(b.connId), now);
       }
-      return j({ ok: true });
-    }
-
-    /* ثبتِ نشستِ قطع‌شده از پنل — تا پایانِ until همان connId پذیرفته/تمدید نمی‌شود */
-    if (url.pathname === '/kick') {
-      const k = [uuid, ip, String(b.connId || '')].join('|');
-      this.kicks.set(k, Number(b.until) || now + 90000);
       return j({ ok: true });
     }
 
@@ -8010,15 +7399,6 @@ export class ConnLimiter {
       }
       const sessions = [...out.values()].sort((a, c) => (c.conns || 0) - (a.conns || 0));
       return j({ ok: true, sessions });
-    }
-
-    /* آزادسازیِ دستی — اگر uuid داده شده باشد فقط همان کاربر */
-    if (url.pathname === '/reset') {
-      let removed = 0;
-      const count = (um) => { if (um) um.forEach((m) => { if (m) removed += m.size; }); };
-      if (uuid && this.users.has(uuid)) { count(this.users.get(uuid)); this.users.delete(uuid); }
-      else if (!uuid) { this.users.forEach((um) => count(um)); this.users.clear(); }
-      return j({ ok: true, removed });
     }
 
     /* ریزِ ردیف‌ها با سن‌شان — برای کارتِ سلامت (تشخیصِ «کدام آی‌پی قفل کرده») */
