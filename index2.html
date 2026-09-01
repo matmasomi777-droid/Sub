@@ -1,0 +1,2482 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl" id="html-root">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title id="page-title">VPN Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* ===== فونت‌ها و ریست ===== */
+        @import url('https://cdn.jsdelivr.net/gh/rastikerdar/shabnam-font@v5.0.1/dist/font-face.css');
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Shabnam', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* ===== متغیرهای تم ===== */
+        :root {
+            --bg: #090C11;
+            --bg-grid: rgba(255, 255, 255, 0.035);
+            --surface: #12161F;
+            --surface-alt: #171C27;
+            --text: #EDEFF3;
+            --text-muted: #838DA0;
+            --border: rgba(255, 255, 255, 0.07);
+            --accent: #2DD4BF;
+            --accent-rgb: 45, 212, 191;
+            --accent-2: #4C8DFF;
+            --accent-2-rgb: 76, 141, 255;
+            --alert: #F0655F;
+            --alert-rgb: 240, 101, 95;
+            --warn: #F4A94A;
+            --warn-rgb: 244, 169, 74;
+            --nav-bg: #0C0F15;
+            --hero-1: #101A28;
+            --hero-2: #05070B;
+            --hero-alert-1: #2A1214;
+            --hero-alert-2: #0B0505;
+            --shadow: rgba(0, 0, 0, 0.4);
+            --box-shadow-light: 0 4px 12px rgba(0,0,0,0.15);
+            --notification-bg: rgba(18, 22, 31, 0.85);
+        }
+
+        body.light-mode {
+            --bg: #EEF1F6;
+            --bg-grid: rgba(16, 21, 32, 0.05);
+            --surface: #FFFFFF;
+            --surface-alt: #F4F6FA;
+            --text: #10141C;
+            --text-muted: #6B7484;
+            --border: rgba(16, 21, 32, 0.08);
+            --accent: #0EA394;
+            --accent-rgb: 14, 163, 148;
+            --accent-2: #2D6CDF;
+            --accent-2-rgb: 45, 108, 223;
+            --alert: #DC4C43;
+            --alert-rgb: 220, 76, 67;
+            --warn: #DB8A2A;
+            --warn-rgb: 219, 138, 42;
+            --nav-bg: #FFFFFF;
+            --shadow: rgba(16, 21, 32, 0.08);
+            --box-shadow-light: 0 6px 18px rgba(0,0,0,0.12);
+            --notification-bg: rgba(255, 255, 255, 0.92);
+        }
+
+        html, body {
+            width: 100%;
+            overflow-x: hidden;
+        }
+
+        body {
+            background-color: var(--bg);
+            background-image: radial-gradient(var(--bg-grid) 1px, transparent 1px);
+            background-size: 18px 18px;
+            color: var(--text);
+            padding: 20px 16px 100px 16px;
+            max-width: 480px;
+            margin: 0 auto;
+            transition: background-color 0.35s ease, color 0.35s ease;
+            position: relative;
+            box-sizing: border-box;
+        }
+
+        img { max-width: 100%; }
+
+        @media (max-width: 360px) {
+            body { padding: 16px 12px 100px 12px; }
+            .ip-copy-btn { padding: 6px 8px; font-size: 10px; }
+            .ip-address-text { font-size: 12px; }
+            .action-dropdown-container { padding: 12px; }
+            .action-dropdown-menu { padding: 12px; max-height: 82vh; }
+        }
+
+        html[dir="ltr"] body { direction: ltr; }
+        html[dir="rtl"] body { direction: rtl; }
+
+        .en-font {
+            font-family: 'JetBrains Mono', 'Segoe UI', Tahoma, Geneva, Verdana, monospace !important;
+            letter-spacing: 0.2px;
+        }
+
+        .app-screen { display: none; }
+        .app-screen.active-screen { display: block; }
+
+        /* ===== هدر ===== */
+        .header {
+            margin-bottom: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .profile-container { display: flex; align-items: center; flex: 1; min-width: 0; }
+        html[dir="rtl"] .profile-img-wrapper { margin-left: 12px; }
+        html[dir="ltr"] .profile-img-wrapper { margin-right: 12px; }
+
+        .profile-img-wrapper {
+            position: relative;
+            cursor: default;
+            width: 54px;
+            height: 54px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .profile-img {
+            width: 46px;
+            height: 46px;
+            border-radius: 50%;
+            background: var(--surface-alt);
+            border: 2.5px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: border-color 0.35s ease;
+        }
+        .profile-img.online {
+            border-color: var(--accent);
+        }
+
+        .default-avatar-svg {
+            width: 24px;
+            height: 24px;
+            fill: var(--text-muted);
+            display: block;
+            border-radius: 50%;
+        }
+
+        .online-status-text {
+            font-size: 9px;
+            font-weight: 700;
+            color: var(--accent);
+            margin-top: 2px;
+            transition: color 0.3s;
+            letter-spacing: 0.3px;
+        }
+        .online-status-text.offline {
+            color: var(--text-muted);
+        }
+
+        .online-dot {
+            position: absolute;
+            bottom: 2px;
+            width: 11px;
+            height: 11px;
+            background-color: #555;
+            border-radius: 50%;
+            border: 2px solid var(--bg);
+            z-index: 3;
+            transition: background-color 0.3s ease;
+        }
+        .online-dot.online {
+            background-color: var(--accent);
+        }
+        html[dir="rtl"] .online-dot { left: 2px; }
+        html[dir="ltr"] .online-dot { right: 2px; }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            margin-top: 4px;
+            min-width: 0;
+        }
+        .user-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            flex-wrap: wrap;
+            min-width: 0;
+        }
+        html[dir="rtl"] .user-name { flex-direction: row-reverse; }
+        html[dir="ltr"] .user-name { flex-direction: row; }
+
+        .greeting-text {
+            color: var(--text);
+            transition: color 0.3s;
+            white-space: nowrap;
+        }
+        .username-text {
+            transition: color 0.3s;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 140px;
+        }
+        .username-text.online {
+            color: var(--accent);
+        }
+
+        .wave-icon-wrapper {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            transform-origin: bottom center;
+            animation: premiumSoftWave 3.5s ease-in-out infinite;
+            flex-shrink: 0;
+        }
+        .wave-icon-wrapper svg { width: 100%; height: 100%; }
+
+        @keyframes premiumSoftWave {
+            0% { transform: rotate(0deg) scale(1); }
+            15% { transform: rotate(10deg) scale(1.01); }
+            30% { transform: rotate(-6deg) scale(1.02); }
+            45% { transform: rotate(8deg) scale(1.01); }
+            60% { transform: rotate(-4deg) scale(1); }
+            75% { transform: rotate(4deg) scale(1); }
+            100% { transform: rotate(0deg) scale(1); }
+        }
+
+        .header-icons {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .lang-container { position: relative; }
+
+        .header-icon {
+            height: 42px;
+            padding: 0 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            cursor: pointer;
+            transition: border-color 0.25s;
+            gap: 6px;
+        }
+        .header-icon:hover { border-color: rgba(var(--accent-rgb), 0.4); }
+        .header-icon i { font-size: 16px; color: var(--text-muted); }
+
+        .lang-btn {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .lang-dropdown-menu {
+            position: absolute;
+            top: 50px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            min-width: 110px;
+            box-shadow: 0 10px 25px var(--shadow);
+            z-index: 1000;
+            display: none;
+            text-align: right;
+        }
+        html[dir="rtl"] .lang-dropdown-menu { left: 0; }
+        html[dir="ltr"] .lang-dropdown-menu { right: 0; }
+        .lang-dropdown-menu.show { display: block; }
+
+        .lang-dropdown-item {
+            padding: 10px 14px;
+            font-size: 13px;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .lang-dropdown-item:hover { background: rgba(var(--accent-rgb), 0.12); color: var(--text); }
+
+        /* ===== کارت اشتراک ===== */
+        .subscription-card {
+            border: 1px solid rgba(var(--accent-rgb), 0.15);
+            border-radius: 22px;
+            padding: 24px;
+            margin-bottom: 16px;
+            position: relative;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(150deg, var(--hero-1) 0%, var(--hero-2) 100%);
+            box-shadow: inset 0 0 24px rgba(var(--accent-rgb), 0.06), var(--box-shadow-light);
+            overflow: hidden;
+            transition: background 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease;
+        }
+        .subscription-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image: linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+                               linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+            background-size: 16px 16px;
+            pointer-events: none;
+        }
+        .subscription-card.disconnected {
+            background: linear-gradient(150deg, var(--hero-alert-1) 0%, var(--hero-alert-2) 100%);
+            box-shadow: inset 0 0 24px rgba(var(--alert-rgb), 0.1), var(--box-shadow-light);
+            border-color: rgba(var(--alert-rgb), 0.18);
+        }
+
+        .status-right { display: flex; flex-direction: column; position: relative; z-index: 1; }
+        .active-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+        .status-dot-green {
+            width: 16px;
+            height: 16px;
+            background-color: var(--accent);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: statusPulseGreen 2s infinite;
+        }
+        .status-dot-green i { font-size: 9px; color: #06110F; }
+        .subscription-card.disconnected .status-dot-green {
+            background-color: var(--alert);
+            animation: statusPulseRed 1.5s infinite;
+        }
+        .subscription-card.disconnected .status-dot-green i { color: #2A0B09; }
+
+        @keyframes statusPulseGreen {
+            0% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.5); }
+            70% { box-shadow: 0 0 0 8px rgba(var(--accent-rgb), 0); }
+            100% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0); }
+        }
+        @keyframes statusPulseRed {
+            0% { box-shadow: 0 0 0 0 rgba(var(--alert-rgb), 0.6); }
+            70% { box-shadow: 0 0 10px rgba(var(--alert-rgb), 0); }
+            100% { box-shadow: 0 0 0 0 rgba(var(--alert-rgb), 0); }
+        }
+
+        .days-left {
+            font-size: 36px;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 4px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .days-left span {
+            color: var(--accent);
+            font-size: 18px;
+            font-weight: 600;
+            font-family: 'Shabnam', sans-serif;
+            margin-left: 6px;
+        }
+        .subscription-card.disconnected .days-left span { color: var(--alert); }
+        .expire-date { font-size: 12px; color: rgba(255,255,255,0.65) !important; font-weight: 600; }
+
+        .best-ping-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 8px;
+            font-size: 11.5px;
+            color: rgba(255,255,255,0.7);
+        }
+        .best-ping-row i { font-size: 11px; color: var(--accent); }
+        .best-ping-row .ping-value { font-size: 12px; }
+
+        /* ===== ویجت جدید درصد باقی‌مانده: حلقه مایع ===== */
+        .progress-circle {
+            --remaining-percent: 0;
+            position: relative;
+            width: 116px;
+            height: 116px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1;
+            isolation: isolate;
+            overflow: hidden;
+            background:
+                radial-gradient(circle at 50% 42%, rgba(39, 31, 89, .95) 0 52%, transparent 53%),
+                conic-gradient(from -90deg, #b05cff 0 calc(var(--remaining-percent) * 1%), #5d7cff calc(var(--remaining-percent) * 1%) calc(var(--remaining-percent) * 1% + 4%), rgba(255,255,255,.08) 0 100%);
+            box-shadow: 0 0 34px rgba(123, 78, 255, .22), inset 0 0 24px rgba(255,255,255,.04);
+            transition: --remaining-percent .75s cubic-bezier(.2,.8,.2,1), box-shadow .35s ease;
+        }
+        .progress-circle::before {
+            content: '';
+            position: absolute;
+            inset: 7px;
+            border-radius: 50%;
+            background: linear-gradient(180deg, rgba(10,14,29,.97), rgba(15,13,37,.98));
+            border: 1px solid rgba(181,123,255,.22);
+            box-shadow: inset 0 0 24px rgba(89,68,255,.1);
+            z-index: 0;
+        }
+        .progress-circle::after {
+            content: '';
+            position: absolute;
+            inset: -8px;
+            border-radius: 50%;
+            border: 1px dashed rgba(143,104,255,.26);
+            animation: liquidOrbit 16s linear infinite;
+            pointer-events: none;
+        }
+        .liquid-shell {
+            position: absolute;
+            inset: 12px;
+            border-radius: 50%;
+            overflow: hidden;
+            z-index: 1;
+            background: radial-gradient(circle at 50% 28%, rgba(142,90,255,.14), rgba(10,12,30,.9) 68%);
+        }
+        .liquid-fill {
+            position: absolute;
+            left: -18%;
+            width: 136%;
+            height: 120%;
+            top: calc(100% - (var(--remaining-percent) * 1%));
+            min-height: 18%;
+            background: linear-gradient(180deg, #bd66ff 0%, #7650ff 42%, #405cff 100%);
+            border-radius: 42% 48% 0 0;
+            box-shadow: 0 -8px 24px rgba(170,85,255,.45), inset 0 12px 18px rgba(255,255,255,.1);
+            transition: top .8s cubic-bezier(.2,.8,.2,1);
+            animation: liquidFloat 3.8s ease-in-out infinite alternate;
+        }
+        .liquid-fill::before,
+        .liquid-fill::after {
+            content: '';
+            position: absolute;
+            left: -8%;
+            top: -8px;
+            width: 116%;
+            height: 20px;
+            border-radius: 50%;
+            background: rgba(205,148,255,.52);
+            filter: blur(.4px);
+            animation: liquidWave 3.2s ease-in-out infinite alternate;
+        }
+        .liquid-fill::after {
+            top: -3px;
+            left: 4%;
+            width: 104%;
+            height: 13px;
+            background: rgba(93,141,255,.56);
+            animation-duration: 2.6s;
+            animation-direction: alternate-reverse;
+        }
+        .liquid-bubble {
+            position: absolute;
+            z-index: 2;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: rgba(255,255,255,.55);
+            box-shadow: 0 0 8px rgba(203,161,255,.9);
+            animation: bubbleRise 3.5s ease-in infinite;
+        }
+        .liquid-bubble.b1 { left: 28%; bottom: 20%; animation-delay: -.8s; }
+        .liquid-bubble.b2 { left: 62%; bottom: 12%; width: 4px; height: 4px; animation-delay: -2s; }
+        .liquid-bubble.b3 { left: 48%; bottom: 32%; width: 3px; height: 3px; animation-delay: -1.3s; }
+        .radar-sweep {
+            position: absolute;
+            inset: 1px;
+            border-radius: 50%;
+            z-index: 3;
+            pointer-events: none;
+            animation: liquidOrbit 8s linear infinite;
+        }
+        .radar-sweep::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: 7px;
+            height: 7px;
+            margin-left: -3.5px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 0 10px 3px rgba(181,100,255,.95);
+        }
+        .progress-text { position: relative; z-index: 5; text-align: center; text-shadow: 0 2px 10px rgba(0,0,0,.8); }
+        .progress-text .percent { font-size: 22px; font-weight: 700; color: #fff; font-family: 'JetBrains Mono', monospace; }
+        .progress-text .label { font-size: 9px; color: #cbbcf4; display: block; margin-top: 2px; }
+        .subscription-card.disconnected .progress-circle { filter: grayscale(.65); opacity: .7; }
+        .subscription-card.disconnected .radar-sweep,
+        .subscription-card.disconnected .liquid-fill { animation-play-state: paused; }
+        @keyframes liquidOrbit { to { transform: rotate(360deg); } }
+        @keyframes liquidFloat { to { transform: translateY(5px) rotate(2deg); } }
+        @keyframes liquidWave { to { transform: translateX(9%) scaleY(.8); } }
+        @keyframes bubbleRise {
+            0% { transform: translateY(8px) scale(.6); opacity: 0; }
+            22% { opacity: .8; }
+            100% { transform: translateY(-48px) scale(1.05); opacity: 0; }
+        }
+
+        /* ===== کارت آمار ===== */
+        .stats-card {
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 18px 10px;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            box-shadow: var(--box-shadow-light);
+        }
+        .stat-item { flex: 1; display: flex; flex-direction: column; align-items: center; }
+        .stat-header-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 12px;
+            flex-direction: row-reverse;
+        }
+        html[dir="ltr"] .stat-header-row { flex-direction: row; }
+        .stat-icon-wrapper {
+            width: 26px;
+            height: 26px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--surface-alt);
+            border: 1px solid var(--border);
+        }
+        .stat-title { font-size: 11px; color: var(--text-muted); }
+        .stat-value { font-size: 14px; font-weight: 700; color: var(--text); font-family: 'JetBrains Mono', monospace; }
+        .stat-value.purple-value { color: var(--accent); }
+        .stat-divider { height: 40px; width: 1px; background: var(--border); align-self: center; }
+
+        /* ===== کارت تبلیغاتی ===== */
+        .promo-card {
+            background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.15), rgba(var(--accent-rgb), 0.05));
+            border: 1px solid rgba(var(--accent-rgb), 0.25);
+            border-radius: 18px;
+            padding: 18px 16px;
+            margin-bottom: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
+            box-shadow: var(--box-shadow-light);
+            text-align: center;
+        }
+        .promo-card .promo-text {
+            font-size: 16px;
+            font-weight: 500;
+            color: var(--text);
+            line-height: 1.8;
+        }
+        .promo-card .promo-text span {
+            color: var(--accent);
+            font-weight: 700;
+        }
+        .promo-buttons {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .promo-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 18px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 700;
+            text-decoration: none;
+            transition: all 0.25s ease;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: var(--text);
+            box-shadow: var(--box-shadow-light);
+        }
+        .promo-btn:hover {
+            transform: scale(1.03);
+            border-color: rgba(var(--accent-rgb), 0.4);
+        }
+        .promo-btn i { font-size: 18px; }
+        .promo-btn.telegram i { color: #0088cc; }
+
+        /* ===== نوتیفیکیشن ===== */
+        .notification-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+        .notification-overlay.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .notification-box {
+            background: var(--notification-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1.5px solid rgba(var(--accent-rgb), 0.5);
+            border-radius: 24px;
+            padding: 28px 24px 24px;
+            max-width: 360px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(var(--accent-rgb), 0.1);
+            text-align: center;
+            transform: scale(0.85) translateY(20px);
+            transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.5s ease;
+            opacity: 0;
+        }
+        .notification-overlay.show .notification-box {
+            transform: scale(1) translateY(0);
+            opacity: 1;
+        }
+
+        .notification-box .icon {
+            font-size: 32px;
+            color: var(--accent);
+            margin-bottom: 12px;
+            display: block;
+        }
+        .notification-box .title {
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 6px;
+        }
+        .notification-box .desc {
+            font-size: 14px;
+            color: var(--text-muted);
+            line-height: 1.6;
+            margin-bottom: 18px;
+        }
+        .notification-box .timer-bar {
+            width: 100%;
+            height: 3px;
+            background: rgba(var(--accent-rgb), 0.2);
+            border-radius: 4px;
+            margin-bottom: 18px;
+            overflow: hidden;
+        }
+        .notification-box .timer-bar .fill {
+            height: 100%;
+            width: 100%;
+            background: var(--accent);
+            border-radius: 4px;
+            transition: width 0.1s linear;
+        }
+
+        .notification-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+        .notification-btn {
+            padding: 10px 24px;
+            border-radius: 14px;
+            font-size: 14px;
+            font-weight: 700;
+            border: none;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            min-width: 100px;
+        }
+        .notification-btn:hover {
+            transform: scale(1.04);
+        }
+        .notification-btn:active {
+            transform: scale(0.96);
+        }
+        .notification-btn.danger {
+            background: rgba(var(--alert-rgb), 0.15);
+            color: var(--alert);
+            border: 1px solid rgba(var(--alert-rgb), 0.3);
+        }
+        .notification-btn.danger:hover {
+            background: rgba(var(--alert-rgb), 0.25);
+        }
+        .notification-btn.primary {
+            background: rgba(var(--accent-rgb), 0.2);
+            color: var(--accent);
+            border: 1px solid rgba(var(--accent-rgb), 0.4);
+        }
+        .notification-btn.primary:hover {
+            background: rgba(var(--accent-rgb), 0.35);
+        }
+
+        /* ===== گرید جزئیات ===== */
+        .details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+        .detail-card {
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 14px 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: center;
+            min-height: 72px;
+            box-shadow: var(--box-shadow-light);
+        }
+        .detail-card .label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .detail-card .value {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .detail-card .value.accent-value { color: var(--accent); }
+        .detail-card .value.alert-value { color: var(--alert); }
+
+        .section-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            text-align: right;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+        html[dir="ltr"] .section-title { text-align: left; }
+
+        /* ===== دکمه‌های عملیاتی ===== */
+        .actions-grid {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .action-cell { flex: 1; }
+        .action-card {
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 18px 4px;
+            text-align: center;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            height: 100%;
+            transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+            box-shadow: var(--box-shadow-light);
+        }
+        .action-card:active { transform: scale(0.96); }
+        .action-card:hover { border-color: rgba(var(--accent-rgb), 0.3); }
+        .action-card i { font-size: 20px; }
+        .action-card.renew i { color: var(--warn); }
+        .action-card.link i { color: var(--accent); }
+        .action-card.qr i { color: var(--accent-2); }
+        .action-card.config i { color: var(--accent); }
+        .action-label { font-size: 11px; color: var(--text); font-weight: 600; line-height: 1.3; }
+
+        .action-dropdown-container {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9998;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            box-sizing: border-box;
+        }
+        .action-dropdown-container.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .action-dropdown-menu {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 14px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+            max-width: 520px;
+            max-height: 78vh;
+            transform: scale(0.92) translateY(16px);
+            transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-sizing: border-box;
+        }
+        .action-dropdown-container.show .action-dropdown-menu {
+            transform: scale(1) translateY(0);
+        }
+
+        .dropdown-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .dropdown-modal-title { font-size: 14px; font-weight: 700; color: var(--text); }
+        .dropdown-close-btn {
+            background: var(--surface-alt);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            width: 30px;
+            height: 30px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        .dropdown-close-btn:hover { color: var(--alert); border-color: rgba(var(--alert-rgb), 0.4); }
+
+        .action-dropdown-body {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            min-height: 60px;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            font-size: 13px;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(var(--accent-rgb), 0.35) transparent;
+        }
+        .action-dropdown-body::-webkit-scrollbar { width: 5px; }
+        .action-dropdown-body::-webkit-scrollbar-thumb {
+            background: rgba(var(--accent-rgb), 0.35);
+            border-radius: 10px;
+        }
+
+        .ip-row-item {
+            background: var(--surface-alt);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 10px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 100%;
+            max-width: 100%;
+            overflow: hidden;
+            box-sizing: border-box;
+            flex-shrink: 0;
+        }
+        .ip-row-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            width: 100%;
+        }
+        .ip-row-bottom {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding-top: 8px;
+            border-top: 1px dashed var(--border);
+        }
+        .ip-details-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-align: right;
+            min-width: 0;
+            flex: 1 1 auto;
+            overflow: hidden;
+        }
+        html[dir="ltr"] .ip-details-left { text-align: left; flex-direction: row; }
+        html[dir="rtl"] .ip-details-left { flex-direction: row-reverse; }
+
+        .action-mini-flag {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background-size: cover;
+            background-position: center;
+            border: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .ip-meta-block {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+            flex: 1 1 auto;
+            overflow: hidden;
+        }
+        .ip-address-text {
+            font-size: 13px;
+            font-weight: bold;
+            color: var(--text);
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .ip-protocol-text {
+            font-size: 10.5px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+        .proto-part-1 { color: var(--warn); }
+        .proto-part-2 { color: var(--accent-2); }
+        .proto-part-3 { color: var(--accent); }
+
+        .ping-value {
+            font-size: 12px;
+            font-weight: 700;
+            flex-shrink: 0;
+            transition: color 0.25s ease;
+        }
+        .ping-value.level-3 { color: var(--accent); }
+        .ping-value.level-2 { color: var(--warn); }
+        .ping-value.level-1 { color: var(--alert); }
+        .ping-value.muted { color: var(--text-muted); }
+
+        .ip-copy-btn {
+            background: rgba(var(--accent-rgb), 0.12);
+            border: 1px solid rgba(var(--accent-rgb), 0.25);
+            color: var(--accent);
+            padding: 6px 10px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+        .ip-copy-btn:hover { background: var(--accent); color: #06110F; }
+
+        .copy-all-btn {
+            background: rgba(var(--accent-rgb), 0.15);
+            border: 1px solid rgba(var(--accent-rgb), 0.3);
+            color: var(--text);
+            padding: 8px 14px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            transition: all 0.25s;
+            flex-shrink: 0;
+        }
+        .copy-all-btn:hover { background: var(--accent); color: #06110F; }
+
+        .qr-modern-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            flex-shrink: 0;
+            margin: 0 4px;
+            transition: border-color 0.2s;
+        }
+        .qr-modern-wrapper:hover { border-color: rgba(var(--accent-rgb), 0.4); }
+        .qr-modern-wrapper img {
+            width: 24px;
+            height: 24px;
+            display: block;
+            border-radius: 4px;
+        }
+
+        /* ===== دانلود برنامه‌ها ===== */
+        .download-os-tabs {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+            background: var(--surface);
+            padding: 6px;
+            border-radius: 16px;
+            margin-bottom: 24px;
+            text-align: center;
+            border: 1px solid var(--border);
+            box-shadow: var(--box-shadow-light);
+        }
+        .os-tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 10px 4px;
+            font-size: 12px;
+            font-weight: bold;
+            border-radius: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: all 0.25s ease;
+        }
+        .os-tab-btn.active-tab {
+            background-color: var(--accent);
+            color: #06110F;
+            box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.3);
+        }
+
+        .client-card-item {
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: var(--box-shadow-light);
+        }
+        .client-info-side { display: flex; align-items: center; gap: 12px; }
+        html[dir="rtl"] .client-info-side { flex-direction: row; text-align: right; }
+        html[dir="ltr"] .client-info-side { flex-direction: row-reverse; text-align: left; }
+        .client-icon-box {
+            width: 44px;
+            height: 44px;
+            background: var(--surface-alt);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            color: var(--text-muted);
+        }
+        .client-title-text { font-size: 14px; font-weight: 700; color: var(--text); }
+        .client-subtitle-text { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+        .client-download-btn {
+            background-color: rgba(var(--accent-rgb), 0.15);
+            color: var(--accent);
+            padding: 8px 18px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 700;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+        .client-download-btn:hover { background-color: var(--accent); color: #06110F; }
+
+        /* ===== کارت طراح ===== */
+        .designer-card {
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 10px 14px;
+            margin-top: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: var(--box-shadow-light);
+        }
+        .designer-info { display: flex; align-items: center; gap: 8px; }
+        .designer-text-label { font-size: 11px; color: var(--text-muted); font-weight: 500; }
+        .designer-name-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--accent);
+            font-family: 'JetBrains Mono', monospace;
+            cursor: pointer;
+            transition: color 0.2s;
+            text-decoration: none;
+        }
+        .designer-name-title:hover { color: var(--accent-2); }
+        .designer-tg-btn {
+            font-size: 15px;
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: all 0.25s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .designer-tg-btn:hover { color: var(--accent); transform: scale(1.1); }
+
+        /* ===== ناوبری پایین ===== */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            max-width: 480px;
+            background-color: var(--nav-bg);
+            border-top: 1px solid var(--border);
+            padding: 12px 16px;
+            display: flex;
+            z-index: 100;
+        }
+        .nav-item-cell { flex: 1; display: flex; justify-content: center; }
+        .nav-item {
+            color: var(--text-muted);
+            font-size: 11px;
+            cursor: pointer;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            width: 100%;
+            padding: 8px 0;
+        }
+        .nav-item i { font-size: 18px; }
+        .nav-item.active {
+            background-color: rgba(var(--accent-rgb), 0.12);
+            border: 1px solid rgba(var(--accent-rgb), 0.25);
+            border-radius: 16px;
+            color: var(--accent);
+        }
+    </style>
+</head>
+<body>
+
+    <svg style="position: absolute; width: 0; height: 0;" width="0" height="0">
+        <defs>
+            <linearGradient id="premiumPurpleNeon" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="#5EEAD4"/>
+                <stop offset="50%" stop-color="#2DD4BF"/>
+                <stop offset="100%" stop-color="#0F9E90"/>
+            </linearGradient>
+        </defs>
+    </svg>
+
+    <!-- ===== نوتیفیکیشن ===== -->
+    <div class="notification-overlay" id="notificationOverlay">
+        <div class="notification-box" id="notificationBox">
+            <span class="icon">🔔</span>
+            <div class="title">آیا مشکلی در اتصال کانفیگ دارید؟</div>
+            <div class="desc">به پشتیبانی پیام بدهید</div>
+            <div class="timer-bar">
+                <div class="fill" id="timerFill"></div>
+            </div>
+            <div class="notification-actions">
+                <button class="notification-btn danger" id="notificationDismiss">خیر</button>
+                <button class="notification-btn primary" id="notificationSupport">پشتیبانی</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="header">
+        <div class="profile-container">
+            <div class="profile-img-wrapper">
+                <div class="profile-img" id="profile-img">
+                    <svg class="default-avatar-svg" id="default-avatar" viewBox="0 0 24 24">
+                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                    </svg>
+                </div>
+                <div class="online-dot" id="online-status-dot"></div>
+                <span class="online-status-text" id="online-status-text">آفلاین</span>
+            </div>
+            <div class="user-info">
+                <div class="user-name" id="user-name"></div>
+            </div>
+        </div>
+
+        <div class="header-icons">
+            <div class="lang-container">
+                <div class="header-icon" id="lang-toggle-btn">
+                    <span class="lang-btn"><i class="fa-solid fa-globe"></i> <span id="lang-text">FA</span></span>
+                </div>
+                <div class="lang-dropdown-menu" id="lang-dropdown">
+                    <div class="lang-dropdown-item" onclick="selectLanguage('fa')">فارسی</div>
+                    <div class="lang-dropdown-item" onclick="selectLanguage('en')">English</div>
+                    <div class="lang-dropdown-item" onclick="selectLanguage('tr')">Türkçe</div>
+                    <div class="lang-dropdown-item" onclick="selectLanguage('ar')">العربية</div>
+                </div>
+            </div>
+            <div class="header-icon" id="theme-toggle">
+                <i class="fa-solid fa-moon" id="theme-icon"></i>
+            </div>
+        </div>
+    </div>
+
+    <div id="screen-dashboard" class="app-screen active-screen">
+        <!-- کارت اشتراک -->
+        <div class="subscription-card" id="main-sub-card">
+            <div class="status-right">
+                <div class="active-badge">
+                    <span class="status-dot-green" id="status-indicator-dot"><i class="fa-solid fa-check" id="status-icon-mark"></i></span>
+                    <span id="badge-text">فعال</span>
+                </div>
+                <div class="days-left en-font" id="live-days-count">0 <span id="days-label">روز</span></div>
+                <div class="expire-date" id="expire-date">تاریخ انقضا: --</div>
+                <div class="best-ping-row">
+                    <i class="fa-solid fa-gauge-high"></i>
+                    <span id="best-ping-label">بهترین پینگ:</span>
+                    <span class="ping-value muted en-font" id="best-ping-value">در حال بررسی...</span>
+                </div>
+            </div>
+            <div class="status-left">
+                <div class="progress-circle" id="sub-progress-circle">
+                    <div class="liquid-shell" aria-hidden="true">
+                        <div class="liquid-fill"></div>
+                        <span class="liquid-bubble b1"></span>
+                        <span class="liquid-bubble b2"></span>
+                        <span class="liquid-bubble b3"></span>
+                    </div>
+                    <div class="radar-sweep" aria-hidden="true"></div>
+                    <div class="progress-text">
+                        <span class="percent en-font" id="live-percent-display">0%</span>
+                        <span class="label" id="remaining-label">باقی‌مانده</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- کارت آمار -->
+        <div class="stats-card">
+            <div class="stat-item">
+                <div class="stat-header-row">
+                    <div class="stat-icon-wrapper"><i class="fa-solid fa-database" style="color: #4C8DFF;"></i></div>
+                    <div class="stat-title" id="title-limit">حجم کلی</div>
+                </div>
+                <div class="stat-value purple-value en-font" id="stat-limit">0 GB</div>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+                <div class="stat-header-row">
+                    <div class="stat-icon-wrapper"><i class="fa-solid fa-chart-pie" style="color: #2DD4BF;"></i></div>
+                    <div class="stat-title" id="title-total">مصرف کل</div>
+                </div>
+                <div class="stat-value en-font" id="stat-total-val">0 B</div>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+                <div class="stat-header-row">
+                    <div class="stat-icon-wrapper"><i class="fa-solid fa-arrow-down" style="color: #4C8DFF;"></i></div>
+                    <div class="stat-title" id="title-download">دانلود</div>
+                </div>
+                <div class="stat-value en-font" id="stat-dl-val">0 B</div>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+                <div class="stat-header-row">
+                    <div class="stat-icon-wrapper"><i class="fa-solid fa-arrow-up" style="color: #F4A94A;"></i></div>
+                    <div class="stat-title" id="title-upload">آپلود</div>
+                </div>
+                <div class="stat-value en-font" id="stat-ul-val">0 B</div>
+            </div>
+        </div>
+
+        <!-- کارت تبلیغاتی (فقط تلگرام) -->
+        <div class="promo-card">
+            <div class="promo-text">
+                آیا نیاز به <span>خرید</span> یا <span>تمدید ساب</span> دارید؟<br>
+                با پشتیبانی تماس بگیرید.
+            </div>
+            <div class="promo-buttons" style="justify-content: center;">
+                <a href="https://t.me/Masih_psn" target="_blank" class="promo-btn telegram" id="promo-support-link">
+                    <i class="fa-brands fa-telegram"></i> تلگرام
+                </a>
+            </div>
+        </div>
+
+        <!-- گرید جزئیات -->
+        <div class="details-grid">
+            <div class="detail-card">
+                <span class="label" id="detail-total-label">مصرف کل</span>
+                <span class="value" id="detail-total-value">0 B</span>
+            </div>
+            <div class="detail-card">
+                <span class="label" id="detail-remaining-label">باقی‌مانده</span>
+                <span class="value accent-value" id="detail-remaining-value">0%</span>
+            </div>
+            <div class="detail-card">
+                <span class="label" id="detail-remaining-volume-label">حجم باقی‌مانده</span>
+                <span class="value" id="detail-remaining-volume">نامحدود</span>
+            </div>
+            <div class="detail-card">
+                <span class="label" id="detail-last-connect-label">آخرین اتصال</span>
+                <span class="value" id="detail-last-connect-value">--</span>
+            </div>
+        </div>
+
+        <!-- دکمه‌های عملیاتی -->
+        <div class="actions-grid">
+            <div class="action-cell">
+                <div class="action-card renew" id="btn-renew-support">
+                    <i class="fa-solid fa-battery-three-quarters"></i>
+                    <div class="action-label" id="action-renew">تمدید ساب</div>
+                </div>
+            </div>
+            <div class="action-cell">
+                <div class="action-card link" id="btn-copy-sub">
+                    <i class="fa-solid fa-link"></i>
+                    <div class="action-label" id="action-copy">کپی لینک ساب</div>
+                </div>
+            </div>
+            <div class="action-cell">
+                <div class="action-card qr" id="btn-toggle-qr">
+                    <i class="fa-solid fa-qrcode"></i>
+                    <div class="action-label" id="action-qr">QR Code</div>
+                </div>
+            </div>
+            <div class="action-cell">
+                <div class="action-card config" id="btn-toggle-config">
+                    <i class="fa-solid fa-cloud-arrow-down"></i>
+                    <div class="action-label" id="action-config">کپی کانفیگ</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="action-dropdown-container" id="dropdown-qr-container">
+            <div class="action-dropdown-menu">
+                <div class="dropdown-modal-header">
+                    <span class="dropdown-modal-title" id="qr-modal-title">QR Code</span>
+                    <button class="dropdown-close-btn" id="close-qr-dropdown"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="action-dropdown-body" id="list-qr-ips">
+                    <span style="color:#6c6c8c;" id="qr-empty-msg">خالی</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="action-dropdown-container" id="dropdown-config-container">
+            <div class="action-dropdown-menu">
+                <div class="dropdown-modal-header">
+                    <span class="dropdown-modal-title" id="config-modal-title">کپی کانفیگ</span>
+                    <button class="dropdown-close-btn" id="close-config-dropdown"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="action-dropdown-body" id="list-config-ips">
+                    <span style="color:#6c6c8c;" id="config-empty-msg">خالی</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- کارت طراح -->
+        <div class="designer-card">
+            <div class="designer-info">
+                <span class="designer-text-label" id="designer-lbl">سازنده تم:</span>
+                <a href="https://t.me/Masih_psn" target="_blank" class="designer-name-title en-font">@Masih_psn</a>
+            </div>
+            <a class="designer-tg-btn" href="https://t.me/Masih_psn" target="_blank" title="Telegram">
+                <i class="fa-brands fa-telegram"></i>
+            </a>
+        </div>
+    </div>
+
+    <div id="screen-download-apps" class="app-screen">
+        <div class="section-title" id="download-screen-title" style="margin-bottom: 16px;">دانلود برنامه ها</div>
+        <div class="download-os-tabs">
+            <div class="os-tab-btn active-tab" id="os-tab-android" onclick="switchDownloadTab('android')">
+                <i class="fa-brands fa-android"></i> <span id="lbl-tab-android">اندروید</span>
+            </div>
+            <div class="os-tab-btn" id="os-tab-ios" onclick="switchDownloadTab('ios')">
+                <i class="fa-brands fa-apple"></i> <span id="lbl-tab-ios">آیفون / آیپد</span>
+            </div>
+            <div class="os-tab-btn" id="os-tab-desktop" onclick="switchDownloadTab('desktop')">
+                <i class="fa-solid fa-desktop"></i> <span id="lbl-tab-desktop">ویندوز / مک</span>
+            </div>
+        </div>
+        <div class="client-card-item">
+            <a href="#" id="btn-dl-client1" target="_blank" class="client-download-btn">دانلود</a>
+            <div class="client-info-side">
+                <div class="client-details">
+                    <div class="client-title-text" id="title-client1">v2rayNG</div>
+                    <div class="client-subtitle-text" id="sub-client1">کلاینت رسمی فروشگاه</div>
+                </div>
+                <div class="client-icon-box"><i class="fa-solid fa-paper-plane" id="icon-client1"></i></div>
+            </div>
+        </div>
+        <div class="client-card-item">
+            <a href="#" id="btn-dl-client2" target="_blank" class="client-download-btn">دانلود</a>
+            <div class="client-info-side">
+                <div class="client-details">
+                    <div class="client-title-text" id="title-client2">Hiddify Next</div>
+                    <div class="client-subtitle-text" id="sub-client2">کلاینت رسمی فروشگاه</div>
+                </div>
+                <div class="client-icon-box"><i class="fa-solid fa-shield-halved" id="icon-client2"></i></div>
+            </div>
+        </div>
+        <div class="client-card-item">
+            <a href="#" id="btn-dl-client3" target="_blank" class="client-download-btn">دانلود</a>
+            <div class="client-info-side">
+                <div class="client-details">
+                    <div class="client-title-text" id="title-client3">sing-box</div>
+                    <div class="client-subtitle-text" id="sub-client3">کلاینت رسمی فروشگاه</div>
+                </div>
+                <div class="client-icon-box"><i class="fa-solid fa-box-open" id="icon-client3"></i></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="bottom-nav">
+        <div class="nav-item-cell">
+            <div class="nav-item active" id="nav-dashboard" onclick="navigateToScreen('dashboard')">
+                <i class="fa-solid fa-house"></i>داشبورد
+            </div>
+        </div>
+        <div class="nav-item-cell">
+            <div class="nav-item" id="nav-download" onclick="navigateToScreen('download')">
+                <i class="fa-solid fa-download"></i>دانلود برنامه
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ================================================================
+        // آیدی تلگرام پشتیبانی — برای تغییر، فقط همین مقدار رو عوض کن
+        // (بدون @، فقط خودِ یوزرنیم)
+        // همه‌جای سایت (کارت تبلیغاتی، دکمه تمدید، پاپ‌آپ نوتیفیکیشن)
+        // از همین یک متغیر استفاده می‌کنن
+        // ================================================================
+        const SUPPORT_TELEGRAM_ID = "Masih_psn";
+        const SUPPORT_TELEGRAM_URL = `https://t.me/${SUPPORT_TELEGRAM_ID}`;
+
+        // ===== داده‌های دریافتی از پنل =====
+        const sanaeiTemplateData = {
+            sId: "{{ .sId }}",
+            enabled: {{ .enabled }},
+            expireSeconds: {{ .expire }},
+            downloadByte: {{ .downloadByte }},
+            uploadByte: {{ .uploadByte }},
+            totalByte: {{ .totalByte }},
+            subUrl: "{{ .subUrl }}",
+            subJsonUrl: "{{ .subJsonUrl }}",
+            subClashUrl: "{{ .subClashUrl }}",
+            subTitle: "{{ .subTitle }}",
+            subSupportUrl: "{{ .subSupportUrl }}",
+            datepicker: "{{ .datepicker }}",
+            lastOnline: {{ .lastOnline }},
+            emails: [{{ range $i, $e := .emails }}{{ if $i }},{{ end }}"{{ $e }}"{{ end }}],
+            links: [{{ range $i, $l := .links }}{{ if $i }},{{ end }}"{{ $l }}"{{ end }}]
+        };
+
+        // ===== متغیرهای سراسری =====
+        let currentLang = 'fa';
+        let isServerConnected = sanaeiTemplateData.enabled;
+        let liveRefreshTimer = null;
+        let notificationTimer = null;
+        let notificationTimeout = null;
+        let timerInterval = null;
+
+        // ===== توابع کمکی =====
+        function calculateDaysLeft(expireSeconds) {
+            if (!expireSeconds || expireSeconds <= 0) return null;
+            const now = Date.now();
+            const diff = (expireSeconds * 1000) - now;
+            return diff > 0 ? Math.ceil(diff / (1000 * 60 * 60 * 24)) : -1;
+        }
+
+        function generateExpiryDates(expireSeconds) {
+            const dates = { fa: "--", en: "--", tr: "--", ar: "--" };
+            if (expireSeconds && expireSeconds > 0) {
+                const dateObj = new Date(expireSeconds * 1000);
+                dates.fa = dateObj.toLocaleDateString('fa-IR');
+                dates.en = dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+                dates.tr = dateObj.toLocaleDateString('tr-TR');
+                dates.ar = dateObj.toLocaleDateString('ar-EG');
+            }
+            return dates;
+        }
+
+        const initialExpiryDates = generateExpiryDates(sanaeiTemplateData.expireSeconds);
+
+        let sanaeiClientData = {
+            username: (sanaeiTemplateData.emails && sanaeiTemplateData.emails.length > 0) ? sanaeiTemplateData.emails[0] : "کاربر",
+            daysLeft: calculateDaysLeft(sanaeiTemplateData.expireSeconds),
+            expireSeconds: sanaeiTemplateData.expireSeconds,
+            expiryDateFa: initialExpiryDates.fa,
+            expiryDateEn: initialExpiryDates.en,
+            expiryDateTr: initialExpiryDates.tr,
+            expiryDateAr: initialExpiryDates.ar,
+            totalByte: sanaeiTemplateData.totalByte,
+            downloadByte: sanaeiTemplateData.downloadByte,
+            uploadByte: sanaeiTemplateData.uploadByte,
+            subUrl: sanaeiTemplateData.subUrl || window.location.href,
+            links: sanaeiTemplateData.links || [],
+            lastOnline: sanaeiTemplateData.lastOnline || 0
+        };
+
+        function updateConnectionStatus() {
+            const now = Date.now();
+            const totalUsage = sanaeiClientData.downloadByte + sanaeiClientData.uploadByte;
+            const isExpired = sanaeiClientData.expireSeconds > 0 && (sanaeiClientData.expireSeconds * 1000) < now;
+            const isOverQuota = sanaeiClientData.totalByte > 0 && totalUsage >= sanaeiClientData.totalByte;
+            isServerConnected = !isExpired && !isOverQuota;
+        }
+
+        if (sanaeiClientData.daysLeft === -1) {
+            isServerConnected = false;
+        } else {
+            updateConnectionStatus();
+        }
+
+        const appDownloadLinks = {
+            android: {
+                c1: { name: "v2rayNG", url: "https://play.google.com/store/apps/details?id=com.v2ray.ang" },
+                c2: { name: "Hiddify Next", url: "https://play.google.com/store/apps/details?id=fg.hiddify.com" },
+                c3: { name: "KP2P / sing-box", url: "https://play.google.com/store/apps/details?id=io.nekohasekai.sfa" }
+            },
+            ios: {
+                c1: { name: "FoXray", url: "https://apps.apple.com/us/app/foxray/id6448898375" },
+                c2: { name: "Hiddify Next", url: "https://apps.apple.com/us/app/hiddify-next/id6473611382" },
+                c3: { name: "sing-box", url: "https://apps.apple.com/us/app/sing-box/id6443657551" }
+            },
+            desktop: {
+                c1: { name: "v2rayN (Windows)", url: "https://github.com/2dust/v2rayN/releases" },
+                c2: { name: "Hiddify (Win/Mac)", url: "https://apps.microsoft.com/detail/hiddify" },
+                c3: { name: "NekoRay (Win/Linux)", url: "https://github.com/MatsuriDayo/nekoray/releases" }
+            }
+        };
+
+        const waveIconHTML = `
+            <div class="wave-icon-wrapper">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M7 23h7.5c2.2 0 4-1.8 4-4v-7.5c0-.8-.7-1.5-1.5-1.5s-1.5.7-1.5 1.5V11h-.5V4.5c0-.8-.7-1.5-1.5-1.5S12 3.7 12 4.5V11h-.5V2.5c0-.8-.7-1.5-1.5-1.5S8.5 1.7 8.5 2.5V11h-.5V5.5c0-.8-.7-1.5-1.5-1.5S5 4.7 5 5.5v10.3c-.6-.7-1.5-1.1-2.4-.9-.9.2-1.5 1.1-1.4 2 .2 1.9 2 4.2 3.8 5.4C5.7 22.7 6.3 23 7 23z" fill="url(#premiumPurpleNeon)"/>
+                </svg>
+            </div>`;
+
+        const locales = {
+            fa: {
+                dir: "rtl", greet: "سلام ", badgeActive: "فعال", badgeInactive: "غیرفعال",
+                daysUnit: "روز", remainingLabel: "باقی‌مانده", titleLimit: "حجم کلی", titleTotal: "مصرف کل",
+                titleDownload: "دانلود", titleUpload: "آپلود",
+                detailTotal: "مصرف کل", detailRemaining: "باقی‌مانده", detailRemainingVolume: "حجم باقی‌مانده", detailLastConnect: "آخرین اتصال",
+                actionRenew: "تمدید ساب", actionCopy: "کپی لینک ساب", actionCopied: "کپی شد!",
+                actionQr: "QR Code", actionConfig: "کپی کانفیگ", copyAllBtn: "کپی همه کانفیگ‌ها",
+                navDashboard: "<i class='fa-solid fa-house'></i>داشبورد", navDownload: "<i class='fa-solid fa-download'></i>دانلود برنامه",
+                dlScreenTitle: "دانلود برنامه ها", dlSubtitle: "کلاینت رسمی فروشگاه", btnDl: "دانلود",
+                tabAndroid: "اندروید", tabIos: "آیفون / آیپد", tabDesktop: "ویندوز / مک",
+                designerLbl: "سازنده تم:", expiredText: "منقضی", unlimitedText: "نامحدود", emptyConfigs: "خالی", copyBtnText: "کپی",
+                lastConnectUnknown: "--", onlineText: "آنلاین", offlineText: "آفلاین",
+                promoText: "آیا نیاز به <span>خرید</span> یا <span>تمدید ساب</span> دارید؟<br>با پشتیبانی تماس بگیرید.",
+                promoTelegram: "تلگرام",
+                notificationTitle: "آیا مشکلی در اتصال کانفیگ دارید؟",
+                notificationDesc: "به پشتیبانی پیام بدهید",
+                notificationDismiss: "خیر",
+                notificationSupport: "پشتیبانی",
+                pingChecking: "در حال بررسی...", pingTimeout: "بدون پاسخ", bestPingLabel: "بهترین پینگ:",
+                qrModalTitle: "QR Code", configModalTitle: "کپی کانفیگ"
+            },
+            en: {
+                dir: "ltr", greet: "Hello ", badgeActive: "Active", badgeInactive: "Inactive",
+                daysUnit: "Days", remainingLabel: "Remaining", titleLimit: "Total Limit", titleTotal: "Total Usage",
+                titleDownload: "Download", titleUpload: "Upload",
+                detailTotal: "Total Usage", detailRemaining: "Remaining", detailRemainingVolume: "Remaining Volume", detailLastConnect: "Last Connect",
+                actionRenew: "Renew", actionCopy: "Copy Sub Link", actionCopied: "Copied!",
+                actionQr: "QR Code", actionConfig: "Copy Config", copyAllBtn: "Copy All Configs",
+                navDashboard: "<i class='fa-solid fa-house'></i>Dashboard", navDownload: "<i class='fa-solid fa-download'></i>App",
+                dlScreenTitle: "Download Clients", dlSubtitle: "Official Store Client", btnDl: "Get App",
+                tabAndroid: "Android", tabIos: "iPhone / iPad", tabDesktop: "Win / Mac",
+                designerLbl: "Theme Developer:", expiredText: "Expired", unlimitedText: "Unlimited", emptyConfigs: "Empty", copyBtnText: "Copy",
+                lastConnectUnknown: "--", onlineText: "Online", offlineText: "Offline",
+                promoText: "Need to <span>buy</span> or <span>renew</span> your subscription?<br>Contact support.",
+                promoTelegram: "Telegram",
+                notificationTitle: "Having trouble connecting?",
+                notificationDesc: "Contact support",
+                notificationDismiss: "No",
+                notificationSupport: "Support",
+                pingChecking: "Checking...", pingTimeout: "No response", bestPingLabel: "Best Ping:",
+                qrModalTitle: "QR Code", configModalTitle: "Copy Config"
+            },
+            tr: {
+                dir: "ltr", greet: "Merhaba ", badgeActive: "Aktif", badgeInactive: "Pasif",
+                daysUnit: "Gün", remainingLabel: "Kalan", titleLimit: "Toplam Kota", titleTotal: "Toplam",
+                titleDownload: "İndirme", titleUpload: "Yükleme",
+                detailTotal: "Toplam", detailRemaining: "Kalan", detailRemainingVolume: "Kalan Hacim", detailLastConnect: "Son Bağlantı",
+                actionRenew: "Yenile", actionCopy: "Sub Linki Kopyala", actionCopied: "Kopyalandı!",
+                actionQr: "QR Kodu", actionConfig: "Konfig Kopyala", copyAllBtn: "Tüm Konfigleri Kopyala",
+                navDashboard: "<i class='fa-solid fa-house'></i>Panel", navDownload: "<i class='fa-solid fa-download'></i>Uygulama",
+                dlScreenTitle: "Uygulamaları İndir", dlSubtitle: "Resmi Mağaza İstemcisi", btnDl: "İndir",
+                tabAndroid: "Android", tabIos: "iPhone / iPad", tabDesktop: "Win / Mac",
+                designerLbl: "Tema Geliştirici:", expiredText: "Süresi Doldu", unlimitedText: "Sınırsız", emptyConfigs: "Boş", copyBtnText: "Kopyala",
+                lastConnectUnknown: "--", onlineText: "Çevrimiçi", offlineText: "Çevrimdışı",
+                promoText: "Aboneliğinizi <span>satın</span> veya <span>yenile</span> mi gerekiyor?<br>Destek ile iletişime geçin.",
+                promoTelegram: "Telegram",
+                notificationTitle: "Bağlantı sorunu mu yaşıyorsunuz?",
+                notificationDesc: "Destek ile iletişime geçin",
+                notificationDismiss: "Hayır",
+                notificationSupport: "Destek",
+                pingChecking: "Kontrol ediliyor...", pingTimeout: "Yanıt yok", bestPingLabel: "En İyi Ping:",
+                qrModalTitle: "QR Kodu", configModalTitle: "Konfig Kopyala"
+            },
+            ar: {
+                dir: "rtl", greet: "أهلاً ", badgeActive: "نشط", badgeInactive: "غير نشط",
+                daysUnit: "يوم", remainingLabel: "المتبقي", titleLimit: "الحجم الكلي", titleTotal: "الإجمالي",
+                titleDownload: "تحميل", titleUpload: "رفع",
+                detailTotal: "الإجمالي", detailRemaining: "المتبقي", detailRemainingVolume: "الحجم المتبقي", detailLastConnect: "آخر اتصال",
+                actionRenew: "تجديد", actionCopy: "نسخ رابط الساب", actionCopied: "تم النسخ!",
+                actionQr: "رمز QR", actionConfig: "نسخ التكوين", copyAllBtn: "نسخ كل التكوينات",
+                navDashboard: "<i class='fa-solid fa-house'></i>الرئيسية", navDownload: "<i class='fa-solid fa-download'></i>التطبيق",
+                dlScreenTitle: "تحميل التطبيقات", dlSubtitle: "عميل المتجر الرسمي", btnDl: "تحميل",
+                tabAndroid: "أندروید", tabIos: "آيفون / آيباد", tabDesktop: "ویندوز / ماک",
+                designerLbl: "مطور القالب:", expiredText: "منتهي", unlimitedText: "غير محدود", emptyConfigs: "خالي", copyBtnText: "نسخ",
+                lastConnectUnknown: "--", onlineText: "متصل", offlineText: "غير متصل",
+                promoText: "هل تحتاج إلى <span>شراء</span> أو <span>تجديد</span> اشتراكك؟<br>اتصل بالدعم.",
+                promoTelegram: "تيليجرام",
+                notificationTitle: "هل تواجه مشكلة في الاتصال؟",
+                notificationDesc: "اتصل بالدعم",
+                notificationDismiss: "لا",
+                notificationSupport: "الدعم",
+                pingChecking: "جارٍ الفحص...", pingTimeout: "لا استجابة", bestPingLabel: "أفضل بينغ:",
+                qrModalTitle: "رمز QR", configModalTitle: "نسخ التكوين"
+            }
+        };
+
+        // ===== توابع اصلی =====
+        function decodeBase64Unicode(str) {
+            const clean = str.replace(/-/g, '+').replace(/_/g, '/').trim();
+            const binary = atob(clean);
+            const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+            return new TextDecoder('utf-8').decode(bytes);
+        }
+
+        function parseSubscriptionUserinfo(headerValue) {
+            const result = { upload: null, download: null, total: null, expire: null };
+            if (!headerValue) return result;
+            headerValue.split(';').forEach(part => {
+                const [key, val] = part.trim().split('=');
+                if (key && val !== undefined && result.hasOwnProperty(key.trim())) {
+                    result[key.trim()] = parseInt(val.trim(), 10);
+                }
+            });
+            return result;
+        }
+
+        async function fetchLiveSubscriptionData() {
+            if (!sanaeiClientData.subUrl) return;
+            try {
+                const response = await fetch(sanaeiClientData.subUrl, {
+                    method: 'GET',
+                    cache: 'no-store',
+                    headers: { 'Accept': 'text/plain' }
+                });
+
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+
+                const userInfoHeader = response.headers.get('subscription-userinfo');
+                const bodyText = (await response.text()).trim();
+
+                if (bodyText) {
+                    let decodedLinks = [];
+                    try {
+                        decodedLinks = decodeBase64Unicode(bodyText).split('\n').map(l => l.trim()).filter(Boolean);
+                    } catch (e) {
+                        decodedLinks = bodyText.split('\n').map(l => l.trim()).filter(Boolean);
+                    }
+                    if (decodedLinks.length > 0) {
+                        sanaeiClientData.links = decodedLinks;
+                    }
+                }
+
+                if (userInfoHeader) {
+                    const info = parseSubscriptionUserinfo(userInfoHeader);
+                    if (info.download !== null && info.upload !== null) {
+                        sanaeiClientData.downloadByte = info.download;
+                        sanaeiClientData.uploadByte = info.upload;
+                    }
+                    if (info.total !== null) sanaeiClientData.totalByte = info.total;
+                    if (info.expire !== null) {
+                        sanaeiClientData.expireSeconds = info.expire;
+                        sanaeiClientData.daysLeft = calculateDaysLeft(info.expire);
+                        const dates = generateExpiryDates(info.expire);
+                        sanaeiClientData.expiryDateFa = dates.fa;
+                        sanaeiClientData.expiryDateEn = dates.en;
+                        sanaeiClientData.expiryDateTr = dates.tr;
+                        sanaeiClientData.expiryDateAr = dates.ar;
+                    }
+                }
+
+                const lastOnlineHeader = response.headers.get('subscription-last-online');
+                if (lastOnlineHeader) {
+                    const parsed = parseInt(lastOnlineHeader, 10);
+                    if (!isNaN(parsed) && parsed > 0) {
+                        sanaeiClientData.lastOnline = parsed;
+                    }
+                }
+
+                updateConnectionStatus();
+                renderAll();
+            } catch (error) {
+                console.error("❌ خطا در دریافت اطلاعات زنده:", error);
+            }
+        }
+
+        function isUserOnline() {
+            const now = Date.now();
+            if (sanaeiClientData.lastOnline && sanaeiClientData.lastOnline > 0) {
+                const diffSeconds = (now - sanaeiClientData.lastOnline) / 1000;
+                return diffSeconds < 300;
+            }
+            return false;
+        }
+
+        function renderAll() {
+            renderPanelData();
+            renderActionMenus();
+            updateOnlineStatus();
+            updatePageTitle();
+        }
+
+        function getColorForPercentage(percent) {
+            if (percent >= 75) return '#2DD4BF';
+            if (percent >= 50) return '#F4A94A';
+            if (percent >= 25) return '#F4A94A';
+            return '#F0655F';
+        }
+
+        function renderPanelData() {
+            const data = locales[currentLang] || locales.fa;
+
+            const username = sanaeiClientData.username;
+            const isOnline = isUserOnline();
+            const usernameClass = isOnline ? 'username-text online' : 'username-text';
+            document.getElementById("user-name").innerHTML = `
+                ${waveIconHTML}
+                <span class="greeting-text">${data.greet}</span>
+                <span class="${usernameClass}">${username}</span>
+            `;
+
+            if (sanaeiClientData.daysLeft === -1) {
+                document.getElementById("live-days-count").innerHTML = `<span style="font-size:22px; color:#F0655F;">${data.expiredText}</span>`;
+            } else if (sanaeiClientData.daysLeft === null) {
+                document.getElementById("live-days-count").innerHTML = `<span style="font-size:22px;">${data.unlimitedText}</span>`;
+            } else {
+                document.getElementById("live-days-count").innerHTML = `${sanaeiClientData.daysLeft} <span id="days-label">${data.daysUnit}</span>`;
+            }
+
+            document.getElementById("stat-limit").innerText = sanaeiClientData.totalByte > 0 ? formatBytes(sanaeiClientData.totalByte) : data.unlimitedText;
+
+            if (currentLang === 'fa') document.getElementById("expire-date").innerText = "تاریخ انقضا: " + (sanaeiClientData.expireSeconds > 0 ? sanaeiClientData.expiryDateFa : data.unlimitedText);
+            else if (currentLang === 'en') document.getElementById("expire-date").innerText = "Expiry: " + (sanaeiClientData.expireSeconds > 0 ? sanaeiClientData.expiryDateEn : data.unlimitedText);
+            else if (currentLang === 'tr') document.getElementById("expire-date").innerText = "Son Kullanma: " + (sanaeiClientData.expireSeconds > 0 ? sanaeiClientData.expiryDateTr : data.unlimitedText);
+            else if (currentLang === 'ar') document.getElementById("expire-date").innerText = "تاريخ الانتهاء: " + (sanaeiClientData.expireSeconds > 0 ? sanaeiClientData.expiryDateAr : data.unlimitedText);
+
+            const totalUsage = sanaeiClientData.downloadByte + sanaeiClientData.uploadByte;
+            document.getElementById("stat-dl-val").innerText = formatBytes(sanaeiClientData.downloadByte);
+            document.getElementById("stat-ul-val").innerText = formatBytes(sanaeiClientData.uploadByte);
+            document.getElementById("stat-total-val").innerText = formatBytes(totalUsage);
+
+            document.getElementById("detail-total-value").innerText = formatBytes(totalUsage);
+
+            let percentRemaining = 100;
+            let remainingVolume = sanaeiClientData.totalByte - totalUsage;
+            if (sanaeiClientData.totalByte > 0) {
+                let percentUsage = (totalUsage / sanaeiClientData.totalByte) * 100;
+                percentRemaining = Math.round(100 - percentUsage);
+                if (percentRemaining < 0) percentRemaining = 0;
+                if (percentRemaining > 100) percentRemaining = 100;
+            }
+            document.getElementById("detail-remaining-value").innerText = percentRemaining + '%';
+
+            if (sanaeiClientData.totalByte > 0) {
+                document.getElementById("detail-remaining-volume").innerText = remainingVolume > 0 ? formatBytes(remainingVolume) : '0 B';
+            } else {
+                document.getElementById("detail-remaining-volume").innerText = data.unlimitedText;
+            }
+
+            let lastConnectStr = data.lastConnectUnknown;
+            if (sanaeiClientData.lastOnline && sanaeiClientData.lastOnline > 0) {
+                const d = new Date(sanaeiClientData.lastOnline);
+                try {
+                    if (currentLang === 'fa') lastConnectStr = d.toLocaleString('fa-IR');
+                    else if (currentLang === 'en') lastConnectStr = d.toLocaleString('en-US');
+                    else if (currentLang === 'tr') lastConnectStr = d.toLocaleString('tr-TR');
+                    else if (currentLang === 'ar') lastConnectStr = d.toLocaleString('ar-EG');
+                    else lastConnectStr = d.toLocaleString();
+                } catch (e) { /* ignore */ }
+            }
+            document.getElementById("detail-last-connect-value").innerText = lastConnectStr;
+
+            document.getElementById("live-percent-display").innerText = percentRemaining + "%";
+            document.getElementById("sub-progress-circle").style.setProperty("--remaining-percent", percentRemaining);
+            updateStatusUI();
+        }
+
+        function updateOnlineStatus() {
+            const data = locales[currentLang] || locales.fa;
+            const dot = document.getElementById('online-status-dot');
+            const statusText = document.getElementById('online-status-text');
+            const usernameElement = document.querySelector('.username-text');
+            const profileImg = document.getElementById('profile-img');
+
+            const isOnline = isUserOnline();
+
+            if (isOnline && isServerConnected) {
+                dot.classList.add('online');
+                statusText.innerText = data.onlineText;
+                statusText.classList.remove('offline');
+                if (usernameElement) usernameElement.classList.add('online');
+                profileImg.classList.add('online');
+            } else {
+                dot.classList.remove('online');
+                statusText.innerText = data.offlineText;
+                statusText.classList.add('offline');
+                if (usernameElement) usernameElement.classList.remove('online');
+                profileImg.classList.remove('online');
+            }
+        }
+
+        function updateStatusUI() {
+            const data = locales[currentLang] || locales.fa;
+            const card = document.getElementById("main-sub-card");
+            const badgeText = document.getElementById("badge-text");
+            const iconMark = document.getElementById("status-icon-mark");
+
+            if (isServerConnected) {
+                card.classList.remove("disconnected");
+                badgeText.innerText = data.badgeActive;
+                iconMark.className = "fa-solid fa-check";
+            } else {
+                card.classList.add("disconnected");
+                badgeText.innerText = data.badgeInactive;
+                iconMark.className = "fa-solid fa-xmark";
+            }
+        }
+
+        function updatePageTitle() {
+            const titleEl = document.getElementById('page-title');
+            const username = sanaeiClientData.username || 'VPN Dashboard';
+            titleEl.textContent = username;
+        }
+
+        // ===== توابع نوتیفیکیشن =====
+        function showNotification() {
+            const overlay = document.getElementById('notificationOverlay');
+            const fill = document.getElementById('timerFill');
+            const box = document.getElementById('notificationBox');
+
+            // تنظیم ترجمه
+            const data = locales[currentLang] || locales.fa;
+            document.querySelector('.notification-box .title').textContent = data.notificationTitle;
+            document.querySelector('.notification-box .desc').textContent = data.notificationDesc;
+            document.getElementById('notificationDismiss').textContent = data.notificationDismiss;
+            document.getElementById('notificationSupport').textContent = data.notificationSupport;
+
+            // ریست تایمر
+            let timeLeft = 10;
+            fill.style.width = '100%';
+
+            overlay.classList.add('show');
+
+            // تایمر شمارش معکوس
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                timeLeft -= 0.1;
+                const percent = (timeLeft / 10) * 100;
+                fill.style.width = Math.max(0, percent) + '%';
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    dismissNotification();
+                }
+            }, 100);
+
+            // تایم‌اوت برای بسته شدن خودکار بعد از ۱۰ ثانیه
+            if (notificationTimeout) clearTimeout(notificationTimeout);
+            notificationTimeout = setTimeout(() => {
+                dismissNotification();
+            }, 10000);
+
+            // رویدادهای دکمه‌ها
+            document.getElementById('notificationDismiss').onclick = function() {
+                dismissNotification();
+            };
+            document.getElementById('notificationSupport').onclick = function() {
+                window.open(SUPPORT_TELEGRAM_URL, '_blank');
+                dismissNotification();
+            };
+        }
+
+        function dismissNotification() {
+            const overlay = document.getElementById('notificationOverlay');
+            overlay.classList.remove('show');
+            if (timerInterval) clearInterval(timerInterval);
+            if (notificationTimeout) clearTimeout(notificationTimeout);
+        }
+
+        function parseConfigLink(rawLink) {
+            const result = { protocol: 'unknown', remark: '', host: '', port: '', link: rawLink };
+            try {
+                const schemeMatch = rawLink.match(/^([a-zA-Z0-9]+):\/\//);
+                if (!schemeMatch) return result;
+                result.protocol = schemeMatch[1].toLowerCase();
+
+                if (result.protocol === 'vmess') {
+                    const b64 = rawLink.replace(/^vmess:\/\//, '');
+                    const json = JSON.parse(decodeBase64Unicode(b64));
+                    result.remark = json.ps || '';
+                    result.host = json.add || '';
+                    result.port = json.port || '';
+                } else {
+                    const u = new URL(rawLink);
+                    result.remark = decodeURIComponent((u.hash || '').replace(/^#/, ''));
+                    result.host = u.hostname || '';
+                    result.port = u.port || '';
+                }
+            } catch (e) { /* ignore */ }
+            return result;
+        }
+
+        function getProtocolDetails(link) {
+            const parsed = parseConfigLink(link);
+            if (parsed.protocol === 'vmess') {
+                try {
+                    const b64 = link.replace(/^vmess:\/\//, '');
+                    const json = JSON.parse(decodeBase64Unicode(b64));
+                    const net = json.net || 'tcp';
+                    const security = json.tls === 'tls' ? 'tls' : (json.tls === 'reality' ? 'reality' : 'none');
+                    return { parts: [parsed.protocol, net, security], full: `${parsed.protocol}+${net}+${security}` };
+                } catch (e) { return { parts: [parsed.protocol], full: parsed.protocol }; }
+            } else if (parsed.protocol === 'vless' || parsed.protocol === 'trojan') {
+                try {
+                    const u = new URL(link);
+                    const type = u.searchParams.get('type') || 'tcp';
+                    const security = u.searchParams.get('security') || 'none';
+                    return { parts: [parsed.protocol, type, security], full: `${parsed.protocol}+${type}+${security}` };
+                } catch (e) { return { parts: [parsed.protocol], full: parsed.protocol }; }
+            } else if (parsed.protocol === 'ss') {
+                try {
+                    const b64 = link.replace(/^ss:\/\//, '').split('#')[0];
+                    const decoded = atob(b64);
+                    const parts = decoded.split(':');
+                    const method = parts[0] || 'unknown';
+                    return { parts: ['ss', method], full: `ss+${method}` };
+                } catch (e) { return { parts: [parsed.protocol], full: parsed.protocol }; }
+            } else if (parsed.protocol === 'hysteria2' || parsed.protocol === 'hysteria') {
+                try {
+                    const u = new URL(link);
+                    const security = u.searchParams.get('insecure') === '0' ? 'secure' : 'insecure';
+                    return { parts: [parsed.protocol, security], full: `${parsed.protocol}+${security}` };
+                } catch (e) { return { parts: [parsed.protocol], full: parsed.protocol }; }
+            }
+            return { parts: [parsed.protocol], full: parsed.protocol };
+        }
+
+        function extractCountryInfo(parsedConfig) {
+            const remark = (parsedConfig.remark || parsedConfig.host || "").trim();
+            const textWithoutFlagEmojis = remark.replace(/[\u{1F1E0}-\u{1F1FF}]/gu, '').trim();
+            const dashParts = textWithoutFlagEmojis.split(/[-–—]/).map(p => p.trim()).filter(p => p);
+            const pipeParts = textWithoutFlagEmojis.split('|').map(p => p.trim()).filter(p => p);
+            const colonParts = textWithoutFlagEmojis.split(':').map(p => p.trim()).filter(p => p);
+
+            let countryName = "";
+            let cityName = "";
+
+            if (dashParts.length >= 2) {
+                countryName = dashParts[0];
+                cityName = dashParts[1];
+            } else if (pipeParts.length >= 2) {
+                countryName = pipeParts[0];
+                cityName = pipeParts[1];
+            } else if (colonParts.length >= 2) {
+                countryName = colonParts[0];
+                cityName = colonParts[1];
+            } else {
+                countryName = textWithoutFlagEmojis || parsedConfig.host || "Unknown";
+                cityName = parsedConfig.host || "";
+            }
+
+            let countryCode = "";
+            if (remark) {
+                const flagMatch = remark.match(/[\u{1F1E0}-\u{1F1FF}]{2}/gu);
+                if (flagMatch) {
+                    const codePoints = [...flagMatch[0]];
+                    countryCode = String.fromCodePoint(
+                        codePoints[0].codePointAt(0) - 0x1F1E6 + 0x61,
+                        codePoints[1].codePointAt(0) - 0x1F1E6 + 0x61
+                    );
+                }
+            }
+
+            if (!countryCode && countryName) {
+                try {
+                    const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
+                    const commonCodes = ['de', 'nl', 'fr', 'gb', 'us', 'ca', 'tr', 'ae', 'sg', 'jp',
+                        'fi', 'se', 'no', 'ch', 'it', 'es', 'pt', 'pl', 'ru', 'ua',
+                        'ir', 'cn', 'hk', 'tw', 'kr', 'in', 'br', 'ar', 'au', 'at',
+                        'be', 'dk', 'gr', 'ie', 'il', 'mx', 'nz', 'za'
+                    ];
+                    const lowerCountry = countryName.toLowerCase();
+                    for (const code of commonCodes) {
+                        if (regionNames.of(code).toLowerCase() === lowerCountry) {
+                            countryCode = code;
+                            break;
+                        }
+                    }
+                } catch (e) {
+                    countryCode = countryName.substring(0, 2).toLowerCase();
+                }
+            }
+
+            if (!countryCode || countryCode.length !== 2) countryCode = 'unknown';
+            return {
+                countryName: countryName || "Unknown",
+                countryCode: countryCode,
+                cityName: cityName || parsedConfig.host || "",
+                host: parsedConfig.host || ""
+            };
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return "0 B";
+            if (bytes < 0 || bytes === undefined || bytes === null) return "---";
+            const k = 1024;
+            const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+        }
+
+        // پینگ شبه-TCP: فقط زمان برقراری اتصال رو با یه درخواست تصویر سبک اندازه می‌گیره
+        // (بدون منتظر موندن برای کل بدنه‌ی پاسخ)، بنابراین عدد نمایش داده‌شده پایین‌تر از fetch کامل است.
+        function tcpStylePing(host, port) {
+            return new Promise((resolve) => {
+                if (!host) { resolve(null); return; }
+                const start = performance.now();
+                let settled = false;
+                const finish = () => {
+                    if (settled) return;
+                    settled = true;
+                    resolve(Math.round(performance.now() - start));
+                };
+                const img = new Image();
+                img.onload = finish;
+                img.onerror = finish; // حتی خطا هم یعنی اتصال برقرار شده، پس زمانش معتبره
+                img.src = `https://${host}:${port || 443}/favicon.ico?_=${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                setTimeout(() => {
+                    if (!settled) { settled = true; resolve(null); }
+                }, 4000);
+            });
+        }
+
+        function pingLevelClass(latencyMs) {
+            if (latencyMs === null || latencyMs === undefined) return 'muted';
+            if (latencyMs < 150) return 'level-3';
+            if (latencyMs < 300) return 'level-2';
+            return 'level-1';
+        }
+
+        function updateConfigPingUI(idx, latencyMs, data) {
+            ['ping-qr-' + idx, 'ping-cfg-' + idx].forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                if (latencyMs === null || latencyMs === undefined) {
+                    el.textContent = data.pingTimeout;
+                    el.className = 'ping-value muted en-font';
+                } else {
+                    el.textContent = `${latencyMs}ms`;
+                    el.className = `ping-value ${pingLevelClass(latencyMs)} en-font`;
+                }
+            });
+        }
+
+        function updateBestPingUI(bestLatencyMs, data) {
+            const el = document.getElementById('best-ping-value');
+            if (!el) return;
+            if (bestLatencyMs === null || bestLatencyMs === undefined) {
+                el.textContent = data.pingTimeout;
+                el.className = 'ping-value muted en-font';
+            } else {
+                el.textContent = `${bestLatencyMs}ms`;
+                el.className = `ping-value ${pingLevelClass(bestLatencyMs)} en-font`;
+            }
+        }
+
+        let pingRunToken = 0;
+        async function pingAllConfigs(links) {
+            const data = locales[currentLang] || locales.fa;
+            const myToken = ++pingRunToken;
+
+            if (!links || links.length === 0) {
+                updateBestPingUI(null, data);
+                return;
+            }
+
+            const bestEl = document.getElementById('best-ping-value');
+            if (bestEl) { bestEl.textContent = data.pingChecking; bestEl.className = 'ping-value muted en-font'; }
+
+            const results = await Promise.all(links.map(async (rawLink, idx) => {
+                const parsed = parseConfigLink(rawLink);
+                const latency = await tcpStylePing(parsed.host, parsed.port);
+                if (myToken === pingRunToken) updateConfigPingUI(idx, latency, data);
+                return latency;
+            }));
+
+            if (myToken !== pingRunToken) return; // یه رندر جدیدتر شروع شده، این نتیجه‌ی قدیمی نادیده گرفته میشه
+
+            const validResults = results.filter(v => v !== null && v !== undefined);
+            const best = validResults.length ? Math.min(...validResults) : null;
+            updateBestPingUI(best, data);
+        }
+
+        function renderActionMenus() {
+            const data = locales[currentLang] || locales.fa;
+            const links = sanaeiClientData.links || [];
+
+            const qrContainer = document.getElementById("list-qr-ips");
+            const configContainer = document.getElementById("list-config-ips");
+
+            function buildProtocolBadge(protocolDetails) {
+                const parts = protocolDetails.parts || [];
+                if (parts.length === 0) return '';
+                return parts.map((part, idx) => {
+                    let cls = '';
+                    if (parts.length >= 3) {
+                        if (idx === 0) cls = 'proto-part-1';
+                        else if (idx === 1) cls = 'proto-part-2';
+                        else cls = 'proto-part-3';
+                    } else if (parts.length === 2) {
+                        if (idx === 0) cls = 'proto-part-1';
+                        else cls = 'proto-part-2';
+                    } else {
+                        cls = 'proto-part-1';
+                    }
+                    return `<span class="${cls}">${part}</span>`;
+                }).join('<span style="color: rgba(255,255,255,0.4); margin: 0 1px;">+</span>');
+            }
+
+            function buildQrItem(parsed, idx) {
+                const flagInfo = extractCountryInfo(parsed);
+                const flagUrl = flagInfo.countryCode !== 'unknown' ? `https://flagcdn.com/w80/${flagInfo.countryCode}.png` : '';
+                const flagHtml = flagUrl
+                    ? `<div class="action-mini-flag" style="background-image: url('${flagUrl}');"></div>`
+                    : `<div class="action-mini-flag" style="background: #2C2C3E; display: flex; align-items: center; justify-content: center; color: #6c6c8c;"><i class="fa-solid fa-globe"></i></div>`;
+
+                const protocolDetails = getProtocolDetails(parsed.link);
+                const encoded = encodeURIComponent(parsed.link);
+                const item = document.createElement("div");
+                item.className = "ip-row-item";
+                item.innerHTML = `
+                    <div class="ip-row-top">
+                        <div class="ip-details-left">
+                            ${flagHtml}
+                            <div class="qr-modern-wrapper">
+                                <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encoded}" alt="QR" loading="lazy" />
+                            </div>
+                            <div class="ip-meta-block">
+                                <div class="ip-address-text en-font">${parsed.remark || parsed.host}</div>
+                            </div>
+                        </div>
+                        <button class="ip-copy-btn" data-config-text="${encodeURIComponent(parsed.link)}">
+                            <i class="fa-solid fa-copy"></i> ${data.copyBtnText}
+                        </button>
+                    </div>
+                    <div class="ip-row-bottom">
+                        <span class="ip-protocol-text en-font">${buildProtocolBadge(protocolDetails)}</span>
+                        <span class="ping-value muted en-font" id="ping-qr-${idx}">${data.pingChecking}</span>
+                    </div>
+                `;
+
+                const copyBtn = item.querySelector('.ip-copy-btn');
+                copyBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const textToCopy = decodeURIComponent(this.getAttribute('data-config-text'));
+                    navigator.clipboard.writeText(textToCopy).then(() => {
+                        this.innerHTML = `<i class="fa-solid fa-check"></i> ${data.actionCopied}`;
+                        this.style.background = "#22C55E";
+                        this.style.color = "#fff";
+                        setTimeout(() => {
+                            this.innerHTML = `<i class="fa-solid fa-copy"></i> ${data.copyBtnText}`;
+                            this.style.background = "";
+                            this.style.color = "";
+                        }, 2000);
+                    });
+                });
+
+                return item;
+            }
+
+            function buildConfigItem(parsed, idx) {
+                const flagInfo = extractCountryInfo(parsed);
+                const flagUrl = flagInfo.countryCode !== 'unknown' ? `https://flagcdn.com/w80/${flagInfo.countryCode}.png` : '';
+                const flagHtml = flagUrl
+                    ? `<div class="action-mini-flag" style="background-image: url('${flagUrl}');"></div>`
+                    : `<div class="action-mini-flag" style="background: #2C2C3E; display: flex; align-items: center; justify-content: center; color: #6c6c8c;"><i class="fa-solid fa-globe"></i></div>`;
+
+                const protocolDetails = getProtocolDetails(parsed.link);
+                const item = document.createElement("div");
+                item.className = "ip-row-item";
+                item.innerHTML = `
+                    <div class="ip-row-top">
+                        <div class="ip-details-left">
+                            ${flagHtml}
+                            <div class="ip-meta-block">
+                                <div class="ip-address-text en-font">${parsed.remark || parsed.host}</div>
+                            </div>
+                        </div>
+                        <button class="ip-copy-btn" data-config-text="${encodeURIComponent(parsed.link)}">
+                            <i class="fa-solid fa-copy"></i> ${data.copyBtnText}
+                        </button>
+                    </div>
+                    <div class="ip-row-bottom">
+                        <span class="ip-protocol-text en-font">${buildProtocolBadge(protocolDetails)}</span>
+                        <span class="ping-value muted en-font" id="ping-cfg-${idx}">${data.pingChecking}</span>
+                    </div>
+                `;
+
+                const copyBtn = item.querySelector('.ip-copy-btn');
+                copyBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const textToCopy = decodeURIComponent(this.getAttribute('data-config-text'));
+                    navigator.clipboard.writeText(textToCopy).then(() => {
+                        this.innerHTML = `<i class="fa-solid fa-check"></i> ${data.actionCopied}`;
+                        this.style.background = "#22C55E";
+                        this.style.color = "#fff";
+                        setTimeout(() => {
+                            this.innerHTML = `<i class="fa-solid fa-copy"></i> ${data.copyBtnText}`;
+                            this.style.background = "";
+                            this.style.color = "";
+                        }, 2000);
+                    });
+                });
+
+                return item;
+            }
+
+            qrContainer.innerHTML = "";
+            configContainer.innerHTML = "";
+
+            if (links.length === 0) {
+                qrContainer.innerHTML = `<span style="color:#6c6c8c;" id="qr-empty-msg">${data.emptyConfigs}</span>`;
+                configContainer.innerHTML = `<span style="color:#6c6c8c;" id="config-empty-msg">${data.emptyConfigs}</span>`;
+            } else {
+                const copyAllBtn = document.createElement("button");
+                copyAllBtn.className = "copy-all-btn";
+                copyAllBtn.innerHTML = `<i class="fa-solid fa-copy"></i> ${data.copyAllBtn}`;
+                copyAllBtn.addEventListener('click', function() {
+                    const allLinks = links.join('\n');
+                    navigator.clipboard.writeText(allLinks).then(() => {
+                        this.innerHTML = `<i class="fa-solid fa-check"></i> ${data.actionCopied}`;
+                        this.style.background = "#22C55E";
+                        setTimeout(() => {
+                            this.innerHTML = `<i class="fa-solid fa-copy"></i> ${data.copyAllBtn}`;
+                            this.style.background = "";
+                        }, 2000);
+                    });
+                });
+                configContainer.appendChild(copyAllBtn);
+
+                links.forEach((rawLink, idx) => {
+                    const parsed = parseConfigLink(rawLink);
+                    qrContainer.appendChild(buildQrItem(parsed, idx));
+                    configContainer.appendChild(buildConfigItem(parsed, idx));
+                });
+            }
+
+            pingAllConfigs(links);
+        }
+
+        // ===== زبان و UI =====
+        function selectLanguage(lang) {
+            currentLang = lang;
+            const data = locales[lang] || locales.fa;
+            document.getElementById("lang-text").innerText = lang.toUpperCase();
+            document.getElementById("html-root").setAttribute("dir", data.dir);
+
+            document.getElementById("remaining-label").innerText = data.remainingLabel;
+            document.getElementById("title-limit").innerText = data.titleLimit;
+            document.getElementById("title-total").innerText = data.titleTotal;
+            document.getElementById("title-download").innerText = data.titleDownload;
+            document.getElementById("title-upload").innerText = data.titleUpload;
+
+            document.getElementById("detail-total-label").innerText = data.detailTotal;
+            document.getElementById("detail-remaining-label").innerText = data.detailRemaining;
+            document.getElementById("detail-remaining-volume-label").innerText = data.detailRemainingVolume;
+            document.getElementById("detail-last-connect-label").innerText = data.detailLastConnect;
+
+            document.getElementById("action-renew").innerText = data.actionRenew;
+            document.getElementById("action-copy").innerText = data.actionCopy;
+            document.getElementById("action-qr").innerText = data.actionQr;
+            document.getElementById("action-config").innerText = data.actionConfig;
+            document.getElementById("download-screen-title").innerText = data.dlScreenTitle;
+            document.getElementById("lbl-tab-android").innerText = data.tabAndroid;
+            document.getElementById("lbl-tab-ios").innerText = data.tabIos;
+            document.getElementById("lbl-tab-desktop").innerText = data.tabDesktop;
+            document.getElementById("designer-lbl").innerText = data.designerLbl;
+            document.getElementById("qr-modal-title").innerText = data.qrModalTitle;
+            document.getElementById("config-modal-title").innerText = data.configModalTitle;
+            document.getElementById("best-ping-label").innerText = data.bestPingLabel;
+
+            document.querySelector('.promo-text').innerHTML = data.promoText;
+            const promoBtns = document.querySelectorAll('.promo-btn');
+            if (promoBtns.length >= 1) {
+                promoBtns[0].innerHTML = `<i class="fa-brands fa-telegram"></i> ${data.promoTelegram}`;
+            }
+
+            document.getElementById("nav-dashboard").innerHTML = `<i class='fa-solid fa-house'></i>${data.navDashboard.replace(/<.*?>/g, '')}`;
+            document.getElementById("nav-download").innerHTML = `<i class='fa-solid fa-download'></i>${data.navDownload.replace(/<.*?>/g, '')}`;
+
+            renderAll();
+        }
+
+        // ===== رویدادها =====
+        document.getElementById("btn-copy-sub").addEventListener("click", function(e) {
+            e.stopPropagation();
+            const data = locales[currentLang] || locales.fa;
+            const linkToCopy = sanaeiClientData.subUrl || window.location.href;
+
+            document.getElementById("dropdown-qr-container").classList.remove("show");
+            document.getElementById("dropdown-config-container").classList.remove("show");
+
+            navigator.clipboard.writeText(linkToCopy).then(() => {
+                const labelNode = document.getElementById("action-copy");
+                labelNode.innerText = data.actionCopied;
+                labelNode.style.color = "#22C55E";
+                setTimeout(() => {
+                    labelNode.innerText = data.actionCopy;
+                    labelNode.style.color = "";
+                }, 2000);
+            });
+        });
+
+        document.getElementById("btn-toggle-qr").addEventListener("click", function(e) {
+            e.stopPropagation();
+            document.getElementById("dropdown-config-container").classList.remove("show");
+            document.getElementById("dropdown-qr-container").classList.toggle("show");
+        });
+
+        document.getElementById("btn-toggle-config").addEventListener("click", function(e) {
+            e.stopPropagation();
+            document.getElementById("dropdown-qr-container").classList.remove("show");
+            document.getElementById("dropdown-config-container").classList.toggle("show");
+        });
+
+        function navigateToScreen(screenName) {
+            document.querySelectorAll('.app-screen').forEach(scr => scr.classList.remove('active-screen'));
+            document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+
+            if (screenName === 'dashboard') {
+                document.getElementById('screen-dashboard').classList.add('active-screen');
+                document.getElementById('nav-dashboard').classList.add('active');
+            } else if (screenName === 'download') {
+                document.getElementById('screen-download-apps').classList.add('active-screen');
+                document.getElementById('nav-download').classList.add('active');
+                switchDownloadTab('android');
+            }
+        }
+
+        function switchDownloadTab(os) {
+            document.querySelectorAll('.os-tab-btn').forEach(btn => btn.classList.remove('active-tab'));
+            document.getElementById(`os-tab-${os}`).classList.add('active-tab');
+
+            const currentLocale = locales[currentLang] || locales.fa;
+            const data = appDownloadLinks[os];
+
+            document.getElementById('title-client1').innerText = data.c1.name;
+            document.getElementById('btn-dl-client1').href = data.c1.url;
+            document.getElementById('sub-client1').innerText = currentLocale.dlSubtitle;
+
+            document.getElementById('title-client2').innerText = data.c2.name;
+            document.getElementById('btn-dl-client2').href = data.c2.url;
+            document.getElementById('sub-client2').innerText = currentLocale.dlSubtitle;
+
+            document.getElementById('title-client3').innerText = data.c3.name;
+            document.getElementById('btn-dl-client3').href = data.c3.url;
+            document.getElementById('sub-client3').innerText = currentLocale.dlSubtitle;
+
+            document.querySelectorAll('.client-download-btn').forEach(btn => {
+                btn.innerText = currentLocale.btnDl;
+            });
+        }
+
+        // ===== راه‌اندازی اولیه =====
+        document.addEventListener("DOMContentLoaded", () => {
+            document.getElementById('promo-support-link').href = SUPPORT_TELEGRAM_URL;
+            document.getElementById('btn-renew-support').addEventListener('click', () => {
+                window.open(SUPPORT_TELEGRAM_URL, '_blank');
+            });
+
+            selectLanguage(currentLang);
+            fetchLiveSubscriptionData();
+            liveRefreshTimer = setInterval(fetchLiveSubscriptionData, 10000);
+
+            // نمایش نوتیفیکیشن بعد از ۱۰ ثانیه
+            setTimeout(() => {
+                showNotification();
+            }, 10000);
+        });
+
+        const langToggleBtn = document.getElementById("lang-toggle-btn");
+        const langDropdown = document.getElementById("lang-dropdown");
+        langToggleBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            langDropdown.classList.toggle("show");
+        });
+
+        document.addEventListener("click", () => {
+            langDropdown.classList.remove("show");
+        });
+
+        // بستن پاپ‌آپ فقط با کلیک روی بک‌دراپ (بیرون کادر) یا دکمه‌ی ضربدر —
+        // کلیک روی هر جای داخل لیست دیگه پاپ‌آپ رو نمی‌بنده
+        const qrDropdownEl = document.getElementById("dropdown-qr-container");
+        const configDropdownEl = document.getElementById("dropdown-config-container");
+
+        qrDropdownEl.addEventListener("click", (e) => {
+            if (e.target === qrDropdownEl) qrDropdownEl.classList.remove("show");
+        });
+        configDropdownEl.addEventListener("click", (e) => {
+            if (e.target === configDropdownEl) configDropdownEl.classList.remove("show");
+        });
+        document.getElementById("close-qr-dropdown").addEventListener("click", (e) => {
+            e.stopPropagation();
+            qrDropdownEl.classList.remove("show");
+        });
+        document.getElementById("close-config-dropdown").addEventListener("click", (e) => {
+            e.stopPropagation();
+            configDropdownEl.classList.remove("show");
+        });
+
+        const themeToggle = document.getElementById("theme-toggle");
+        const themeIcon = document.getElementById("theme-icon");
+        themeToggle.addEventListener("click", () => {
+            document.body.classList.toggle("light-mode");
+            themeIcon.className = document.body.classList.contains("light-mode") ? "fa-solid fa-sun" : "fa-solid fa-moon";
+        });
+    </script>
+</body>
+</html>
