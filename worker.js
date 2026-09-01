@@ -4739,20 +4739,20 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             return new Promise(function(res) {
                 const t0 = performance.now();
                 let done = false;
+                const img = new Image();
                 const fin = function(ok) {
                     if (done) return;
                     done = true;
+                    img.onload = img.onerror = null;
                     res(ok ? Math.round(performance.now() - t0) : null);
                 };
-                const ctrl = new AbortController();
-                const timer = setTimeout(function() { ctrl.abort(); fin(false); }, timeout);
-                /* fetch با mode:'no-cors' — برخلاف Image که خطای SSL و رَفضِ اتصال را
-                   هم «پاسخ» حساب می‌کرد و همه‌ی آی‌پی‌ها را زنده نشان می‌داد، اینجا
-                   هر خطای واقعی شبکه reject می‌شود و فقط پاسخِ واقعیِ CDN اندازه‌گیری می‌شود */
-                fetch('https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random(),
-                    { mode: 'no-cors', cache: 'no-store', signal: ctrl.signal })
-                    .then(function() { clearTimeout(timer); fin(true); })
-                    .catch(function() { clearTimeout(timer); fin(false); });
+                const timer = setTimeout(function() { fin(false); }, timeout);
+                /* پروب با Image: مرورگر برای https://IP گواهی معتبر ندارد و درخواست
+                   همیشه خطا می‌دهد — اما لحظه‌ی خطا یعنی handshake کامل شده (لبه‌ی زنده).
+                   fetch برخلاف آن روی همان خطای گواهی reject می‌شود و هیچ‌وقت جواب نمی‌دهد. */
+                img.onerror = function() { clearTimeout(timer); fin(true); };
+                img.onload = function() { clearTimeout(timer); fin(true); };
+                img.src = 'https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random();
             });
         }
 

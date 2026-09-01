@@ -92,12 +92,43 @@
 
         img { max-width: 100%; }
 
-        @media (max-width: 360px) {
+        @media (max-width: 480px) {
+            .subscription-card { padding: 20px 16px; }
+            .progress-circle { width: 104px; height: 104px; }
+            .days-left { font-size: 32px; }
+        }
+
+        @media (max-width: 420px) {
             body { padding: 16px 12px 100px 12px; }
+            .subscription-card { padding: 18px 14px; gap: 10px; }
+            .days-left { font-size: 27px; }
+            .expire-date { font-size: 11px; }
+            .progress-circle { width: 94px; height: 94px; }
+            .progress-text .percent { font-size: 19px; }
+            .stats-card { flex-wrap: wrap; padding: 14px 8px; row-gap: 14px; }
+            .stat-item { flex: 0 0 50%; }
+            .stat-divider { display: none; }
+            .stat-title { font-size: 10px; }
+            .stat-value { font-size: 13px; }
+            .actions-grid { gap: 8px; }
+            .action-card { padding: 15px 2px; }
+            .action-label { font-size: 10px; }
+            .user-name { min-width: 0; }
+            .username-text { display: inline-block; max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
             .ip-copy-btn { padding: 6px 8px; font-size: 10px; }
             .ip-address-text { font-size: 12px; }
             .action-dropdown-container { padding: 12px; }
             .action-dropdown-menu { padding: 12px; max-height: 82vh; }
+            .radar-best-row { flex-wrap: wrap; }
+            .radar-table { font-size: 10px; }
+        }
+
+        @media (max-width: 360px) {
+            body { padding: 14px 8px 100px 8px; }
+            .days-left { font-size: 24px; }
+            .progress-circle { width: 84px; height: 84px; }
+            .progress-text .percent { font-size: 17px; }
+            .qr-big-img { width: 200px; height: 200px; }
         }
 
         html[dir="ltr"] body { direction: ltr; }
@@ -504,7 +535,7 @@
             background: #fff;
             box-shadow: 0 0 10px 3px rgba(var(--accent-rgb), .95);
         }
-        .progress-text { position: relative; z-index: 5; text-align: center; text-shadow: 0 2px 10px rgba(0,0,0,.8); }
+        .progress-text { position: relative; z-index: 5; width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-align: center; text-shadow: 0 2px 10px rgba(0,0,0,.8); }
         .progress-text .percent { font-size: 22px; font-weight: 700; color: #fff; font-family: 'JetBrains Mono', monospace; }
         .progress-text .label { font-size: 10px; font-weight: 600; color: rgba(255,255,255,.85); display: block; margin-top: 2px; }
         .subscription-card.disconnected .progress-circle { filter: grayscale(.65); opacity: .7; }
@@ -605,118 +636,6 @@
         }
         .promo-btn i { font-size: 18px; }
         .promo-btn.telegram i { color: #0088cc; }
-
-        /* ===== نوتیفیکیشن ===== */
-        .notification-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.5s ease;
-        }
-        .notification-overlay.show {
-            opacity: 1;
-            pointer-events: auto;
-        }
-
-        .notification-box {
-            background: var(--notification-bg);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1.5px solid rgba(var(--accent-rgb), 0.5);
-            border-radius: 24px;
-            padding: 28px 24px 24px;
-            max-width: 360px;
-            width: 90%;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(var(--accent-rgb), 0.1);
-            text-align: center;
-            transform: scale(0.85) translateY(20px);
-            transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.5s ease;
-            opacity: 0;
-        }
-        .notification-overlay.show .notification-box {
-            transform: scale(1) translateY(0);
-            opacity: 1;
-        }
-
-        .notification-box .icon {
-            font-size: 32px;
-            color: var(--accent);
-            margin-bottom: 12px;
-            display: block;
-        }
-        .notification-box .title {
-            font-size: 17px;
-            font-weight: 700;
-            color: var(--text);
-            margin-bottom: 6px;
-        }
-        .notification-box .desc {
-            font-size: 14px;
-            color: var(--text-muted);
-            line-height: 1.6;
-            margin-bottom: 18px;
-        }
-        .notification-box .timer-bar {
-            width: 100%;
-            height: 3px;
-            background: rgba(var(--accent-rgb), 0.2);
-            border-radius: 4px;
-            margin-bottom: 18px;
-            overflow: hidden;
-        }
-        .notification-box .timer-bar .fill {
-            height: 100%;
-            width: 100%;
-            background: var(--accent);
-            border-radius: 4px;
-            transition: width 0.1s linear;
-        }
-
-        .notification-actions {
-            display: flex;
-            gap: 12px;
-            justify-content: center;
-        }
-        .notification-btn {
-            padding: 10px 24px;
-            border-radius: 14px;
-            font-size: 14px;
-            font-weight: 700;
-            border: none;
-            cursor: pointer;
-            transition: all 0.25s ease;
-            min-width: 100px;
-        }
-        .notification-btn:hover {
-            transform: scale(1.04);
-        }
-        .notification-btn:active {
-            transform: scale(0.96);
-        }
-        .notification-btn.danger {
-            background: rgba(var(--alert-rgb), 0.15);
-            color: var(--alert);
-            border: 1px solid rgba(var(--alert-rgb), 0.3);
-        }
-        .notification-btn.danger:hover {
-            background: rgba(var(--alert-rgb), 0.25);
-        }
-        .notification-btn.primary {
-            background: rgba(var(--accent-rgb), 0.2);
-            color: var(--accent);
-            border: 1px solid rgba(var(--accent-rgb), 0.4);
-        }
-        .notification-btn.primary:hover {
-            background: rgba(var(--accent-rgb), 0.35);
-        }
 
         /* ===== گرید جزئیات ===== */
         .details-grid {
@@ -1221,21 +1140,6 @@
         body.light-mode .active-badge { color: var(--text); }
         body.light-mode .days-left { color: var(--text); }
         body.light-mode .expire-date { color: var(--text-muted) !important; }
-        body.light-mode .progress-circle {
-            background:
-                radial-gradient(circle at 50% 42%, rgba(255, 255, 255, .95) 0 52%, transparent 53%),
-                conic-gradient(from -90deg, var(--accent-2) 0 calc(var(--remaining-percent) * 1%), var(--accent) calc(var(--remaining-percent) * 1%) calc(var(--remaining-percent) * 1% + 4%), var(--ring-track) 0 100%);
-            box-shadow: 0 0 34px rgba(var(--accent-2-rgb), .18), inset 0 0 24px rgba(16,21,32,.04);
-        }
-        body.light-mode .progress-circle::before {
-            background: linear-gradient(180deg, rgba(255,255,255,.97), rgba(234,246,244,.98));
-            border-color: rgba(var(--accent-rgb), .3);
-            box-shadow: inset 0 0 24px rgba(var(--accent-2-rgb), .08);
-        }
-        body.light-mode .liquid-shell { background: radial-gradient(circle at 50% 28%, rgba(var(--accent-rgb), .1), rgba(255,255,255,.92) 68%); }
-        body.light-mode .progress-text .percent { color: var(--text); }
-        body.light-mode .progress-text .label { color: var(--text-muted); }
-        body.light-mode .radar-sweep::before { background: var(--text); }
     </style>
 </head>
 <body>
@@ -1251,18 +1155,6 @@
     </svg>
 
     <!-- ===== نوتیفیکیشن ===== -->
-    <div class="notification-overlay" id="notificationOverlay">
-        <div class="notification-box" id="notificationBox">
-            <span class="icon">🔔</span>
-            <div class="title">آیا مشکلی در اتصال کانفیگ دارید؟</div>
-            <div class="desc">به پشتیبانی پیام بدهید</div>
-            <div class="timer-bar">
-                <div class="fill" id="timerFill"></div>
-            </div>
-            <div class="notification-actions">
-                <button class="notification-btn danger" id="notificationDismiss">خیر</button>
-                <button class="notification-btn primary" id="notificationSupport">پشتیبانی</button>
-            </div>
         </div>
     </div>
 
@@ -1547,6 +1439,18 @@
         </div>
     </div>
 
+    <!-- نمایشگر بزرگ QR -->
+    <div class="qr-big-overlay" id="qrBigOverlay">
+        <div class="qr-big-box">
+            <div class="qr-big-head">
+                <span class="qr-big-title" id="qr-big-title">QR Code</span>
+                <button class="qr-big-close" id="qr-big-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <img class="qr-big-img" id="qr-big-img" alt="QR" />
+            <div class="qr-big-remark en-font" id="qr-big-remark"></div>
+        </div>
+    </div>
+
     <script>
         // ================================================================
         // آیدی تلگرام پشتیبانی — برای تغییر، فقط همین مقدار رو عوض کن
@@ -1580,9 +1484,6 @@
         let isServerConnected = sanaeiTemplateData.enabled;
         let serverStatus = sanaeiTemplateData.statusCode || "active";   // active | paused | expired | limit | dailyLimit
         let liveRefreshTimer = null;
-        let notificationTimer = null;
-        let notificationTimeout = null;
-        let timerInterval = null;
 
         // ===== توابع کمکی =====
         function calculateDaysLeft(expireSeconds) {
@@ -1687,13 +1588,10 @@
                 dlScreenTitle: "دانلود برنامه ها", dlSubtitle: "کلاینت رسمی فروشگاه", btnDl: "دانلود",
                 tabAndroid: "اندروید", tabIos: "آیفون / آیپد", tabDesktop: "ویندوز / مک",
                 expiredText: "منقضی", unlimitedText: "نامحدود", emptyConfigs: "خالی", copyBtnText: "کپی",
+                showQrText: "نمایش QR کد",
                 lastConnectUnknown: "--", onlineText: "آنلاین", offlineText: "آفلاین",
                 promoText: "آیا نیاز به <span>خرید</span> یا <span>تمدید ساب</span> دارید؟<br>با پشتیبانی تماس بگیرید.",
                 promoTelegram: "تلگرام",
-                notificationTitle: "آیا مشکلی در اتصال کانفیگ دارید؟",
-                notificationDesc: "به پشتیبانی پیام بدهید",
-                notificationDismiss: "خیر",
-                notificationSupport: "پشتیبانی",
                 radarTitle: "رادار آی‌پی تمیز", radarHint: "کاملاً در مرورگر شما اجرا می‌شود — اسکن روی پورت‌های کانفیگ",
                 radarStart: "شروع اسکن", radarStop: "توقف", radarStatusReady: "آماده برای اسکن",
                 radarStatusScan: "در حال اسکن... {done} از {total} - یافت‌شده: {found}",
@@ -1717,13 +1615,10 @@
                 dlScreenTitle: "Download Clients", dlSubtitle: "Official Store Client", btnDl: "Get App",
                 tabAndroid: "Android", tabIos: "iPhone / iPad", tabDesktop: "Win / Mac",
                 expiredText: "Expired", unlimitedText: "Unlimited", emptyConfigs: "Empty", copyBtnText: "Copy",
+                showQrText: "Show QR Code",
                 lastConnectUnknown: "--", onlineText: "Online", offlineText: "Offline",
                 promoText: "Need to <span>buy</span> or <span>renew</span> your subscription?<br>Contact support.",
                 promoTelegram: "Telegram",
-                notificationTitle: "Having trouble connecting?",
-                notificationDesc: "Contact support",
-                notificationDismiss: "No",
-                notificationSupport: "Support",
                 radarTitle: "Clean IP Radar", radarHint: "Runs entirely in your browser — scans config ports",
                 radarStart: "Start Scan", radarStop: "Stop", radarStatusReady: "Ready to scan",
                 radarStatusScan: "Scanning... {done} of {total} - found: {found}",
@@ -1747,13 +1642,10 @@
                 dlScreenTitle: "Uygulamaları İndir", dlSubtitle: "Resmi Mağaza İstemcisi", btnDl: "İndir",
                 tabAndroid: "Android", tabIos: "iPhone / iPad", tabDesktop: "Win / Mac",
                 expiredText: "Süresi Doldu", unlimitedText: "Sınırsız", emptyConfigs: "Boş", copyBtnText: "Kopyala",
+                showQrText: "QR Kodu Göster",
                 lastConnectUnknown: "--", onlineText: "Çevrimiçi", offlineText: "Çevrimdışı",
                 promoText: "Aboneliğinizi <span>satın</span> veya <span>yenile</span> mi gerekiyor?<br>Destek ile iletişime geçin.",
                 promoTelegram: "Telegram",
-                notificationTitle: "Bağlantı sorunu mu yaşıyorsunuz?",
-                notificationDesc: "Destek ile iletişime geçin",
-                notificationDismiss: "Hayır",
-                notificationSupport: "Destek",
                 radarTitle: "Temiz IP Radarı", radarHint: "Tamamen tarayıcınızda çalışır — yapılandırma portlarını tarar",
                 radarStart: "Taramayı Başlat", radarStop: "Durdur", radarStatusReady: "Taramaya hazır",
                 radarStatusScan: "Taranıyor... {done} / {total} - bulunan: {found}",
@@ -1777,13 +1669,10 @@
                 dlScreenTitle: "تحميل التطبيقات", dlSubtitle: "عميل المتجر الرسمي", btnDl: "تحميل",
                 tabAndroid: "أندروید", tabIos: "آيفون / آيباد", tabDesktop: "ویندوز / ماک",
                 expiredText: "منتهي", unlimitedText: "غير محدود", emptyConfigs: "خالي", copyBtnText: "نسخ",
+                showQrText: "عرض رمز QR",
                 lastConnectUnknown: "--", onlineText: "متصل", offlineText: "غير متصل",
                 promoText: "هل تحتاج إلى <span>شراء</span> أو <span>تجديد</span> اشتراكك؟<br>اتصل بالدعم.",
                 promoTelegram: "تيليجرام",
-                notificationTitle: "هل تواجه مشكلة في الاتصال؟",
-                notificationDesc: "اتصل بالدعم",
-                notificationDismiss: "لا",
-                notificationSupport: "الدعم",
                 radarTitle: "رادار الآي‌بي النظيف", radarHint: "يعمل بالكامل داخل متصفحك — يفحص منافذ الإعدادات",
                 radarStart: "بدء الفحص", radarStop: "إيقاف", radarStatusReady: "جاهز للفحص",
                 radarStatusScan: "جارٍ الفحص... {done} من {total} - تم العثور: {found}",
@@ -1948,7 +1837,14 @@
                 if (percentRemaining > 100) percentRemaining = 100;
             }
             /* نامحدود = ∞ به‌جای درصد */
-            document.getElementById("detail-remaining-value").innerText = sanaeiClientData.totalByte > 0 ? percentRemaining + '%' : '∞';
+            const remEl = document.getElementById("detail-remaining-value");
+            if (sanaeiClientData.totalByte > 0) {
+                remEl.innerText = percentRemaining + '%';
+                remEl.style.fontSize = '';
+            } else {
+                remEl.innerText = '∞';
+                remEl.style.fontSize = '20px';
+            }
 
             if (sanaeiClientData.totalByte > 0) {
                 document.getElementById("detail-remaining-volume").innerText = remainingVolume > 0 ? formatBytes(remainingVolume) : '0 B';
@@ -1969,7 +1865,14 @@
             }
             document.getElementById("detail-last-connect-value").innerText = lastConnectStr;
 
-            document.getElementById("live-percent-display").innerText = sanaeiClientData.totalByte > 0 ? percentRemaining + "%" : "∞";
+            const pctEl = document.getElementById("live-percent-display");
+            if (sanaeiClientData.totalByte > 0) {
+                pctEl.innerText = percentRemaining + "%";
+                pctEl.style.fontSize = "";
+            } else {
+                pctEl.innerText = "∞";
+                pctEl.style.fontSize = "34px";
+            }
             document.getElementById("sub-progress-circle").style.setProperty("--remaining-percent", percentRemaining);
             updateStatusUI();
         }
@@ -2027,60 +1930,6 @@
             const titleEl = document.getElementById('page-title');
             const username = sanaeiClientData.username || 'VPN Dashboard';
             titleEl.textContent = username;
-        }
-
-        // ===== توابع نوتیفیکیشن =====
-        function showNotification() {
-            const overlay = document.getElementById('notificationOverlay');
-            const fill = document.getElementById('timerFill');
-            const box = document.getElementById('notificationBox');
-
-            // تنظیم ترجمه
-            const data = locales[currentLang] || locales.fa;
-            document.querySelector('.notification-box .title').textContent = data.notificationTitle;
-            document.querySelector('.notification-box .desc').textContent = data.notificationDesc;
-            document.getElementById('notificationDismiss').textContent = data.notificationDismiss;
-            document.getElementById('notificationSupport').textContent = data.notificationSupport;
-
-            // ریست تایمر
-            let timeLeft = 10;
-            fill.style.width = '100%';
-
-            overlay.classList.add('show');
-
-            // تایمر شمارش معکوس
-            if (timerInterval) clearInterval(timerInterval);
-            timerInterval = setInterval(() => {
-                timeLeft -= 0.1;
-                const percent = (timeLeft / 10) * 100;
-                fill.style.width = Math.max(0, percent) + '%';
-                if (timeLeft <= 0) {
-                    clearInterval(timerInterval);
-                    dismissNotification();
-                }
-            }, 100);
-
-            // تایم‌اوت برای بسته شدن خودکار بعد از ۱۰ ثانیه
-            if (notificationTimeout) clearTimeout(notificationTimeout);
-            notificationTimeout = setTimeout(() => {
-                dismissNotification();
-            }, 10000);
-
-            // رویدادهای دکمه‌ها
-            document.getElementById('notificationDismiss').onclick = function() {
-                dismissNotification();
-            };
-            document.getElementById('notificationSupport').onclick = function() {
-                window.open(SUPPORT_TELEGRAM_URL, '_blank');
-                dismissNotification();
-            };
-        }
-
-        function dismissNotification() {
-            const overlay = document.getElementById('notificationOverlay');
-            overlay.classList.remove('show');
-            if (timerInterval) clearInterval(timerInterval);
-            if (notificationTimeout) clearTimeout(notificationTimeout);
         }
 
         function parseConfigLink(rawLink) {
@@ -2263,8 +2112,8 @@
                                 <div class="ip-address-text en-font">${parsed.remark || parsed.host}</div>
                             </div>
                         </div>
-                        <button class="ip-copy-btn" data-config-text="${encodeURIComponent(parsed.link)}">
-                            <i class="fa-solid fa-copy"></i> ${data.copyBtnText}
+                        <button class="ip-copy-btn" data-qr-link="${encodeURIComponent(parsed.link)}">
+                            <i class="fa-solid fa-qrcode"></i> ${data.showQrText}
                         </button>
                     </div>
                     <div class="ip-row-bottom">
@@ -2272,20 +2121,10 @@
                     </div>
                 `;
 
-                const copyBtn = item.querySelector('.ip-copy-btn');
-                copyBtn.addEventListener('click', function(e) {
+                const showQrBtn = item.querySelector('.ip-copy-btn');
+                showQrBtn.addEventListener('click', function(e) {
                     e.stopPropagation();
-                    const textToCopy = decodeURIComponent(this.getAttribute('data-config-text'));
-                    navigator.clipboard.writeText(textToCopy).then(() => {
-                        this.innerHTML = `<i class="fa-solid fa-check"></i> ${data.actionCopied}`;
-                        this.style.background = "#22C55E";
-                        this.style.color = "#fff";
-                        setTimeout(() => {
-                            this.innerHTML = `<i class="fa-solid fa-copy"></i> ${data.copyBtnText}`;
-                            this.style.background = "";
-                            this.style.color = "";
-                        }, 2000);
-                    });
+                    showBigQr(decodeURIComponent(this.getAttribute('data-qr-link')), parsed.remark || parsed.host);
                 });
 
                 return item;
@@ -2368,6 +2207,18 @@
             }
 
         }
+
+        function showBigQr(link, remark) {
+            document.getElementById('qr-big-img').src = 'https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=' + encodeURIComponent(link);
+            document.getElementById('qr-big-remark').textContent = remark || '';
+            document.getElementById('qr-big-title').textContent = (locales[currentLang] || locales.fa).qrModalTitle;
+            document.getElementById('qrBigOverlay').classList.add('show');
+        }
+        (function() {
+            const overlay = document.getElementById('qrBigOverlay');
+            document.getElementById('qr-big-close').addEventListener('click', () => overlay.classList.remove('show'));
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('show'); });
+        })();
 
         // ===== زبان و UI =====
         function selectLanguage(lang) {
@@ -2511,20 +2362,20 @@
             return new Promise(function(res) {
                 const t0 = performance.now();
                 let done = false;
+                const img = new Image();
                 const fin = function(ok) {
                     if (done) return;
                     done = true;
+                    img.onload = img.onerror = null;
                     res(ok ? Math.round(performance.now() - t0) : null);
                 };
-                const ctrl = new AbortController();
-                const timer = setTimeout(function() { ctrl.abort(); fin(false); }, timeout);
-                /* fetch با mode:'no-cors' — برخلاف Image که خطای SSL و رَفضِ اتصال را
-                   هم «پاسخ» حساب می‌کرد و همه‌ی آی‌پی‌ها را زنده نشان می‌داد، اینجا
-                   هر خطای واقعی شبکه reject می‌شود و فقط پاسخِ واقعیِ CDN اندازه‌گیری می‌شود */
-                fetch('https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random(),
-                    { mode: 'no-cors', cache: 'no-store', signal: ctrl.signal })
-                    .then(function() { clearTimeout(timer); fin(true); })
-                    .catch(function() { clearTimeout(timer); fin(false); });
+                const timer = setTimeout(function() { fin(false); }, timeout);
+                /* پروب با Image: مرورگر برای https://IP گواهی معتبر ندارد و درخواست
+                   همیشه خطا می‌دهد — اما لحظه‌ی خطا یعنی handshake کامل شده (لبه‌ی زنده).
+                   fetch برخلاف آن روی همان خطای گواهی reject می‌شود و هیچ‌وقت جواب نمی‌دهد. */
+                img.onerror = function() { clearTimeout(timer); fin(true); };
+                img.onload = function() { clearTimeout(timer); fin(true); };
+                img.src = 'https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random();
             });
         }
 
@@ -2721,10 +2572,6 @@
             fetchLiveSubscriptionData();
             liveRefreshTimer = setInterval(fetchLiveSubscriptionData, 10000);
 
-            // نمایش نوتیفیکیشن بعد از ۱۰ ثانیه
-            setTimeout(() => {
-                showNotification();
-            }, 10000);
         });
 
         const langToggleBtn = document.getElementById("lang-toggle-btn");
