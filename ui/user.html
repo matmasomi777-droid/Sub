@@ -1421,6 +1421,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStart: "شروع اسکن", radarStop: "توقف", radarStatusReady: "آماده برای اسکن",
                 radarStatusScan: "در حال اسکن... {done} از {total} - یافت‌شده: {found}",
                 radarStatusDone: "پایان اسکن - {found} آی‌پی سالم یافت شد",
+                radarStatusStopping: "در حال توقف...", radarStatusStopped: "اسکن متوقف شد",
                 radarStatusNoResult: "آی‌پی سالمی یافت نشد",
                 radarStatusNoConfig: "کانفیگ vless در این ساب یافت نشد",
                 radarStatusNoTlsPort: "هیچ پورت TLS قابل‌اسکنی در کانفیگ‌ها یافت نشد",
@@ -1448,6 +1449,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStart: "Start Scan", radarStop: "Stop", radarStatusReady: "Ready to scan",
                 radarStatusScan: "Scanning... {done} of {total} - found: {found}",
                 radarStatusDone: "Scan finished - {found} healthy IPs found",
+                radarStatusStopping: "Stopping...", radarStatusStopped: "Scan stopped",
                 radarStatusNoResult: "No healthy IP found",
                 radarStatusNoConfig: "No vless config found in this subscription",
                 radarStatusNoTlsPort: "No probeable TLS port found in configs",
@@ -1475,6 +1477,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStart: "Taramayı Başlat", radarStop: "Durdur", radarStatusReady: "Taramaya hazır",
                 radarStatusScan: "Taranıyor... {done} / {total} - bulunan: {found}",
                 radarStatusDone: "Tarama bitti - {found} sağlıklı IP bulundu",
+                radarStatusStopping: "Durduruluyor...", radarStatusStopped: "Tarama durduruldu",
                 radarStatusNoResult: "Sağlıklı IP bulunamadı",
                 radarStatusNoConfig: "Bu abonelikte vless konfigi bulunamadı",
                 radarStatusNoTlsPort: "Yapılandırmalarda taranabilir TLS portu bulunamadı",
@@ -1502,6 +1505,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStart: "بدء الفحص", radarStop: "إيقاف", radarStatusReady: "جاهز للفحص",
                 radarStatusScan: "جارٍ الفحص... {done} من {total} - تم العثور: {found}",
                 radarStatusDone: "انتهى الفحص - تم العثور على {found} آي‌بي سليم",
+                radarStatusStopping: "جارٍ الإيقاف...", radarStatusStopped: "تم إيقاف الفحص",
                 radarStatusNoResult: "لم يتم العثور على آي‌بي سليم",
                 radarStatusNoConfig: "لا يوجد تكوين vless في هذا الاشتراك",
                 radarStatusNoTlsPort: "لم يتم العثور على منفذ TLS قابل للفحص في الإعدادات",
@@ -2051,9 +2055,11 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         // ===== رادار آی‌پی تمیز (کاملاً سمت مرورگر) =====
         const CF_RANGES = [['104.16.', 0, 255], ['104.17.', 0, 255], ['104.18.', 0, 255], ['104.19.', 0, 255], ['104.20.', 0, 255], ['104.21.', 0, 255], ['104.22.', 0, 255], ['104.24.', 0, 255], ['104.25.', 0, 255], ['104.26.', 0, 255], ['104.27.', 0, 255], ['162.159.', 0, 255], ['172.64.', 0, 255], ['172.66.', 0, 255], ['172.67.', 0, 255], ['188.114.', 96, 111], ['141.101.', 64, 127]];
         const RADAR_PORTS = [443, 8443, 2053, 2083, 2087, 2096];
-        const RADAR_TIMEOUT = 2000;
-        const RADAR_PROBES = 3;
-        const RADAR_CONCURRENCY = 12;
+        /* تایم‌اوت کوتاه‌تر و پروب کمتر = اسکن چند برابر سریع‌تر؛
+           آی‌پی مرده دیگر ۶ ثانیه هم بلاک نمی‌کند */
+        const RADAR_TIMEOUT = 1200;
+        const RADAR_PROBES = 2;
+        const RADAR_CONCURRENCY = 16;
         const RADAR_IP_COUNT = 140;
         const RADAR_KEEP = 8;
 
@@ -2181,7 +2187,9 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             const startBtn = document.getElementById('radar-start-btn');
 
             if (radarRunning) {
+                /* توقف: بازخورد فوری — unwind حداکثر تا پایان پروب جاری (کمتر از ۱.۲ ثانیه) */
                 radarCancelRequested = true;
+                statusEl.textContent = data.radarStatusStopping;
                 return;
             }
 
@@ -2202,47 +2210,58 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             document.getElementById('radar-progress-bar').style.width = '0%';
             statusEl.textContent = data.radarStatusScan.replace('{done}', '0').replace('{total}', RADAR_IP_COUNT).replace('{found}', '0');
 
-            const ips = [];
-            for (let i = 0; i < RADAR_IP_COUNT; i++) ips.push(randCfIp());
+            /* try/finally: حتی اگر وسط اسکن خطایی رخ دهد radarRunning ریست می‌شود
+               و دکمه هرگز روی «توقف» قفل نمی‌ماند */
+            try {
+                const ips = [];
+                for (let i = 0; i < RADAR_IP_COUNT; i++) ips.push(randCfIp());
 
-            const results = [];
-            let cursor = 0;
-            let doneCount = 0;
+                const results = [];
+                let cursor = 0;
+                let doneCount = 0;
 
-            async function worker() {
-                while (cursor < ips.length) {
-                    if (radarCancelRequested) return;
-                    const ip = ips[cursor++];
-                    const res = await radarProbeIp(ip, ports);
-                    if (res) results.push(res);
-                    doneCount++;
-                    document.getElementById('radar-progress-bar').style.width = Math.round(doneCount / ips.length * 100) + '%';
-                    statusEl.textContent = data.radarStatusScan
-                        .replace('{done}', doneCount)
-                        .replace('{total}', ips.length)
-                        .replace('{found}', results.length);
+                async function worker() {
+                    while (cursor < ips.length) {
+                        if (radarCancelRequested) return;
+                        const ip = ips[cursor++];
+                        const res = await radarProbeIp(ip, ports);
+                        if (res) results.push(res);
+                        doneCount++;
+                        document.getElementById('radar-progress-bar').style.width = Math.round(doneCount / ips.length * 100) + '%';
+                        statusEl.textContent = data.radarStatusScan
+                            .replace('{done}', doneCount)
+                            .replace('{total}', ips.length)
+                            .replace('{found}', results.length);
+                    }
                 }
+
+                const workers = [];
+                for (let w = 0; w < RADAR_CONCURRENCY; w++) workers.push(worker());
+                await Promise.all(workers);
+
+                if (radarCancelRequested) {
+                    /* توقف‌شده — نتیجه‌ی ناقص به‌عنوان «پایان اسکن» جعل نمی‌شود */
+                    document.getElementById('radar-progress-bar').style.width = '0%';
+                    statusEl.textContent = data.radarStatusStopped;
+                    return;
+                }
+
+                results.sort(function(a, b) { return a.score - b.score; });
+                const top = results.slice(0, RADAR_KEEP);
+                radarRenderResults(top);
+
+                if (top.length > 0) {
+                    statusEl.textContent = data.radarStatusDone.replace('{found}', results.length);
+                    radarBuildBestConfig(top[0]);
+                } else {
+                    statusEl.textContent = data.radarStatusNoResult;
+                }
+            } finally {
+                radarRunning = false;
+                radarCancelRequested = false;
+                startBtn.classList.remove('running');
+                document.getElementById('radar-start-label').textContent = data.radarStart;
             }
-
-            const workers = [];
-            for (let w = 0; w < RADAR_CONCURRENCY; w++) workers.push(worker());
-            await Promise.all(workers);
-
-            results.sort(function(a, b) { return a.score - b.score; });
-            const top = results.slice(0, RADAR_KEEP);
-            radarRenderResults(top);
-
-            if (top.length > 0) {
-                statusEl.textContent = data.radarStatusDone.replace('{found}', results.length);
-                radarBuildBestConfig(top[0]);
-            } else {
-                statusEl.textContent = data.radarStatusNoResult;
-            }
-
-            radarRunning = false;
-            radarCancelRequested = false;
-            startBtn.classList.remove('running');
-            document.getElementById('radar-start-label').textContent = data.radarStart;
         }
 
         /* دکمه‌ی باز کردنِ رادار حذف شده — کارت همیشه نمایان است */
