@@ -42,7 +42,7 @@
      داده در state نگه داشته می‌شود، نه در DOM: به‌روزرسانیِ دوره‌ای و
      جابه‌جایی بین بخش‌ها جدول را خالی نمی‌کند — فقط یک بارخوانیِ موفق
      جای داده‌ی قبلی را می‌گیرد (خطا یا قطعیِ لحظه‌ای چیزی را پاک نمی‌کند). */
-  const CN = { data: null, q: '', ts: 0, err: '' };
+  const CN = { data: null, ts: 0, err: '' };
   const cnShow = () => {
     const o = $('#connOut'); if (o) o.innerHTML = cnHtml(CN.data);
     /* خلاصه و نشانگرِ وضعیت هم همان لحظه به‌روز می‌شوند — وگرنه عددهای
@@ -1069,16 +1069,14 @@
   function cnStatsHtml() {
     const d = CN.data || {};
     const sum = d.summary || { users: 0, ips: 0, connections: 0 };
-    const ttl = d.ttlMs ? fa(Math.round(d.ttlMs / 1000)) + ' ثانیه' : '—';
-    return '<div class="grid g4">' +
+    /* کارتِ «مرجع فعال» حذف شده — سه کارتِ باقی‌مانده در g3 می‌نشینند */
+    return '<div class="grid g3">' +
       '<div class="stat"><div class="lbl">کاربران متصل</div><div class="val">' + fa(sum.users || 0) + '</div>' +
       '<div class="sub">از ' + fa(((S.d && S.d.users) || []).length) + ' کاربرِ تعریف‌شده</div></div>' +
       '<div class="stat"><div class="lbl">آی‌پی‌های متمایز</div><div class="val">' + fa(sum.ips || 0) + '</div>' +
       '<div class="sub">همان شمارنده‌ای که سقف روی آن بسته می‌شود</div></div>' +
       '<div class="stat"><div class="lbl">تعداد اتصال‌ها</div><div class="val">' + fa(sum.connections || 0) + '</div>' +
       '<div class="sub">نشستِ در جریان روی این مرجع</div></div>' +
-      '<div class="stat"><div class="lbl">مرجع فعال</div><div class="val" style="font-size:15px">' + esc(d.sourceLabel || d.source || '—') + '</div>' +
-      '<div class="sub">زمان آزادسازی: ' + ttl + '</div></div>' +
       '</div>';
   }
 
@@ -1089,47 +1087,75 @@
     return '<span class="badge ' + (n ? 'ok' : '') + '">' + icon('fa-tower-broadcast') + ' به‌روزرسانی خودکار • ' + fa(n) + ' اتصال</span>';
   }
 
-  /* متنِ قابلِ جست‌وجوی هر نشست — هم برای رندرِ اول و هم برای فیلترِ زنده،
-     تا فیلترِ لحظه‌ای دقیقاً همان ردیف‌هایی را نگه دارد که رندرِ بعدی نگه
-     می‌دارد (و برعکس) */
-  const cnKey = (s) => [s.user, s.uuid, s.ip, s.cc, s.transport].join(' ').toLowerCase();
-  const cnHit = (s) => {
-    const q = (CN.q || '').trim().toLowerCase();
-    return !q || cnKey(s).includes(q) ? 1 : 0;
-  };
+  /* ═══ گروه‌بندیِ نشست‌ها بر پایه‌ی آی‌پی ═══
+     جدول یک ردیف به‌ازای هر آی‌پی‌ی متصل نشان می‌دهد: چند نشست روی آن باز
+     است، از کدام کانفیگ‌ها آمده و مجموعِ ترافیکِ آن‌ها چقدر است.
+     ترتیب: نزولی بر پایه‌ی تعداد اتصال، سپس مجموعِ ترافیک. */
+  function cnIps(r) {
+    const map = new Map();
+    ((r && r.sessions) || []).forEach((s) => {
+      if (!s || !s.ip) return;
+      let g = map.get(s.ip);
+      if (!g) {
+        g = { ip: s.ip, cc: s.cc || '', n: 0, users: [], up: 0, down: 0,
+              startedAt: s.startedAt || 0, idleSec: null, idle: false, transports: [] };
+        map.set(s.ip, g);
+      }
+      g.n += 1;
+      const nm = s.user || (s.known === false ? 'کانفیگ حذف‌شده' : '—');
+      if (g.users.indexOf(nm) < 0) g.users.push(nm);
+      g.up += s.up || 0;
+      g.down += s.down || 0;
+      if (s.cc) g.cc = s.cc;
+      if (s.transport && g.transports.indexOf(s.transport) < 0) g.transports.push(s.transport);
+      /* قدیمی‌ترین شروع = آغازِ حضورِ این آی‌پی */
+      if (s.startedAt && (!g.startedAt || s.startedAt < g.startedAt)) g.startedAt = s.startedAt;
+      /* کمترین زمانِ بی‌فعالیتی = تازه‌ترین فعالیتِ این آی‌پی */
+      if (s.idleSec !== null && s.idleSec !== undefined &&
+          (g.idleSec === null || s.idleSec < g.idleSec)) g.idleSec = s.idleSec;
+      /* وضعیت: اگر هر نشستی روی این آی‌پی فعال باشد، خودِ آی‌پی فعال است */
+      if (g.n === 1) g.idle = !!s.idle;
+      else if (!s.idle) g.idle = false;
+    });
+    return Array.from(map.values()).sort((a, b) =>
+      (b.n - a.n) || ((b.up + b.down) - (a.up + a.down)));
+  }
 
-  /* جدولِ نشست‌ها — در هر بار بازسازیِ صفحه از CN.data رندر می‌شود */
+  /* جدولِ «آی‌پی‌های متصل» — در هر بار بازسازیِ صفحه از CN.data رندر می‌شود
+     (جست‌وجو از این بخش حذف شده است) */
   function cnHtml(r) {
     if (!r || !r.sessions) {
       return '<div class="empty">در حال بارگیریِ اتصال‌های زنده…</div>';
     }
     if (!r.sessions.length) {
-      return '<div class="empty">هیچ اتصالِ زنده‌ای ثبت نشده است — هیچ آی‌پی‌ای قفل نیست.</div>';
+      return '<div class="empty">هیچ آی‌پی‌ی متصلی ثبت نشده است — هیچ آی‌پی‌ای قفل نیست.</div>';
     }
+    const ips = cnIps(r);
     const stamp = CN.ts ? new Date(CN.ts).toLocaleString('fa-IR', { hour12: false }) : '';
     return '<div class="hint" style="margin-bottom:8px">آخرین بارخوانی: <b>' + (stamp ? fa(stamp) : '—') + '</b>' +
       (CN.err ? ' • <span style="color:var(--bad)">' + esc(CN.err) + '</span>' : '') +
       ' • <span class="hint">جدول هر ۱۰ ثانیه به‌روز می‌شود؛ داده‌ی قبلی تا رسیدنِ پاسخِ تازه سر جایش می‌ماند.</span></div>' +
       '<div style="max-height:460px;overflow:auto" class="tbl-wrap"><table>' +
-      '<thead><tr><th>کانفیگ (یوزر)</th><th>آی‌پی</th><th>کشور</th><th>شروع</th><th>مدت اتصال</th>' +
-      '<th>ارسال</th><th>دریافت</th><th>انتقال</th><th>آخرین فعالیت</th><th>وضعیت</th></tr></thead><tbody>' +
-      r.sessions.map((s) => {
-        const nm = s.user || (s.known === false ? 'کانفیگ حذف‌شده' : '—');
-        const started = s.startedAt ? new Date(s.startedAt).toLocaleTimeString('fa-IR', { hour12: false }) : '—';
-        const hit = cnHit(s);
-        /* ستونِ «عملیات» (قطعِ موقت / مسدودسازی) حذف شده — این جدول فقط نمایشی
-           است و هیچ عملی روی نشستِ زنده‌ی کاربر انجام نمی‌دهد. */
-        return '<tr data-hit="' + hit + '" data-q="' + esc(cnKey(s)) + '"' + (hit ? '' : ' class="hide"') + '>' +
-          '<td><div class="cell-main">' + esc(nm) + '</div><div class="cell-sub mono">' + esc(String(s.uuid || '').slice(0, 13)) + '…</div></td>' +
-          '<td class="mono">' + esc(s.ip || '—') + '</td>' +
-          '<td>' + (s.cc ? '<span class="badge">' + esc(s.cc) + '</span>' : '<span class="cell-sub">—</span>') + '</td>' +
+      '<thead><tr><th>آی‌پی</th><th>کشور</th><th>اتصال‌ها</th><th>کانفیگ‌ها (یوزر)</th><th>ارسال</th>' +
+      '<th>دریافت</th><th>انتقال</th><th>شروع</th><th>آخرین فعالیت</th><th>وضعیت</th></tr></thead><tbody>' +
+      ips.map((g) => {
+        const started = g.startedAt ? new Date(g.startedAt).toLocaleTimeString('fa-IR', { hour12: false }) : '—';
+        return '<tr>' +
+          '<td class="mono"><b>' + esc(g.ip) + '</b></td>' +
+          '<td>' + (g.cc ? '<span class="badge">' + esc(g.cc) + '</span>' : '<span class="cell-sub">—</span>') + '</td>' +
+          '<td class="mono">' + fa(g.n) + '</td>' +
+          '<td>' + (g.users.length
+            ? '<div class="cell-main">' + esc(g.users.join('، ')) + '</div>' +
+              '<div class="cell-sub">' + fa(g.users.length) + ' کانفیگ</div>'
+            : '<span class="cell-sub">—</span>') + '</td>' +
+          '<td class="mono">' + bytes(g.up) + '</td>' +
+          '<td class="mono">' + bytes(g.down) + '</td>' +
+          '<td>' + (g.transports.length
+            ? g.transports.map((t) => '<span class="badge b2">' + esc(t) + '</span>').join(' ')
+            : '<span class="cell-sub">—</span>') + '</td>' +
           '<td class="mono">' + esc(started) + '</td>' +
-          '<td class="mono">' + (s.durationSec === null || s.durationSec === undefined ? '<span class="cell-sub">نامعلوم</span>' : durFa(s.durationSec)) + '</td>' +
-          '<td class="mono">' + bytes(s.up || 0) + '</td>' +
-          '<td class="mono">' + bytes(s.down || 0) + '</td>' +
-          '<td><span class="badge b2">' + esc(s.transport || '—') + '</span></td>' +
-          '<td class="mono">' + (s.idleSec === null || s.idleSec === undefined ? '—' : durFa(s.idleSec) + ' پیش') + '</td>' +
-          '<td>' + (s.idle
+          '<td class="mono">' + (g.idleSec === null ? '—' : durFa(g.idleSec) + ' پیش') + '</td>' +
+          '<td>' + (g.idle
             ? '<span class="badge warn">' + icon('fa-triangle-exclamation') + ' بی‌فعالیت</span>'
             : '<span class="badge ok">' + icon('fa-circle-check') + ' فعال</span>') + '</td>' +
           '</tr>';
@@ -1149,17 +1175,15 @@
 
   function connsView() {
     return '<div class="page-head"><div><h1>اتصال‌های زنده</h1>' +
-      '<p>نشست‌های در جریان روی همان مرجعی که سقفِ آی‌پی روی آن حساب می‌شود — فقط نمایشی</p></div>' +
+      '<p>آی‌پی‌هایی که همین حالا روی همان مرجعی که سقفِ آی‌پی روی آن حساب می‌شود، متصل‌اند — فقط نمایشی</p></div>' +
       '<div class="btn-row">' +
       '<span id="connBadge" style="display:inline-flex">' + cnBadgeHtml() + '</span>' +
       '<button class="btn sm" data-act="conn-load">' + icon('fa-rotate') + ' بارخوانی</button>' +
       '</div></div>' +
       '<div id="connStats">' + cnStatsHtml() + '</div>' +
       '<div class="card" style="margin-top:12px"><header><span class="ic">' + icon('fa-activity') + '</span>' +
-      '<div><h3>نشست‌های در جریان</h3><p>این جدول فقط برای دیدن است؛ هیچ عملی روی نشستِ زنده انجام نمی‌شود</p></div>' +
-      '<div class="acts"><div class="search" style="width:210px" id="connSearchBox">' +
-      '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>' +
-      '<input id="connSearch" placeholder="جستجوی نام کانفیگ، UUID، آی‌پی…" value="' + esc(CN.q || '') + '"></div></div></header>' +
+      '<div><h3>آی‌پی‌های متصل</h3><p>هر ردیف یک آی‌پی است؛ نشست‌های همان آی‌پی در آن ادغام شده‌اند — فقط نمایشی</p></div>' +
+      '</header>' +
       '<div class="bd"><div id="connOut">' + cnHtml(CN.data) + '</div></div></div>';
   }
 
@@ -2361,23 +2385,7 @@
       if (!bar) { bar = document.createElement('div'); bar.id = 'uCount'; bar.className = 'hint'; $('#uSearchBox').parentElement.appendChild(bar); }
       bar.textContent = fa(vis) + ' از ' + fa(S.d.users.length) + ' کاربر';
     }
-    /* جست‌وجو در جدولِ اتصال‌های زنده — فیلترِ زنده، بدون رندرِ مجدد */
-    if (e.target.id === 'connSearch') {
-      CN.q = e.target.value;
-      const q = CN.q.trim().toLowerCase();
-      const rows = $$('#connOut tbody tr[data-hit]');
-      rows.forEach((tr) => {
-        /* همان متنی که هنگامِ رندر ساخته شد — فیلترِ زنده و رندر یکی‌اند */
-        tr.dataset.hit = !q || String(tr.dataset.q || '').includes(q) ? '1' : '0';
-      });
-      const vis = rows.filter((tr) => tr.dataset.hit === '1').length;
-      let bar = $('#cCount');
-      if (!bar) { bar = document.createElement('div'); bar.id = 'cCount'; bar.className = 'hint'; $('#connSearchBox').parentElement.appendChild(bar); }
-      bar.textContent = fa(vis) + ' از ' + fa(rows.length) + ' نشست';
-      $$('#connOut tbody tr[data-hit="0"]').forEach((tr) => tr.classList.add('hide'));
-      $$('#connOut tbody tr[data-hit="1"]').forEach((tr) => tr.classList.remove('hide'));
-      return;
-    }
+    /* جست‌وجو در جدولِ اتصال‌های زنده حذف شده است */
     if (e.target.id === 'tbSearch') doSearch(e.target.value);
     /* به‌روزرسانی زنده‌ی پیش‌نمایش کانفیگ‌های فیک */
     if (e.target.classList.contains('fk-name') || e.target.classList.contains('fk-pos')) refreshPreview();

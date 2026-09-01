@@ -3199,9 +3199,24 @@ const USER_PAGE = `<!DOCTYPE html>
             font-size: 13px;
         }
 
-        /* ===== رادار آی‌پی تمیز ===== */
-        .radar-panel { align-items: stretch; justify-content: flex-start; gap: 10px; text-align: right; }
-        html[dir="ltr"] .radar-panel { text-align: left; }
+        /* ===== رادار آی‌پی تمیز — کارتِ کامل و همیشه‌نما (بدون دکمه‌ی باز کردن) ===== */
+        .radar-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 10px 25px var(--shadow);
+            padding: 16px;
+            margin-bottom: 16px;
+            width: 100%;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            justify-content: flex-start;
+            gap: 10px;
+            text-align: right;
+        }
+        html[dir="ltr"] .radar-card { text-align: left; }
         .radar-head { display: flex; flex-direction: column; gap: 2px; padding: 2px 4px; }
         .radar-title { font-size: 13px; font-weight: 700; color: var(--text); }
         .radar-hint { font-size: 10px; color: var(--text-muted); }
@@ -3559,7 +3574,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
   #screen-dashboard > .promo-card { grid-column:2; margin-bottom:0; height:100%; }
   #screen-dashboard > .details-grid { grid-column:1/-1; grid-template-columns:repeat(4,minmax(0,1fr)); }
   #screen-dashboard > .actions-grid { grid-column:1/-1; gap:12px; }
-  #screen-dashboard > .action-dropdown-container, #screen-dashboard > .designer-card { grid-column:1/-1; }
+  #screen-dashboard > .radar-card, #screen-dashboard > .action-dropdown-container, #screen-dashboard > .designer-card { grid-column:1/-1; }
   .subscription-card { min-height:180px; padding:28px 32px; }
   .progress-circle { width:132px; height:132px; }
   .progress-circle::after { width:108px; height:108px; }
@@ -3621,6 +3636,53 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
     </div>
 
     <div id="screen-dashboard" class="app-screen active-screen">
+        <!-- رادار آی‌پی تمیز — کارتِ کاملِ بالای صفحه؛ برای دیدنش دکمه‌ای لازم نیست -->
+        <div class="radar-card" id="radar-card">
+            <div class="radar-head">
+                <span class="radar-title" id="radar-title">رادار آی‌پی تمیز</span>
+                <span class="radar-hint" id="radar-hint">کاملاً در مرورگر شما اجرا می‌شود</span>
+            </div>
+            <div class="radar-ports" id="radar-ports">
+                <span class="radar-port-chip active" data-port="443">443</span>
+                <span class="radar-port-chip" data-port="8443">8443</span>
+                <span class="radar-port-chip" data-port="2053">2053</span>
+                <span class="radar-port-chip" data-port="2083">2083</span>
+                <span class="radar-port-chip" data-port="2087">2087</span>
+                <span class="radar-port-chip" data-port="2096">2096</span>
+            </div>
+            <button class="radar-start-btn" id="radar-start-btn">
+                <i class="fa-solid fa-satellite-dish"></i> <span id="radar-start-label">شروع اسکن</span>
+            </button>
+            <div class="radar-progress-track">
+                <div class="radar-progress-bar" id="radar-progress-bar"></div>
+            </div>
+            <div class="radar-status" id="radar-status">آماده برای اسکن</div>
+            <div class="radar-table-wrap" id="radar-table-wrap">
+                <table class="radar-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>IP</th>
+                            <th id="radar-th-ping">تأخیر</th>
+                            <th id="radar-th-jitter">جیتر</th>
+                            <th id="radar-th-loss">لاس٪</th>
+                        </tr>
+                    </thead>
+                    <tbody id="radar-results-body"></tbody>
+                </table>
+            </div>
+            <div class="radar-best" id="radar-best">
+                <div class="radar-best-label" id="radar-best-label">کانفیگ بهترین آی‌پی</div>
+                <div class="radar-best-row">
+                    <input type="text" class="radar-best-input en-font" id="radar-best-link" readonly value="">
+                    <button class="ip-copy-btn" id="radar-copy-btn">
+                        <i class="fa-solid fa-copy"></i> <span id="radar-copy-label">کپی</span>
+                    </button>
+                </div>
+                <div class="radar-best-note" id="radar-best-note"></div>
+            </div>
+        </div>
+
         <!-- کارت اشتراک -->
         <div class="subscription-card" id="main-sub-card">
             <div class="status-right">
@@ -3728,12 +3790,6 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                     <div class="action-label" id="action-config">کپی کانفیگ</div>
                 </div>
             </div>
-            <div class="action-cell">
-                <div class="action-card" id="btn-radar">
-                    <i class="fa-solid fa-satellite-dish" style="color: var(--accent-2);"></i>
-                    <div class="action-label" id="action-radar">رادار</div>
-                </div>
-            </div>
         </div>
 
         <div class="action-dropdown-container" id="dropdown-qr-container">
@@ -3748,53 +3804,6 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             </div>
         </div>
 
-        <div class="action-dropdown-container" id="dropdown-radar-container">
-            <div class="action-dropdown-menu radar-panel" id="radar-panel">
-                <div class="radar-head">
-                    <span class="radar-title" id="radar-title">رادار آی‌پی تمیز</span>
-                    <span class="radar-hint" id="radar-hint">کاملاً در مرورگر شما اجرا می‌شود</span>
-                </div>
-                <div class="radar-ports" id="radar-ports">
-                    <span class="radar-port-chip active" data-port="443">443</span>
-                    <span class="radar-port-chip" data-port="8443">8443</span>
-                    <span class="radar-port-chip" data-port="2053">2053</span>
-                    <span class="radar-port-chip" data-port="2083">2083</span>
-                    <span class="radar-port-chip" data-port="2087">2087</span>
-                    <span class="radar-port-chip" data-port="2096">2096</span>
-                </div>
-                <button class="radar-start-btn" id="radar-start-btn">
-                    <i class="fa-solid fa-satellite-dish"></i> <span id="radar-start-label">شروع اسکن</span>
-                </button>
-                <div class="radar-progress-track">
-                    <div class="radar-progress-bar" id="radar-progress-bar"></div>
-                </div>
-                <div class="radar-status" id="radar-status">آماده برای اسکن</div>
-                <div class="radar-table-wrap" id="radar-table-wrap">
-                    <table class="radar-table">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>IP</th>
-                                <th id="radar-th-ping">تأخیر</th>
-                                <th id="radar-th-jitter">جیتر</th>
-                                <th id="radar-th-loss">لاس٪</th>
-                            </tr>
-                        </thead>
-                        <tbody id="radar-results-body"></tbody>
-                    </table>
-                </div>
-                <div class="radar-best" id="radar-best">
-                    <div class="radar-best-label" id="radar-best-label">کانفیگ بهترین آی‌پی</div>
-                    <div class="radar-best-row">
-                        <input type="text" class="radar-best-input en-font" id="radar-best-link" readonly value="">
-                        <button class="ip-copy-btn" id="radar-copy-btn">
-                            <i class="fa-solid fa-copy"></i> <span id="radar-copy-label">کپی</span>
-                        </button>
-                    </div>
-                    <div class="radar-best-note" id="radar-best-note"></div>
-                </div>
-            </div>
-        </div>
     </div>
 
     <div id="screen-download-apps" class="app-screen">
@@ -4567,7 +4576,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             document.getElementById("action-copy").innerText = data.actionCopy;
             document.getElementById("action-qr").innerText = data.actionQr;
             document.getElementById("action-config").innerText = data.actionConfig;
-            document.getElementById("action-radar").innerText = data.actionRadar;
+            /* «action-radar» حذف شد — رادار دیگر دکمه‌ای در گریدِ عملیات ندارد */
             document.getElementById("radar-title").innerText = data.radarTitle;
             document.getElementById("radar-hint").innerText = data.radarHint;
             document.getElementById("radar-th-ping").innerText = data.radarThPing;
@@ -4619,14 +4628,12 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         document.getElementById("btn-toggle-qr").addEventListener("click", function(e) {
             e.stopPropagation();
             document.getElementById("dropdown-config-container").classList.remove("show");
-            document.getElementById("dropdown-radar-container").classList.remove("show");
             document.getElementById("dropdown-qr-container").classList.toggle("show");
         });
 
         document.getElementById("btn-toggle-config").addEventListener("click", function(e) {
             e.stopPropagation();
             document.getElementById("dropdown-qr-container").classList.remove("show");
-            document.getElementById("dropdown-radar-container").classList.remove("show");
             document.getElementById("dropdown-config-container").classList.toggle("show");
         });
 
@@ -4814,12 +4821,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             document.getElementById('radar-start-label').textContent = data.radarStart;
         }
 
-        document.getElementById("btn-radar").addEventListener("click", function(e) {
-            e.stopPropagation();
-            document.getElementById("dropdown-qr-container").classList.remove("show");
-            document.getElementById("dropdown-config-container").classList.remove("show");
-            document.getElementById("dropdown-radar-container").classList.toggle("show");
-        });
+        /* دکمه‌ی باز کردنِ رادار حذف شده — کارت همیشه نمایان است */
 
         document.getElementById("radar-start-btn").addEventListener("click", function(e) {
             e.stopPropagation();
@@ -4917,7 +4919,6 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             langDropdown.classList.remove("show");
             document.getElementById("dropdown-qr-container").classList.remove("show");
             document.getElementById("dropdown-config-container").classList.remove("show");
-            document.getElementById("dropdown-radar-container").classList.remove("show");
         });
 
         const themeToggle = document.getElementById("theme-toggle");
