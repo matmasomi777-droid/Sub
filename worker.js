@@ -1870,11 +1870,46 @@ function vlessHeader(u, host, port, payloadBytes) {
   return out;
 }
 
-const CC = { FR: '🇫🇷 فرانکفورت', NL: '🇳🇱 آمستردام', DE: '🇩🇪 برلین', GB: '🇬🇧 لندن', TR: '🇹🇷 استانبول', US: '🇺🇸 نیویورک', AE: '🇦🇪 دبی', SE: '🇸🇪 استکهلم', SG: '🇸🇬 سنگاپور', IR: '🇮🇷 تهران' };
-function geo(ip, cf) {
-  if (cf && cf.country && CC[cf.country]) return { cc: cf.country, name: CC[cf.country], isp: (cf.asOrganization || '').split(' ')[0] };
-  const h = [...ip].reduce((a, c) => a + c.charCodeAt(0), 0), ks = Object.keys(CC);
-  return { cc: ks[h % ks.length], name: CC[ks[h % ks.length]], isp: 'Cloudflare' };
+/* ── کشورها — نام و پرچم درست (ISO → فارسی) ──
+   جدول قبلی غلط بود (مثلاً FR→فرانکفورت!) و geo() از هشِ IP کشورِ جعلی می‌ساخت.
+   حالا: کشورِ واقعیِ IP با کوئری به geojs (رایگان، بدون کلید، با کش) به‌دست
+   می‌آید؛ CC فقط برای تبدیل کدِ کشور به نام/پرچم استفاده می‌شود. */
+const CC = {
+  IR: '🇮🇷 ایران', US: '🇺🇸 آمریکا', GB: '🇬🇧 انگلیس', DE: '🇩🇪 آلمان', FR: '🇫🇷 فرانسه',
+  NL: '🇳🇱 هلند', TR: '🇹🇷 ترکیه', AE: '🇦🇪 امارات', SE: '🇸🇪 سوئد', FI: '🇫🇮 فنلاند',
+  NO: '🇳🇴 نروژ', DK: '🇩🇰 دانمارک', PL: '🇵🇱 لهستان', AT: '🇦🇹 اتریش', CH: '🇨🇭 سوئیس',
+  IT: '🇮🇹 ایتالیا', ES: '🇪🇸 اسپانیا', PT: '🇵🇹 پرتغال', BE: '🇧🇪 بلژیک', IE: '🇮🇪 ایرلند',
+  GR: '🇬🇷 یونان', CZ: '🇨🇿 چک', RO: '🇷🇴 رومانی', UA: '🇺🇦 اوکراین', RU: '🇷🇺 روسیه',
+  CA: '🇨🇦 کانادا', BR: '🇧🇷 برزیل', AR: '🇦🇷 آرژانتین', MX: '🇲🇽 مکزیک',
+  JP: '🇯🇵 ژاپن', KR: '🇰🇷 کره جنوبی', CN: '🇨🇳 چین', HK: '🇭🇰 هنگ‌کنگ', TW: '🇹🇼 تایوان',
+  SG: '🇸🇬 سنگاپور', MY: '🇲🇾 مالزی', TH: '🇹🇭 تایلند', IN: '🇮🇳 هند', ID: '🇮🇩 اندونزی',
+  VN: '🇻🇳 ویتنام', PH: '🇵🇭 فیلیپین', KZ: '🇰🇿 قزاقستان', IL: '🇮🇱 اسرائیل',
+  AU: '🇦🇺 استرالیا', NZ: '🇳🇿 نیوزیلند', ZA: '🇿🇦 آفریقای جنوبی', SA: '🇸🇦 عربستان',
+  QA: '🇶🇦 قطر', KW: '🇰🇼 کویت', OM: '🇴🇲 عمان', BH: '🇧🇭 بحرین', IQ: '🇮🇶 عراق',
+  MD: '🇲🇩 مولداوی', LT: '🇱🇹 لیتوانی', LV: '🇱🇻 لتونی', EE: '🇪🇪 استونی', BG: '🇧🇬 بلغارستان',
+  HU: '🇭🇺 مجارستان', SK: '🇸🇰 اسلواکی', HR: '🇭🇷 کرواسی', RS: '🇷🇸 صربستان', IS: '🇮🇸 ایسلند',
+  LU: '🇱🇺 لوکزامبورگ', CY: '🇨🇾 قبرس', MT: '🇲🇹 مالت', GE: '🇬🇪 گرجستان', AM: '🇦🇲 ارمنستان',
+};
+const ccName = (cc) => CC[String(cc || '').toUpperCase()] || String(cc || '');
+
+/* کشِ جغرافیا — ۷ روز در حافظه‌ی isolate؛ اولین درخواستِ هر IP یک کوئری کوچک می‌زند */
+const GEO_CACHE = new Map();
+const GEO_TTL = 7 * 86400000;
+async function geoReal(ip) {
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(String(ip || ''))) return null;
+  const hit = GEO_CACHE.get(ip);
+  if (hit && Date.now() - hit.ts < GEO_TTL) return hit;
+  let cc = null;
+  try {
+    const r = await fetch('https://get.geojs.io/v1/ip/country/' + ip + '.json',
+      { cf: { cacheTtl: 86400, cacheEverything: true }, signal: AbortSignal.timeout(4000) });
+    if (r.ok) { const j = await r.json().catch(() => null); if (j && j.country) cc = String(j.country).toUpperCase(); }
+  } catch (e) { /* قطعِ geo حیاتی نیست — نام = خودِ IP می‌ماند */ }
+  if (!cc) return null;
+  const rec = { cc, name: ccName(cc), flag: String(ccName(cc)).match(/[\u{1F1E6}-\u{1F1FF}]{2}/u)?.[0] || '', ts: Date.now() };
+  GEO_CACHE.set(ip, rec);
+  if (GEO_CACHE.size > 500) { const first = GEO_CACHE.keys().next().value; GEO_CACHE.delete(first); }
+  return rec;
 }
 function portsOf(u, s) { const p = (u.ports && u.ports.length ? (typeof u.ports === 'string' ? u.ports.split(/[,\s]+/) : u.ports) : s.ports).map(Number).filter((x) => x > 0); return p.length ? p : [443]; }
 function ipsOf(u, s, cf) {
@@ -1886,7 +1921,10 @@ function ipsOf(u, s, cf) {
   }
   return list.length ? list : [(s.panel.url || 'simorgh.workers.dev')];
 }
-const ipName = (e) => { const [ip, nm] = String(e).split('#'); return { ip: ip.trim(), name: (nm || geo(ip).name).trim() }; };
+/* نامِ ورودی — خواسته‌ی کاربر: اگر پسوندِ نام (ip#نام) نبود، هیچ اسمِ جعلی‌ای
+   ساخته نمی‌شود؛ خودِ IP برچسب می‌شود. کشورِ واقعی فقط برای سرورهای خروجی و
+   در buildList با geoReal (کوئری geojs) تکمیل می‌شود. */
+const ipName = (e) => { const [ip, nm] = String(e).split('#'); const i = String(ip).trim(); return { ip: i, name: (nm || i).trim() }; };
 function junk(p, i) { return p.startsWith('/') ? p : '/' + p; }
 /* پارامترهای ترنسپورت — فقط مقدارهای اسکالر (چون مستقیم داخل query string می‌روند) */
 /* جانک پایدار — با هر بار رفرش ساب عوض نمی‌شود تا کلاینت‌های ذخیره‌شده نشکنند */
@@ -2048,7 +2086,24 @@ async function uri(kind, u, s, entry, port, i, host) {
 
 async function buildList(u, s, url, cf) {
   const host = s.host || url.hostname;
-  const entries = ipsOf(u, s, cf).map(ipName);
+  /* خواسته‌ی کاربر: نام/آیکنِ کانفیگ باید کشورِ واقعیِ مقصدِ ترافیک باشد.
+     ۱) اگر سرور خروجی فعال تعریف شده، نامِ همان سرور (که ادمین انتخابش کرده) استفاده می‌شود.
+     ۲) وگرنه کشورِ واقعیِ IP ورودی با geoReal (کوئری geojs با کش) به‌دست می‌آید.
+     ۳) اگر نشد، خودِ IP — هیچ اسمِ جعلی‌ای از هش ساخته نمی‌شود. */
+  const rawIps = ipsOf(u, s, cf);
+  const ex = exitRoutingEnabled({ settings: s }) ? resolveExit({ settings: s }, u) : null;
+  const exitCountry = (ex && ex.mode === 'exit' && ex.server && ex.server.address) ? await geoReal(ex.server.address) : null;
+  const entries = [];
+  for (const raw of rawIps) {
+    const e = ipName(raw);
+    const hadName = String(raw).includes('#') && String(raw).split('#')[1] && String(raw).split('#')[1].trim();
+    if (!hadName) {
+      const g = (exitCountry && exitCountry.cc) ? exitCountry : (await geoReal(e.ip));
+      if (g && g.name) e.name = g.name;
+      /* g نبود → نام همان IP می‌ماند (بدون جعل) */
+    }
+    entries.push(e);
+  }
   const ports = portsOf(u, s);
   const protos = protoList(s, u);
   const limit = Number(u.maxConfigs) || Number(s.sub.nodeLimit) || 0;
@@ -2280,7 +2335,7 @@ const FALLBACK = `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="
 /* ═══════════ منبع ثابت UI — فقط همین سه فایل، غیرقابل تغییر ═══════════ */
 /* UI_REV: با هر تغییرِ UI یک واحد زیاد شود تا کشِ Cloudflare/گیت‌هاب نسخه‌ی
    قدیمی را برگرداند (کلیدِ کش‌شکن در URL) */
-const UI_REV = '20260902b';
+const UI_REV = '20260902c';
 const UI_SRC = {
   html: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/index.html?r=' + UI_REV,
   css: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/style.css?r=' + UI_REV,
@@ -4733,14 +4788,24 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         });
 
         // ===== رادار آی‌پی تمیز (کاملاً سمت مرورگر) =====
-        /* کل رنج 104.0.0.0/8 و 172.0.0.0/8 کلودفلر اسکن می‌شود */
-        const CF_RANGES = [];
-        for (let b2 = 0; b2 <= 255; b2++) CF_RANGES.push(['104.' + b2 + '.', 0, 255]);
-        for (let b2 = 0; b2 <= 255; b2++) CF_RANGES.push(['172.' + b2 + '.', 0, 255]);
+        /* رنج‌های رسمیِ کلودفلر (cloudflare.com/ips-v4) — همگام با صفحه‌ی جدید */
+        const CF_RANGES = [
+            ['104.16.', 0, 255], ['104.17.', 0, 255], ['104.18.', 0, 255], ['104.19.', 0, 255],
+            ['104.20.', 0, 255], ['104.21.', 0, 255], ['104.22.', 0, 255], ['104.23.', 0, 255],
+            ['104.24.', 0, 255], ['104.25.', 0, 255], ['104.26.', 0, 255], ['104.27.', 0, 255],
+            ['104.28.', 0, 255], ['104.29.', 0, 255], ['104.30.', 0, 255], ['104.31.', 0, 255],
+            ['172.64.', 0, 255], ['172.65.', 0, 255], ['172.66.', 0, 255], ['172.67.', 0, 255],
+            ['172.68.', 0, 255], ['172.69.', 0, 255], ['172.70.', 0, 255], ['172.71.', 0, 255],
+            ['162.158.', 0, 255],
+            ['188.114.96.', 0, 15], ['188.114.97.', 0, 15], ['188.114.98.', 0, 15], ['188.114.99.', 0, 15],
+            ['108.162.192.', 0, 255], ['108.162.193.', 0, 255], ['108.162.194.', 0, 255], ['108.162.195.', 0, 255],
+            ['141.101.64.', 0, 255], ['141.101.65.', 0, 255], ['141.101.66.', 0, 255], ['141.101.67.', 0, 255],
+            ['190.93.240.', 0, 255], ['197.234.240.', 0, 3], ['131.0.72.', 0, 7],
+            ['173.245.48.', 0, 255], ['103.21.244.', 0, 7], ['103.22.200.', 0, 7], ['103.31.4.', 0, 7],
+        ];
         const RADAR_PORTS = [443, 8443, 2053, 2083, 2087, 2096];
-        /* تایم‌اوت کوتاه‌تر و پروب کمتر = اسکن چند برابر سریع‌تر؛
-           آی‌پی مرده دیگر ۶ ثانیه هم بلاک نمی‌کند */
         const RADAR_TIMEOUT = 1200;
+        const RADAR_MIN_RTT = 60;      /* میلی‌ثانیه — کمتر از این = جعلی */
         const RADAR_PROBES = 2;
         const RADAR_CONCURRENCY = 16;
         const RADAR_IP_COUNT = 180;
@@ -4755,25 +4820,25 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             return r[0] + c + '.' + Math.floor(Math.random() * 256);
         }
 
-        // هم onload و هم onerror یعنی «هاست جواب داد»؛ ما دسترسی و تأخیر را می‌سنجیم نه موفقیت تصویر.
+        // پروب با fetch — همگام با صفحه‌ی جدید: خطای سریع یعنی زنده، تایم‌اوت یعنی مرده
         function pingIp(ip, port, timeout) {
             return new Promise(function(res) {
                 const t0 = performance.now();
                 let done = false;
-                const img = new Image();
                 const fin = function(ok) {
                     if (done) return;
                     done = true;
-                    img.onload = img.onerror = null;
+                    try { ctrl.abort(); } catch (e) {}
                     res(ok ? Math.round(performance.now() - t0) : null);
                 };
+                const ctrl = new AbortController();
                 const timer = setTimeout(function() { fin(false); }, timeout);
-                /* پروب با Image: مرورگر برای https://IP گواهی معتبر ندارد و درخواست
-                   همیشه خطا می‌دهد — اما لحظه‌ی خطا یعنی handshake کامل شده (لبه‌ی زنده).
-                   fetch برخلاف آن روی همان خطای گواهی reject می‌شود و هیچ‌وقت جواب نمی‌دهد. */
-                img.onerror = function() { clearTimeout(timer); fin(true); };
-                img.onload = function() { clearTimeout(timer); fin(true); };
-                img.src = 'https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random();
+                fetch('https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random(), {
+                    signal: ctrl.signal, mode: 'cors', cache: 'no-store',
+                }).then(function(r) { fin(true); }).catch(function(err) {
+                    if (err && err.name === 'AbortError') { fin(false); return; }
+                    fin(true);
+                });
             });
         }
 
@@ -4799,7 +4864,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 for (let p = 0; p < RADAR_PROBES; p++) {
                     if (radarCancelRequested) return null;
                     const rtt = await pingIp(ip, port, RADAR_TIMEOUT);
-                    if (rtt !== null) samples.push(rtt);
+                    if (rtt !== null && rtt >= RADAR_MIN_RTT) samples.push(rtt);
                 }
                 if (samples.length === 0) continue;
                 const avg = Math.round(samples.reduce(function(a, b) { return a + b; }, 0) / samples.length);
@@ -6125,7 +6190,21 @@ function renderUserPage(u, st, url, dailyUsed) {
       return 'https://t.me/' + String(raw).replace('@', '');
     })(),
   };
+  /* خواسته‌ی کاربر: صفحه‌ی قدیمی هرگز لود نشود. ترتیب: تمپلیت جدید
+     (new-subscription) → همگام‌سازی فوری از گیت‌هاب → آخرین نسخه‌ی کش‌شده.
+     USER_PAGE (نسخه‌ی پشتیبانِ داخلی) فقط وقتی گیت‌هاب در دسترس نیست و هیچ
+     کشی هم نداریم استفاده می‌شود — نه به‌عنوان جایگزینِ صفحه‌ی جدید. */
   let out = USER_HTML || USER_PAGE;
+  if (!USER_HTML) {
+    /* تلاش همگام‌سازی یک‌باره — تا اولین بازدیدِ غیرادمین هم صفحه‌ی جدید ببیند.
+       env اینجا در دسترس نیست؛ فقط واکشیِ تمپلیت لازم است نه ذخیره‌ی uiLoaded. */
+    try {
+      const get = (u, n) => fetch(u, { cf: { cacheTtl: 0, cacheEverything: false } })
+        .then((r) => { if (!r.ok) throw new Error(n + ' → ' + r.status); return r.text(); });
+      USER_HTML = await get(UI_SRC.userNew, 'new-subscription');
+      out = USER_HTML;
+    } catch (e) { try { USER_HTML = await fetch(UI_SRC.user.replace('?r=' + UI_REV, '?r=' + UI_REV + '&fb=1')).then((r) => r.ok ? r.text() : null); if (USER_HTML) out = USER_HTML; } catch (e2) { /* بی‌شبکه → fallback داخلی */ } }
+  }
   for (const k in map) out = out.split(k).join(map[k]);
   return new Response(out, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
 }
@@ -6152,12 +6231,16 @@ async function subHandler(req, env, url, cf, wantPage) {
       .filter((x) => /^\d{1,3}(\.\d{1,3}){3}$/.test(x))
       .slice(0, 20);
     if (!ips.length) return json({ ok: false, error: 'no valid ips' }, 400);
-    /* اعمال روی کانفیگ‌های همین کاربر — با برچسب جغرافیایی مثل فرمت پنل */
-    ru.cleanIPs = ips.map((ip) => ip + '#' + geo(ip, cf).name);
-    /* ذخیره در بخش آی‌پی‌های تمیز پنل — بدون تکرارِ آی‌پی */
+    /* خواسته‌ی کاربر: فقط خودِ IP ذخیره شود — بدون نام شهر یا هر پسوند دیگری.
+       (نامِ کشور موقعِ ساخت ساب و فقط برای سرور خروجی/IP واقعی به‌دست می‌آید.) */
+    ru.cleanIPs = ips.slice();
+    /* ذخیره در بخش آی‌پی‌های تمیز پنل — بدون تکرارِ آی‌پی، بدون پسوند نام */
     const have = new Set(s.cleanIPs.map((e) => String(e).split('#')[0]));
-    ips.forEach((ip) => { if (!have.has(ip)) s.cleanIPs.unshift(ip + '#' + geo(ip, cf).name); });
+    ips.forEach((ip) => { if (!have.has(ip)) s.cleanIPs.unshift(ip); });
     s.cleanIPs = s.cleanIPs.slice(0, 100);
+    /* لاگِ اسکنر در بخش لاگ‌های پنل ادمین — مشخصاتِ کاملِ اسکن */
+    addLog(st, 'success', 'radar', 'اسکن رادار — آی‌پی تمیز ذخیره شد',
+      'کاربر: ' + (ru.name || '—') + ' • یافت‌شده: ' + fa(ips.length) + ' • ' + ips.join(', ').slice(0, 300));
     save(env, st);
     return json({ ok: true, saved: ips.length, applied: ru.cleanIPs.length });
   }

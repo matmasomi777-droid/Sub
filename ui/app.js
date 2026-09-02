@@ -885,6 +885,9 @@
      بازه‌ی کوتاه‌تر از انتهای همان سری بریده می‌شود؛ بازه‌ی ۹۰ روزه اگر
      تاریخچه کمتر داشته باشد، همان مقدار موجود را نشان می‌دهد. */
   const DASH_CHART_KEY = 'sg_dash_chart';
+  /* ⚠️ یک واحد برای همه‌ی نمودارها — باگِ قبلی: داشبورد واحد را از
+     sg_dash_chart می‌خواند ولی تبدیلِ سری از sg_mon_unit؛ دو کلید از هم جدا
+     می‌افتادند و «مگابایت» انتخاب می‌شد ولی نمودار گیگ نشان می‌داد. */
   const MON_UNIT_KEY = 'sg_mon_unit';
   const tryGet = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } };
   const trySet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
@@ -892,9 +895,9 @@
   function dashChartCfg() {
     const raw = tryGet(DASH_CHART_KEY, '');
     const p = raw.split('|');
-    return { range: DASH_RANGES.some(([k]) => k === p[0]) ? p[0] : '30', unit: p[1] === 'MB' ? 'MB' : 'GB' };
+    return { range: DASH_RANGES.some(([k]) => k === p[0]) ? p[0] : '30', unit: chartUnitKey() };
   }
-  const dashChartSave = (c) => trySet(DASH_CHART_KEY, c.range + '|' + c.unit);
+  const dashChartSave = (c) => { trySet(DASH_CHART_KEY, c.range + '|' + chartUnitKey()); trySet(MON_UNIT_KEY, chartUnitKey()); };
   const chartUnitKey = () => (tryGet(MON_UNIT_KEY, 'GB') === 'MB' ? 'MB' : 'GB');
   const chartUnit = () => (chartUnitKey() === 'MB' ? ' MB' : ' GB');
   /* گیگابایت → واحد انتخابی */
@@ -916,7 +919,7 @@
     const c = dashChartCfg();
     return '<div class="chart-ctl" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:0 14px;margin-top:4px">' +
       '<div class="seg">' + DASH_RANGES.map(([k, l]) => '<button data-act="dash-range" data-v="' + k + '" class="' + (c.range === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
-      '<div class="seg">' + [['GB', 'گیگابایت'], ['MB', 'مگابایت']].map(([k, l]) => '<button data-act="dash-unit" data-v="' + k + '" class="' + (c.unit === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
+      '<div class="seg">' + [['GB', 'گیگابایت'], ['MB', 'مگابایت']].map(([k, l]) => '<button data-act="dash-unit" data-v="' + k + '" class="' + (chartUnitKey() === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
       '</div>';
   }
 
@@ -1321,9 +1324,10 @@
 
   function logsView() {
     const logs = S.d.logs || [], lv = S.tab.log || 'all';
-    const list = logs.filter((l) => lv === 'all' || l.level === lv);
+    /* فیلترِ «رادار» هم کنار سطوح — اسکنر صفحه‌ی کاربر اینجا لاگ می‌گذارد */
+    const list = logs.filter((l) => lv === 'all' || (lv === 'radar' ? l.actor === 'radar' : l.level === lv));
     return '<div class="page-head"><div><h1>لاگ فعالیت</h1><p>' + fa(logs.length) + ' رویداد • audit trail تغییرات ادمین</p></div>' +
-      '<div class="seg">' + [['all', 'همه'], ['success', 'موفق'], ['info', 'اطلاعات'], ['warn', 'هشدار'], ['error', 'خطا']].map(([k, l]) => '<button data-act="loglv" data-v="' + k + '" class="' + (lv === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div></div>' +
+      '<div class="seg">' + [['all', 'همه'], ['radar', 'رادار'], ['success', 'موفق'], ['info', 'اطلاعات'], ['warn', 'هشدار'], ['error', 'خطا']].map(([k, l]) => '<button data-act="loglv" data-v="' + k + '" class="' + (lv === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div></div>' +
       '<div class="card"><div class="bd">' +
       (list.map((l) => '<div class="log"><span class="dot ' + (l.level === 'success' ? 'on' : l.level === 'error' ? 'bad' : 'warn') + '"></span>' +
         '<div class="l"><b>' + esc(l.action) + '</b> <span class="badge">' + esc(l.actor) + '</span> <span class="badge ' + (l.level === 'error' ? 'bad' : l.level === 'success' ? 'ok' : 'b2') + '">' + esc(l.level) + '</span>' +
@@ -2025,7 +2029,7 @@
       else if (a === 'range') { S.range = v; render(); }
       /* ═══ کنترل‌های نمودار: بازه و واحد ═══ */
       else if (a === 'dash-range') { const c = dashChartCfg(); c.range = v; dashChartSave(c); render(); }
-      else if (a === 'dash-unit') { const c = dashChartCfg(); c.unit = v; dashChartSave(c); render(); }
+      else if (a === 'dash-unit') { trySet(MON_UNIT_KEY, v); render(); }
       else if (a === 'chart-unit') { trySet(MON_UNIT_KEY, v); render(); }
       else if (a === 'loglv') { S.tab.log = v; render(); }
       /* ═══════ اتصال‌های زنده — فقط بارخوانی ═══════

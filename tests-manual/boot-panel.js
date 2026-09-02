@@ -3,7 +3,7 @@ const { JSDOM } = require('jsdom');
 const fs = require('fs');
 const path = require('path');
 
-const ROOT = process.argv[2] || path.resolve(process.cwd(), 'Sub');
+const ROOT = process.argv[2] || path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(ROOT, 'ui/index.html'), 'utf8');
 const css = fs.readFileSync(path.join(ROOT, 'ui/style.css'), 'utf8');
 const js = fs.readFileSync(path.join(ROOT, 'ui/app.js'), 'utf8');
