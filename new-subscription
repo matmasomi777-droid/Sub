@@ -62,6 +62,11 @@
             --warn: #DB8A2A;
             --warn-rgb: 219, 138, 42;
             --nav-bg: #FFFFFF;
+            --hero-1: #FFFFFF;
+            --hero-2: #EAF6F4;
+            --hero-alert-1: #FDEBEA;
+            --hero-alert-2: #F7CFCB;
+            --ring-track: rgba(16, 21, 32, 0.09);
             --shadow: rgba(16, 21, 32, 0.08);
             --box-shadow-light: 0 6px 18px rgba(0,0,0,0.12);
             --notification-bg: rgba(255, 255, 255, 0.92);
@@ -87,13 +92,6 @@
 
         img { max-width: 100%; }
 
-        @media (max-width: 360px) {
-            body { padding: 16px 12px 100px 12px; }
-            .ip-copy-btn { padding: 6px 8px; font-size: 10px; }
-            .ip-address-text { font-size: 12px; }
-            .action-dropdown-container { padding: 12px; }
-            .action-dropdown-menu { padding: 12px; max-height: 82vh; }
-        }
 
         html[dir="ltr"] body { direction: ltr; }
         html[dir="rtl"] body { direction: rtl; }
@@ -384,16 +382,6 @@
         .subscription-card.disconnected .days-left span { color: var(--alert); }
         .expire-date { font-size: 12px; color: rgba(255,255,255,0.65) !important; font-weight: 600; }
 
-        .best-ping-row {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            margin-top: 8px;
-            font-size: 11.5px;
-            color: rgba(255,255,255,0.7);
-        }
-        .best-ping-row i { font-size: 11px; color: var(--accent); }
-        .best-ping-row .ping-value { font-size: 12px; }
 
         /* ===== ویجت جدید درصد باقی‌مانده: حلقه مایع ===== */
         .progress-circle {
@@ -409,9 +397,9 @@
             isolation: isolate;
             overflow: hidden;
             background:
-                radial-gradient(circle at 50% 42%, rgba(39, 31, 89, .95) 0 52%, transparent 53%),
-                conic-gradient(from -90deg, #b05cff 0 calc(var(--remaining-percent) * 1%), #5d7cff calc(var(--remaining-percent) * 1%) calc(var(--remaining-percent) * 1% + 4%), rgba(255,255,255,.08) 0 100%);
-            box-shadow: 0 0 34px rgba(123, 78, 255, .22), inset 0 0 24px rgba(255,255,255,.04);
+                radial-gradient(circle at 50% 42%, rgba(9, 12, 17, .95) 0 52%, transparent 53%),
+                conic-gradient(from -90deg, var(--accent-2) 0 calc(var(--remaining-percent) * 1%), var(--accent) calc(var(--remaining-percent) * 1%) calc(var(--remaining-percent) * 1% + 4%), rgba(255,255,255,.08) 0 100%);
+            box-shadow: 0 0 34px rgba(var(--accent-2-rgb), .22), inset 0 0 24px rgba(255,255,255,.04);
             transition: --remaining-percent .75s cubic-bezier(.2,.8,.2,1), box-shadow .35s ease;
         }
         .progress-circle::before {
@@ -419,9 +407,9 @@
             position: absolute;
             inset: 7px;
             border-radius: 50%;
-            background: linear-gradient(180deg, rgba(10,14,29,.97), rgba(15,13,37,.98));
-            border: 1px solid rgba(181,123,255,.22);
-            box-shadow: inset 0 0 24px rgba(89,68,255,.1);
+            background: linear-gradient(180deg, rgba(9,12,17,.97), rgba(18,22,31,.98));
+            border: 1px solid rgba(var(--accent-rgb), .25);
+            box-shadow: inset 0 0 24px rgba(var(--accent-2-rgb), .12);
             z-index: 0;
         }
         .progress-circle::after {
@@ -429,7 +417,7 @@
             position: absolute;
             inset: -8px;
             border-radius: 50%;
-            border: 1px dashed rgba(143,104,255,.26);
+            border: 1px dashed rgba(var(--accent-rgb), .26);
             animation: liquidOrbit 16s linear infinite;
             pointer-events: none;
         }
@@ -439,7 +427,7 @@
             border-radius: 50%;
             overflow: hidden;
             z-index: 1;
-            background: radial-gradient(circle at 50% 28%, rgba(142,90,255,.14), rgba(10,12,30,.9) 68%);
+            background: radial-gradient(circle at 50% 28%, rgba(var(--accent-rgb), .14), rgba(9,12,17,.9) 68%);
         }
         .liquid-fill {
             position: absolute;
@@ -448,9 +436,9 @@
             height: 120%;
             top: calc(100% - (var(--remaining-percent) * 1%));
             min-height: 18%;
-            background: linear-gradient(180deg, #bd66ff 0%, #7650ff 42%, #405cff 100%);
+            background: linear-gradient(180deg, var(--accent) 0%, color-mix(in oklab, var(--accent) 55%, var(--accent-2)) 42%, var(--accent-2) 100%);
             border-radius: 42% 48% 0 0;
-            box-shadow: 0 -8px 24px rgba(170,85,255,.45), inset 0 12px 18px rgba(255,255,255,.1);
+            box-shadow: 0 -8px 24px rgba(var(--accent-rgb), .35), inset 0 12px 18px rgba(255,255,255,.1);
             transition: top .8s cubic-bezier(.2,.8,.2,1);
             animation: liquidFloat 3.8s ease-in-out infinite alternate;
         }
@@ -463,7 +451,7 @@
             width: 116%;
             height: 20px;
             border-radius: 50%;
-            background: rgba(205,148,255,.52);
+            background: rgba(var(--accent-rgb), .5);
             filter: blur(.4px);
             animation: liquidWave 3.2s ease-in-out infinite alternate;
         }
@@ -472,7 +460,7 @@
             left: 4%;
             width: 104%;
             height: 13px;
-            background: rgba(93,141,255,.56);
+            background: rgba(var(--accent-2-rgb), .5);
             animation-duration: 2.6s;
             animation-direction: alternate-reverse;
         }
@@ -483,7 +471,7 @@
             height: 5px;
             border-radius: 50%;
             background: rgba(255,255,255,.55);
-            box-shadow: 0 0 8px rgba(203,161,255,.9);
+            box-shadow: 0 0 8px rgba(var(--accent-rgb), .7);
             animation: bubbleRise 3.5s ease-in infinite;
         }
         .liquid-bubble.b1 { left: 28%; bottom: 20%; animation-delay: -.8s; }
@@ -507,11 +495,11 @@
             margin-left: -3.5px;
             border-radius: 50%;
             background: #fff;
-            box-shadow: 0 0 10px 3px rgba(181,100,255,.95);
+            box-shadow: 0 0 10px 3px rgba(var(--accent-rgb), .95);
         }
-        .progress-text { position: relative; z-index: 5; text-align: center; text-shadow: 0 2px 10px rgba(0,0,0,.8); }
+        .progress-text { position: relative; z-index: 5; width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-align: center; text-shadow: 0 2px 10px rgba(0,0,0,.8); }
         .progress-text .percent { font-size: 22px; font-weight: 700; color: #fff; font-family: 'JetBrains Mono', monospace; }
-        .progress-text .label { font-size: 9px; color: #cbbcf4; display: block; margin-top: 2px; }
+        .progress-text .label { font-size: 10px; font-weight: 600; color: rgba(255,255,255,.85); display: block; margin-top: 2px; }
         .subscription-card.disconnected .progress-circle { filter: grayscale(.65); opacity: .7; }
         .subscription-card.disconnected .radar-sweep,
         .subscription-card.disconnected .liquid-fill { animation-play-state: paused; }
@@ -610,118 +598,6 @@
         }
         .promo-btn i { font-size: 18px; }
         .promo-btn.telegram i { color: #0088cc; }
-
-        /* ===== نوتیفیکیشن ===== */
-        .notification-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.5s ease;
-        }
-        .notification-overlay.show {
-            opacity: 1;
-            pointer-events: auto;
-        }
-
-        .notification-box {
-            background: var(--notification-bg);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1.5px solid rgba(var(--accent-rgb), 0.5);
-            border-radius: 24px;
-            padding: 28px 24px 24px;
-            max-width: 360px;
-            width: 90%;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(var(--accent-rgb), 0.1);
-            text-align: center;
-            transform: scale(0.85) translateY(20px);
-            transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.5s ease;
-            opacity: 0;
-        }
-        .notification-overlay.show .notification-box {
-            transform: scale(1) translateY(0);
-            opacity: 1;
-        }
-
-        .notification-box .icon {
-            font-size: 32px;
-            color: var(--accent);
-            margin-bottom: 12px;
-            display: block;
-        }
-        .notification-box .title {
-            font-size: 17px;
-            font-weight: 700;
-            color: var(--text);
-            margin-bottom: 6px;
-        }
-        .notification-box .desc {
-            font-size: 14px;
-            color: var(--text-muted);
-            line-height: 1.6;
-            margin-bottom: 18px;
-        }
-        .notification-box .timer-bar {
-            width: 100%;
-            height: 3px;
-            background: rgba(var(--accent-rgb), 0.2);
-            border-radius: 4px;
-            margin-bottom: 18px;
-            overflow: hidden;
-        }
-        .notification-box .timer-bar .fill {
-            height: 100%;
-            width: 100%;
-            background: var(--accent);
-            border-radius: 4px;
-            transition: width 0.1s linear;
-        }
-
-        .notification-actions {
-            display: flex;
-            gap: 12px;
-            justify-content: center;
-        }
-        .notification-btn {
-            padding: 10px 24px;
-            border-radius: 14px;
-            font-size: 14px;
-            font-weight: 700;
-            border: none;
-            cursor: pointer;
-            transition: all 0.25s ease;
-            min-width: 100px;
-        }
-        .notification-btn:hover {
-            transform: scale(1.04);
-        }
-        .notification-btn:active {
-            transform: scale(0.96);
-        }
-        .notification-btn.danger {
-            background: rgba(var(--alert-rgb), 0.15);
-            color: var(--alert);
-            border: 1px solid rgba(var(--alert-rgb), 0.3);
-        }
-        .notification-btn.danger:hover {
-            background: rgba(var(--alert-rgb), 0.25);
-        }
-        .notification-btn.primary {
-            background: rgba(var(--accent-rgb), 0.2);
-            color: var(--accent);
-            border: 1px solid rgba(var(--accent-rgb), 0.4);
-        }
-        .notification-btn.primary:hover {
-            background: rgba(var(--accent-rgb), 0.35);
-        }
 
         /* ===== گرید جزئیات ===== */
         .details-grid {
@@ -1111,40 +987,6 @@
         }
         .client-download-btn:hover { background-color: var(--accent); color: #06110F; }
 
-        /* ===== کارت طراح ===== */
-        .designer-card {
-            background-color: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            padding: 10px 14px;
-            margin-top: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            box-shadow: var(--box-shadow-light);
-        }
-        .designer-info { display: flex; align-items: center; gap: 8px; }
-        .designer-text-label { font-size: 11px; color: var(--text-muted); font-weight: 500; }
-        .designer-name-title {
-            font-size: 12px;
-            font-weight: 700;
-            color: var(--accent);
-            font-family: 'JetBrains Mono', monospace;
-            cursor: pointer;
-            transition: color 0.2s;
-            text-decoration: none;
-        }
-        .designer-name-title:hover { color: var(--accent-2); }
-        .designer-tg-btn {
-            font-size: 15px;
-            color: var(--text-muted);
-            text-decoration: none;
-            transition: all 0.25s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .designer-tg-btn:hover { color: var(--accent); transform: scale(1.1); }
 
         /* ===== ناوبری پایین ===== */
         .bottom-nav {
@@ -1180,12 +1022,179 @@
             border-radius: 16px;
             color: var(--accent);
         }
+        /* ===== رادار آی‌پی تمیز — کارتِ کامل و همیشه‌نما (بدون دکمه‌ی باز کردن) ===== */
+        .radar-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 10px 25px var(--shadow);
+            padding: 16px;
+            margin-bottom: 16px;
+            width: 100%;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            justify-content: flex-start;
+            gap: 10px;
+            text-align: right;
+        }
+        html[dir="ltr"] .radar-card { text-align: left; }
+        .radar-head { display: flex; flex-direction: column; gap: 2px; padding: 2px 4px; }
+        .radar-title { font-size: 13px; font-weight: 700; color: var(--text); }
+        .radar-hint { font-size: 10px; color: var(--text-muted); }
+        .radar-start-btn {
+            background: rgba(var(--accent-rgb), 0.15);
+            border: 1px solid rgba(var(--accent-rgb), 0.3);
+            color: var(--text);
+            padding: 8px 14px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        .radar-start-btn:hover { background: var(--accent); color: #06110F; }
+        .radar-start-btn.running { background: rgba(var(--warn-rgb), 0.15); border-color: rgba(var(--warn-rgb), 0.35); color: var(--warn); }
+        .radar-progress-track { width: 100%; height: 6px; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+        .radar-progress-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.2s; }
+        .radar-status { font-size: 11px; color: var(--text-muted); padding: 0 4px; min-height: 14px; }
+        /* ===== حالت روز — کارت اشتراک و حلقه‌ی درصد ===== */
+        body.light-mode .subscription-card { border-color: rgba(var(--accent-rgb), 0.25); }
+        body.light-mode .subscription-card.disconnected {
+            border-color: rgba(var(--alert-rgb), 0.4);
+            box-shadow: inset 0 0 24px rgba(var(--alert-rgb), 0.12), var(--box-shadow-light);
+        }
+        body.light-mode .subscription-card::before {
+            background-image: linear-gradient(rgba(16,21,32,0.03) 1px, transparent 1px),
+                               linear-gradient(90deg, rgba(16,21,32,0.03) 1px, transparent 1px);
+        }
+        body.light-mode .active-badge { color: var(--text); }
+        body.light-mode .days-left { color: var(--text); }
+        body.light-mode .expire-date { color: var(--text-muted) !important; }
+        /* ===== نمایشگر بزرگ QR ===== */
+        .qr-big-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .65);
+            backdrop-filter: blur(3px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            /* باید از دراپ‌داون‌های QR/کانفیگ (z-index:9998) بالاتر باشد وگرنه
+               مودال پشت کادر باز‌شده گیر می‌کند */
+            z-index: 10000;
+            padding: 20px;
+        }
+        .qr-big-overlay.show { display: flex; }
+        .qr-big-box {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 18px;
+            width: 100%;
+            max-width: 340px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            box-shadow: var(--box-shadow-light);
+        }
+        .qr-big-head { width: 100%; display: flex; align-items: center; justify-content: space-between; }
+        .qr-big-title { font-size: 13px; font-weight: 700; color: var(--text); }
+        .qr-big-close {
+            background: var(--surface-alt);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            border-radius: 10px;
+            width: 32px;
+            height: 32px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+        .qr-big-close:hover { color: var(--text); }
+        .qr-big-img { width: 248px; height: 248px; background: #fff; border-radius: 14px; padding: 12px; box-sizing: content-box; }
+        .qr-big-remark { font-size: 12px; color: var(--text-muted); text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        /* ===== ریسپانسیو (انتهای استایل تا بر قوانین پایه غلبه کند) ===== */
+        /* دسکتاپ — دقیقاً هم‌رویکرد صفحه‌ی ساب قبلی: body بدون سقف عرض،
+           محتوا تا ۱۱۸۰px وسط‌چین و داشبورد گرید دوستونه (کارت اشتراک و
+           رادار و جزئیات و دکمه‌ها تمام‌عرض) */
+        @media (min-width: 769px) {
+            body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
+            .header, #screen-dashboard, #screen-download-apps { width: 100%; max-width: 1180px; margin-left: auto; margin-right: auto; }
+            .bottom-nav { max-width: 1180px; width: calc(100% - 48px); border: 1px solid var(--border); border-bottom: 0; border-radius: 18px 18px 0 0; }
+            #screen-dashboard { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; align-items: stretch; }
+            #screen-dashboard > .subscription-card { grid-column: 1/-1; }
+            #screen-dashboard > .stats-card { grid-column: 1; margin-bottom: 0; }
+            #screen-dashboard > .promo-card { grid-column: 2; margin-bottom: 0; height: 100%; }
+            #screen-dashboard > .radar-card,
+            #screen-dashboard > .action-dropdown-container { grid-column: 1/-1; }
+            #screen-dashboard > .details-grid { grid-column: 1/-1; grid-template-columns: repeat(4,minmax(0,1fr)); }
+            #screen-dashboard > .actions-grid { grid-column: 1/-1; gap: 12px; }
+            .subscription-card { min-height: 180px; padding: 28px 32px; }
+            .progress-circle { width: 132px; height: 132px; }
+            .days-left { font-size: 42px; }
+            .action-card { padding: 20px 10px; }
+            .action-label { font-size: 12px; }
+        }
+
+        @media (min-width: 1200px) {
+            body { padding-left: 40px; padding-right: 40px; }
+            .header, #screen-dashboard, #screen-download-apps { max-width: 1280px; }
+            .bottom-nav { max-width: 1280px; width: calc(100% - 80px); }
+        }
+
+        @media (max-width: 480px) {
+            .subscription-card { padding: 20px 16px; }
+            .progress-circle { width: 104px; height: 104px; }
+            .days-left { font-size: 32px; }
+        }
+
+        @media (max-width: 420px) {
+            body { padding: 16px 12px 100px 12px; }
+            .subscription-card { padding: 18px 14px; gap: 10px; }
+            .days-left { font-size: 27px; }
+            .expire-date { font-size: 11px; }
+            .progress-circle { width: 94px; height: 94px; }
+            .progress-text .percent { font-size: 19px; }
+            .stats-card { flex-wrap: wrap; padding: 14px 8px; row-gap: 14px; }
+            .stat-item { flex: 0 0 50%; }
+            .stat-divider { display: none; }
+            .stat-title { font-size: 10px; }
+            .stat-value { font-size: 13px; }
+            .actions-grid { gap: 8px; }
+            .action-card { padding: 15px 2px; }
+            .action-label { font-size: 10px; }
+            .user-name { min-width: 0; }
+            .username-text { display: inline-block; max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+            .ip-copy-btn { padding: 6px 8px; font-size: 10px; }
+            .ip-address-text { font-size: 12px; }
+            .action-dropdown-container { padding: 12px; }
+            .action-dropdown-menu { padding: 12px; max-height: 82vh; }
+        }
+
+        @media (max-width: 360px) {
+            body { padding: 14px 8px 100px 8px; }
+            .days-left { font-size: 24px; }
+            .progress-circle { width: 84px; height: 84px; }
+            .progress-text .percent { font-size: 17px; }
+            .qr-big-img { width: 190px; height: 190px; }
+        }
     </style>
 </head>
 <body>
 
     <svg style="position: absolute; width: 0; height: 0;" width="0" height="0">
         <defs>
+            <!-- گرادیانِ آیکنِ سلام — هم‌خانواده‌ی پالت پنل (تیل/فیروزه‌ای)، نامِ id برای سازگاری حفظ شده -->
             <linearGradient id="premiumPurpleNeon" x1="0%" y1="0%" x2="0%" y2="100%">
                 <stop offset="0%" stop-color="#5EEAD4"/>
                 <stop offset="50%" stop-color="#2DD4BF"/>
@@ -1195,18 +1204,6 @@
     </svg>
 
     <!-- ===== نوتیفیکیشن ===== -->
-    <div class="notification-overlay" id="notificationOverlay">
-        <div class="notification-box" id="notificationBox">
-            <span class="icon">🔔</span>
-            <div class="title">آیا مشکلی در اتصال کانفیگ دارید؟</div>
-            <div class="desc">به پشتیبانی پیام بدهید</div>
-            <div class="timer-bar">
-                <div class="fill" id="timerFill"></div>
-            </div>
-            <div class="notification-actions">
-                <button class="notification-btn danger" id="notificationDismiss">خیر</button>
-                <button class="notification-btn primary" id="notificationSupport">پشتیبانی</button>
-            </div>
         </div>
     </div>
 
@@ -1254,11 +1251,6 @@
                 </div>
                 <div class="days-left en-font" id="live-days-count">0 <span id="days-label">روز</span></div>
                 <div class="expire-date" id="expire-date">تاریخ انقضا: --</div>
-                <div class="best-ping-row">
-                    <i class="fa-solid fa-gauge-high"></i>
-                    <span id="best-ping-label">بهترین پینگ:</span>
-                    <span class="ping-value muted en-font" id="best-ping-value">در حال بررسی...</span>
-                </div>
             </div>
             <div class="status-left">
                 <div class="progress-circle" id="sub-progress-circle">
@@ -1281,7 +1273,7 @@
         <div class="stats-card">
             <div class="stat-item">
                 <div class="stat-header-row">
-                    <div class="stat-icon-wrapper"><i class="fa-solid fa-database" style="color: #4C8DFF;"></i></div>
+                    <div class="stat-icon-wrapper"><i class="fa-solid fa-database" style="color: var(--accent-2);"></i></div>
                     <div class="stat-title" id="title-limit">حجم کلی</div>
                 </div>
                 <div class="stat-value purple-value en-font" id="stat-limit">0 GB</div>
@@ -1289,7 +1281,7 @@
             <div class="stat-divider"></div>
             <div class="stat-item">
                 <div class="stat-header-row">
-                    <div class="stat-icon-wrapper"><i class="fa-solid fa-chart-pie" style="color: #2DD4BF;"></i></div>
+                    <div class="stat-icon-wrapper"><i class="fa-solid fa-chart-pie" style="color: var(--accent);"></i></div>
                     <div class="stat-title" id="title-total">مصرف کل</div>
                 </div>
                 <div class="stat-value en-font" id="stat-total-val">0 B</div>
@@ -1297,7 +1289,7 @@
             <div class="stat-divider"></div>
             <div class="stat-item">
                 <div class="stat-header-row">
-                    <div class="stat-icon-wrapper"><i class="fa-solid fa-arrow-down" style="color: #4C8DFF;"></i></div>
+                    <div class="stat-icon-wrapper"><i class="fa-solid fa-arrow-down" style="color: var(--accent-2);"></i></div>
                     <div class="stat-title" id="title-download">دانلود</div>
                 </div>
                 <div class="stat-value en-font" id="stat-dl-val">0 B</div>
@@ -1305,7 +1297,7 @@
             <div class="stat-divider"></div>
             <div class="stat-item">
                 <div class="stat-header-row">
-                    <div class="stat-icon-wrapper"><i class="fa-solid fa-arrow-up" style="color: #F4A94A;"></i></div>
+                    <div class="stat-icon-wrapper"><i class="fa-solid fa-arrow-up" style="color: var(--warn);"></i></div>
                     <div class="stat-title" id="title-upload">آپلود</div>
                 </div>
                 <div class="stat-value en-font" id="stat-ul-val">0 B</div>
@@ -1319,10 +1311,25 @@
                 با پشتیبانی تماس بگیرید.
             </div>
             <div class="promo-buttons" style="justify-content: center;">
-                <a href="https://t.me/Masih_psn" target="_blank" class="promo-btn telegram" id="promo-support-link">
+                <a href="__TG_CHANNEL__" target="_blank" class="promo-btn telegram" id="promo-support-link">
                     <i class="fa-brands fa-telegram"></i> تلگرام
                 </a>
             </div>
+        </div>
+
+        <!-- رادار آی‌پی تمیز — سه ردیف پایین‌تر از کارت‌های اصلی؛ اسکن روی پورت‌های کانفیگ انجام می‌شود -->
+        <div class="radar-card" id="radar-card">
+            <div class="radar-head">
+                <span class="radar-title" id="radar-title">رادار آی‌پی تمیز</span>
+                <span class="radar-hint" id="radar-hint">کاملاً در مرورگر شما اجرا می‌شود — اسکن روی پورت‌های کانفیگ</span>
+            </div>
+            <button class="radar-start-btn" id="radar-start-btn">
+                <i class="fa-solid fa-satellite-dish"></i> <span id="radar-start-label">شروع اسکن</span>
+            </button>
+            <div class="radar-progress-track">
+                <div class="radar-progress-bar" id="radar-progress-bar"></div>
+            </div>
+            <div class="radar-status" id="radar-status">آماده برای اسکن</div>
         </div>
 
         <!-- گرید جزئیات -->
@@ -1380,7 +1387,7 @@
                     <button class="dropdown-close-btn" id="close-qr-dropdown"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <div class="action-dropdown-body" id="list-qr-ips">
-                    <span style="color:#6c6c8c;" id="qr-empty-msg">خالی</span>
+                    <span style="color:var(--text-muted);" id="qr-empty-msg">خالی</span>
                 </div>
             </div>
         </div>
@@ -1392,21 +1399,11 @@
                     <button class="dropdown-close-btn" id="close-config-dropdown"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <div class="action-dropdown-body" id="list-config-ips">
-                    <span style="color:#6c6c8c;" id="config-empty-msg">خالی</span>
+                    <span style="color:var(--text-muted);" id="config-empty-msg">خالی</span>
                 </div>
             </div>
         </div>
 
-        <!-- کارت طراح -->
-        <div class="designer-card">
-            <div class="designer-info">
-                <span class="designer-text-label" id="designer-lbl">سازنده تم:</span>
-                <a href="https://t.me/Masih_psn" target="_blank" class="designer-name-title en-font">@Masih_psn</a>
-            </div>
-            <a class="designer-tg-btn" href="https://t.me/Masih_psn" target="_blank" title="Telegram">
-                <i class="fa-brands fa-telegram"></i>
-            </a>
-        </div>
     </div>
 
     <div id="screen-download-apps" class="app-screen">
@@ -1426,7 +1423,7 @@
             <a href="#" id="btn-dl-client1" target="_blank" class="client-download-btn">دانلود</a>
             <div class="client-info-side">
                 <div class="client-details">
-                    <div class="client-title-text" id="title-client1">v2rayNG</div>
+                    <div class="client-title-text" id="title-client1">V2Box</div>
                     <div class="client-subtitle-text" id="sub-client1">کلاینت رسمی فروشگاه</div>
                 </div>
                 <div class="client-icon-box"><i class="fa-solid fa-paper-plane" id="icon-client1"></i></div>
@@ -1436,7 +1433,7 @@
             <a href="#" id="btn-dl-client2" target="_blank" class="client-download-btn">دانلود</a>
             <div class="client-info-side">
                 <div class="client-details">
-                    <div class="client-title-text" id="title-client2">Hiddify Next</div>
+                    <div class="client-title-text" id="title-client2">Hiddify</div>
                     <div class="client-subtitle-text" id="sub-client2">کلاینت رسمی فروشگاه</div>
                 </div>
                 <div class="client-icon-box"><i class="fa-solid fa-shield-halved" id="icon-client2"></i></div>
@@ -1467,6 +1464,18 @@
         </div>
     </div>
 
+    <!-- نمایشگر بزرگ QR -->
+    <div class="qr-big-overlay" id="qrBigOverlay">
+        <div class="qr-big-box">
+            <div class="qr-big-head">
+                <span class="qr-big-title" id="qr-big-title">QR Code</span>
+                <button class="qr-big-close" id="qr-big-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <img class="qr-big-img" id="qr-big-img" alt="QR" />
+            <div class="qr-big-remark en-font" id="qr-big-remark"></div>
+        </div>
+    </div>
+
     <script>
         // ================================================================
         // آیدی تلگرام پشتیبانی — برای تغییر، فقط همین مقدار رو عوض کن
@@ -1474,35 +1483,32 @@
         // همه‌جای سایت (کارت تبلیغاتی، دکمه تمدید، پاپ‌آپ نوتیفیکیشن)
         // از همین یک متغیر استفاده می‌کنن
         // ================================================================
-        const SUPPORT_TELEGRAM_ID = "Masih_psn";
-        const SUPPORT_TELEGRAM_URL = `https://t.me/${SUPPORT_TELEGRAM_ID}`;
+        // لینک تلگرام پشتیبانی از پنل تزریق می‌شود (__TG_CHANNEL__ در worker.js)
+        const SUPPORT_TELEGRAM_URL = "__TG_CHANNEL__";
 
-        // ===== داده‌های دریافتی از پنل =====
+        // ===== داده‌های دریافتی از پنل (worker.js — جایگزین تمپلیت Go) =====
+        // Placeholderهای پنل با همان فرمتِ تمپلیت (bytes/ثانیه) مقداردهی می‌شوند؛
+        // fetchLiveSubscriptionData همین‌ها را با هدر subscription-userinfo زنده به‌روز می‌کند.
         const sanaeiTemplateData = {
-            sId: "{{ .sId }}",
-            enabled: {{ .enabled }},
-            expireSeconds: {{ .expire }},
-            downloadByte: {{ .downloadByte }},
-            uploadByte: {{ .uploadByte }},
-            totalByte: {{ .totalByte }},
-            subUrl: "{{ .subUrl }}",
-            subJsonUrl: "{{ .subJsonUrl }}",
-            subClashUrl: "{{ .subClashUrl }}",
-            subTitle: "{{ .subTitle }}",
-            subSupportUrl: "{{ .subSupportUrl }}",
-            datepicker: "{{ .datepicker }}",
-            lastOnline: {{ .lastOnline }},
-            emails: [{{ range $i, $e := .emails }}{{ if $i }},{{ end }}"{{ $e }}"{{ end }}],
-            links: [{{ range $i, $l := .links }}{{ if $i }},{{ end }}"{{ $l }}"{{ end }}]
+            enabled: ("__STATUS_CODE__" === "active"),
+            statusCode: "__STATUS_CODE__",
+            expireSeconds: parseInt("__EXPIRE_SECONDS__", 10) || 0,
+            downloadByte: parseInt("__USED_BYTES__", 10) || 0,
+            uploadByte: 0,
+            totalByte: parseInt("__LIMIT_BYTES__", 10) || 0,
+            subUrl: "__SYNC_NORMAL__",
+            subTitle: "__PANEL_NAME__",
+            subSupportUrl: "__TG_CHANNEL__",
+            lastOnline: parseInt("__LAST_ONLINE_MS__", 10) || 0,
+            emails: ["__USER_NAME__"],
+            links: []
         };
 
         // ===== متغیرهای سراسری =====
         let currentLang = 'fa';
         let isServerConnected = sanaeiTemplateData.enabled;
+        let serverStatus = sanaeiTemplateData.statusCode || "active";   // active | paused | expired | limit | dailyLimit
         let liveRefreshTimer = null;
-        let notificationTimer = null;
-        let notificationTimeout = null;
-        let timerInterval = null;
 
         // ===== توابع کمکی =====
         function calculateDaysLeft(expireSeconds) {
@@ -1527,6 +1533,7 @@
         const initialExpiryDates = generateExpiryDates(sanaeiTemplateData.expireSeconds);
 
         let sanaeiClientData = {
+            statusCode: sanaeiTemplateData.statusCode || "active",
             username: (sanaeiTemplateData.emails && sanaeiTemplateData.emails.length > 0) ? sanaeiTemplateData.emails[0] : "کاربر",
             daysLeft: calculateDaysLeft(sanaeiTemplateData.expireSeconds),
             expireSeconds: sanaeiTemplateData.expireSeconds,
@@ -1542,34 +1549,46 @@
             lastOnline: sanaeiTemplateData.lastOnline || 0
         };
 
+        /* وضعیت نهایی: اول کد پنل (paused/دailyLimit فقط از سرور می‌آید)،
+           بعد بازمحاسبه‌ی محلی انقضا/سهمیه با داده‌ی زنده */
         function updateConnectionStatus() {
             const now = Date.now();
             const totalUsage = sanaeiClientData.downloadByte + sanaeiClientData.uploadByte;
             const isExpired = sanaeiClientData.expireSeconds > 0 && (sanaeiClientData.expireSeconds * 1000) < now;
             const isOverQuota = sanaeiClientData.totalByte > 0 && totalUsage >= sanaeiClientData.totalByte;
-            isServerConnected = !isExpired && !isOverQuota;
+            serverStatus = sanaeiClientData.statusCode || "active";
+            if (serverStatus === "active") {
+                if (isExpired) serverStatus = "expired";
+                else if (isOverQuota) serverStatus = "limit";
+            }
+            isServerConnected = serverStatus === "active";
         }
 
         if (sanaeiClientData.daysLeft === -1) {
             isServerConnected = false;
+            if (serverStatus === "active") serverStatus = "expired";
         } else {
             updateConnectionStatus();
         }
 
+        /* لینک‌های رسمی — همه با iTunes Lookup API و HTTP 200 بررسی شدند:
+           V2Box: dev.hexasoftware.v2box (Play) / id6446814690 (App Store)
+           Hiddify: app.hiddify.com (Play) / id6596777532 (App Store)
+           Streisand: id6450534064 (App Store) — کلاینت sing-box/xray اپل */
         const appDownloadLinks = {
             android: {
-                c1: { name: "v2rayNG", url: "https://play.google.com/store/apps/details?id=com.v2ray.ang" },
-                c2: { name: "Hiddify Next", url: "https://play.google.com/store/apps/details?id=fg.hiddify.com" },
-                c3: { name: "KP2P / sing-box", url: "https://play.google.com/store/apps/details?id=io.nekohasekai.sfa" }
+                c1: { name: "V2Box", url: "https://play.google.com/store/apps/details?id=dev.hexasoftware.v2box" },
+                c2: { name: "Hiddify", url: "https://play.google.com/store/apps/details?id=app.hiddify.com" },
+                c3: { name: "sing-box (SFA)", url: "https://play.google.com/store/apps/details?id=io.nekohasekai.sfa" }
             },
             ios: {
-                c1: { name: "FoXray", url: "https://apps.apple.com/us/app/foxray/id6448898375" },
-                c2: { name: "Hiddify Next", url: "https://apps.apple.com/us/app/hiddify-next/id6473611382" },
-                c3: { name: "sing-box", url: "https://apps.apple.com/us/app/sing-box/id6443657551" }
+                c1: { name: "V2Box", url: "https://apps.apple.com/us/app/v2box-v2ray-client/id6446814690" },
+                c2: { name: "Hiddify", url: "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532" },
+                c3: { name: "Streisand", url: "https://apps.apple.com/us/app/streisand/id6450534064" }
             },
             desktop: {
                 c1: { name: "v2rayN (Windows)", url: "https://github.com/2dust/v2rayN/releases" },
-                c2: { name: "Hiddify (Win/Mac)", url: "https://apps.microsoft.com/detail/hiddify" },
+                c2: { name: "Hiddify (Win/Mac)", url: "https://github.com/hiddify/hiddify-app/releases" },
                 c3: { name: "NekoRay (Win/Linux)", url: "https://github.com/MatsuriDayo/nekoray/releases" }
             }
         };
@@ -1584,27 +1603,34 @@
         const locales = {
             fa: {
                 dir: "rtl", greet: "سلام ", badgeActive: "فعال", badgeInactive: "غیرفعال",
+                badgeBlocked: "مسدود", badgeExpired: "منقضی", badgeLimit: "اتمام حجم", badgeDailyLimit: "سهمیه روزانه",
                 daysUnit: "روز", remainingLabel: "باقی‌مانده", titleLimit: "حجم کلی", titleTotal: "مصرف کل",
                 titleDownload: "دانلود", titleUpload: "آپلود",
                 detailTotal: "مصرف کل", detailRemaining: "باقی‌مانده", detailRemainingVolume: "حجم باقی‌مانده", detailLastConnect: "آخرین اتصال",
                 actionRenew: "تمدید ساب", actionCopy: "کپی لینک ساب", actionCopied: "کپی شد!",
-                actionQr: "QR Code", actionConfig: "کپی کانفیگ", copyAllBtn: "کپی همه کانفیگ‌ها",
+                actionQr: "دیدن QR کد", actionConfig: "کپی کانفیگ", copyAllBtn: "کپی همه کانفیگ‌ها",
                 navDashboard: "<i class='fa-solid fa-house'></i>داشبورد", navDownload: "<i class='fa-solid fa-download'></i>دانلود برنامه",
                 dlScreenTitle: "دانلود برنامه ها", dlSubtitle: "کلاینت رسمی فروشگاه", btnDl: "دانلود",
                 tabAndroid: "اندروید", tabIos: "آیفون / آیپد", tabDesktop: "ویندوز / مک",
-                designerLbl: "سازنده تم:", expiredText: "منقضی", unlimitedText: "نامحدود", emptyConfigs: "خالی", copyBtnText: "کپی",
+                expiredText: "منقضی", unlimitedText: "نامحدود", emptyConfigs: "خالی", copyBtnText: "کپی",
+                showQrText: "دیدن QR کد",
                 lastConnectUnknown: "--", onlineText: "آنلاین", offlineText: "آفلاین",
                 promoText: "آیا نیاز به <span>خرید</span> یا <span>تمدید ساب</span> دارید؟<br>با پشتیبانی تماس بگیرید.",
                 promoTelegram: "تلگرام",
-                notificationTitle: "آیا مشکلی در اتصال کانفیگ دارید؟",
-                notificationDesc: "به پشتیبانی پیام بدهید",
-                notificationDismiss: "خیر",
-                notificationSupport: "پشتیبانی",
-                pingChecking: "در حال بررسی...", pingTimeout: "بدون پاسخ", bestPingLabel: "بهترین پینگ:",
+                radarTitle: "رادار آی‌پی تمیز", radarHint: "کاملاً در مرورگر شما اجرا می‌شود — اسکن روی پورت‌های کانفیگ",
+                radarStart: "شروع اسکن", radarStop: "توقف", radarStatusReady: "آماده برای اسکن",
+                radarStatusScan: "در حال اسکن... {done} از {total} - یافت‌شده: {found}",
+                radarStatusDone: "پایان اسکن - {found} آی‌پی سالم یافت شد",
+                radarStatusSaving: "در حال ذخیره در پنل...", radarStatusSaved: "{count} آی‌پی تمیز ذخیره و روی کانفیگ‌های شما اعمال شد", radarStatusSaveFail: "ذخیره‌ی آی‌پی‌ها در پنل ناموفق بود",
+                radarStatusStopping: "در حال توقف...", radarStatusStopped: "اسکن متوقف شد",
+                radarStatusNoTlsPort: "هیچ پورت TLS قابل‌اسکنی در کانفیگ‌ها یافت نشد",
+                radarStatusNoResult: "آی‌پی سالمی یافت نشد",
+                radarStatusNoConfig: "کانفیگ vless در این ساب یافت نشد",
                 qrModalTitle: "QR Code", configModalTitle: "کپی کانفیگ"
             },
             en: {
                 dir: "ltr", greet: "Hello ", badgeActive: "Active", badgeInactive: "Inactive",
+                badgeBlocked: "Blocked", badgeExpired: "Expired", badgeLimit: "Quota Used", badgeDailyLimit: "Daily Limit",
                 daysUnit: "Days", remainingLabel: "Remaining", titleLimit: "Total Limit", titleTotal: "Total Usage",
                 titleDownload: "Download", titleUpload: "Upload",
                 detailTotal: "Total Usage", detailRemaining: "Remaining", detailRemainingVolume: "Remaining Volume", detailLastConnect: "Last Connect",
@@ -1613,19 +1639,25 @@
                 navDashboard: "<i class='fa-solid fa-house'></i>Dashboard", navDownload: "<i class='fa-solid fa-download'></i>App",
                 dlScreenTitle: "Download Clients", dlSubtitle: "Official Store Client", btnDl: "Get App",
                 tabAndroid: "Android", tabIos: "iPhone / iPad", tabDesktop: "Win / Mac",
-                designerLbl: "Theme Developer:", expiredText: "Expired", unlimitedText: "Unlimited", emptyConfigs: "Empty", copyBtnText: "Copy",
+                expiredText: "Expired", unlimitedText: "Unlimited", emptyConfigs: "Empty", copyBtnText: "Copy",
+                showQrText: "View QR Code",
                 lastConnectUnknown: "--", onlineText: "Online", offlineText: "Offline",
                 promoText: "Need to <span>buy</span> or <span>renew</span> your subscription?<br>Contact support.",
                 promoTelegram: "Telegram",
-                notificationTitle: "Having trouble connecting?",
-                notificationDesc: "Contact support",
-                notificationDismiss: "No",
-                notificationSupport: "Support",
-                pingChecking: "Checking...", pingTimeout: "No response", bestPingLabel: "Best Ping:",
+                radarTitle: "Clean IP Radar", radarHint: "Runs entirely in your browser — scans config ports",
+                radarStart: "Start Scan", radarStop: "Stop", radarStatusReady: "Ready to scan",
+                radarStatusScan: "Scanning... {done} of {total} - found: {found}",
+                radarStatusDone: "Scan finished - {found} healthy IPs found",
+                radarStatusSaving: "Saving to panel...", radarStatusSaved: "{count} clean IPs saved and applied to your configs", radarStatusSaveFail: "Failed to save IPs to the panel",
+                radarStatusStopping: "Stopping...", radarStatusStopped: "Scan stopped",
+                radarStatusNoTlsPort: "No probeable TLS port found in configs",
+                radarStatusNoResult: "No healthy IP found",
+                radarStatusNoConfig: "No vless config found in this subscription",
                 qrModalTitle: "QR Code", configModalTitle: "Copy Config"
             },
             tr: {
                 dir: "ltr", greet: "Merhaba ", badgeActive: "Aktif", badgeInactive: "Pasif",
+                badgeBlocked: "Engellendi", badgeExpired: "Süresi Doldu", badgeLimit: "Kota Bitti", badgeDailyLimit: "Günlük Limit",
                 daysUnit: "Gün", remainingLabel: "Kalan", titleLimit: "Toplam Kota", titleTotal: "Toplam",
                 titleDownload: "İndirme", titleUpload: "Yükleme",
                 detailTotal: "Toplam", detailRemaining: "Kalan", detailRemainingVolume: "Kalan Hacim", detailLastConnect: "Son Bağlantı",
@@ -1634,19 +1666,25 @@
                 navDashboard: "<i class='fa-solid fa-house'></i>Panel", navDownload: "<i class='fa-solid fa-download'></i>Uygulama",
                 dlScreenTitle: "Uygulamaları İndir", dlSubtitle: "Resmi Mağaza İstemcisi", btnDl: "İndir",
                 tabAndroid: "Android", tabIos: "iPhone / iPad", tabDesktop: "Win / Mac",
-                designerLbl: "Tema Geliştirici:", expiredText: "Süresi Doldu", unlimitedText: "Sınırsız", emptyConfigs: "Boş", copyBtnText: "Kopyala",
+                expiredText: "Süresi Doldu", unlimitedText: "Sınırsız", emptyConfigs: "Boş", copyBtnText: "Kopyala",
+                showQrText: "QR Kodu Görüntüle",
                 lastConnectUnknown: "--", onlineText: "Çevrimiçi", offlineText: "Çevrimdışı",
                 promoText: "Aboneliğinizi <span>satın</span> veya <span>yenile</span> mi gerekiyor?<br>Destek ile iletişime geçin.",
                 promoTelegram: "Telegram",
-                notificationTitle: "Bağlantı sorunu mu yaşıyorsunuz?",
-                notificationDesc: "Destek ile iletişime geçin",
-                notificationDismiss: "Hayır",
-                notificationSupport: "Destek",
-                pingChecking: "Kontrol ediliyor...", pingTimeout: "Yanıt yok", bestPingLabel: "En İyi Ping:",
+                radarTitle: "Temiz IP Radarı", radarHint: "Tamamen tarayıcınızda çalışır — yapılandırma portlarını tarar",
+                radarStart: "Taramayı Başlat", radarStop: "Durdur", radarStatusReady: "Taramaya hazır",
+                radarStatusScan: "Taranıyor... {done} / {total} - bulunan: {found}",
+                radarStatusDone: "Tarama bitti - {found} sağlıklı IP bulundu",
+                radarStatusSaving: "Panele kaydediliyor...", radarStatusSaved: "{count} temiz IP kaydedildi ve yapılandırmalarınıza uygulandı", radarStatusSaveFail: "IP'ler panele kaydedilemedi",
+                radarStatusStopping: "Durduruluyor...", radarStatusStopped: "Tarama durduruldu",
+                radarStatusNoTlsPort: "Yapılandırmalarda taranabilir TLS portu bulunamadı",
+                radarStatusNoResult: "Sağlıklı IP bulunamadı",
+                radarStatusNoConfig: "Bu abonelikte vless konfigi bulunamadı",
                 qrModalTitle: "QR Kodu", configModalTitle: "Konfig Kopyala"
             },
             ar: {
                 dir: "rtl", greet: "أهلاً ", badgeActive: "نشط", badgeInactive: "غير نشط",
+                badgeBlocked: "محجوب", badgeExpired: "منتهي", badgeLimit: "انتهت الحصة", badgeDailyLimit: "الحصة اليومية",
                 daysUnit: "يوم", remainingLabel: "المتبقي", titleLimit: "الحجم الكلي", titleTotal: "الإجمالي",
                 titleDownload: "تحميل", titleUpload: "رفع",
                 detailTotal: "الإجمالي", detailRemaining: "المتبقي", detailRemainingVolume: "الحجم المتبقي", detailLastConnect: "آخر اتصال",
@@ -1655,15 +1693,20 @@
                 navDashboard: "<i class='fa-solid fa-house'></i>الرئيسية", navDownload: "<i class='fa-solid fa-download'></i>التطبيق",
                 dlScreenTitle: "تحميل التطبيقات", dlSubtitle: "عميل المتجر الرسمي", btnDl: "تحميل",
                 tabAndroid: "أندروید", tabIos: "آيفون / آيباد", tabDesktop: "ویندوز / ماک",
-                designerLbl: "مطور القالب:", expiredText: "منتهي", unlimitedText: "غير محدود", emptyConfigs: "خالي", copyBtnText: "نسخ",
+                expiredText: "منتهي", unlimitedText: "غير محدود", emptyConfigs: "خالي", copyBtnText: "نسخ",
+                showQrText: "عرض رمز QR",
                 lastConnectUnknown: "--", onlineText: "متصل", offlineText: "غير متصل",
                 promoText: "هل تحتاج إلى <span>شراء</span> أو <span>تجديد</span> اشتراكك؟<br>اتصل بالدعم.",
                 promoTelegram: "تيليجرام",
-                notificationTitle: "هل تواجه مشكلة في الاتصال؟",
-                notificationDesc: "اتصل بالدعم",
-                notificationDismiss: "لا",
-                notificationSupport: "الدعم",
-                pingChecking: "جارٍ الفحص...", pingTimeout: "لا استجابة", bestPingLabel: "أفضل بينغ:",
+                radarTitle: "رادار الآي‌بي النظيف", radarHint: "يعمل بالكامل داخل متصفحك — يفحص منافذ الإعدادات",
+                radarStart: "بدء الفحص", radarStop: "إيقاف", radarStatusReady: "جاهز للفحص",
+                radarStatusScan: "جارٍ الفحص... {done} من {total} - تم العثور: {found}",
+                radarStatusDone: "انتهى الفحص - تم العثور على {found} آي‌بي سليم",
+                radarStatusSaving: "جارٍ الحفظ في اللوحة...", radarStatusSaved: "تم حفظ {count} آي‌بي نظيف وتطبيقه على تكويناتك", radarStatusSaveFail: "فشل حفظ عناوين IP في اللوحة",
+                radarStatusStopping: "جارٍ الإيقاف...", radarStatusStopped: "تم إيقاف الفحص",
+                radarStatusNoTlsPort: "لم يتم العثور على منفذ TLS قابل للفحص في الإعدادات",
+                radarStatusNoResult: "لا يوجد آي‌بي سليم",
+                radarStatusNoConfig: "لا يوجد تكوين vless في هذا الاشتراك",
                 qrModalTitle: "رمز QR", configModalTitle: "نسخ التكوين"
             }
         };
@@ -1691,7 +1734,11 @@
         async function fetchLiveSubscriptionData() {
             if (!sanaeiClientData.subUrl) return;
             try {
-                const response = await fetch(sanaeiClientData.subUrl, {
+                /* ⚠️ خودِ subUrl صفحه‌ی HTML را برمی‌گرداند — باید فرمت base64 خواسته شود
+                   وگرنه بدنه‌ی HTML به‌عنوان «کانفیگ» پارس می‌شد و هیچ کانفیگی نمایش داده نمی‌شد */
+                const base = (sanaeiClientData.subUrl || window.location.href).split('#')[0];
+                const fetchUrl = base + (base.includes('?') ? '&' : '?') + 'format=base64';
+                const response = await fetch(fetchUrl, {
                     method: 'GET',
                     cache: 'no-store',
                     headers: { 'Accept': 'text/plain' }
@@ -1709,6 +1756,8 @@
                     } catch (e) {
                         decodedLinks = bodyText.split('\n').map(l => l.trim()).filter(Boolean);
                     }
+                    /* فقط ردیف‌های با ساختار واقعیِ کانفیگ — خطای پارس HTML/متن‌های اضافه را حذف می‌کند */
+                    decodedLinks = decodedLinks.filter(l => /^(vless|vmess|trojan|ss|ssr|hysteria2?|hy2|tuic|juicity|socks|naive|brook):\/\//i.test(l));
                     if (decodedLinks.length > 0) {
                         sanaeiClientData.links = decodedLinks;
                     }
@@ -1764,10 +1813,10 @@
         }
 
         function getColorForPercentage(percent) {
-            if (percent >= 75) return '#2DD4BF';
-            if (percent >= 50) return '#F4A94A';
-            if (percent >= 25) return '#F4A94A';
-            return '#F0655F';
+            if (percent >= 75) return 'var(--accent)';
+            if (percent >= 50) return 'var(--warn)';
+            if (percent >= 25) return 'var(--warn)';
+            return 'var(--alert)';
         }
 
         function renderPanelData() {
@@ -1783,7 +1832,7 @@
             `;
 
             if (sanaeiClientData.daysLeft === -1) {
-                document.getElementById("live-days-count").innerHTML = `<span style="font-size:22px; color:#F0655F;">${data.expiredText}</span>`;
+                document.getElementById("live-days-count").innerHTML = `<span style="font-size:22px; color:var(--alert);">${data.expiredText}</span>`;
             } else if (sanaeiClientData.daysLeft === null) {
                 document.getElementById("live-days-count").innerHTML = `<span style="font-size:22px;">${data.unlimitedText}</span>`;
             } else {
@@ -1812,7 +1861,15 @@
                 if (percentRemaining < 0) percentRemaining = 0;
                 if (percentRemaining > 100) percentRemaining = 100;
             }
-            document.getElementById("detail-remaining-value").innerText = percentRemaining + '%';
+            /* نامحدود = ∞ به‌جای درصد */
+            const remEl = document.getElementById("detail-remaining-value");
+            if (sanaeiClientData.totalByte > 0) {
+                remEl.innerText = percentRemaining + '%';
+                remEl.style.fontSize = '';
+            } else {
+                remEl.innerText = '∞';
+                remEl.style.fontSize = '20px';
+            }
 
             if (sanaeiClientData.totalByte > 0) {
                 document.getElementById("detail-remaining-volume").innerText = remainingVolume > 0 ? formatBytes(remainingVolume) : '0 B';
@@ -1833,7 +1890,14 @@
             }
             document.getElementById("detail-last-connect-value").innerText = lastConnectStr;
 
-            document.getElementById("live-percent-display").innerText = percentRemaining + "%";
+            const pctEl = document.getElementById("live-percent-display");
+            if (sanaeiClientData.totalByte > 0) {
+                pctEl.innerText = percentRemaining + "%";
+                pctEl.style.fontSize = "";
+            } else {
+                pctEl.innerText = "∞";
+                pctEl.style.fontSize = "34px";
+            }
             document.getElementById("sub-progress-circle").style.setProperty("--remaining-percent", percentRemaining);
             updateStatusUI();
         }
@@ -1868,75 +1932,29 @@
             const badgeText = document.getElementById("badge-text");
             const iconMark = document.getElementById("status-icon-mark");
 
-            if (isServerConnected) {
+            /* همه‌ی حالت‌های غیرفعال (مسدود/منقضی/اتمام حجم/سهمیه روزانه) ظاهرِ قطع می‌گیرند
+               و متن و آیکن badge متناسب با همان حالت نشان داده می‌شود */
+            const STATES = {
+                active:    { text: data.badgeActive,    icon: "fa-solid fa-check" },
+                paused:    { text: data.badgeBlocked,   icon: "fa-solid fa-ban" },
+                expired:   { text: data.badgeExpired,   icon: "fa-solid fa-hourglass-end" },
+                limit:     { text: data.badgeLimit,     icon: "fa-solid fa-database" },
+                dailyLimit:{ text: data.badgeDailyLimit,icon: "fa-solid fa-clock" },
+            };
+            const st = STATES[serverStatus] || STATES.active;
+            if (serverStatus === "active") {
                 card.classList.remove("disconnected");
-                badgeText.innerText = data.badgeActive;
-                iconMark.className = "fa-solid fa-check";
             } else {
                 card.classList.add("disconnected");
-                badgeText.innerText = data.badgeInactive;
-                iconMark.className = "fa-solid fa-xmark";
             }
+            badgeText.innerText = st.text;
+            iconMark.className = st.icon;
         }
 
         function updatePageTitle() {
             const titleEl = document.getElementById('page-title');
             const username = sanaeiClientData.username || 'VPN Dashboard';
             titleEl.textContent = username;
-        }
-
-        // ===== توابع نوتیفیکیشن =====
-        function showNotification() {
-            const overlay = document.getElementById('notificationOverlay');
-            const fill = document.getElementById('timerFill');
-            const box = document.getElementById('notificationBox');
-
-            // تنظیم ترجمه
-            const data = locales[currentLang] || locales.fa;
-            document.querySelector('.notification-box .title').textContent = data.notificationTitle;
-            document.querySelector('.notification-box .desc').textContent = data.notificationDesc;
-            document.getElementById('notificationDismiss').textContent = data.notificationDismiss;
-            document.getElementById('notificationSupport').textContent = data.notificationSupport;
-
-            // ریست تایمر
-            let timeLeft = 10;
-            fill.style.width = '100%';
-
-            overlay.classList.add('show');
-
-            // تایمر شمارش معکوس
-            if (timerInterval) clearInterval(timerInterval);
-            timerInterval = setInterval(() => {
-                timeLeft -= 0.1;
-                const percent = (timeLeft / 10) * 100;
-                fill.style.width = Math.max(0, percent) + '%';
-                if (timeLeft <= 0) {
-                    clearInterval(timerInterval);
-                    dismissNotification();
-                }
-            }, 100);
-
-            // تایم‌اوت برای بسته شدن خودکار بعد از ۱۰ ثانیه
-            if (notificationTimeout) clearTimeout(notificationTimeout);
-            notificationTimeout = setTimeout(() => {
-                dismissNotification();
-            }, 10000);
-
-            // رویدادهای دکمه‌ها
-            document.getElementById('notificationDismiss').onclick = function() {
-                dismissNotification();
-            };
-            document.getElementById('notificationSupport').onclick = function() {
-                window.open(SUPPORT_TELEGRAM_URL, '_blank');
-                dismissNotification();
-            };
-        }
-
-        function dismissNotification() {
-            const overlay = document.getElementById('notificationOverlay');
-            overlay.classList.remove('show');
-            if (timerInterval) clearInterval(timerInterval);
-            if (notificationTimeout) clearTimeout(notificationTimeout);
         }
 
         function parseConfigLink(rawLink) {
@@ -2071,88 +2089,6 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
         }
 
-        // پینگ شبه-TCP: فقط زمان برقراری اتصال رو با یه درخواست تصویر سبک اندازه می‌گیره
-        // (بدون منتظر موندن برای کل بدنه‌ی پاسخ)، بنابراین عدد نمایش داده‌شده پایین‌تر از fetch کامل است.
-        function tcpStylePing(host, port) {
-            return new Promise((resolve) => {
-                if (!host) { resolve(null); return; }
-                const start = performance.now();
-                let settled = false;
-                const finish = () => {
-                    if (settled) return;
-                    settled = true;
-                    resolve(Math.round(performance.now() - start));
-                };
-                const img = new Image();
-                img.onload = finish;
-                img.onerror = finish; // حتی خطا هم یعنی اتصال برقرار شده، پس زمانش معتبره
-                img.src = `https://${host}:${port || 443}/favicon.ico?_=${Date.now()}-${Math.random().toString(36).slice(2)}`;
-                setTimeout(() => {
-                    if (!settled) { settled = true; resolve(null); }
-                }, 4000);
-            });
-        }
-
-        function pingLevelClass(latencyMs) {
-            if (latencyMs === null || latencyMs === undefined) return 'muted';
-            if (latencyMs < 150) return 'level-3';
-            if (latencyMs < 300) return 'level-2';
-            return 'level-1';
-        }
-
-        function updateConfigPingUI(idx, latencyMs, data) {
-            ['ping-qr-' + idx, 'ping-cfg-' + idx].forEach(id => {
-                const el = document.getElementById(id);
-                if (!el) return;
-                if (latencyMs === null || latencyMs === undefined) {
-                    el.textContent = data.pingTimeout;
-                    el.className = 'ping-value muted en-font';
-                } else {
-                    el.textContent = `${latencyMs}ms`;
-                    el.className = `ping-value ${pingLevelClass(latencyMs)} en-font`;
-                }
-            });
-        }
-
-        function updateBestPingUI(bestLatencyMs, data) {
-            const el = document.getElementById('best-ping-value');
-            if (!el) return;
-            if (bestLatencyMs === null || bestLatencyMs === undefined) {
-                el.textContent = data.pingTimeout;
-                el.className = 'ping-value muted en-font';
-            } else {
-                el.textContent = `${bestLatencyMs}ms`;
-                el.className = `ping-value ${pingLevelClass(bestLatencyMs)} en-font`;
-            }
-        }
-
-        let pingRunToken = 0;
-        async function pingAllConfigs(links) {
-            const data = locales[currentLang] || locales.fa;
-            const myToken = ++pingRunToken;
-
-            if (!links || links.length === 0) {
-                updateBestPingUI(null, data);
-                return;
-            }
-
-            const bestEl = document.getElementById('best-ping-value');
-            if (bestEl) { bestEl.textContent = data.pingChecking; bestEl.className = 'ping-value muted en-font'; }
-
-            const results = await Promise.all(links.map(async (rawLink, idx) => {
-                const parsed = parseConfigLink(rawLink);
-                const latency = await tcpStylePing(parsed.host, parsed.port);
-                if (myToken === pingRunToken) updateConfigPingUI(idx, latency, data);
-                return latency;
-            }));
-
-            if (myToken !== pingRunToken) return; // یه رندر جدیدتر شروع شده، این نتیجه‌ی قدیمی نادیده گرفته میشه
-
-            const validResults = results.filter(v => v !== null && v !== undefined);
-            const best = validResults.length ? Math.min(...validResults) : null;
-            updateBestPingUI(best, data);
-        }
-
         function renderActionMenus() {
             const data = locales[currentLang] || locales.fa;
             const links = sanaeiClientData.links || [];
@@ -2184,47 +2120,36 @@
                 const flagUrl = flagInfo.countryCode !== 'unknown' ? `https://flagcdn.com/w80/${flagInfo.countryCode}.png` : '';
                 const flagHtml = flagUrl
                     ? `<div class="action-mini-flag" style="background-image: url('${flagUrl}');"></div>`
-                    : `<div class="action-mini-flag" style="background: #2C2C3E; display: flex; align-items: center; justify-content: center; color: #6c6c8c;"><i class="fa-solid fa-globe"></i></div>`;
+                    : `<div class="action-mini-flag" style="background: var(--surface-alt); display: flex; align-items: center; justify-content: center; color: var(--text-muted);"><i class="fa-solid fa-globe"></i></div>`;
 
                 const protocolDetails = getProtocolDetails(parsed.link);
                 const encoded = encodeURIComponent(parsed.link);
+                /* خواسته‌ی کاربر: در بخش QR هیچ ردیفِ تصویرِ کوچک و هیچ دکمه‌ی
+                   «نمایش» جداگانه وجود ندارد — فقط یک دکمه‌ی «دیدن QR کد» که
+                   نمایشگرِ بزرگ را باز می‌کند */
                 const item = document.createElement("div");
                 item.className = "ip-row-item";
                 item.innerHTML = `
                     <div class="ip-row-top">
                         <div class="ip-details-left">
                             ${flagHtml}
-                            <div class="qr-modern-wrapper">
-                                <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encoded}" alt="QR" loading="lazy" />
-                            </div>
                             <div class="ip-meta-block">
                                 <div class="ip-address-text en-font">${parsed.remark || parsed.host}</div>
                             </div>
                         </div>
-                        <button class="ip-copy-btn" data-config-text="${encodeURIComponent(parsed.link)}">
-                            <i class="fa-solid fa-copy"></i> ${data.copyBtnText}
+                        <button class="ip-copy-btn" data-qr-link="${encoded}">
+                            <i class="fa-solid fa-qrcode"></i> ${data.showQrText}
                         </button>
                     </div>
                     <div class="ip-row-bottom">
                         <span class="ip-protocol-text en-font">${buildProtocolBadge(protocolDetails)}</span>
-                        <span class="ping-value muted en-font" id="ping-qr-${idx}">${data.pingChecking}</span>
                     </div>
                 `;
 
-                const copyBtn = item.querySelector('.ip-copy-btn');
-                copyBtn.addEventListener('click', function(e) {
+                const showQrBtn = item.querySelector('.ip-copy-btn');
+                showQrBtn.addEventListener('click', function(e) {
                     e.stopPropagation();
-                    const textToCopy = decodeURIComponent(this.getAttribute('data-config-text'));
-                    navigator.clipboard.writeText(textToCopy).then(() => {
-                        this.innerHTML = `<i class="fa-solid fa-check"></i> ${data.actionCopied}`;
-                        this.style.background = "#22C55E";
-                        this.style.color = "#fff";
-                        setTimeout(() => {
-                            this.innerHTML = `<i class="fa-solid fa-copy"></i> ${data.copyBtnText}`;
-                            this.style.background = "";
-                            this.style.color = "";
-                        }, 2000);
-                    });
+                    showBigQr(decodeURIComponent(this.getAttribute('data-qr-link')), parsed.remark || parsed.host);
                 });
 
                 return item;
@@ -2235,7 +2160,7 @@
                 const flagUrl = flagInfo.countryCode !== 'unknown' ? `https://flagcdn.com/w80/${flagInfo.countryCode}.png` : '';
                 const flagHtml = flagUrl
                     ? `<div class="action-mini-flag" style="background-image: url('${flagUrl}');"></div>`
-                    : `<div class="action-mini-flag" style="background: #2C2C3E; display: flex; align-items: center; justify-content: center; color: #6c6c8c;"><i class="fa-solid fa-globe"></i></div>`;
+                    : `<div class="action-mini-flag" style="background: var(--surface-alt); display: flex; align-items: center; justify-content: center; color: var(--text-muted);"><i class="fa-solid fa-globe"></i></div>`;
 
                 const protocolDetails = getProtocolDetails(parsed.link);
                 const item = document.createElement("div");
@@ -2254,7 +2179,6 @@
                     </div>
                     <div class="ip-row-bottom">
                         <span class="ip-protocol-text en-font">${buildProtocolBadge(protocolDetails)}</span>
-                        <span class="ping-value muted en-font" id="ping-cfg-${idx}">${data.pingChecking}</span>
                     </div>
                 `;
 
@@ -2264,8 +2188,8 @@
                     const textToCopy = decodeURIComponent(this.getAttribute('data-config-text'));
                     navigator.clipboard.writeText(textToCopy).then(() => {
                         this.innerHTML = `<i class="fa-solid fa-check"></i> ${data.actionCopied}`;
-                        this.style.background = "#22C55E";
-                        this.style.color = "#fff";
+                        this.style.background = "var(--accent)";
+                        this.style.color = "var(--bg)";
                         setTimeout(() => {
                             this.innerHTML = `<i class="fa-solid fa-copy"></i> ${data.copyBtnText}`;
                             this.style.background = "";
@@ -2281,8 +2205,8 @@
             configContainer.innerHTML = "";
 
             if (links.length === 0) {
-                qrContainer.innerHTML = `<span style="color:#6c6c8c;" id="qr-empty-msg">${data.emptyConfigs}</span>`;
-                configContainer.innerHTML = `<span style="color:#6c6c8c;" id="config-empty-msg">${data.emptyConfigs}</span>`;
+                qrContainer.innerHTML = `<span style="color:var(--text-muted);" id="qr-empty-msg">${data.emptyConfigs}</span>`;
+                configContainer.innerHTML = `<span style="color:var(--text-muted);" id="config-empty-msg">${data.emptyConfigs}</span>`;
             } else {
                 const copyAllBtn = document.createElement("button");
                 copyAllBtn.className = "copy-all-btn";
@@ -2291,7 +2215,7 @@
                     const allLinks = links.join('\n');
                     navigator.clipboard.writeText(allLinks).then(() => {
                         this.innerHTML = `<i class="fa-solid fa-check"></i> ${data.actionCopied}`;
-                        this.style.background = "#22C55E";
+                        this.style.background = "var(--accent)";
                         setTimeout(() => {
                             this.innerHTML = `<i class="fa-solid fa-copy"></i> ${data.copyAllBtn}`;
                             this.style.background = "";
@@ -2307,8 +2231,19 @@
                 });
             }
 
-            pingAllConfigs(links);
         }
+
+        function showBigQr(link, remark) {
+            document.getElementById('qr-big-img').src = 'https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=' + encodeURIComponent(link);
+            document.getElementById('qr-big-remark').textContent = remark || '';
+            document.getElementById('qr-big-title').textContent = (locales[currentLang] || locales.fa).qrModalTitle;
+            document.getElementById('qrBigOverlay').classList.add('show');
+        }
+        (function() {
+            const overlay = document.getElementById('qrBigOverlay');
+            document.getElementById('qr-big-close').addEventListener('click', () => overlay.classList.remove('show'));
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('show'); });
+        })();
 
         // ===== زبان و UI =====
         function selectLanguage(lang) {
@@ -2336,10 +2271,14 @@
             document.getElementById("lbl-tab-android").innerText = data.tabAndroid;
             document.getElementById("lbl-tab-ios").innerText = data.tabIos;
             document.getElementById("lbl-tab-desktop").innerText = data.tabDesktop;
-            document.getElementById("designer-lbl").innerText = data.designerLbl;
             document.getElementById("qr-modal-title").innerText = data.qrModalTitle;
             document.getElementById("config-modal-title").innerText = data.configModalTitle;
-            document.getElementById("best-ping-label").innerText = data.bestPingLabel;
+            document.getElementById("radar-title").innerText = data.radarTitle;
+            document.getElementById("radar-hint").innerText = data.radarHint;
+            if (!radarRunning) {
+                document.getElementById("radar-start-label").innerText = data.radarStart;
+                document.getElementById("radar-status").innerText = data.radarStatusReady;
+            }
 
             document.querySelector('.promo-text').innerHTML = data.promoText;
             const promoBtns = document.querySelectorAll('.promo-btn');
@@ -2365,7 +2304,7 @@
             navigator.clipboard.writeText(linkToCopy).then(() => {
                 const labelNode = document.getElementById("action-copy");
                 labelNode.innerText = data.actionCopied;
-                labelNode.style.color = "#22C55E";
+                labelNode.style.color = "var(--accent)";
                 setTimeout(() => {
                     labelNode.innerText = data.actionCopy;
                     labelNode.style.color = "";
@@ -2417,11 +2356,194 @@
             document.getElementById('title-client3').innerText = data.c3.name;
             document.getElementById('btn-dl-client3').href = data.c3.url;
             document.getElementById('sub-client3').innerText = currentLocale.dlSubtitle;
+            /* آیکن کارت سوم per-OS: sing-box اندروید / Streisand آیفون / NekoRay دسکتاپ */
+            const c3Icon = { android: 'fa-box-open', ios: 'fa-bars-staggered', desktop: 'fa-window-maximize' }[os] || 'fa-box-open';
+            const c3El = document.getElementById('icon-client3');
+            if (c3El) c3El.className = 'fa-solid ' + c3Icon;
 
             document.querySelectorAll('.client-download-btn').forEach(btn => {
                 btn.innerText = currentLocale.btnDl;
             });
         }
+
+        /* کل رنج 104.0.0.0/8 و 172.0.0.0/8 کلودفلر اسکن می‌شود */
+        const CF_RANGES = [];
+        for (let b2 = 0; b2 <= 255; b2++) CF_RANGES.push(['104.' + b2 + '.', 0, 255]);
+        for (let b2 = 0; b2 <= 255; b2++) CF_RANGES.push(['172.' + b2 + '.', 0, 255]);
+        const RADAR_PORTS = [443, 8443, 2053, 2083, 2087, 2096];
+        /* تایم‌اوت کوتاه‌تر و پروب کمتر = اسکن چند برابر سریع‌تر؛
+           آی‌پی مرده دیگر ۶ ثانیه هم بلاک نمی‌کند */
+        const RADAR_TIMEOUT = 1200;
+        const RADAR_PROBES = 2;
+        const RADAR_CONCURRENCY = 16;
+        const RADAR_IP_COUNT = 180;
+        const RADAR_KEEP = 8;
+
+        let radarRunning = false;
+        let radarCancelRequested = false;
+
+        function randCfIp() {
+            var r = CF_RANGES[Math.floor(Math.random() * CF_RANGES.length)];
+            var c = r[1] + Math.floor(Math.random() * (r[2] - r[1] + 1));
+            return r[0] + c + '.' + Math.floor(Math.random() * 256);
+        }
+
+        // هم onload و هم onerror یعنی «هاست جواب داد»؛ ما دسترسی و تأخیر را می‌سنجیم نه موفقیت تصویر.
+        function pingIp(ip, port, timeout) {
+            return new Promise(function(res) {
+                const t0 = performance.now();
+                let done = false;
+                const img = new Image();
+                const fin = function(ok) {
+                    if (done) return;
+                    done = true;
+                    img.onload = img.onerror = null;
+                    res(ok ? Math.round(performance.now() - t0) : null);
+                };
+                const timer = setTimeout(function() { fin(false); }, timeout);
+                /* پروب با Image: مرورگر برای https://IP گواهی معتبر ندارد و درخواست
+                   همیشه خطا می‌دهد — اما لحظه‌ی خطا یعنی handshake کامل شده (لبه‌ی زنده).
+                   fetch برخلاف آن روی همان خطای گواهی reject می‌شود و هیچ‌وقت جواب نمی‌دهد. */
+                img.onerror = function() { clearTimeout(timer); fin(true); };
+                img.onload = function() { clearTimeout(timer); fin(true); };
+                img.src = 'https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random();
+            });
+        }
+
+        /* انتخاب پورت حذف شد — اسکن همیشه روی پورت‌های خودِ کانفیگ‌های ساب انجام می‌شود.
+           فقط پورت‌های TLS قابل‌اسکن‌اند: پروب مرورگر https است و پورت‌های غیر-TLS
+           با خطای SSL بلافاصله «پاسخ» می‌دهند و نتیجه را کاملاً خراب می‌کنند. */
+        const RADAR_TLS_PORTS = [443, 2053, 2083, 2087, 2096, 8443];
+        function radarConfigPorts() {
+            const ports = [];
+            const links = sanaeiClientData.links || [];
+            links.forEach(function(link) {
+                const parsed = parseConfigLink(link);
+                const p = parseInt(parsed.port, 10);
+                if (p > 0 && RADAR_TLS_PORTS.indexOf(p) >= 0 && ports.indexOf(p) < 0) ports.push(p);
+            });
+            return ports;
+        }
+
+        async function radarProbeIp(ip, ports) {
+            for (let i = 0; i < ports.length; i++) {
+                const port = ports[i];
+                const samples = [];
+                for (let p = 0; p < RADAR_PROBES; p++) {
+                    if (radarCancelRequested) return null;
+                    const rtt = await pingIp(ip, port, RADAR_TIMEOUT);
+                    if (rtt !== null) samples.push(rtt);
+                }
+                if (samples.length === 0) continue;
+                const avg = Math.round(samples.reduce(function(a, b) { return a + b; }, 0) / samples.length);
+                const jitter = Math.max.apply(null, samples) - Math.min.apply(null, samples);
+                const loss = Math.round((1 - samples.length / RADAR_PROBES) * 100);
+                return { ip: ip, port: port, avg: avg, jitter: jitter, loss: loss, score: avg + jitter * 0.5 + loss * 20 };
+            }
+            return null;
+        }
+
+        async function radarRun() {
+            const data = locales[currentLang] || locales.fa;
+            const statusEl = document.getElementById('radar-status');
+            const startBtn = document.getElementById('radar-start-btn');
+
+            if (radarRunning) {
+                /* توقف: بازخورد فوری — unwind حداکثر تا پایان پروب جاری (کمتر از ۱.۲ ثانیه) */
+                radarCancelRequested = true;
+                statusEl.textContent = data.radarStatusStopping;
+                return;
+            }
+
+            const ports = radarConfigPorts();
+            if (ports.length === 0) {
+                statusEl.textContent = data.radarStatusNoTlsPort || data.radarStatusNoConfig;
+                return;
+            }
+
+            radarRunning = true;
+            radarCancelRequested = false;
+            startBtn.classList.add('running');
+            document.getElementById('radar-start-label').textContent = data.radarStop;
+            document.getElementById('radar-progress-bar').style.width = '0%';
+            statusEl.textContent = data.radarStatusScan.replace('{done}', '0').replace('{total}', RADAR_IP_COUNT).replace('{found}', '0');
+
+            /* try/finally: حتی اگر وسط اسکن خطایی رخ دهد radarRunning ریست می‌شود
+               و دکمه هرگز روی «توقف» قفل نمی‌ماند */
+            try {
+                const ips = [];
+                for (let i = 0; i < RADAR_IP_COUNT; i++) ips.push(randCfIp());
+
+                const results = [];
+                let cursor = 0;
+                let doneCount = 0;
+
+                async function worker() {
+                    while (cursor < ips.length) {
+                        if (radarCancelRequested) return;
+                        const ip = ips[cursor++];
+                        const res = await radarProbeIp(ip, ports);
+                        if (res) results.push(res);
+                        doneCount++;
+                        document.getElementById('radar-progress-bar').style.width = Math.round(doneCount / ips.length * 100) + '%';
+                        statusEl.textContent = data.radarStatusScan
+                            .replace('{done}', doneCount)
+                            .replace('{total}', ips.length)
+                            .replace('{found}', results.length);
+                    }
+                }
+
+                const workers = [];
+                for (let w = 0; w < RADAR_CONCURRENCY; w++) workers.push(worker());
+                await Promise.all(workers);
+
+                if (radarCancelRequested) {
+                    /* توقف‌شده — نتیجه‌ی ناقص به‌عنوان «پایان اسکن» جعل نمی‌شود */
+                    document.getElementById('radar-progress-bar').style.width = '0%';
+                    statusEl.textContent = data.radarStatusStopped;
+                    return;
+                }
+
+                /* آی‌پی‌ها در صفحه نمایش داده نمی‌شوند — به پنل ارسال و
+                   روی کانفیگ‌های همین کاربر اعمال می‌شوند */
+                results.sort(function(a, b) { return a.score - b.score; });
+                const top = results.slice(0, RADAR_KEEP).map(function(r) { return r.ip; });
+
+                if (top.length === 0) {
+                    statusEl.textContent = data.radarStatusNoResult;
+                    return;
+                }
+
+                statusEl.textContent = data.radarStatusSaving;
+                try {
+                    const saveRes = await fetch(sanaeiClientData.subUrl.replace(/\/$/, '') + '/radar-ips', {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({ ips: top })
+                    });
+                    const sj = await saveRes.json().catch(() => ({}));
+                    if (saveRes.ok && sj.ok) {
+                        statusEl.textContent = data.radarStatusSaved.replace('{count}', top.length);
+                    } else {
+                        statusEl.textContent = data.radarStatusSaveFail;
+                    }
+                } catch (e) {
+                    statusEl.textContent = data.radarStatusSaveFail;
+                }
+            } finally {
+                radarRunning = false;
+                radarCancelRequested = false;
+                startBtn.classList.remove('running');
+                document.getElementById('radar-start-label').textContent = data.radarStart;
+            }
+        }
+
+        /* دکمه‌ی باز کردنِ رادار حذف شده — کارت همیشه نمایان است */
+
+        document.getElementById("radar-start-btn").addEventListener("click", function(e) {
+            e.stopPropagation();
+            radarRun();
+        });
 
         // ===== راه‌اندازی اولیه =====
         document.addEventListener("DOMContentLoaded", () => {
@@ -2434,10 +2556,6 @@
             fetchLiveSubscriptionData();
             liveRefreshTimer = setInterval(fetchLiveSubscriptionData, 10000);
 
-            // نمایش نوتیفیکیشن بعد از ۱۰ ثانیه
-            setTimeout(() => {
-                showNotification();
-            }, 10000);
         });
 
         const langToggleBtn = document.getElementById("lang-toggle-btn");

@@ -1270,7 +1270,7 @@
       '<div class="stat"><div class="lbl">نسخه / بیلد</div><div class="val" style="font-size:15px">' + esc(S.d.version) + '</div><div class="sub">' + esc(S.d.build || '—') + '</div></div>' +
       '</div>' +
       '<div class="grid g2" style="margin-top:12px">' +
-      '<div class="card"><header><span class="ic">' + icon('fa-chart-area') + '</span><div><h3>مصرف ' + (r === 'd' ? 'روزانه' : r === 'm' ? 'ماهانه' : 'سالانه') + '</h3><p>' + cUnitL + ' در هر بازه</p></div></header><div class="bd" id="chartWrap">' + area(chartSeries(d, 'mon'), { color: 'var(--ac2)', color2: 'var(--ac)', unit: chartUnit() }) + '</div></div>' +
+      '<div class="card"><header><span class="ic">' + icon('fa-chart-area') + '</span><div><h3>مصرف ' + (r === 'd' ? 'روزانه' : r === 'm' ? 'ماهانه' : 'سالانه') + '</h3><p>' + cUnitL + ' در هر بازه</p></div></header><div class="bd" id="chartWrap">' + area(chartSeries(S.d, 'mon'), { color: 'var(--ac2)', color2: 'var(--ac)', unit: chartUnit() }) + '</div></div>' +
       '<div class="card"><header><span class="ic b2">' + icon('fa-chart-column') + '</span><div><h3>توزیع مصرف کاربران</h3><p>' + cUnitL + '</p></div></header><div class="bd">' + bars(convSeries(u.slice(0, 14).map((x) => (x.up + x.down) / 1073741824 || .01)), chartUnit()) + '</div></div></div>' +
       '<div class="card"><header><span class="ic">' + icon('fa-users') + '</span><div><h3>مصرف به تفکیک کاربر</h3><p>با درصد پیشرفت</p></div></header><div class="bd" style="padding:0"><div class="tbl-wrap"><table>' +
       '<thead><tr><th>کاربر</th><th>آپلود</th><th>دانلود</th><th>کل</th><th>درصد سهمیه</th><th>درخواست</th></tr></thead><tbody>' +
@@ -1905,17 +1905,40 @@
       const patch = collect($('#mbox')); patch.fakes = readUserFakes();
       Object.assign(cur, patch);
       cur.fakeMode = ufm.dataset.ufakeMode;
-      if (cur.fakeMode === 'custom' && (!Array.isArray(cur.fakes) || !cur.fakes.length)) {
-        cur.fakes = [
-          { id: 'usage',     name: '📊 {usage}',     enabled: true, proto: 'vless',  pos: 1 },
-          { id: 'remaining', name: '🟢 {remaining}', enabled: true, proto: 'vless',  pos: 2 },
-          { id: 'expiry',    name: '📅 {expiry}',    enabled: true, proto: 'vless',  pos: 3 },
-          { id: 'channel',   name: '📢 {channel}',   enabled: true, proto: 'trojan', pos: 4 },
-        ];
-      }
+      /* هیچ کانفیگ ثابتی تزریق نمی‌شود — فهرست خالی می‌ماند تا ادمین خودش بسازد */
+      if (!Array.isArray(cur.fakes)) cur.fakes = [];
       closeM(); userModal(cur);
       return;
     }
+    /* افزودن/پیش‌فرض/حذف کانفیگ فیک اختصاصی — پیش از نگهبانِ [data-act]
+       چون مودالِ کاربر ممکن است بسته و دوباره باز شود و رویدادِ فعلی گم شود */
+    const uact = e.target.closest('[data-act="ufake-add"], [data-act="ufake-reset"], [data-act="ufake-del"]');
+    if (uact) {
+      e.preventDefault(); e.stopPropagation();
+      const act = uact.dataset.act;
+      const cur = S.d.users.find((x) => x.id === ($('#mbox [data-act="user-save"]') || {}).dataset?.id);
+      if (!cur) return;
+      /* مقادیر فرم از DOM می‌آید ولی فهرستِ فیک‌ها از state می‌ماند — وگرنه
+         خواندنِ fakes از DOMِ قدیمی، آیتمِ تازه‌افزوده‌شده را پاک می‌کرد */
+      const patch = collect($('#mbox'));
+      patch.fakeMode = cur.fakeMode || 'custom';
+      Object.assign(cur, patch);
+      if (!Array.isArray(cur.fakes)) cur.fakes = [];
+      const idx = Number(uact.dataset.i);
+      if (act === 'ufake-add') {
+        cur.fakes.push({ id: 'uf_' + Date.now().toString(36), name: '', enabled: true, proto: 'vless', pos: cur.fakes.length + 1 });
+      } else if (act === 'ufake-reset') {
+        cur.fakes = []; /* هیچ کانفیگ ثابتی وجود ندارد — فهرست فقط خالی می‌شود */
+      } else {
+        cur.fakes.splice(idx, 1);
+      }
+      cur.fakeMode = 'custom';
+      closeM(); userModal(cur);
+      if (act === 'ufake-add') setTimeout(() => { const el = $('#ufkList .fk-row:last-child .fk-name'); if (el) el.focus(); }, 80);
+      else toast(act === 'ufake-del' ? 'حذف شد' : 'همه پاک شد — برای اعمال، ذخیره کنید', act === 'ufake-del' ? 'err' : 'info');
+      return;
+    }
+
     /* سوییچ کانفیگ فیک کاربر */
     const ufsw = e.target.closest('[data-ufake-sw]');
     if (ufsw) {
@@ -2064,15 +2087,10 @@
         toast('حذف شد', 'err');
       }
       else if (a === 'fake-reset') {
-        S.d.settings.sub.fakes = [
-          { id: 'usage',     name: '📊 {usage}',        enabled: true,  proto: 'vless',  pin: true, pos: 1 },
-          { id: 'remaining', name: '🟢 {remaining}',    enabled: true,  proto: 'vless',  pin: true, pos: 2 },
-          { id: 'expiry',    name: '📅 {expiry}',       enabled: true,  proto: 'vless',  pin: true, pos: 3 },
-          { id: 'channel',   name: '📢 {channel}',      enabled: true,  proto: 'trojan', pin: true, pos: 4 },
-          { id: 'panel',     name: '⚙️ {panel} v{ver}', enabled: false, proto: 'trojan', pin: true, pos: 5 },
-        ];
+        /* هیچ کانفیگ ثابتی وجود ندارد — همه پاک می‌شود */
+        S.d.settings.sub.fakes = [];
         render(); refreshPreview();
-        toast('به پیش‌فرض بازگشت — برای اعمال، ذخیره کنید', 'info');
+        toast('همه پاک شد — برای اعمال، ذخیره کنید', 'info');
       }
       else if (a === 'user-new') { const r = await api('POST', '/api/users', { name: 'کاربر ' + (S.d.users.length + 1) }); if (r.user) { S.sel = r.user.id; await refresh(); userModal(S.d.users.find((u) => u.id === r.user.id) || r.user, true); } }
       else if (a === 'user-edit') userModal(S.d.users.find((u) => u.id === id));
@@ -2103,36 +2121,7 @@
         free(t);
         if (r.ok) { toast('ذخیره شد'); closeM(); await refresh(); } else toast(r.error || 'خطا', 'err');
       }
-      else if (a === 'ufake-add') {
-        if (!Array.isArray(u.fakes)) u.fakes = [];
-        u.fakes.push({ id: 'uf_' + Date.now().toString(36), name: '', enabled: true, proto: 'vless', pos: u.fakes.length + 1 });
-        /* بازتولید مودال برای نمایش ردیف جدید */
-        const patch = collect($('#mbox')); patch.fakes = readUserFakes(); patch.fakeMode = u.fakeMode || 'custom';
-        Object.assign(u, patch); u.fakeMode = 'custom';
-        closeM(); userModal(u);
-        setTimeout(() => { const el = $('#ufkList .fk-row:last-child .fk-name'); if (el) el.focus(); }, 80);
-      }
-      else if (a === 'ufake-reset') {
-        u.fakes = [
-          { id: 'usage',     name: '📊 {usage}',        enabled: true,  proto: 'vless',  pos: 1 },
-          { id: 'remaining', name: '🟢 {remaining}',    enabled: true,  proto: 'vless',  pos: 2 },
-          { id: 'expiry',    name: '📅 {expiry}',       enabled: true,  proto: 'vless',  pos: 3 },
-          { id: 'channel',   name: '📢 {channel}',      enabled: true,  proto: 'trojan', pos: 4 },
-          { id: 'panel',     name: '⚙️ {panel} v{ver}', enabled: false, proto: 'trojan', pos: 5 },
-        ];
-        const patch = collect($('#mbox')); patch.fakes = readUserFakes(); patch.fakeMode = 'custom';
-        Object.assign(u, patch); u.fakeMode = 'custom';
-        closeM(); userModal(u);
-        toast('به پیش‌فرض بازگشت', 'info');
-      }
-      else if (a === 'ufake-del') {
-        if (!Array.isArray(u.fakes)) u.fakes = [];
-        const patch = collect($('#mbox')); patch.fakes = readUserFakes(); patch.fakeMode = 'custom';
-        Object.assign(u, patch); u.fakeMode = 'custom';
-        u.fakes.splice(Number(t.dataset.i), 1);
-        closeM(); userModal(u);
-        toast('حذف شد', 'err');
-      }
+      /* این سه عملیات بالاتر (پیش از نگهبان data-act) مدیریت می‌شوند تا مودال بسته/باز نشود */
       else if (a === 'regen') { const inp = $('#mbox [data-p="uuid"]'); if (inp) { inp.value = crypto.randomUUID(); toast('UUID جدید ساخته شد', 'info'); } }
       else if (a === 'close') closeM();
       else if (a === 'key-new') { const r = await api('POST', '/api/keys', {}); if (r.ok) { toast('کلید ساخته شد'); await refresh(); } else toast(r.error || 'خطا', 'err'); }
@@ -2603,7 +2592,7 @@
       '<div><h3>کانفیگ‌های فیک (اطلاعاتی)</h3>' +
       '<p>در ابتدای لیست ساب کلاینت نمایش داده می‌شوند تا مصرف و انقضا در برنامه دیده شود</p></div>' +
       '<div class="acts">' +
-      '<button class="btn sm" data-act="fake-reset" title="بازگشت به ۵ کانفیگ پیش‌فرض">' + icon('fa-rotate-left') + ' پیش‌فرض</button>' +
+      '<button class="btn sm" data-act="fake-reset" title="پاک‌کردن همه‌ی کانفیگ‌های فیک">' + icon('fa-eraser') + ' پاک‌کردن همه</button>' +
       '<button class="btn sm s" data-act="fake-add">' + icon('fa-plus') + ' افزودن</button>' +
       '<button class="btn sm p" data-act="fake-save">' + icon('fa-floppy-disk') + ' ذخیره</button>' +
       '</div></header>' +
@@ -2715,7 +2704,7 @@
       '</div></div>' +
       '<div class="btn-row" style="margin-bottom:8px">' +
       '<button class="btn sm s" data-act="ufake-add">' + icon('fa-plus') + ' افزودن</button>' +
-      '<button class="btn sm" data-act="ufake-reset">' + icon('fa-rotate-left') + ' پیش‌فرض</button></div>' +
+      '<button class="btn sm" data-act="ufake-reset">' + icon('fa-eraser') + ' پاک‌کردن همه</button></div>' +
       '<div class="fk-list" id="ufkList">' +
       (fakes.map((f, i) => userFakeRow(f, i)).join('') || '<div class="empty">موردی نیست</div>') +
       '</div>';

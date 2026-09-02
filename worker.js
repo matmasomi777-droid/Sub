@@ -97,17 +97,8 @@ const DEF = () => ({
       namePattern: '',
       rules: ['GEOIP,IR,DIRECT', 'DOMAIN-SUFFIX,ir,DIRECT', 'GEOSITE,category-ads-all,REJECT'],
       blockAdult: false, blockAds: true, blockQuic: true, bypassIR: true, doh: 'https://cloudflare-dns.com/dns-query',
-      /* ── کانفیگ‌های فیک (اطلاعاتی) — کاملاً قابل تنظیم ── */
-      fakes: [
-        { id: 'usage',    name: '📊 {usage}',        enabled: true,  proto: 'vless',  pin: true,  pos: 1 },
-        { id: 'remaining',name: '🟢 {remaining}',    enabled: true,  proto: 'vless',  pin: true,  pos: 2 },
-        { id: 'expiry',   name: '📅 {expiry}',       enabled: true,  proto: 'vless',  pin: true,  pos: 3 },
-        { id: 'channel',  name: '📢 {channel}',      enabled: true,  proto: 'trojan', pin: true,  pos: 4 },
-        { id: 'panel',    name: '⚙️ {panel} v{ver}', enabled: false, proto: 'trojan', pin: true,  pos: 5 },
-        { id: 'custom1',  name: '',                  enabled: false, proto: 'vless',  pin: false, pos: 6 },
-        { id: 'custom2',  name: '',                  enabled: false, proto: 'trojan', pin: false, pos: 7 },
-        { id: 'custom3',  name: '',                  enabled: false, proto: 'vless',  pin: false, pos: 8 },
-      ],
+      /* ── کانفیگ‌های فیک — بدون هیچ مورد پیش‌فرض؛ ادمین خودش اضافه می‌کند ── */
+      fakes: [],
     },
   },
   users: [],
@@ -1706,20 +1697,11 @@ function normalize(st) {
   if (s.sub && typeof s.sub.rules === 'string') s.sub.rules = s.sub.rules.split('\n').map((x) => x.trim()).filter(Boolean);
   if (s.fr && typeof s.fr.files === 'string') s.fr.files = s.fr.files.split('\n').map((x) => x.trim()).filter(Boolean);
 
-  /* ── کانفیگ‌های فیک: همیشه آرایه‌ی معتبر و تکمیل‌شده ── */
+  /* ── کانفیگ‌های فیک: همیشه آرایه‌ی معتبر — بدون هیچ کانفیگ ثابت ──
+     خواسته‌ی کاربر: در بخش کانفیگ‌های فیک هیچ مورد پیش‌فرضی نباید باشد؛
+     ادمین خودش اضافه می‌کند. فقط پاک‌سازی و مرتب‌سازی انجام می‌شود. */
   if (!s.sub) s.sub = {};
-  const DEF_FAKES = [
-    { id: 'usage',     name: '📊 {usage}',        enabled: true,  proto: 'vless',  pin: true, pos: 1 },
-    { id: 'remaining', name: '🟢 {remaining}',    enabled: true,  proto: 'vless',  pin: true, pos: 2 },
-    { id: 'expiry',    name: '📅 {expiry}',       enabled: true,  proto: 'vless',  pin: true, pos: 3 },
-    { id: 'channel',   name: '📢 {channel}',      enabled: true,  proto: 'trojan', pin: true, pos: 4 },
-    { id: 'panel',     name: '⚙️ {panel} v{ver}', enabled: false, proto: 'trojan', pin: true, pos: 5 },
-  ];
   if (!Array.isArray(s.sub.fakes)) s.sub.fakes = [];
-  /* موارد پیش‌فرضِ مفقود را اضافه کن (اگر تنظیمات قدیمی است) */
-  DEF_FAKES.forEach((d) => {
-    if (!s.sub.fakes.some((f) => f && f.id === d.id)) s.sub.fakes.push(d);
-  });
   /* پاک‌سازی و ترتیب */
   s.sub.fakes = s.sub.fakes
     .filter((f) => f && typeof f === 'object' && f.id)
@@ -2101,15 +2083,9 @@ async function buildList(u, s, url, cf) {
    {usage} {remaining} {percent} {expiry} {days} {channel} {panel} {ver} {user}
    {quota} {up} {down} {req} {mode} {date} {time} {ip}
    {tgsupport} {tgbuy}   ← آیدی‌های تلگرام
-*/
-/* پیش‌فرض کانفیگ‌های فیک (برای پنل و برای هر کاربر) */
-const DEF_FAKES = () => ([
-  { id: 'usage',     name: '📊 {usage}',        enabled: true,  proto: 'vless',  pin: true, pos: 1 },
-  { id: 'remaining', name: '🟢 {remaining}',    enabled: true,  proto: 'vless',  pin: true, pos: 2 },
-  { id: 'expiry',    name: '📅 {expiry}',       enabled: true,  proto: 'vless',  pin: true, pos: 3 },
-  { id: 'channel',   name: '📢 {channel}',      enabled: true,  proto: 'trojan', pin: true, pos: 4 },
-  { id: 'panel',     name: '⚙️ {panel} v{ver}', enabled: false, proto: 'trojan', pin: true, pos: 5 },
-]);
+*//* پیش‌فرض کانفیگ‌های فیک حذف شد — هیچ کانفیگ ثابتی وجود ندارد؛
+   فقط برای سازگاری با کدهای قدیمی، یک آرایه‌ی خالی برمی‌گرداند */
+const DEF_FAKES = () => ([]);
 
 function fakeVars(u, s) {
   const q = (u.quotaGB || 0) * 1073741824;
@@ -2304,7 +2280,7 @@ const FALLBACK = `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="
 /* ═══════════ منبع ثابت UI — فقط همین سه فایل، غیرقابل تغییر ═══════════ */
 /* UI_REV: با هر تغییرِ UI یک واحد زیاد شود تا کشِ Cloudflare/گیت‌هاب نسخه‌ی
    قدیمی را برگرداند (کلیدِ کش‌شکن در URL) */
-const UI_REV = '20260902a';
+const UI_REV = '20260902b';
 const UI_SRC = {
   html: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/index.html?r=' + UI_REV,
   css: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/style.css?r=' + UI_REV,
@@ -6229,6 +6205,8 @@ async function subHandler(req, env, url, cf, wantPage) {
      cdn-cache-control هم کش لبه را برای همین پاسخ صریحاً خاموش می‌کند. */
   return txt(body, {
     'subscription-userinfo': quotaHdr(u),
+    /* صفحه‌ی کاربر برای «وضعیت زنده» از این هدر می‌خواند (میلی‌ثانیه) */
+    'subscription-last-online': String(Math.floor((Number(u.lastSeen) || 0))),
     'profile-update-interval': '12',
     'profile-title': encodeURIComponent(s.panel.name + ' — ' + u.name),
     ...(supUrl ? { 'support-url': supUrl, 'profile-web-page-url': supUrl } : {}),
