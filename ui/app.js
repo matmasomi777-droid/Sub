@@ -294,7 +294,9 @@
   }
   const toast = (msg, kind = 'ok') => { const d = document.createElement('div'); d.className = 'toast ' + kind; const ic = kind === 'err' ? 'fa-circle-xmark' : kind === 'info' ? 'fa-circle-info' : 'fa-circle-check'; d.innerHTML = icon(ic) + '<span>' + esc(msg) + '</span>'; $('#toastRoot').appendChild(d); setTimeout(() => d.remove(), 3400); };
   const copy = (t) => { (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('در کلیپ‌بورد کپی شد')).catch(() => toast('کپی نشد', 'err')); };
-  const modal = (html, wide) => { const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = '<div class="box' + (wide ? ' wide' : '') + '" id="mbox">' + html + '</div>'; m.onmousedown = (e) => { if (e.target === m) m.remove(); }; $('#modalRoot').appendChild(m); return m; };
+  /* مودال تکی: قبل از بازکردن، مودال‌های قبلی پاک می‌شوند — دوبارِ بازکردن
+     (کلیک روی ردیف + دکمه‌ی ویرایش) دیگر مودال‌های روی‌هم نمی‌سازد */
+  const modal = (html, wide) => { $('#modalRoot').innerHTML = ''; const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = '<div class="box' + (wide ? ' wide' : '') + '" id="mbox">' + html + '</div>'; m.onmousedown = (e) => { if (e.target === m) m.remove(); }; $('#modalRoot').appendChild(m); return m; };
   const closeM = () => { $('#modalRoot').innerHTML = ''; };
   const busy = (el, label) => { if (el) { el.disabled = true; el.dataset.old = el.innerHTML; el.innerHTML = icon('fa-spinner fa-spin') + ' ' + label; } };
   const free = (el) => { if (el && el.dataset.old) { el.disabled = false; el.innerHTML = el.dataset.old; delete el.dataset.old; } };
@@ -983,6 +985,16 @@
       '</div></div>';
   }
 
+  /* ═══ متنِ زمانیِ انقضا — ساعت‌وار اگر کمتر از ۴۸ ساعت مانده باشد ═══
+     کاربرانی که انقضای ساعتی دارند (مثلاً ۲ ساعت) قبلاً «۱ روز» نشان داده می‌شد.
+     hours < 48  → «۲ ساعت و ۱۵ دقیقه» / «۴۵ دقیقه»  •  >= 48  → روز */
+  function expTxt(ms) {
+    const m = Math.ceil(ms / 60000);
+    if (m < 60) return fa(m) + ' دقیقه';
+    const h = Math.floor(m / 60);
+    if (m < 48 * 60) return fa(h) + ' ساعت' + (m % 60 ? ' و ' + fa(m % 60) + ' دقیقه' : '');
+    return fa(Math.ceil(m / 1440)) + ' روز';
+  }
   function usersView() {
     const us = S.d.users;
     const searchHits = (u) => {
@@ -998,12 +1010,19 @@
       (us.map((u) => {
         const q2 = (u.quotaGB || 0) * 1073741824, pc = q2 ? (u.up + u.down) / q2 * 100 : 0;
         const dl = u.expiryAt ? Math.ceil((u.expiryAt - Date.now()) / 86400000) : null;
+        /* انقضای ساعتی‌وار: وقتی کمتر از ۴۸ ساعت مانده، ساعت/دقیقه نشان داده می‌شود */
+        const expCell = u.expiryAt === null ? '<span class="badge ok">نامحدود</span>'
+          : (u.expiryFirstUse && !u.expiryArmed) ? '<span class="badge ac">' + icon('fa-hourglass-start') + ' منتظر اولین اتصال</span>'
+          : u.expiryAt < Date.now() ? '<span class="badge bad">منقضی</span>'
+          : (u.expiryAt - Date.now() < 48 * 3600000
+            ? '<span class="badge' + (u.expiryAt - Date.now() < 2 * 3600000 ? ' bad' : ' warn') + '">' + expTxt(u.expiryAt - Date.now()) + '</span>'
+            : '<span class="badge' + (dl <= 7 ? ' warn' : '') + '">' + fa(dl) + ' روز</span>');
         const own = [(u.mode && u.mode !== 'inherit') ? 'mode' : '', u.ports ? 'ports' : '', (u.cleanIPs || []).length ? 'ips' : '', u.panelUrl ? 'url' : '', u.speedLimit ? 'speed' : ''].filter(Boolean);
         return '<tr data-hit="' + searchHits(u) + '" data-uid="' + esc(u.id) + '"><td><div style="display:flex;align-items:center;gap:8px"><span class="dot ' + (u.enabled ? 'on' : 'bad') + '"></span><span class="cell-main">' + esc(u.name) + '</span></div><div class="cell-sub">' + esc(u.note || '—') + '</div></td>' +
           '<td><div class="mono" style="font-size:10.5px">' + esc(String(u.uuid).slice(0, 13)) + '…</div><button class="btn sm ghost" data-act="copy" data-v="' + esc(u.uuid) + '">' + icon('fa-copy') + ' کپی</button></td>' +
           '<td><b class="mono" style="font-size:11px">' + bytes(u.up + u.down) + '</b><div class="bar ' + (pc > 90 ? 'bad' : pc > 70 ? 'warn' : '') + '" style="margin-top:5px"><i style="width:' + pc + '%"></i></div><div class="cell-sub">↓' + bytes(u.down) + ' ↑' + bytes(u.up) + '</div></td>' +
           '<td class="mono">' + (u.quotaGB ? fa(u.quotaGB) + ' GB' : '∞') + '<div class="cell-sub">' + (u.dailyQuotaMB ? fa(u.dailyQuotaMB) + ' MB/روز' : '—') + '</div></td>' +
-          '<td>' + (dl === null ? '<span class="badge ok">نامحدود</span>' : dl < 0 ? '<span class="badge bad">منقضی</span>' : '<span class="badge' + (dl <= 7 ? ' warn' : '') + '">' + fa(dl) + ' روز</span>') + '</td>' +
+          '<td>' + expCell + '</td>' +
           '<td><span class="badge ' + (u.mode === 'both' ? 'ac' : 'b2') + '">' + esc(u.mode || 'inherit') + '</span></td>' +
           '<td>' + (own.length ? own.map((o) => '<span class="badge ac">' + esc(o) + '</span>').join(' ') : '<span class="cell-sub">—</span>') + '</td>' +
           '<td class="cell-sub">' + ago(u.lastSeen) +
@@ -1070,7 +1089,7 @@
       '<div class="sub-stats">' +
         '<div class="sub-stat"><span>مصرف</span><b>' + bytes(used) + '</b><i>از ' + (q ? fa(u.quotaGB) + ' GB' : 'نامحدود') + '</i></div>' +
         '<div class="sub-stat"><span>باقیمانده</span><b>' + (q ? bytes(Math.max(0, q - used)) : '∞') + '</b><i>' + (q ? fa(pct.toFixed(0)) + '٪ مصرف شده' : 'بدون سقف') + '</i></div>' +
-        '<div class="sub-stat"><span>انقضا</span><b>' + (dl === null ? 'نامحدود' : dl < 0 ? 'منقضی' : fa(dl) + ' روز') + '</b><i>' + (dl === null ? '—' : dl < 0 ? 'غیرفعال' : 'تا ' + new Date(u.expiryAt).toLocaleDateString('fa-IR')) + '</i></div>' +
+        '<div class="sub-stat"><span>انقضا</span><b>' + (u.expiryAt ? (u.expiryAt < Date.now() ? 'منقضی' : expTxt(u.expiryAt - Date.now())) : 'نامحدود') + '</b><i>' + (u.expiryAt ? 'تا ' + new Date(u.expiryAt).toLocaleString('fa-IR') : '—') + '</i></div>' +
         '<div class="sub-stat"><span>وضعیت</span><b>' + (u.enabled ? 'فعال' : 'غیرفعال') + '</b><i>' + fa(u.totalReq || 0) + ' اتصال</i></div>' +
       '</div>' +
       (q ? '<div class="bar' + (pct > 90 ? ' bad' : pct > 70 ? ' warn' : '') + '" style="margin-top:10px"><i style="width:' + pct + '%"></i></div>' : '') +
@@ -2115,9 +2134,32 @@
         const out = $('#subOut');
         if (out) out.innerHTML = '<pre class="code"><div class="hd"><span>' + esc(S.fmt) + ' • ' + esc(tx.length) + ' کاراکتر</span><button class="btn sm" data-act="copy" data-v="' + esc(tx.slice(0, 100000)).replace(/"/g, '&quot;') + '">کپی</button></div>' + esc(tx.slice(0, 6000)) + (tx.length > 6000 ? '\n…' : '') + '</pre>';
       }
+      else if (a === 'exp-mode') {
+        /* تغییرِ حالتِ انقضا — چیپ فعال + فیلدِ پنهان + نمایش/پنهانِ تعداد */
+        const hm = $('#mbox [data-p="expiryMode"]'); if (hm) hm.value = v;
+        const cur = $('#mbox [data-act="exp-mode"].on');
+        if (cur) { cur.classList.remove('on'); cur.style.background = ''; cur.style.borderColor = ''; cur.style.color = ''; }
+        t.classList.add('on'); t.style.background = 'var(--ac)'; t.style.borderColor = 'var(--ac)'; t.style.color = '#fff';
+        const row = $('#mbox #expQtyRow'), lbl = row && row.querySelector('.hint');
+        if (row) {
+          const show = v === 'hours' || v === 'days';
+          row.style.display = show ? 'flex' : 'none';
+          if (lbl) lbl.textContent = v === 'days' ? 'روز — از همین لحظه' : 'ساعت — از همین لحظه';
+        }
+        return;
+      }
       else if (a === 'user-save') {
         busy(t, 'ذخیره');
         const patch = collect($('#mbox'));
+        /* ═══ انقضا: ترجمه‌ی حالتِ انتخابی به فیلدهای سرور ═══
+           expiryMode/expQty فقط برای همین لحظه‌اند و به سرور نمی‌روند. */
+        const expMode = patch.expiryMode || 'none', expQty = Math.max(1, Number(patch.expQty) || 1);
+        delete patch.expiryMode; delete patch.expQty;
+        const fuOn = !!patch.expiryFirstUse;
+        if (expMode === 'none') { patch.expiryDays = 0; patch.expiryFirstUse = false; }
+        else if (expMode === 'hours') { patch.expiryHours = expQty; patch.expiryFirstUse = fuOn; }
+        else if (expMode === 'days') { patch.expiryDays = expQty; patch.expiryFirstUse = fuOn; }
+        else { patch.expiryFirstUse = fuOn; } /* 'date' → ورکر expiryAt فعلی را نگه می‌دارد */
         /* کانفیگ‌های فیک اختصاصی از DOM خوانده می‌شوند */
         patch.fakes = readUserFakes();
         patch.fakeMode = patch.fakeMode || 'inherit';
@@ -2747,6 +2789,39 @@
     return out;
   }
 
+  /* ═══ بخشِ انقضا در مودال کاربر ═══
+     سه حالت: «نامحدود»، «ساعت» (مثلاً ۱ یا ۲ ساعته)، «روز» + حالتِ ویژه‌ی
+     «تاریخِ مشخص». به‌علاوه یک کلید برای «شروع انقضا از اولین استفاده»:
+     وقتی روشن باشد expiryAt الان نوشته نمی‌شود؛ اولین بار که کاربر واقعاً
+     وصل شد، ورکر از همان لحظه انقضا را فعال می‌کند. */
+  function expirySection(u) {
+    const hasExpiry = !!u.expiryAt;
+    const remainH = hasExpiry ? Math.max(1, Math.ceil((u.expiryAt - Date.now()) / 3600000)) : 0;
+    const remainD = hasExpiry ? Math.max(1, Math.ceil((u.expiryAt - Date.now()) / 86400000)) : 0;
+    const fu = !!u.expiryFirstUse;
+    /* حالتِ پیش‌فرض از باقی‌ماندهٔ فعلی حدس زده می‌شود؛ فیلدِ پنهانِ expiryMode
+       با کلیک روی چیپ‌ها به‌روز می‌شود (collect فقط data-p می‌خواند). */
+    const mode = !hasExpiry ? 'none' : (remainD >= 1 && remainH >= remainD * 24 ? 'days' : 'hours');
+    const qty = mode === 'days' ? remainD : remainH;
+    const segBtn = (k, l) => '<button type="button" class="chip' + (mode === k ? ' on" style="background:var(--ac);border-color:var(--ac);color:#fff"' : '"') + ' data-act="exp-mode" data-v="' + k + '">' + l + '</button>';
+    return '<div class="um-sec"><div class="um-sec-h">' + icon('fa-hourglass-half') + '<span>انقضا</span></div>' +
+      '<input type="hidden" data-p="expiryMode" value="' + mode + '">' +
+      '<div class="seg" style="flex-wrap:wrap">' +
+        segBtn('none', 'نامحدود') + segBtn('hours', 'ساعتی') + segBtn('days', 'روزی') + segBtn('date', 'تاریخ مشخص') +
+      '</div>' +
+      '<div id="expQtyRow" style="display:' + (mode === 'hours' || mode === 'days' ? 'flex' : 'none') + ';align-items:center;gap:10px;margin-top:10px">' +
+        '<input type="number" min="1" step="1" data-p="expQty" value="' + esc(qty || 1) + '" style="max-width:110px">' +
+        '<span class="hint" style="margin:0">' + (mode === 'days' ? 'روز — از همین لحظه' : 'ساعت — از همین لحظه') + '</span>' +
+      '</div>' +
+      (mode === 'date' ? '<div class="hint" style="margin-top:8px">در حالت «تاریخ مشخص» پس از ذخیره، تاریخِ دقیقِ انقضای فعلی حفظ می‌شود (' + (hasExpiry ? new Date(u.expiryAt).toLocaleString('fa-IR') : '—') + ').</div>' : '') +
+      '<div style="margin-top:12px">' +
+        field({ p: 'expiryFirstUse', l: 'شروع انقضا از اولین استفاده', t: 'sw' }, fu) +
+        '<div class="hint" style="margin-top:6px">روشن باشد → مدتِ انتخابی (ساعت/روز) از <b>اولین اتصالِ واقعی</b> کاربر شمرده می‌شود؛ تا آن لحظه انقضا فعال نیست و در کلاینت «نامحدود» دیده می‌شود.</div>' +
+      '</div>' +
+      (hasExpiry ? '<div class="hint" style="margin-top:6px">انقضای فعلی: ' + new Date(u.expiryAt).toLocaleString('fa-IR') + (fu && !u.expiryArmed ? ' — هنوز شروع نشده (منتظر اولین اتصال)' : ' (' + expTxt(u.expiryAt - Date.now()) + ' مانده)') + '</div>' : '') +
+      '</div>';
+  }
+
   function userModal(u, isNew) {
     if (!u) return;
     const v = (p) => {
@@ -2779,12 +2854,11 @@
       sec('سهمیه و محدودیت', 'fa-database', [
         { p: 'quotaGB', l: 'سهمیه کل (GB)', t: 'num', h: '۰ = نامحدود' },
         { p: 'dailyQuotaMB', l: 'سهمیه روزانه (MB)', t: 'num', h: '۰ = بدون سقف' },
-        { p: 'expiryDays', l: 'انقضا (روز)', t: 'num', h: '۰ = نامحدود' },
-        /* محدودیت دستگاهی حذف شد — فقط IP واقعی کلاینت شمرده می‌شود */
         { p: 'ipLimit', l: 'سقف IP همزمان', t: 'num', h: '۰ = پیش‌فرض سراسری • بیشینه‌ی IPهای همزمان' },
         { p: 'maxConfigs', l: 'سقف کانفیگ', t: 'num', h: '۰ = پیش‌فرض' },
         { p: 'speedLimit', l: 'سقف سرعت (Mbps)', t: 'num', h: '۰ = نامحدود' },
       ], 'three') +
+      expirySection(u) +
       sec('نام‌گذاری و تنظیمات اختصاصی', 'fa-gear', [
         { p: 'mode', l: 'حالت پروتکل', t: 'sel', o: ['inherit', 'alpha', 'beta', 'both'], lbls: { inherit: 'از پنل', alpha: 'Alpha — VLESS', beta: 'Beta — Trojan', both: 'Both' } },
         { p: 'fakeMode', l: 'کانفیگ‌های فیک', t: 'sel', o: ['inherit', 'custom', 'off'], lbls: { inherit: 'از پنل', custom: 'اختصاصی', off: 'خاموش' } },

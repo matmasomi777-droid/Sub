@@ -750,13 +750,21 @@
             overflow-y: auto;
             overflow-x: hidden;
             min-height: 60px;
-            align-items: center;
-            justify-content: center;
+            /* ⚠️ باگ قبلی: align/justify «center» باعث می‌شد وقتی آیتم‌ها از
+               ارتفاعِ کادر بیشتر می‌شدند، سرِ لیست (شامل دکمه‌ی کپی همه) و
+               تهِ لیست هر دو بیرون از ناحیه‌ی قابل‌اسکرول بریده می‌شدند —
+               با flex-start + min-height:0 اسکرول از اولین ردیف درست است */
+            align-items: stretch;
+            justify-content: flex-start;
+            flex: 1 1 auto;
+            min-height: 0;
             color: var(--text-muted);
             font-size: 13px;
             scrollbar-width: thin;
             scrollbar-color: rgba(var(--accent-rgb), 0.35) transparent;
         }
+        /* حالتِ خالی همچنان وسط‌چین بماند */
+        .action-dropdown-body > span { align-self: center; text-align: center; width: 100%; }
         .action-dropdown-body::-webkit-scrollbar { width: 5px; }
         .action-dropdown-body::-webkit-scrollbar-thumb {
             background: rgba(var(--accent-rgb), 0.35);
@@ -876,7 +884,7 @@
         .ip-copy-btn:hover { background: var(--accent); color: #06110F; }
 
         .copy-all-btn {
-            background: rgba(var(--accent-rgb), 0.15);
+            background: var(--surface);
             border: 1px solid rgba(var(--accent-rgb), 0.3);
             color: var(--text);
             padding: 8px 14px;
@@ -891,6 +899,12 @@
             width: 100%;
             transition: all 0.25s;
             flex-shrink: 0;
+            /* چسبان به بالای لیست — با هر تعداد کانفیگ همیشه دیده می‌شود */
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
         }
         .copy-all-btn:hover { background: var(--accent); color: #06110F; }
 

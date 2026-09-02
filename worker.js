@@ -1783,7 +1783,7 @@ function applyBackup(st, data, mode) {
 
 function addLog(st, level, actor, action, detail = '') { st.logs = st.logs || []; st.logs.unshift({ id: randTok(8), ts: Date.now(), level, actor, action, detail }); st.logs = st.logs.slice(0, 50); }
 function seed(st) {
-  if (!st.users.length) st.users = [{ id: randTok(6), name: 'admin', uuid: crypto.randomUUID(), secret: randTok(12), enabled: true, note: 'کاربر اصلی', quotaGB: 0, dailyQuotaMB: 0, expiryAt: null, deviceLimit: 3, ipLimit: 0, maxConfigs: 0, speedLimit: 0, mode: 'inherit', ports: '', cleanIPs: [], proxyIPs: [], nodes: [], nat64: '', panelUrl: '', blockAdult: false, blockAds: true, fakes: [], fakeMode: 'inherit', up: 0, down: 0, totalReq: 0, lastSeen: null, createdAt: Date.now() }];
+  if (!st.users.length) st.users = [{ id: randTok(6), name: 'admin', uuid: crypto.randomUUID(), secret: randTok(12), enabled: true, note: 'کاربر اصلی', quotaGB: 0, dailyQuotaMB: 0, expiryAt: null, expiryFirstUse: false, expiryArmed: true, deviceLimit: 3, ipLimit: 0, maxConfigs: 0, speedLimit: 0, mode: 'inherit', ports: '', cleanIPs: [], proxyIPs: [], nodes: [], nat64: '', panelUrl: '', blockAdult: false, blockAds: true, fakes: [], fakeMode: 'inherit', up: 0, down: 0, totalReq: 0, lastSeen: null, createdAt: Date.now() }];
   st.users.forEach((u) => { if (!Array.isArray(u.fakes)) u.fakes = []; if (!u.fakeMode) u.fakeMode = 'inherit'; });
   return st;
 }
@@ -2311,13 +2311,15 @@ function sniff(ua) {
   return 'base64';
 }
 /* ⚠️ واحد: بایت — همه‌ی کلاینت‌ها (Clash، sing-box، v2rayN) بایت انتظار دارند */
-const quotaHdr = (u) => {
+function quotaHdr(u) {
   const up = Math.max(0, Math.floor(Number(u.up) || 0));
   const down = Math.max(0, Math.floor(Number(u.down) || 0));
   const total = Math.max(0, Math.floor((Number(u.quotaGB) || 0) * 1073741824));
-  const exp = u.expiryAt ? Math.floor(u.expiryAt / 1000) : 0;
+  /* «انقضا از اولین استفاده»: تا مسلح نشده، کلاینت باید انقضا را نامحدود ببیند */
+  const armed = !u.expiryFirstUse || u.expiryArmed;
+  const exp = u.expiryAt && armed ? Math.floor(u.expiryAt / 1000) : 0;
   return `upload=${up}; download=${down}; total=${total}; expire=${exp}`;
-};
+}
 
 /* ════════════════════════════ صفحات ════════════════════════════ */
 const DECOY = {
@@ -2335,7 +2337,7 @@ const FALLBACK = `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="
 /* ═══════════ منبع ثابت UI — فقط همین سه فایل، غیرقابل تغییر ═══════════ */
 /* UI_REV: با هر تغییرِ UI یک واحد زیاد شود تا کشِ Cloudflare/گیت‌هاب نسخه‌ی
    قدیمی را برگرداند (کلیدِ کش‌شکن در URL) */
-const UI_REV = '20260902c';
+const UI_REV = '20260902d';
 const UI_SRC = {
   html: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/index.html?r=' + UI_REV,
   css: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/style.css?r=' + UI_REV,
@@ -5306,14 +5308,52 @@ async function apiHandler(req, env, url, ctx) {
       }
       else if (b.op === 'update') {
         const p = { ...(b.patch || {}) };
-        if (p.expiryDays !== undefined) { u.expiryAt = Number(p.expiryDays) > 0 ? Date.now() + Number(p.expiryDays) * 86400000 : null; delete p.expiryDays; }
+        /* ═══ انقضا: سه فیلدِ اختیاری ═══
+           expiryDays   → از همین لحظه به روز        (۰ = نامحدود)
+           expiryHours  → از همین لحظه به ساعت         (۱ = یک ساعت دیگر)
+           expiryFirstUse → انقضا تا اولین اتصالِ واقعی غیرفعال است؛ پس از
+            اولین استفاده، «مدتِ» انتخابی از همان لحظه حساب می‌شود.
+            مقدارِ مدت از expiryHours/expiryDaysِ همین درخواست می‌آید؛ اگر
+            هیچ‌کدام نیامده باشد، مقدارِ قبلی حفظ می‌شود. */
+        const fu = p.expiryFirstUse !== undefined ? !!p.expiryFirstUse : undefined;
+        delete p.expiryFirstUse;
+        const hasDays = p.expiryDays !== undefined, hasHours = p.expiryHours !== undefined;
+        if (hasDays || hasHours) {
+          const qty = hasDays ? Number(p.expiryDays) : Number(p.expiryHours);
+          const unitMs = hasDays ? 86400000 : 3600000;
+          delete p.expiryDays; delete p.expiryHours;
+          if (fu) {
+            /* حالتِ «از اولین استفاده»: مدت ذخیره می‌شود، هنوز فعال نمی‌شود.
+               expiryAt فعلاً یک «تخمین» است (همین لحظه + مدت) — لحظه‌ی
+               اولین اتصالِ واقعی بازنویسی و مسلح می‌شود (dial). */
+            u.expiryFirstUse = true;
+            u.expiryDurMs = qty > 0 ? qty * unitMs : 0;
+            u.expiryAt = qty > 0 ? Date.now() + qty * unitMs : null;
+            u.expiryArmed = false;
+          } else {
+            u.expiryFirstUse = false;
+            u.expiryArmed = true;
+            u.expiryAt = qty > 0 ? Date.now() + qty * unitMs : null;
+          }
+        } else if (fu !== undefined) {
+          /* فقط کلید عوض شد و مدتِ تازه‌ای نیامد — مدت از تخمینِ فعلی */
+          u.expiryFirstUse = fu;
+          if (fu) {
+            u.expiryDurMs = u.expiryAt ? Math.max(60000, u.expiryAt - Date.now()) : 0;
+            u.expiryArmed = false;
+            if (!u.expiryAt) u.expiryAt = null;
+          } else {
+            u.expiryArmed = true;
+            if (u.expiryAt && u.expiryAt < Date.now()) u.expiryAt = null;
+          }
+        }
         ['ports', 'cleanIPs', 'proxyIPs', 'nodes'].forEach((k) => { if (typeof p[k] === 'string') p[k] = p[k].split(/[,\n]/).map((x) => x.trim()).filter(Boolean); });
         merge(u, p);
       }
       addLog(st, b.op === 'delete' ? 'warn' : 'info', 'user', 'کاربر: ' + b.op, u.name || '');
       await save(env, st); return json({ ok: true, users: st.users });
     }
-    const u = { id: randTok(6), name: b.name || 'کاربر ' + (st.users.length + 1), uuid: b.uuid || crypto.randomUUID(), secret: b.secret || randTok(12), enabled: true, note: b.note || '', quotaGB: Number(b.quotaGB) || 0, dailyQuotaMB: 0, expiryAt: b.expiryDays ? Date.now() + b.expiryDays * 86400000 : null, deviceLimit: 3, ipLimit: 0, maxConfigs: 0, speedLimit: 0, mode: 'inherit', ports: '', cleanIPs: [], proxyIPs: [], nodes: [], nat64: '', panelUrl: '', blockAdult: false, blockAds: true, fakes: [], fakeMode: 'inherit', up: 0, down: 0, totalReq: 0, lastSeen: null, createdAt: Date.now() };
+    const u = { id: randTok(6), name: b.name || 'کاربر ' + (st.users.length + 1), uuid: b.uuid || crypto.randomUUID(), secret: b.secret || randTok(12), enabled: true, note: b.note || '', quotaGB: Number(b.quotaGB) || 0, dailyQuotaMB: 0, expiryAt: b.expiryDays ? Date.now() + b.expiryDays * 86400000 : (b.expiryHours ? Date.now() + b.expiryHours * 3600000 : null), expiryFirstUse: !!b.expiryFirstUse, expiryArmed: !b.expiryFirstUse, deviceLimit: 3, ipLimit: 0, maxConfigs: 0, speedLimit: 0, mode: 'inherit', ports: '', cleanIPs: [], proxyIPs: [], nodes: [], nat64: '', panelUrl: '', blockAdult: false, blockAds: true, fakes: [], fakeMode: 'inherit', up: 0, down: 0, totalReq: 0, lastSeen: null, createdAt: Date.now() };
     st.users.unshift(u); addLog(st, 'success', 'user', 'کاربر جدید ساخته شد', u.name);
     if (s.tg.enabled && s.tg.notify.user) tgSend(s, `👤 کاربر جدید: ${u.name}\n🔗 ${url.origin}/${s.sub.path}/${u.uuid}`);
     await save(env, st);
@@ -5653,7 +5693,9 @@ async function apiHandler(req, env, url, ctx) {
         .then((r) => ({ name, ok: !!(r && r.ok), note: (r && r.note) || '' }))
         .catch((e) => ({ name, ok: false, note: 'خطا: ' + String((e && e.message) || e) }));
 
-      const active = st.users.filter((u) => u.enabled && (!u.expiryAt || u.expiryAt > Date.now()));
+      /* مثل session(): منتظرِ اولین اتصال هم برای تست مجاز است */
+      const active = st.users.filter((u) => u.enabled && ((!u.expiryFirstUse || u.expiryArmed)
+        ? (!u.expiryAt || u.expiryAt > Date.now()) : true));
       const tester = active[0];                       /* ← باید قبل از استفاده تعریف شود */
       const host = s.host || url.hostname;
       checks.push({ name: 'مسیر تونل', ok: !!s.path, note: s.path });
@@ -6078,7 +6120,8 @@ async function apiHandler(req, env, url, ctx) {
          خودش را صدا بزند). */
       const sizeMB = Number(b.sizeMB) || 1;
       const want = Math.max(1024, Math.min(20 * 1024 * 1024, Math.round(sizeMB * 1048576)));
-      const pool = st.users.filter((u) => u.enabled && (!u.expiryAt || u.expiryAt > Date.now()));
+      const pool = st.users.filter((u) => u.enabled && ((!u.expiryFirstUse || u.expiryArmed)
+        ? (!u.expiryAt || u.expiryAt > Date.now()) : true));
       const target = (b.uuid && st.users.find((u) => u.uuid === b.uuid)) || pool[0] || st.users[0];
       if (!target) return json({ ok: false, error: 'هیچ کاربری برای تست وجود ندارد' }, 400);
       await usageEnsure(env);
@@ -6155,7 +6198,9 @@ function renderUserPage(u, st, url, dailyUsed) {
   const base = url.origin + '/' + s.sub.path + '/' + u.uuid;
   const q = (u.quotaGB || 0) * 1073741824, used = (u.up || 0) + (u.down || 0);
   const gb = (x) => Number((x / 1073741824).toFixed(2));
-  const code = !u.enabled ? 'paused' : u.expiryAt && u.expiryAt < Date.now() ? 'expired' : q && used >= q ? 'limit' : dailyUsed >= (u.dailyQuotaMB || 0) * 1048576 && u.dailyQuotaMB ? 'dailyLimit' : 'active';
+  /* «انقضا از اولین استفاده»: تا مسلح نشده، وضعیتِ صفحه‌ی کاربر «فعال» است */
+  const expArmed = !u.expiryFirstUse || u.expiryArmed;
+  const code = !u.enabled ? 'paused' : u.expiryAt && expArmed && u.expiryAt < Date.now() ? 'expired' : q && used >= q ? 'limit' : dailyUsed >= (u.dailyQuotaMB || 0) * 1048576 && u.dailyQuotaMB ? 'dailyLimit' : 'active';
   const iso = u.expiryAt ? new Date(u.expiryAt).toISOString().slice(0, 10) : '';
   const faDate = u.expiryAt ? new Date(u.expiryAt).toLocaleDateString('fa-IR') : '';
   const map = {
@@ -6260,7 +6305,8 @@ async function subHandler(req, env, url, cf, wantPage) {
   const dailyUsed = (usageRow.dayUp || 0) + (usageRow.dayDown || 0);
   if (wantPage || (!fmtQ && !CLIENT_UA.test(ua))) return renderUserPage(u, st, url, dailyUsed);
   if (u.dailyQuotaMB && dailyUsed >= u.dailyQuotaMB * 1048576) return txt('daily quota exceeded', {}, 403);
-  if (u.expiryAt && u.expiryAt < Date.now()) return txt('subscription expired', {}, 403);
+  /* «انقضا از اولین استفاده»: تا قبل از اولین اتصالِ واقعی، صفحه‌ی ساب کار می‌کند */
+  if (u.expiryAt && u.expiryAt < Date.now() && (!u.expiryFirstUse || u.expiryArmed)) return txt('subscription expired', {}, 403);
   const q = (u.quotaGB || 0) * 1073741824;
   /* ⚠️ NaN-safe: اگر up/down undefined باشند، NaN >= q برابر false می‌شد و سهمیه هرگز فعال نمی‌شد */
   const usedBytes = (Number(u.up) || 0) + (Number(u.down) || 0);
@@ -6963,7 +7009,14 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
   /* صبر برای ساخت جدول‌ها — accept() قبلاً انجام شده، پس handshake آسیب نمی‌بیند */
   if (boot) await boot;
 
-  const users = state.users.filter((u) => u.enabled && (!u.expiryAt || u.expiryAt > Date.now()));
+  /* کاربرانِ واجدِ شرایط:
+     – حالتِ عادی: انقضا تمام‌نشده باشد
+     – حالتِ «انقضا از اولین استفاده» و هنوز مسلح‌نشده: همیشه مجاز —
+       expiryAt فعلاً فقط تخمین است و شمارش با اولین اتصال آغاز می‌شود */
+  const expOk = (u) => (!u.expiryFirstUse || u.expiryArmed)
+    ? (!u.expiryAt || u.expiryAt > Date.now())
+    : true;
+  const users = state.users.filter((u) => u.enabled && expOk(u));
   const byUuid = new Map(users.map((u) => [u.uuid, u]));
   const byPass = new Map(users.map((u) => [sha224(u.secret), u]));
   const s = state.settings;
@@ -7180,6 +7233,28 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
 
   const dial = async (info) => {
     user = info.user;
+    /* ═══ شروعِ انقضا از اولین استفاده ═══
+       وقتی expiryFirstUse فعال است و انقضا هنوز «مسلح» نشده، اولین اتصالِ
+       واقعی (رسیدن به dial یعنی کلاینت واقعاً ترافیک فرستاده) شمارش را
+       آغاز می‌کند. با یک flush فوریِ صفر بایتی هم activation دائمی می‌شود،
+       پس حتی اگر اتصال بلافاصله قطع شود، شمارش ادامه می‌یابد. */
+    if (user && user.expiryFirstUse && user.expiryAt && !user.expiryArmed) {
+      user.expiryArmed = true;
+      /* انقضا از «همین لحظه» بازمحاسبه می‌شود: لحظه‌ی اولین اتصالِ واقعی */
+      user.expiryAt = Date.now() + (Number(user.expiryDurMs) || Math.max(60000, user.expiryAt - Date.now()));
+      ctx.waitUntil((async () => {
+        try {
+          const st2 = await load(env);
+          const u2 = st2.users.find((x) => x.uuid === user.uuid);
+          if (u2 && u2.expiryFirstUse && !u2.expiryArmed) {
+            u2.expiryArmed = true;
+            u2.expiryAt = Date.now() + (Number(u2.expiryDurMs) || (u2.expiryAt ? Math.max(60000, u2.expiryAt - Date.now()) : 0)) || null;
+            await save(env, st2);
+          }
+        } catch (e) {}
+      })());
+      maybeFlush(true);
+    }
     if (info.cmd === 2) { await finish(); return; }
     if (!info.addr || !info.port) return finish();
 
