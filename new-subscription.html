@@ -1525,11 +1525,34 @@
         let liveRefreshTimer = null;
 
         // ===== توابع کمکی =====
+        /* نمایشِ دقیقِ باقی‌مانده — وقتی کمتر از یک روز مانده، ساعت و دقیقه هم نشان داده می‌شود */
         function calculateDaysLeft(expireSeconds) {
             if (!expireSeconds || expireSeconds <= 0) return null;
             const now = Date.now();
             const diff = (expireSeconds * 1000) - now;
             return diff > 0 ? Math.ceil(diff / (1000 * 60 * 60 * 24)) : -1;
+        }
+
+        /* «۲ روز و ۵ ساعت» / «۷ ساعت و ۱۳ دقیقه» / «۴۵ دقیقه» —
+           برچسبِ واحدِ بزرگ (days-label) برای سازگاری با CSS حفظ می‌شود */
+        function formatRemainingText(expireSeconds, daysUnit, hourLabel, minuteLabel) {
+            if (!expireSeconds || expireSeconds <= 0) return null;
+            const diff = (expireSeconds * 1000) - Date.now();
+            if (diff <= 0) return null;
+            const totalMin = Math.max(1, Math.ceil(diff / 60000));
+            const days = Math.floor(totalMin / 1440);
+            const hours = Math.floor((totalMin % 1440) / 60);
+            const mins = totalMin % 60;
+            if (days >= 2) return days + ' ' + (daysUnit || 'روز');
+            if (days >= 1) {
+                if (hours > 0) return days + ' ' + (daysUnit || 'روز') + ' و ' + hours + ' ' + (hourLabel || 'ساعت');
+                return days + ' ' + (daysUnit || 'روز');
+            }
+            if (hours >= 1) {
+                if (mins > 0) return hours + ' ' + (hourLabel || 'ساعت') + ' و ' + mins + ' ' + (minuteLabel || 'دقیقه');
+                return hours + ' ' + (hourLabel || 'ساعت');
+            }
+            return mins + ' ' + (minuteLabel || 'دقیقه');
         }
 
         function generateExpiryDates(expireSeconds) {
@@ -1618,7 +1641,7 @@
             fa: {
                 dir: "rtl", greet: "سلام ", badgeActive: "فعال", badgeInactive: "غیرفعال",
                 badgeBlocked: "مسدود", badgeExpired: "منقضی", badgeLimit: "اتمام حجم", badgeDailyLimit: "سهمیه روزانه",
-                daysUnit: "روز", remainingLabel: "باقی‌مانده", titleLimit: "حجم کلی", titleTotal: "مصرف کل",
+                daysUnit: "روز", hoursUnit: "ساعت", minutesUnit: "دقیقه", remainingLabel: "باقی‌مانده", titleLimit: "حجم کلی", titleTotal: "مصرف کل",
                 titleDownload: "دانلود", titleUpload: "آپلود",
                 detailTotal: "مصرف کل", detailRemaining: "باقی‌مانده", detailRemainingVolume: "حجم باقی‌مانده", detailLastConnect: "آخرین اتصال",
                 actionRenew: "تمدید ساب", actionCopy: "کپی لینک ساب", actionCopied: "کپی شد!",
@@ -1636,6 +1659,7 @@
                 radarStatusScan: "در حال اسکن... {done} از {total} - یافت‌شده: {found}",
                 radarStatusDone: "پایان اسکن - {found} آی‌پی سالم یافت شد",
                 radarStatusSaving: "در حال ذخیره در پنل...", radarStatusSaved: "{count} آی‌پی تمیز ذخیره و روی کانفیگ‌های شما اعمال شد", radarStatusSaveFail: "ذخیره‌ی آی‌پی‌ها در پنل ناموفق بود",
+                radarStatusVerify: "تأیید نهایی در مرورگر... {done} از {total}",
                 radarStatusStopping: "در حال توقف...", radarStatusStopped: "اسکن متوقف شد",
                 radarStatusNoTlsPort: "هیچ پورت TLS قابل‌اسکنی در کانفیگ‌ها یافت نشد",
                 radarStatusNoResult: "آی‌پی سالمی یافت نشد",
@@ -1645,7 +1669,7 @@
             en: {
                 dir: "ltr", greet: "Hello ", badgeActive: "Active", badgeInactive: "Inactive",
                 badgeBlocked: "Blocked", badgeExpired: "Expired", badgeLimit: "Quota Used", badgeDailyLimit: "Daily Limit",
-                daysUnit: "Days", remainingLabel: "Remaining", titleLimit: "Total Limit", titleTotal: "Total Usage",
+                daysUnit: "Days", hoursUnit: "h", minutesUnit: "min", remainingLabel: "Remaining", titleLimit: "Total Limit", titleTotal: "Total Usage",
                 titleDownload: "Download", titleUpload: "Upload",
                 detailTotal: "Total Usage", detailRemaining: "Remaining", detailRemainingVolume: "Remaining Volume", detailLastConnect: "Last Connect",
                 actionRenew: "Renew", actionCopy: "Copy Sub Link", actionCopied: "Copied!",
@@ -1663,6 +1687,7 @@
                 radarStatusScan: "Scanning... {done} of {total} - found: {found}",
                 radarStatusDone: "Scan finished - {found} healthy IPs found",
                 radarStatusSaving: "Saving to panel...", radarStatusSaved: "{count} clean IPs saved and applied to your configs", radarStatusSaveFail: "Failed to save IPs to the panel",
+                radarStatusVerify: "Verifying in browser... {done} of {total}",
                 radarStatusStopping: "Stopping...", radarStatusStopped: "Scan stopped",
                 radarStatusNoTlsPort: "No probeable TLS port found in configs",
                 radarStatusNoResult: "No healthy IP found",
@@ -1672,7 +1697,7 @@
             tr: {
                 dir: "ltr", greet: "Merhaba ", badgeActive: "Aktif", badgeInactive: "Pasif",
                 badgeBlocked: "Engellendi", badgeExpired: "Süresi Doldu", badgeLimit: "Kota Bitti", badgeDailyLimit: "Günlük Limit",
-                daysUnit: "Gün", remainingLabel: "Kalan", titleLimit: "Toplam Kota", titleTotal: "Toplam",
+                daysUnit: "Gün", hoursUnit: "sa", minutesUnit: "dk", remainingLabel: "Kalan", titleLimit: "Toplam Kota", titleTotal: "Toplam",
                 titleDownload: "İndirme", titleUpload: "Yükleme",
                 detailTotal: "Toplam", detailRemaining: "Kalan", detailRemainingVolume: "Kalan Hacim", detailLastConnect: "Son Bağlantı",
                 actionRenew: "Yenile", actionCopy: "Sub Linki Kopyala", actionCopied: "Kopyalandı!",
@@ -1690,6 +1715,7 @@
                 radarStatusScan: "Taranıyor... {done} / {total} - bulunan: {found}",
                 radarStatusDone: "Tarama bitti - {found} sağlıklı IP bulundu",
                 radarStatusSaving: "Panele kaydediliyor...", radarStatusSaved: "{count} temiz IP kaydedildi ve yapılandırmalarınıza uygulandı", radarStatusSaveFail: "IP'ler panele kaydedilemedi",
+                radarStatusVerify: "Tarayıcıda doğrulanıyor... {done} / {total}",
                 radarStatusStopping: "Durduruluyor...", radarStatusStopped: "Tarama durduruldu",
                 radarStatusNoTlsPort: "Yapılandırmalarda taranabilir TLS portu bulunamadı",
                 radarStatusNoResult: "Sağlıklı IP bulunamadı",
@@ -1699,7 +1725,7 @@
             ar: {
                 dir: "rtl", greet: "أهلاً ", badgeActive: "نشط", badgeInactive: "غير نشط",
                 badgeBlocked: "محجوب", badgeExpired: "منتهي", badgeLimit: "انتهت الحصة", badgeDailyLimit: "الحصة اليومية",
-                daysUnit: "يوم", remainingLabel: "المتبقي", titleLimit: "الحجم الكلي", titleTotal: "الإجمالي",
+                daysUnit: "يوم", hoursUnit: "ساعة", minutesUnit: "دقيقة", remainingLabel: "المتبقي", titleLimit: "الحجم الكلي", titleTotal: "الإجمالي",
                 titleDownload: "تحميل", titleUpload: "رفع",
                 detailTotal: "الإجمالي", detailRemaining: "المتبقي", detailRemainingVolume: "الحجم المتبقي", detailLastConnect: "آخر اتصال",
                 actionRenew: "تجديد", actionCopy: "نسخ رابط الساب", actionCopied: "تم النسخ!",
@@ -1717,6 +1743,7 @@
                 radarStatusScan: "جارٍ الفحص... {done} من {total} - تم العثور: {found}",
                 radarStatusDone: "انتهى الفحص - تم العثور على {found} آي‌بي سليم",
                 radarStatusSaving: "جارٍ الحفظ في اللوحة...", radarStatusSaved: "تم حفظ {count} آي‌بي نظيف وتطبيقه على تكويناتك", radarStatusSaveFail: "فشل حفظ عناوين IP في اللوحة",
+                radarStatusVerify: "التحقق في المتصفح... {done} من {total}",
                 radarStatusStopping: "جارٍ الإيقاف...", radarStatusStopped: "تم إيقاف الفحص",
                 radarStatusNoTlsPort: "لم يتم العثور على منفذ TLS قابل للفحص في الإعدادات",
                 radarStatusNoResult: "لا يوجد آي‌بي سليم",
@@ -1850,7 +1877,18 @@
             } else if (sanaeiClientData.daysLeft === null) {
                 document.getElementById("live-days-count").innerHTML = `<span style="font-size:22px;">${data.unlimitedText}</span>`;
             } else {
-                document.getElementById("live-days-count").innerHTML = `${sanaeiClientData.daysLeft} <span id="days-label">${data.daysUnit}</span>`;
+                /* باقی‌ماندهٔ دقیق — کمتر از یک روز: ساعت و دقیقه هم نمایش داده می‌شود */
+                const remainText = formatRemainingText(
+                    sanaeiClientData.expireSeconds,
+                    data.daysUnit,
+                    data.hoursUnit || 'ساعت',
+                    data.minutesUnit || 'دقیقه'
+                );
+                if (remainText && sanaeiClientData.daysLeft < 2) {
+                    document.getElementById("live-days-count").innerHTML = `<span style="font-size:20px;" class="en-font" dir="auto">${remainText}</span>`;
+                } else {
+                    document.getElementById("live-days-count").innerHTML = `${sanaeiClientData.daysLeft} <span id="days-label">${data.daysUnit}</span>`;
+                }
             }
 
             document.getElementById("stat-limit").innerText = sanaeiClientData.totalByte > 0 ? formatBytes(sanaeiClientData.totalByte) : data.unlimitedText;
@@ -2410,7 +2448,41 @@
         const RADAR_PROBES = 2;
         const RADAR_CONCURRENCY = 16;
         const RADAR_IP_COUNT = 180;
-        const RADAR_KEEP = 8;
+        /* تعداد آی‌پی‌هایی که باید ذخیره شود = سقف کانفیگِ همین کاربر
+           (maxConfigs یا nodeLimit پنل) — از ورکر با placeholder می‌آید؛
+           اگر نبود، مقدارِ قبلی (۸) پیش‌فرض می‌ماند. */
+        const RADAR_KEEP = (() => {
+            const n = parseInt("__NODE_LIMIT__", 10);
+            return (n > 0 && n <= 100) ? n : 8;
+        })();
+
+        /* ═══ تأییدِ نهایی در مرورگر ═══
+           بعد از اسکن، هر آی‌پیِ کاندید یک‌بارِ دیگر واقعاً پروب می‌شود تا فقط
+           آی‌پی‌هایی که همین حالا (در همین مرورگر) پاسخ می‌دهند ذخیره شوند. */
+        async function radarVerifyIps(candidates, ports) {
+            const data = locales[currentLang] || locales.fa;
+            const statusEl = document.getElementById('radar-status');
+            const ok = [];
+            let i = 0;
+            async function worker() {
+                while (i < candidates.length) {
+                    if (radarCancelRequested) return;
+                    const r = candidates[i++];
+                    let alive = false;
+                    for (const port of ports) {
+                        const rtt = await pingIp(r.ip, port, RADAR_TIMEOUT);
+                        if (rtt !== null && rtt >= RADAR_MIN_RTT) { alive = true; break; }
+                    }
+                    if (alive) ok.push(r);
+                    if (statusEl && data.radarStatusVerify) statusEl.textContent = data.radarStatusVerify
+                        .replace('{done}', i).replace('{total}', candidates.length);
+                }
+            }
+            const ws = [];
+            for (let w = 0; w < RADAR_CONCURRENCY; w++) ws.push(worker());
+            await Promise.all(ws);
+            return ok;
+        }
 
         let radarRunning = false;
         let radarCancelRequested = false;
@@ -2547,12 +2619,27 @@
                 /* آی‌پی‌ها در صفحه نمایش داده نمی‌شوند — به پنل ارسال و
                    روی کانفیگ‌های همین کاربر اعمال می‌شوند */
                 results.sort(function(a, b) { return a.score - b.score; });
-                const top = results.slice(0, RADAR_KEEP).map(function(r) { return r.ip; });
+                /* کاندیدها = بهترین‌ها تا حداکثرِ دو برابرِ تعدادِ لازم —
+                   بعد از تأییدِ مجدد در همین مرورگر، تعدادِ نهاییِ درست ذخیره می‌شود */
+                const candidates = results.slice(0, RADAR_KEEP * 2);
 
-                if (top.length === 0) {
+                if (candidates.length === 0) {
                     statusEl.textContent = data.radarStatusNoResult;
                     return;
                 }
+
+                /* ═══ تأییدِ نهایی در همین مرورگر ═══
+                   فقط آی‌پی‌هایی که همین حالا هم پاسخ می‌دهند ذخیره می‌شوند */
+                const verified = await radarVerifyIps(candidates, ports);
+                if (radarCancelRequested) {
+                    statusEl.textContent = data.radarStatusStopped;
+                    return;
+                }
+                if (verified.length === 0) {
+                    statusEl.textContent = data.radarStatusNoResult;
+                    return;
+                }
+                const top = verified.slice(0, RADAR_KEEP).map(function(r) { return r.ip; });
 
                 statusEl.textContent = data.radarStatusSaving;
                 try {
@@ -2563,7 +2650,12 @@
                     });
                     const sj = await saveRes.json().catch(() => ({}));
                     if (saveRes.ok && sj.ok) {
-                        statusEl.textContent = data.radarStatusSaved.replace('{count}', top.length);
+                        statusEl.textContent = data.radarStatusSaved
+                            .replace('{count}', sj.applied || top.length);
+                        /* کانفیگ‌های سابِ صفحه باید با آی‌پی‌های تازه دوباره لود شوند —
+                           ورکر بعد از حذفِ کانفیگ‌های مرده، ساب را بازسازی کرده است */
+                        await fetchLiveSubscriptionData();
+                        renderAll();
                     } else {
                         statusEl.textContent = data.radarStatusSaveFail;
                     }

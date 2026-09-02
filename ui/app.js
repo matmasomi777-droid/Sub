@@ -2135,7 +2135,7 @@
         if (out) out.innerHTML = '<pre class="code"><div class="hd"><span>' + esc(S.fmt) + ' • ' + esc(tx.length) + ' کاراکتر</span><button class="btn sm" data-act="copy" data-v="' + esc(tx.slice(0, 100000)).replace(/"/g, '&quot;') + '">کپی</button></div>' + esc(tx.slice(0, 6000)) + (tx.length > 6000 ? '\n…' : '') + '</pre>';
       }
       else if (a === 'exp-mode') {
-        /* تغییرِ حالتِ انقضا — چیپ فعال + فیلدِ پنهان + نمایش/پنهانِ تعداد */
+        /* تغییرِ حالتِ انقضا — چیپ فعال + فیلدِ پنهان + نمایش/پنهانِ تعداد یا تاریخ */
         const hm = $('#mbox [data-p="expiryMode"]'); if (hm) hm.value = v;
         const cur = $('#mbox [data-act="exp-mode"].on');
         if (cur) { cur.classList.remove('on'); cur.style.background = ''; cur.style.borderColor = ''; cur.style.color = ''; }
@@ -2146,6 +2146,8 @@
           row.style.display = show ? 'flex' : 'none';
           if (lbl) lbl.textContent = v === 'days' ? 'روز — از همین لحظه' : 'ساعت — از همین لحظه';
         }
+        const drow = $('#mbox #expDateRow');
+        if (drow) drow.style.display = v === 'date' ? 'flex' : 'none';
         return;
       }
       else if (a === 'user-save') {
@@ -2159,7 +2161,15 @@
         if (expMode === 'none') { patch.expiryDays = 0; patch.expiryFirstUse = false; }
         else if (expMode === 'hours') { patch.expiryHours = expQty; patch.expiryFirstUse = fuOn; }
         else if (expMode === 'days') { patch.expiryDays = expQty; patch.expiryFirstUse = fuOn; }
-        else { patch.expiryFirstUse = fuOn; } /* 'date' → ورکر expiryAt فعلی را نگه می‌دارد */
+        else if (expMode === 'date') {
+          /* تاریخِ مشخص — مقدارِ datetime-local به timestamp تبدیل می‌شود؛
+             ورکر فیلدِ expiryAt را بدون expiryDays/expiryHours عیناً ذخیره می‌کند */
+          const ts = patch.expDate ? new Date(patch.expDate).getTime() : NaN;
+          delete patch.expDate;
+          if (!isNaN(ts) && ts > 0) { patch.expiryAt = ts; patch.expiryFirstUse = fuOn; if (!fuOn) patch.expiryArmed = true; }
+          else { toast('تاریخ انقضا نامعتبر است', 'err'); free(t); return; }
+        }
+        else { patch.expiryFirstUse = fuOn; }
         /* کانفیگ‌های فیک اختصاصی از DOM خوانده می‌شوند */
         patch.fakes = readUserFakes();
         patch.fakeMode = patch.fakeMode || 'inherit';
@@ -2168,6 +2178,16 @@
         if (r.ok) { toast('ذخیره شد'); closeM(); await refresh(); } else toast(r.error || 'خطا', 'err');
       }
       /* این سه عملیات بالاتر (پیش از نگهبان data-act) مدیریت می‌شوند تا مودال بسته/باز نشود */
+      else if (a === 'cfg-cnt') {
+        /* انتخابِ سریعِ تعدادِ کانفیگ — فیلدِ «سقف کانفیگ» را پر می‌کند */
+        const inp = $('#mbox [data-p="maxConfigs"]'); if (inp) inp.value = v;
+        $$('#mbox [data-act="cfg-cnt"]').forEach((x) => {
+          const on = String(x.dataset.v) === String(v);
+          x.classList.toggle('on', on);
+          x.style.background = on ? 'var(--ac)' : ''; x.style.borderColor = on ? 'var(--ac)' : ''; x.style.color = on ? '#fff' : '';
+        });
+        return;
+      }
       else if (a === 'regen') { const inp = $('#mbox [data-p="uuid"]'); if (inp) { inp.value = crypto.randomUUID(); toast('UUID جدید ساخته شد', 'info'); } }
       else if (a === 'close') closeM();
       else if (a === 'key-new') { const r = await api('POST', '/api/keys', {}); if (r.ok) { toast('کلید ساخته شد'); await refresh(); } else toast(r.error || 'خطا', 'err'); }
@@ -2799,10 +2819,15 @@
     const remainH = hasExpiry ? Math.max(1, Math.ceil((u.expiryAt - Date.now()) / 3600000)) : 0;
     const remainD = hasExpiry ? Math.max(1, Math.ceil((u.expiryAt - Date.now()) / 86400000)) : 0;
     const fu = !!u.expiryFirstUse;
-    /* حالتِ پیش‌فرض از باقی‌ماندهٔ فعلی حدس زده می‌شود؛ فیلدِ پنهانِ expiryMode
-       با کلیک روی چیپ‌ها به‌روز می‌شود (collect فقط data-p می‌خواند). */
+    /* حالتِ پیش‌فرض: اگر کاربر انقضا دارد، «تاریخ مشخص» فعال است تا تاریخِ دقیق
+       قابل ویرایش باشد — قبلاً این حالت هرگز انتخاب نمی‌شد و هیچ فیلدی نشان داده نمی‌شد. */
     const mode = !hasExpiry ? 'none' : (remainD >= 1 && remainH >= remainD * 24 ? 'days' : 'hours');
     const qty = mode === 'days' ? remainD : remainH;
+    /* مقدارِ فیلدِ تاریخ — همین حالا + ۳۰ روز برای کاربرِ بدون انقضا */
+    const dtLocal = (ts) => { const d = new Date(ts); d.setSeconds(0, 0);
+      const p = (n) => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes()); };
+    const curDate = hasExpiry ? dtLocal(u.expiryAt) : dtLocal(Date.now() + 30 * 86400000);
     const segBtn = (k, l) => '<button type="button" class="chip' + (mode === k ? ' on" style="background:var(--ac);border-color:var(--ac);color:#fff"' : '"') + ' data-act="exp-mode" data-v="' + k + '">' + l + '</button>';
     return '<div class="um-sec"><div class="um-sec-h">' + icon('fa-hourglass-half') + '<span>انقضا</span></div>' +
       '<input type="hidden" data-p="expiryMode" value="' + mode + '">' +
@@ -2813,7 +2838,11 @@
         '<input type="number" min="1" step="1" data-p="expQty" value="' + esc(qty || 1) + '" style="max-width:110px">' +
         '<span class="hint" style="margin:0">' + (mode === 'days' ? 'روز — از همین لحظه' : 'ساعت — از همین لحظه') + '</span>' +
       '</div>' +
-      (mode === 'date' ? '<div class="hint" style="margin-top:8px">در حالت «تاریخ مشخص» پس از ذخیره، تاریخِ دقیقِ انقضای فعلی حفظ می‌شود (' + (hasExpiry ? new Date(u.expiryAt).toLocaleString('fa-IR') : '—') + ').</div>' : '') +
+      /* ═══ انتخابگرِ تاریخِ مشخص — قبلاً وجود نداشت و «هیچی» نشان نمی‌داد ═══ */
+      '<div id="expDateRow" style="display:' + (mode === 'date' ? 'flex' : 'none') + ';align-items:center;gap:10px;margin-top:10px">' +
+        '<input type="datetime-local" data-p="expDate" value="' + esc(curDate) + '" style="max-width:230px" class="mono">' +
+        '<span class="hint" style="margin:0">تاریخ و ساعتِ دقیقِ انقضا</span>' +
+      '</div>' +
       '<div style="margin-top:12px">' +
         field({ p: 'expiryFirstUse', l: 'شروع انقضا از اولین استفاده', t: 'sw' }, fu) +
         '<div class="hint" style="margin-top:6px">روشن باشد → مدتِ انتخابی (ساعت/روز) از <b>اولین اتصالِ واقعی</b> کاربر شمرده می‌شود؛ تا آن لحظه انقضا فعال نیست و در کلاینت «نامحدود» دیده می‌شود.</div>' +
@@ -2858,6 +2887,14 @@
         { p: 'maxConfigs', l: 'سقف کانفیگ', t: 'num', h: '۰ = پیش‌فرض' },
         { p: 'speedLimit', l: 'سقف سرعت (Mbps)', t: 'num', h: '۰ = نامحدود' },
       ], 'three') +
+      /* ═══ انتخابگرِ سریعِ تعدادِ کانفیگ — قبلاً فقط ورودیِ عددی بود ═══ */
+      '<div class="um-sec"><div class="um-sec-h">' + icon('fa-list-ol') + '<span>تعداد کانفیگ</span></div>' +
+      '<div class="chips" style="flex-wrap:wrap">' +
+        [0, 5, 10, 12, 15, 20, 30, 50].map((n) =>
+          '<button type="button" class="chip' + ((Number(u.maxConfigs) || 0) === n ? ' on" style="background:var(--ac);border-color:var(--ac);color:#fff"' : '"') +
+          ' data-act="cfg-cnt" data-v="' + n + '">' + (n === 0 ? 'پیش‌فرض پنل' : n) + '</button>').join('') +
+      '</div>' +
+      '<div class="hint" style="margin-top:6px">تعداد کانفیگ‌هایی که در ساب این کاربر ساخته می‌شود — «پیش‌فرض پنل» از Node limit تنظیمات پیروی می‌کند. انتخابِ سریع = پر شدن فیلدِ «سقف کانفیگ».</div></div>' +
       expirySection(u) +
       sec('نام‌گذاری و تنظیمات اختصاصی', 'fa-gear', [
         { p: 'mode', l: 'حالت پروتکل', t: 'sel', o: ['inherit', 'alpha', 'beta', 'both'], lbls: { inherit: 'از پنل', alpha: 'Alpha — VLESS', beta: 'Beta — Trojan', both: 'Both' } },
