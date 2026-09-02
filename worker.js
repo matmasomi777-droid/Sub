@@ -2304,7 +2304,7 @@ const FALLBACK = `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="
 /* ═══════════ منبع ثابت UI — فقط همین سه فایل، غیرقابل تغییر ═══════════ */
 /* UI_REV: با هر تغییرِ UI یک واحد زیاد شود تا کشِ Cloudflare/گیت‌هاب نسخه‌ی
    قدیمی را برگرداند (کلیدِ کش‌شکن در URL) */
-const UI_REV = '20260901d';
+const UI_REV = '20260902a';
 const UI_SRC = {
   html: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/index.html?r=' + UI_REV,
   css: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/style.css?r=' + UI_REV,
@@ -2313,6 +2313,39 @@ const UI_SRC = {
   userNew: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/new-subscription?r=' + UI_REV,
 };
 let USER_HTML = null;
+
+/* ═══ اعتبارسنجی تازگی UI با گیت‌هاب ═══
+   هر ۳۰ ثانیه یک درخواست سبک (HEAD-ish) به گیت‌هاب می‌زنیم تا ETag/Last-Modified
+   را با نسخه‌ی کش‌شده مقایسه کنیم. اگر تغییر کرده باشد UI با force=true دوباره
+   خوانده می‌شود. نتیجه: به‌محض push در گیت‌هاب، پنل نسخه‌ی جدید را سرو می‌کند؛
+   حتی وقتی UI.html هنوز در مهلت ۳۰۰ ثانیه‌ای کش داخلی است. */
+const UI_ETAGS = {};                  // url -> { etag, lastMod, ts }
+const UI_VALIDATE_MS = 30000;         // هر ۳۰ ثانیه یک‌بار اعتبارسنجی
+const UI_VALIDATE_TTL = 300;          // کش گیت‌هاب برای اعتبارسنجی — بدون کش لبه
+let UI_VALIDATE = { ts: 0, inFlight: null };
+async function uiValidate(env) {
+  const now = Date.now();
+  if (now - UI_VALIDATE.ts < UI_VALIDATE_MS) return false;
+  if (UI_VALIDATE.inFlight) return UI_VALIDATE.inFlight;
+  UI_VALIDATE.inFlight = (async () => {
+    try {
+      const bust = '&check=' + Math.floor(now / UI_VALIDATE_MS);
+      const probe = (u, n) => fetch(u + bust, { method: 'GET', headers: { 'range': 'bytes=0-0' }, cf: { cacheTtl: 0, cacheEverything: false } })
+        .then((r) => ({ u, etag: r.headers.get('etag') || '', lastMod: r.headers.get('last-modified') || '' }))
+        .catch(() => ({ u, etag: '', lastMod: '' }));
+      const [h, c, j] = await Promise.all([probe(UI_SRC.html, 'index'), probe(UI_SRC.css, 'style'), probe(UI_SRC.js, 'app')]);
+      let changed = false;
+      [h, c, j].forEach((p) => {
+        const old = UI_ETAGS[p.u];
+        if (old && (p.etag || p.lastMod) && (old.etag !== p.etag || old.lastMod !== p.lastMod)) changed = true;
+        UI_ETAGS[p.u] = { etag: p.etag, lastMod: p.lastMod, ts: now };
+      });
+      UI_VALIDATE.ts = now;
+      return changed;
+    } catch (e) { return false; }
+  })().finally(() => { UI_VALIDATE.inFlight = null; });
+  return UI_VALIDATE.inFlight;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    سیستم استتار — ایده از نهان ولی پیاده‌سازی مستقل
@@ -4724,14 +4757,17 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         });
 
         // ===== رادار آی‌پی تمیز (کاملاً سمت مرورگر) =====
-        const CF_RANGES = [['104.16.', 0, 255], ['104.17.', 0, 255], ['104.18.', 0, 255], ['104.19.', 0, 255], ['104.20.', 0, 255], ['104.21.', 0, 255], ['104.22.', 0, 255], ['104.24.', 0, 255], ['104.25.', 0, 255], ['104.26.', 0, 255], ['104.27.', 0, 255], ['162.159.', 0, 255], ['172.64.', 0, 255], ['172.66.', 0, 255], ['172.67.', 0, 255], ['188.114.', 96, 111], ['141.101.', 64, 127]];
+        /* کل رنج 104.0.0.0/8 و 172.0.0.0/8 کلودفلر اسکن می‌شود */
+        const CF_RANGES = [];
+        for (let b2 = 0; b2 <= 255; b2++) CF_RANGES.push(['104.' + b2 + '.', 0, 255]);
+        for (let b2 = 0; b2 <= 255; b2++) CF_RANGES.push(['172.' + b2 + '.', 0, 255]);
         const RADAR_PORTS = [443, 8443, 2053, 2083, 2087, 2096];
         /* تایم‌اوت کوتاه‌تر و پروب کمتر = اسکن چند برابر سریع‌تر؛
            آی‌پی مرده دیگر ۶ ثانیه هم بلاک نمی‌کند */
         const RADAR_TIMEOUT = 1200;
         const RADAR_PROBES = 2;
         const RADAR_CONCURRENCY = 16;
-        const RADAR_IP_COUNT = 140;
+        const RADAR_IP_COUNT = 180;
         const RADAR_KEEP = 8;
 
         let radarRunning = false;
@@ -5041,10 +5077,29 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
 
 async function loadUI(env, force) {
   const st = await load(env);
+  /* ═══ ضدِ «نسخه‌ی قدیمی پنل» ═══
+     کش لبه‌ی Cloudflare و کش ۵ دقیقه‌ای githack، هر دو می‌توانستند نسخه‌ی
+     قبلی فایل‌ها را برگردانند. حالا:
+     • هر واکشی از گیت‌هاب cacheTtl: 0 دارد (هرگز از کش لبه پاسخ نمی‌گیرد)
+     • درخواست‌های GET هم ETag را ثبت می‌کنند و هم ETag ذخیره‌شده را با آن
+       مقایسه — اگر گیت‌هاب نسخه‌ی تازه‌تری بدهد، همان‌جا force می‌شود
+     • یک اعتبارسنجِ سبک هر ۳۰ ثانیه ETag فایل‌ها را چک می‌کند تا حتی وسطِ
+       مهلت کش داخلی هم به‌محض push در گیت‌هاب، نسخه‌ی جدید سرو شود */
+  if (!force && UI.html) {
+    const changed = await uiValidate(env);
+    if (changed) force = true;
+  }
   if (!force && UI.html && Date.now() - UI.ts < 300000) return UI.html;
   try {
-    const bust = force ? '?v=' + Date.now() : '';
-    const get = (u, n) => fetch(u + bust, { cf: force ? { cacheTtl: 0 } : { cacheTtl: 300 } }).then((r) => { if (!r.ok) throw new Error(n + ' → ' + r.status); return r.text(); });
+    const bust = '&v=' + Date.now();
+    /* cacheTtl: 0 + cacheEverything: false — هیچ لبه‌ای این پاسخ را کش نمی‌کند */
+    const get = (u, n) => fetch(u + bust, { cf: { cacheTtl: 0, cacheEverything: false } }).then((r) => {
+      if (!r.ok) throw new Error(n + ' → ' + r.status);
+      const et = r.headers.get('etag') || '', lm = r.headers.get('last-modified') || '';
+      if (et || lm) UI_ETAGS[u] = { etag: et, lastMod: lm, ts: Date.now() };
+      else if (UI_ETAGS[u]) delete UI_ETAGS[u];
+      return r.text();
+    });
     const [html, css, js] = await Promise.all([get(UI_SRC.html, 'index.html'), get(UI_SRC.css, 'style.css'), get(UI_SRC.js, 'app.js')]);
     if (!html.includes('<!--APPJS-->') || !html.includes('<!--STYLESHEET-->')) throw new Error('index.html نامعتبر است');
 
@@ -6167,12 +6222,20 @@ async function subHandler(req, env, url, cf, wantPage) {
   save(env, st);                                  // بافر دارد — بدون await
   const supId = s.sub.telegramSupport || s.sub.telegramChannel || '';
   const supUrl = supId ? (supId.startsWith('http') ? supId : 'https://t.me/' + String(supId).replace('@', '')) : '';
+  /* ═══ ضدِ «سابِ قدیمی» ═══
+     txt() به‌صورت پیش‌فرض no-store می‌گذارد؛ این هدرها صریحاً تکرار می‌شوند تا
+     هر لایه‌ی احتمالی (کلاینت، مرورگر، لبه‌ی کلودفلر حتی برای کاربر ناشناس،
+     و ربات‌های میانی) مطمئن شود این پاسخ هرگز نباید از کش سرو شود.
+     cdn-cache-control هم کش لبه را برای همین پاسخ صریحاً خاموش می‌کند. */
   return txt(body, {
     'subscription-userinfo': quotaHdr(u),
     'profile-update-interval': '12',
     'profile-title': encodeURIComponent(s.panel.name + ' — ' + u.name),
     ...(supUrl ? { 'support-url': supUrl, 'profile-web-page-url': supUrl } : {}),
     'content-disposition': `attachment; filename="${encodeURIComponent(u.name)}.txt"`,
+    'cache-control': 'no-store, no-cache, must-revalidate, max-age=0',
+    'cdn-cache-control': 'no-store',
+    'cloudflare-cdn-cache-control': 'no-store',
   });
 }
 

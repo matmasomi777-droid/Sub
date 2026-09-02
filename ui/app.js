@@ -879,13 +879,59 @@
       '</div></div></div>';
   }
 
+  /* ═══════════ کنترل‌های نمودار: بازه‌ی زمانی + واحد GB/MB ═══════════
+     انتخاب‌ها در localStorage ذخیره می‌شوند تا با رفرش پنل پاک نشوند.
+     سری‌های دمِ دست: روزانه (۳۰ روز از تاریخچه)، ماهانه، سالانه.
+     بازه‌ی کوتاه‌تر از انتهای همان سری بریده می‌شود؛ بازه‌ی ۹۰ روزه اگر
+     تاریخچه کمتر داشته باشد، همان مقدار موجود را نشان می‌دهد. */
+  const DASH_CHART_KEY = 'sg_dash_chart';
+  const MON_UNIT_KEY = 'sg_mon_unit';
+  const tryGet = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } };
+  const trySet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  const DASH_RANGES = [['7', '۷ روز'], ['14', '۱۴ روز'], ['30', '۳۰ روز'], ['90', '۹۰ روز']];
+  function dashChartCfg() {
+    const raw = tryGet(DASH_CHART_KEY, '');
+    const p = raw.split('|');
+    return { range: DASH_RANGES.some(([k]) => k === p[0]) ? p[0] : '30', unit: p[1] === 'MB' ? 'MB' : 'GB' };
+  }
+  const dashChartSave = (c) => trySet(DASH_CHART_KEY, c.range + '|' + c.unit);
+  const chartUnitKey = () => (tryGet(MON_UNIT_KEY, 'GB') === 'MB' ? 'MB' : 'GB');
+  const chartUnit = () => (chartUnitKey() === 'MB' ? ' MB' : ' GB');
+  /* گیگابایت → واحد انتخابی */
+  const convSeries = (arr) => chartUnitKey() === 'MB' ? (arr || []).map((x) => (Number(x) || 0) * 1024) : (arr || []);
+  function chartSeries(d, which) {
+    const st = (d && d.stats) || {};
+    let arr;
+    if (which === 'dsh') {
+      const days = Number(dashChartCfg().range) || 30;
+      const full = (st.daily || []).slice(-Math.min(days, (st.daily || []).length || days));
+      arr = full.length ? full : [0];
+    } else {
+      const r = S.range;
+      arr = (r === 'm' ? st.monthly : r === 'y' ? st.yearly : st.daily) || st.daily || [0];
+    }
+    return convSeries(arr);
+  }
+  function chartCtlHtml(prefix) {
+    const c = dashChartCfg();
+    return '<div class="chart-ctl" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:0 14px;margin-top:4px">' +
+      '<div class="seg">' + DASH_RANGES.map(([k, l]) => '<button data-act="dash-range" data-v="' + k + '" class="' + (c.range === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
+      '<div class="seg">' + [['GB', 'گیگابایت'], ['MB', 'مگابایت']].map(([k, l]) => '<button data-act="dash-unit" data-v="' + k + '" class="' + (c.unit === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
+      '</div>';
+  }
+
   function dashView() {
     const d = S.d, us = d.users, s = d.settings;
     const used = us.reduce((a, u) => a + (u.up || 0) + (u.down || 0), 0);
     const quota = us.reduce((a, u) => a + (u.quotaGB || 0) * 1073741824, 0);
     const on = us.filter((u) => u.enabled).length, exp = us.filter((u) => u.expiryAt && u.expiryAt < Date.now()).length;
+    const panic = !!(s.auth && s.auth.panic);
+    const activeConns = us.reduce((a, u) => a + (u.activeConns || 0), 0);
     const top = [...us].sort((a, b) => (b.up + b.down) - (a.up + a.down)).slice(0, 6);
-    const ser = (d.stats && d.stats.trafficSeries) || Array(24).fill(.2);
+    /* ── انتخاب بازه و واحد نمودار داشبورد — بین رفرش‌ها حفظ می‌شود ── */
+    const CD = dashChartCfg();
+    const cLabel = CD.range === '90' ? '۹۰ روز اخیر' : CD.range === '30' ? '۳۰ روز اخیر' : CD.range === '14' ? '۱۴ روز اخیر' : '۷ روز اخیر';
+    const cUnitL = CD.unit === 'MB' ? 'مگابایت' : 'گیگابایت';
     const p = (s.auth && s.auth.path) || 'panel';
     return '<div class="page-head"><div><h1>نمای کلی</h1><p>' + esc(s.panel.name) + ' • ' + esc(location.hostname) + ' • نسخه ' + esc(d.version) + '</p></div>' +
       '<div class="btn-row">' +
@@ -903,7 +949,9 @@
       '<div class="stat"><div class="lbl">' + icon('fa-tower-broadcast') + ' گره‌ها</div><div class="val">' + fa(s.cleanIPs.length) + '</div><div class="sub">' + fa(s.ports.length) + ' پورت • ' + fa(s.proxyIPs.length) + ' پروکسی</div></div>' +
       '</div>' +
       '<div class="grid g2" style="margin-top:12px">' +
-      '<div class="card"><header><span class="ic">' + icon('fa-chart-line') + '</span><div><h3>جریان ترافیک</h3><p>۲۴ روز اخیر (گیگابایت) — موس را روی نمودار ببرید</p></div></header><div class="bd" id="chartWrap">' + area(ser, { unit: ' GB' }) + '</div></div>' +
+      '<div class="card"><header><span class="ic">' + icon('fa-chart-line') + '</span><div><h3>جریان ترافیک</h3><p>' + cLabel + ' (' + cUnitL + ') — موس را روی نمودار ببرید</p></div></header>' +
+      chartCtlHtml('dsh') +
+      '<div class="bd" id="chartWrap">' + area(chartSeries(d, 'dsh'), { unit: chartUnit() }) + '</div></div>' +
       '<div class="card"><header><span class="ic b2">' + icon('fa-ranking-star') + '</span><div><h3>بیشترین مصرف‌کنندگان</h3><p>۶ کاربر اول</p></div></header><div class="bd">' +
       (top.map((u) => { const q = (u.quotaGB || 0) * 1073741824, pc = q ? (u.up + u.down) / q * 100 : 0; return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' +
         '<span class="dot ' + (u.enabled ? 'on' : 'bad') + '"></span>' +
@@ -918,8 +966,16 @@
       '<div class="kv"><span>fingerprint</span><b class="mono">' + esc(s.fingerprint) + '</b></div>' +
       '<div class="kv"><span>Trojan hash</span><b class="mono">' + esc(s.trojanHash) + '</b></div>' +
       '<div class="kv"><span>مسیر تونل</span><b class="mono">' + esc(s.path) + '</b></div></div></div>' +
-      '<div class="card"><header><span class="ic b2">' + icon('fa-gauge-high') + '</span><div><h3>سهمیه‌ی مصرف</h3></div></header><div class="bd" style="display:flex;justify-content:space-around;gap:12px;flex-wrap:wrap">' +
-      ring(quota ? used / quota * 100 : 0, 'سهمیه') + ring(quota ? 100 - used / quota * 100 : 100, 'باقیمانده', 'var(--ac2)') +
+      /* ═══ وضعیت زنده — جایگزین کارت معیوب «سهمیه‌ی مصرف» ═══
+         (آن کارت همیشه ۰٪ نشان می‌داد؛ رینگ‌ها به داده‌ی واقعی متصل نبودند.
+         این کارت وضعیت واقعیِ همین لحظه را نشان می‌دهد.) */
+      '<div class="card"><header><span class="ic b2">' + icon('fa-gauge-high') + '</span><div><h3>وضعیت زنده</h3><p>داده‌ی واقعیِ همین لحظه</p></div></header><div class="bd">' +
+      '<div class="status-row">' + icon('fa-database') + ' ذخیره‌سازی<b>' + (d.storage === 'd1' ? 'D1 پایدار' : 'موقت') + '</b></div>' +
+      '<div class="status-row">' + icon('fa-plug-circle-check') + ' کاربران فعال<b>' + fa(on) + ' از ' + fa(us.length) + '</b></div>' +
+      '<div class="status-row">' + icon('fa-clock') + ' اشتراک منقضی<b>' + fa(exp) + '</b></div>' +
+      '<div class="status-row">' + icon('fa-globe') + ' اتصال‌های زنده<b>' + fa(activeConns) + '</b></div>' +
+      '<div class="status-row">' + icon('fa-arrow-up-right-dots') + ' درخواست‌ها<b>' + n((d.stats && d.stats.requests) || 0) + '</b></div>' +
+      '<div class="status-row">' + icon('fa-shield-halved') + ' وضعیت سرویس<b style="color:' + (panic ? 'var(--bad)' : 'var(--ok, #2ee6a8)') + '">' + (panic ? 'Panic فعال' : 'فعال') + '</b></div>' +
       '</div></div>' +
       '</div></div>';
   }
@@ -1201,9 +1257,12 @@
 
   function monitorView() {
     const st = S.d.stats || {}, u = S.d.users, r = S.range;
-    const ser = (r === 'm' ? st.monthly : r === 'y' ? st.yearly : st.daily) || st.daily || Array(14).fill(.3);
+    const cUnitL = chartUnitKey() === 'MB' ? 'مگابایت' : 'گیگابایت';
     return '<div class="page-head"><div><h1>مانیتورینگ و آمار</h1><p>مصرف روزانه/ماهانه/سالانه، اتصال‌های فعال و سلامت سرویس</p></div>' +
-      '<div class="seg">' + [['d', 'روزانه'], ['m', 'ماهانه'], ['y', 'سالانه']].map(([k, l]) => '<button data-act="range" data-v="' + k + '" class="' + (r === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div></div>' +
+      '<div class="btn-row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+      '<div class="seg">' + [['d', 'روزانه'], ['m', 'ماهانه'], ['y', 'سالانه']].map(([k, l]) => '<button data-act="range" data-v="' + k + '" class="' + (r === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
+      '<div class="seg">' + [['GB', 'گیگابایت'], ['MB', 'مگابایت']].map(([k, l]) => '<button data-act="chart-unit" data-v="' + k + '" class="' + (chartUnitKey() === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
+      '</div></div>' +
       '<div class="grid g4">' +
       '<div class="stat"><div class="lbl">آپلود کل</div><div class="val">' + bytes(u.reduce((a, x) => a + (x.up || 0), 0)) + '</div><div class="sub">' + fa(u.length) + ' کاربر</div></div>' +
       '<div class="stat"><div class="lbl">دانلود کل</div><div class="val">' + bytes(u.reduce((a, x) => a + (x.down || 0), 0)) + '</div><div class="sub">اتصال فعال: ' + fa(st.connections || 0) + '</div></div>' +
@@ -1211,8 +1270,8 @@
       '<div class="stat"><div class="lbl">نسخه / بیلد</div><div class="val" style="font-size:15px">' + esc(S.d.version) + '</div><div class="sub">' + esc(S.d.build || '—') + '</div></div>' +
       '</div>' +
       '<div class="grid g2" style="margin-top:12px">' +
-      '<div class="card"><header><span class="ic">' + icon('fa-chart-area') + '</span><div><h3>مصرف ' + (r === 'd' ? 'روزانه' : r === 'm' ? 'ماهانه' : 'سالانه') + '</h3><p>گیگابایت در هر بازه</p></div></header><div class="bd" id="chartWrap">' + area(ser, { color: 'var(--ac2)', color2: 'var(--ac)', unit: ' GB' }) + '</div></div>' +
-      '<div class="card"><header><span class="ic b2">' + icon('fa-chart-column') + '</span><div><h3>توزیع مصرف کاربران</h3><p>گیگابایت</p></div></header><div class="bd">' + bars(u.slice(0, 14).map((x) => (x.up + x.down) / 1073741824 || .01), 'GB') + '</div></div></div>' +
+      '<div class="card"><header><span class="ic">' + icon('fa-chart-area') + '</span><div><h3>مصرف ' + (r === 'd' ? 'روزانه' : r === 'm' ? 'ماهانه' : 'سالانه') + '</h3><p>' + cUnitL + ' در هر بازه</p></div></header><div class="bd" id="chartWrap">' + area(chartSeries(d, 'mon'), { color: 'var(--ac2)', color2: 'var(--ac)', unit: chartUnit() }) + '</div></div>' +
+      '<div class="card"><header><span class="ic b2">' + icon('fa-chart-column') + '</span><div><h3>توزیع مصرف کاربران</h3><p>' + cUnitL + '</p></div></header><div class="bd">' + bars(convSeries(u.slice(0, 14).map((x) => (x.up + x.down) / 1073741824 || .01)), chartUnit()) + '</div></div></div>' +
       '<div class="card"><header><span class="ic">' + icon('fa-users') + '</span><div><h3>مصرف به تفکیک کاربر</h3><p>با درصد پیشرفت</p></div></header><div class="bd" style="padding:0"><div class="tbl-wrap"><table>' +
       '<thead><tr><th>کاربر</th><th>آپلود</th><th>دانلود</th><th>کل</th><th>درصد سهمیه</th><th>درخواست</th></tr></thead><tbody>' +
       u.map((x) => { const q = (x.quotaGB || 0) * 1073741824, p = q ? (x.up + x.down) / q * 100 : 0; return '<tr><td class="cell-main">' + esc(x.name) + '</td><td class="mono">' + bytes(x.up) + '</td><td class="mono">' + bytes(x.down) + '</td><td class="mono"><b>' + bytes(x.up + x.down) + '</b></td>' +
@@ -1703,8 +1762,8 @@
     const cw = $('#chartWrap');
     if (cw) {
       const ser = S.view === 'monitor'
-        ? ((S.range === 'm' ? d.stats.monthly : S.range === 'y' ? d.stats.yearly : d.stats.daily) || [])
-        : (d.stats.trafficSeries || []);
+        ? chartSeries(d, 'mon')
+        : chartSeries(d, 'dsh');
       bindCharts(cw, ser);
     }
     $('#foot').innerHTML = esc(s.panel.name) + ' • ' + esc(location.hostname) + ' • ورود: <span class="mono">/' + esc(s.auth.path) + '</span> • ساب: <span class="mono">/' + esc(s.sub.path) + '</span>';
@@ -1941,6 +2000,10 @@
       else if (a === 'open') window.open(v, '_blank');
       else if (a === 'fmt') { S.fmt = v; render(); }
       else if (a === 'range') { S.range = v; render(); }
+      /* ═══ کنترل‌های نمودار: بازه و واحد ═══ */
+      else if (a === 'dash-range') { const c = dashChartCfg(); c.range = v; dashChartSave(c); render(); }
+      else if (a === 'dash-unit') { const c = dashChartCfg(); c.unit = v; dashChartSave(c); render(); }
+      else if (a === 'chart-unit') { trySet(MON_UNIT_KEY, v); render(); }
       else if (a === 'loglv') { S.tab.log = v; render(); }
       /* ═══════ اتصال‌های زنده — فقط بارخوانی ═══════
          عملیاتِ روی نشستِ زنده (قطعِ موقت، مسدودسازیِ آی‌پی، آزادسازی) کاملاً
