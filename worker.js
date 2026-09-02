@@ -6193,7 +6193,7 @@ async function tgSend(s, text) {
 
 /* ════════════════════════════ اشتراک ════════════════════════════ */
 /* ── صفحه‌ی کاربر (داشبورد + اشتراک در یک صفحه) ── */
-function renderUserPage(u, st, url, dailyUsed) {
+async function renderUserPage(u, st, url, dailyUsed) {
   const s = st.settings;
   const base = url.origin + '/' + s.sub.path + '/' + u.uuid;
   const q = (u.quotaGB || 0) * 1073741824, used = (u.up || 0) + (u.down || 0);
