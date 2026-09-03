@@ -2337,13 +2337,13 @@ const FALLBACK = `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="
 /* ═══════════ منبع ثابت UI — فقط همین سه فایل، غیرقابل تغییر ═══════════ */
 /* UI_REV: با هر تغییرِ UI یک واحد زیاد شود تا کشِ Cloudflare/گیت‌هاب نسخه‌ی
    قدیمی را برگرداند (کلیدِ کش‌شکن در URL) */
-const UI_REV = '20260903a';
+const UI_REV = '20260902d';
 const UI_SRC = {
   html: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/index.html?r=' + UI_REV,
   css: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/style.css?r=' + UI_REV,
   js: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/app.js?r=' + UI_REV,
   user: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/user.html?r=' + UI_REV,
-  userNew: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/new-subscription.html?r=' + UI_REV,
+  userNew: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/new-subscription?r=' + UI_REV,
 };
 let USER_HTML = null;
 
@@ -6193,7 +6193,7 @@ async function tgSend(s, text) {
 
 /* ════════════════════════════ اشتراک ════════════════════════════ */
 /* ── صفحه‌ی کاربر (داشبورد + اشتراک در یک صفحه) ── */
-async function renderUserPage(u, st, url, dailyUsed) {
+function renderUserPage(u, st, url, dailyUsed) {
   const s = st.settings;
   const base = url.origin + '/' + s.sub.path + '/' + u.uuid;
   const q = (u.quotaGB || 0) * 1073741824, used = (u.up || 0) + (u.down || 0);
@@ -6218,8 +6218,6 @@ async function renderUserPage(u, st, url, dailyUsed) {
     __LIMIT_BYTES__: String(q),
     __EXPIRE_SECONDS__: u.expiryAt ? String(Math.floor(u.expiryAt / 1000)) : '0',
     __LAST_ONLINE_MS__: String(u.lastSeen || 0),
-    /* تعدادِ کانفیگِ مؤثرِ این کاربر — رادارِ صفحه‌ی کاربر همین‌قدر آی‌پی ذخیره می‌کند */
-    __NODE_LIMIT__: String(Number(u.maxConfigs) || Number(s.sub.nodeLimit) || 0),
     __SYNC_NORMAL__: base,
     __SYNC_NORMAL_BASE64__: base + '?format=base64',
     __SYNC_RAW__: base + '?format=raw',
@@ -6273,14 +6271,10 @@ async function subHandler(req, env, url, cf, wantPage) {
     const ru = st.users.find((x) => x.uuid === userId || x.secret === userId || x.name === userId);
     if (!ru) return json({ ok: false, error: 'user not found' }, 404);
     const rb = await req.json().catch(() => ({}));
-    /* تعدادِ آی‌پی دقیقاً بر اساس تنظیمات: سقفِ کانفیگِ کاربر (maxConfigs)
-       یا nodeLimit سراسری پنل — مرورگر قبل از ارسال در همان تعداد راستی‌آزمایی
-       کرده است؛ اینجا هم سقف اعمال می‌شود تا تعدادِ ذخیره‌شده همیشه درست باشد. */
-    const wantN = Math.max(1, Number(ru.maxConfigs) || Number(s.sub.nodeLimit) || 8);
     const ips = (Array.isArray(rb.ips) ? rb.ips : [])
       .map((x) => String(x).trim())
       .filter((x) => /^\d{1,3}(\.\d{1,3}){3}$/.test(x))
-      .slice(0, Math.min(wantN, 100));
+      .slice(0, 20);
     if (!ips.length) return json({ ok: false, error: 'no valid ips' }, 400);
     /* خواسته‌ی کاربر: فقط خودِ IP ذخیره شود — بدون نام شهر یا هر پسوند دیگری.
        (نامِ کشور موقعِ ساخت ساب و فقط برای سرور خروجی/IP واقعی به‌دست می‌آید.) */
@@ -6291,7 +6285,7 @@ async function subHandler(req, env, url, cf, wantPage) {
     s.cleanIPs = s.cleanIPs.slice(0, 100);
     /* لاگِ اسکنر در بخش لاگ‌های پنل ادمین — مشخصاتِ کاملِ اسکن */
     addLog(st, 'success', 'radar', 'اسکن رادار — آی‌پی تمیز ذخیره شد',
-      'کاربر: ' + (ru.name || '—') + ' • یافت‌شده: ' + fa(ips.length) + ' (سقف: ' + fa(wantN) + ') • ' + ips.join(', ').slice(0, 300));
+      'کاربر: ' + (ru.name || '—') + ' • یافت‌شده: ' + fa(ips.length) + ' • ' + ips.join(', ').slice(0, 300));
     save(env, st);
     return json({ ok: true, saved: ips.length, applied: ru.cleanIPs.length });
   }
