@@ -2446,8 +2446,10 @@
         const RADAR_TIMEOUT = 1200;
         const RADAR_MIN_RTT = 60;      /* میلی‌ثانیه — کمتر از این = جعلی */
         const RADAR_PROBES = 2;
-        const RADAR_CONCURRENCY = 16;
-        const RADAR_IP_COUNT = 180;
+        /* ⚠️ تعداد اسکن ۱۰۲۴ شد (قبلاً ۱۸۰ بود) — برای پوششِ کاملِ فضای آی‌پی،
+           همروندی هم بالا رفت تا اسکن در مدتِ معقول تمام شود. */
+        const RADAR_CONCURRENCY = 48;
+        const RADAR_IP_COUNT = 1024;
         /* تعداد آی‌پی‌هایی که باید ذخیره شود = سقف کانفیگِ همین کاربر
            (maxConfigs یا nodeLimit پنل) — از ورکر با placeholder می‌آید؛
            اگر نبود، مقدارِ قبلی (۸) پیش‌فرض می‌ماند. */
@@ -2624,6 +2626,8 @@
                 const candidates = results.slice(0, RADAR_KEEP * 2);
 
                 if (candidates.length === 0) {
+                    /* اسکنِ بی‌نتیجه — هیچ لاگ موفقی ثبت نمی‌شود و هیچ آی‌پی‌ای
+                       ذخیره نمی‌شود؛ فقط پیامِ «آی‌پی سالمی یافت نشد». */
                     statusEl.textContent = data.radarStatusNoResult;
                     return;
                 }
@@ -2636,6 +2640,7 @@
                     return;
                 }
                 if (verified.length === 0) {
+                    /* هیچ آی‌پی سالمی تأیید نشد — ذخیره/لاگی انجام نمی‌شود */
                     statusEl.textContent = data.radarStatusNoResult;
                     return;
                 }

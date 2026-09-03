@@ -2084,6 +2084,52 @@ async function uri(kind, u, s, entry, port, i, host) {
   return '';
 }
 
+/* ═══ سنجشِ سلامت و تأخیرِ آی‌پی‌ها — «حذفِ خراب‌ها + اولویتِ پینگِ کمتر» ═══
+   اتصالِ TCP واقعی به هر آی‌پی (با سوکتِ کلاودفلر)؛ زمانِ باز شدنِ سوکت =
+   تأخیرِ تقریبی. مرده‌ها (تایم‌اوت) از ساب حذف و زنده‌ها صعودی مرتب می‌شوند.
+   نتیجه ۵ دقیقه کش می‌شود تا واکشیِ مکررِ ساب هزینه‌ی دوباره نداشته باشد.
+   اگر هیچ آی‌پی‌ای پاسخ نداد (مثلاً سوکت‌ها بلاک باشند) همان ترتیبِ اولیه
+   و همه‌ی ورودی‌ها برمی‌گردد — ساب هرگز خالی نمی‌شود. */
+const PROBE_TTL = 5 * 60 * 1000;
+const PROBE_TIMEOUT = 2500;
+const PROBE_CACHE = new Map();                 /* ip -> { ms, ts } */
+
+async function probeIpOnce(ip, port) {
+  const hit = PROBE_CACHE.get(ip);
+  if (hit && Date.now() - hit.ts < PROBE_TTL) return hit;
+  let rec = { ms: null, ts: Date.now() };
+  try {
+    const t0 = Date.now();
+    const sock = connect({ hostname: ip, port }, { secureTransport: 'off' });
+    await Promise.race([
+      sock.opened,
+      new Promise((_, rj) => setTimeout(() => rj(new Error('probe timeout')), PROBE_TIMEOUT)),
+    ]);
+    rec = { ms: Date.now() - t0, ts: Date.now() };
+    try { sock.close(); } catch (e) {}
+  } catch (e) { rec = { ms: null, ts: Date.now() }; }
+  PROBE_CACHE.set(ip, rec);
+  if (PROBE_CACHE.size > 2000) { const k0 = PROBE_CACHE.keys().next().value; PROBE_CACHE.delete(k0); }
+  return rec;
+}
+
+/** ورودی‌های سالم را به‌ترتیبِ کمترین تأخیر برمی‌گرداند */
+async function healthySortedEntries(entries, port) {
+  if (!entries || entries.length <= 1) return entries;
+  const msMap = new Map();
+  /* حداکثر ۶ اتصالِ همزمان — محدودیتِ اتصالِ همزمانِ ورکر */
+  const CH = 6;
+  for (let i = 0; i < entries.length; i += CH) {
+    const chunk = entries.slice(i, i + CH);
+    const rs = await Promise.all(chunk.map((e) => probeIpOnce(e.ip, port)));
+    chunk.forEach((e, j) => msMap.set(e.ip, rs[j].ms));
+  }
+  const alive = entries.map((e) => ({ e, ms: msMap.get(e.ip) })).filter((x) => x.ms !== null && x.ms !== undefined);
+  if (!alive.length) return entries;           /* هیچ‌کس زنده نبود → بدون تغییر */
+  alive.sort((a, b) => a.ms - b.ms);           /* کمترین پینگ اول */
+  return alive.map((x) => x.e);
+}
+
 async function buildList(u, s, url, cf) {
   const host = s.host || url.hostname;
   /* خواسته‌ی کاربر: نام/آیکنِ کانفیگ باید کشورِ واقعیِ مقصدِ ترافیک باشد.
@@ -2105,6 +2151,10 @@ async function buildList(u, s, url, cf) {
     entries.push(e);
   }
   const ports = portsOf(u, s);
+  /* ═══ حذفِ کانفیگ‌های مرده + اولویت با کمترین پینگ ═══
+     قبل از ساختِ لیست، هر آی‌پی واقعاً پروب می‌شود؛ خراب‌ها حذف و
+     بقیه بر اساسِ تأخیرِ اتصال (کم‌ترین پینگ اول) مرتب می‌شوند. */
+  const sortedEntries = await healthySortedEntries(entries, ports[0] || 443);
   const protos = protoList(s, u);
   const limit = Number(u.maxConfigs) || Number(s.sub.nodeLimit) || 0;
   const out = [];
@@ -2116,17 +2166,17 @@ async function buildList(u, s, url, cf) {
   let n = 0;
   for (const k of protos) {
     let c = 0;
-    for (let i = 0; i < entries.length && c < perProto; i++) {
+    for (let i = 0; i < sortedEntries.length && c < perProto; i++) {
       for (let p = 0; p < ports.length && c < perProto; p++) {
         const port = ports[p];
-        out.push({ kind: k, uri: await uri(k, u, s, entries[i], port, n, host), entry: entries[i], port });
+        out.push({ kind: k, uri: await uri(k, u, s, sortedEntries[i], port, n, host), entry: sortedEntries[i], port });
         n++; c++;
       }
     }
   }
   for (const k of ['ss', 'vmess']) {
     if (!s.protocols[k]) continue;
-    const e = entries[n % entries.length], port = ports[n % ports.length];
+    const e = sortedEntries[n % sortedEntries.length], port = ports[n % ports.length];
     out.push({ kind: k, uri: await uri(k, u, s, e, port, n, host), entry: e, port });
     n++;
   }
@@ -2182,14 +2232,21 @@ function renderFakeName(tpl, vars) {
 }
 
 function fakeCfg(u, s) {
+  /* ═══ حالتِ کانفیگ فیکِ کاربر (fakeMode) — قبلاً کاملاً نادیده گرفته می‌شد ═══
+     inherit: کانفیگ‌های عمومی پنل • custom: فقط فهرستِ اختصاصی کاربر
+     off: هیچ کانفیگ فکی ساخته نمی‌شود (باگِ «گزینه‌ی خاموش کار نمی‌کند»). */
+  const mode = (u && u.fakeMode) ? String(u.fakeMode) : 'inherit';
+  if (mode === 'off') return [];
   /* اولویت: کانفیگ‌های اختصاصی کاربر ← وگرنه کانفیگ‌های عمومی پنل */
   const own = Array.isArray(u.fakes) ? u.fakes : null;
-  const useOwn = !!(own && own.some((f) => f && f.enabled && f.name && String(f.name).trim()));
+  /* حالتِ اختصاصی فقط با fakeMode='custom' — مطابق برچسب‌های UI:
+     inherit = کانفیگ‌های عمومی پنل • custom = فقط فهرستِ خود کاربر */
+  const useOwn = mode === 'custom';
 
   if (useOwn) {
-    /* حالت اختصاصی: فقط کانفیگ‌های خود کاربر */
+    /* حالت اختصاصی: فقط کانفیگ‌های خود کاربر (فهرستِ خالی = هیچ) */
     const vars = fakeVars(u, s);
-    return own
+    return (own || [])
       .filter((f) => f && f.enabled && f.name && String(f.name).trim())
       .sort((a, b) => (a.pos || 99) - (b.pos || 99))
       .map((f) => {
@@ -2337,7 +2394,7 @@ const FALLBACK = `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="
 /* ═══════════ منبع ثابت UI — فقط همین سه فایل، غیرقابل تغییر ═══════════ */
 /* UI_REV: با هر تغییرِ UI یک واحد زیاد شود تا کشِ Cloudflare/گیت‌هاب نسخه‌ی
    قدیمی را برگرداند (کلیدِ کش‌شکن در URL) */
-const UI_REV = '20260903a';
+const UI_REV = '20260903c';
 const UI_SRC = {
   html: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/index.html?r=' + UI_REV,
   css: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/style.css?r=' + UI_REV,
@@ -4810,7 +4867,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         const RADAR_MIN_RTT = 60;      /* میلی‌ثانیه — کمتر از این = جعلی */
         const RADAR_PROBES = 2;
         const RADAR_CONCURRENCY = 16;
-        const RADAR_IP_COUNT = 180;
+        const RADAR_IP_COUNT = 1024;
         const RADAR_KEEP = 8;
 
         let radarRunning = false;
@@ -5348,12 +5405,26 @@ async function apiHandler(req, env, url, ctx) {
           }
         }
         ['ports', 'cleanIPs', 'proxyIPs', 'nodes'].forEach((k) => { if (typeof p[k] === 'string') p[k] = p[k].split(/[,\n]/).map((x) => x.trim()).filter(Boolean); });
+        /* ═══ سهمیه بر حسب مگابایت (از UI مودالِ جدید) ═══
+           'off' → سهمیه حذف (نامحدود)؛  عدد → MB. quotaGB از quotaMB
+           بازمحاسبه می‌شود تا همه‌ی نمایش‌های پنل هم بروز بمانند. */
+        if (p.quotaMB !== undefined) {
+          const qv = p.quotaMB === 'off' ? 0 : (Number(p.quotaMB) || 0);
+          u.quotaMB = qv;
+          u.quotaGB = Math.round(qv / 1024 * 10000) / 10000;
+          delete p.quotaMB;
+        }
+        if (p.dailyQuotaMB !== undefined) {
+          const dv = p.dailyQuotaMB === 'off' ? 0 : (Number(p.dailyQuotaMB) || 0);
+          u.dailyQuotaMB = dv;
+          delete p.dailyQuotaMB;
+        }
         merge(u, p);
       }
       addLog(st, b.op === 'delete' ? 'warn' : 'info', 'user', 'کاربر: ' + b.op, u.name || '');
       await save(env, st); return json({ ok: true, users: st.users });
     }
-    const u = { id: randTok(6), name: b.name || 'کاربر ' + (st.users.length + 1), uuid: b.uuid || crypto.randomUUID(), secret: b.secret || randTok(12), enabled: true, note: b.note || '', quotaGB: Number(b.quotaGB) || 0, dailyQuotaMB: 0, expiryAt: b.expiryDays ? Date.now() + b.expiryDays * 86400000 : (b.expiryHours ? Date.now() + b.expiryHours * 3600000 : null), expiryFirstUse: !!b.expiryFirstUse, expiryArmed: !b.expiryFirstUse, deviceLimit: 3, ipLimit: 0, maxConfigs: 0, speedLimit: 0, mode: 'inherit', ports: '', cleanIPs: [], proxyIPs: [], nodes: [], nat64: '', panelUrl: '', blockAdult: false, blockAds: true, fakes: [], fakeMode: 'inherit', up: 0, down: 0, totalReq: 0, lastSeen: null, createdAt: Date.now() };
+    const u = { id: randTok(6), name: b.name || 'کاربر ' + (st.users.length + 1), uuid: b.uuid || crypto.randomUUID(), secret: b.secret || randTok(12), enabled: true, note: b.note || '', quotaGB: Number(b.quotaGB) || 0, dailyQuotaMB: Number(b.dailyQuotaMB) || 0, expiryAt: b.expiryDays ? Date.now() + b.expiryDays * 86400000 : (b.expiryHours ? Date.now() + b.expiryHours * 3600000 : null), expiryFirstUse: !!b.expiryFirstUse, expiryArmed: !b.expiryFirstUse, deviceLimit: 3, ipLimit: 0, maxConfigs: 0, speedLimit: 0, mode: 'inherit', ports: '', cleanIPs: [], proxyIPs: [], nodes: [], nat64: '', panelUrl: '', blockAdult: false, blockAds: true, fakes: [], fakeMode: 'inherit', up: 0, down: 0, totalReq: 0, lastSeen: null, createdAt: Date.now() };
     st.users.unshift(u); addLog(st, 'success', 'user', 'کاربر جدید ساخته شد', u.name);
     if (s.tg.enabled && s.tg.notify.user) tgSend(s, `👤 کاربر جدید: ${u.name}\n🔗 ${url.origin}/${s.sub.path}/${u.uuid}`);
     await save(env, st);
@@ -6289,7 +6360,8 @@ async function subHandler(req, env, url, cf, wantPage) {
     const have = new Set(s.cleanIPs.map((e) => String(e).split('#')[0]));
     ips.forEach((ip) => { if (!have.has(ip)) s.cleanIPs.unshift(ip); });
     s.cleanIPs = s.cleanIPs.slice(0, 100);
-    /* لاگِ اسکنر در بخش لاگ‌های پنل ادمین — مشخصاتِ کاملِ اسکن */
+    /* لاگِ اسکنر — فقط وقتی اسکن موفق بوده و آی‌پی سالمی پیدا شده است.
+       «اسکنِ بی‌نتیجه» دیگر لاگ جعل نمی‌کند. */
     addLog(st, 'success', 'radar', 'اسکن رادار — آی‌پی تمیز ذخیره شد',
       'کاربر: ' + (ru.name || '—') + ' • یافت‌شده: ' + fa(ips.length) + ' (سقف: ' + fa(wantN) + ') • ' + ips.join(', ').slice(0, 300));
     save(env, st);
@@ -7092,6 +7164,24 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
     flushing = true;
     ctx.waitUntil(usageDelta(env, u.uuid, dUp, dDown, dReqs)
       .catch(() => {})
+      /* ═══ قطعِ اتصالِ زنده پس از اتمام سهمیه ═══
+         بعد از هر flush، مصرفِ تازه خوانده می‌شود؛ اگر حجمِ کل/روزانه تمام
+         شده یا انقضا گذشته باشد همین اتصالِ زنده بسته می‌شود — تا حالا فقط
+         واکشیِ ساب بلاک می‌شد و اتصالِ باز تا بی‌نهایت کار می‌کرد. */
+      .then(async () => {
+        try {
+          const uq = await usageFresh(env, u.uuid);
+          const qB = (Number(u.quotaGB) || 0) * 1073741824;
+          const dqB = (Number(u.dailyQuotaMB) || 0) * 1048576;
+          const usedB = (Number(uq.up) || 0) + (Number(uq.down) || 0);
+          const usedD = (Number(uq.dayUp) || 0) + (Number(uq.dayDown) || 0);
+          const expDead = u.expiryAt && u.expiryAt < Date.now() && (!u.expiryFirstUse || u.expiryArmed);
+          if ((qB > 0 && usedB >= qB) || (dqB > 0 && usedD >= dqB) || expDead) {
+            try { ws.close(1008, 'quota exceeded'); } catch (e2) {}
+            await finish();
+          }
+        } catch (e2) {}
+      })
       .then(() => { flushing = false; }));
     /* حجمِ همین نشست — برای ستونِ «ارسال/دریافت» در بخش اتصال‌ها.
        از همین نقطه‌ی flush می‌آید (نه یک تایمرِ تازه)، پس با مصرفِ کاربر
@@ -7157,9 +7247,18 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
 
   /* ═══════════ پیاده‌سازی ProxyIP مطابق BPB ═══════════ */
 
-  /** پمپ از سوکت ریموت به WebSocket. اگر هیچ داده‌ای نیامد، retry صدا زده می‌شود. */
-  const remoteToWs = (tcpSock, respHeader, retry) => {
+  /**
+   * پمپ از سوکت ریموت به WebSocket. اگر هیچ داده‌ای نیامد، retry صدا زده می‌شود.
+   * ⚠️ skipLead: بایت‌های اولِ بالادست که نباید به کلاینت برسند.
+   * در مسیرِ «سرور خروجی VLESS» بالادست خودش هدرِ پاسخِ VLESSِ دوبایتی
+   * ([version, 0]) می‌فرستد؛ کلاینتِ ما فقط هدرِ پاسخِ «ما» را انتظار دارد.
+   * اگر هدرِ بالادست هم رد شود دو هدرِ پشت‌سرهم می‌رسد و پروتکل از هم می‌پاشد
+   * — علتِ واقعیِ «ترافیک از سرور خروجی رد نمی‌شود». پس ۲ بایتِ اول مصرف
+   * می‌شود و بقیه relay.
+   */
+  const remoteToWs = (tcpSock, respHeader, retry, skipLead) => {
     let header = respHeader;
+    let skip = Math.max(0, Number(skipLead) || 0);
     let hasData = false;
     return (async () => {
       const reader = tcpSock.readable.getReader();
@@ -7168,7 +7267,14 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
           const { done, value } = await reader.read();
           if (done || !value) break;
           /* مطابق مستندات: byteLength برای ArrayBuffer */
-          const vLen = value.byteLength || value.length || 0;
+          let v = (value instanceof Uint8Array) ? value : toU8(value);
+          if (skip > 0) {
+            /* کلِ این تکه هدرِ بالادست بود — فقط مصرفش کن و ادامه بده */
+            if (v.length <= skip) { skip -= v.length; continue; }
+            v = v.slice(skip);
+            skip = 0;
+          }
+          const vLen = v.length;
           if (!vLen) continue;
           hasData = true;
           down += vLen; pendDown += vLen;
@@ -7177,11 +7283,11 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
           if (header && header.length) {
             const merged = new Uint8Array(header.length + vLen);
             merged.set(header, 0);
-            merged.set(value, header.length);
+            merged.set(v, header.length);
             ws.send(merged);
             header = null;
           } else {
-            ws.send(value);
+            ws.send(v);
           }
         }
       } catch (e) {}
@@ -7285,6 +7391,25 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
     }
     connAcquired = true;
 
+    /* ═══ اعمالِ سهمیه در لحظه‌ی اتصال ═══
+       قبلاً محدودیتِ حجم فقط در واکشیِ ساب چک می‌شد؛ کانفیگی که حجمش تمام
+       شده بود با ساختنِ اتصالِ تازه به کارِ خودش ادامه می‌داد. حالا اتصالِ
+       جدید هم وقتی سهمیه‌ی کل/روزانه تمام یا انقضا گذشته باشد رد می‌شود؛
+       اتصالِ زنده هم در نخستین flush (حداکثر ~۱۰ ثانیه) بسته می‌شود. */
+    try {
+      const uq = await usageFresh(env, user.uuid);
+      const qB = (Number(user.quotaGB) || 0) * 1073741824;
+      const dqB = (Number(user.dailyQuotaMB) || 0) * 1048576;
+      const usedB = (Number(uq.up) || 0) + (Number(uq.down) || 0);
+      const usedD = (Number(uq.dayUp) || 0) + (Number(uq.dayDown) || 0);
+      const expDead = user.expiryAt && user.expiryAt < Date.now() && (!user.expiryFirstUse || user.expiryArmed);
+      if ((qB > 0 && usedB >= qB) || (dqB > 0 && usedD >= dqB) || expDead) {
+        try { ws.close(1008, 'quota exceeded'); } catch (e2) {}
+        await finish();
+        return;
+      }
+    } catch (e) {}
+
     pendReqs++;
     const respHeader = info.isTrojan ? new Uint8Array(0) : new Uint8Array([info.version || 0, 0]);
     /* شمارش آپلود بسته‌ی اول — فقط همین‌جا، تا retry دوباره‌شماری نکند */
@@ -7343,7 +7468,9 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
           EXIT_STATS.tunnels++;
           EXIT_STATS.lastAt = Date.now();
           /* retry داده نمی‌شود: مسیرِ خروجی با ProxyIP معنا ندارد */
-          remoteToWs(up, respHeader, null);
+          /* ⚠️ ۲ بایتِ اولِ بالادست = هدرِ پاسخِ VLESSِ سرور خروجی —
+             نباید به کلاینت برسد (هدرِ پاسخِ خودمان را می‌فرستیم). */
+          remoteToWs(up, respHeader, null, 2);
           return;
         } catch (e) {
           EXIT_STATS.fallbacks++;

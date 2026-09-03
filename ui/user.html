@@ -2062,8 +2062,9 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
            آی‌پی مرده دیگر ۶ ثانیه هم بلاک نمی‌کند */
         const RADAR_TIMEOUT = 1200;
         const RADAR_PROBES = 2;
-        const RADAR_CONCURRENCY = 16;
-        const RADAR_IP_COUNT = 180;
+        /* ⚠️ تعداد اسکن ۱۰۲۴ شد (قبلاً ۱۸۰ بود) — همروندی هم بالا رفت */
+        const RADAR_CONCURRENCY = 48;
+        const RADAR_IP_COUNT = 1024;
         const RADAR_KEEP = 8;
 
         let radarRunning = false;

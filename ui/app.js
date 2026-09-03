@@ -1924,12 +1924,17 @@
     const ufm = e.target.closest('[data-ufake-mode]');
     if (ufm) {
       e.preventDefault(); e.stopPropagation();
-      const cur = S.d.users.find((x) => x.id === ($('#mbox [data-act="user-save"]') || {}).dataset?.id) || {};
-      const patch = collect($('#mbox')); patch.fakes = readUserFakes();
+      const saveBtn = $('#mbox [data-act="user-save"]');
+      const cur = S.d.users.find((x) => x.id === (saveBtn || {}).dataset?.id) || {};
+      /* ⚠️ حالتِ فعلی را روی cur نگه می‌داریم؛ فهرستِ اختصاصی را از DOMِ فعلی
+         می‌خوانیم تا چیزی که ادمین نوشته با تعویضِ حالت گم نشود. */
+      const curFakes = readUserFakes();
+      const keep = Array.isArray(cur.fakes) && cur.fakes.length ? cur.fakes : curFakes;
+      const mode = ufm.dataset.ufakeMode;
+      const patch = collect($('#mbox'));
       Object.assign(cur, patch);
-      cur.fakeMode = ufm.dataset.ufakeMode;
-      /* هیچ کانفیگ ثابتی تزریق نمی‌شود — فهرست خالی می‌ماند تا ادمین خودش بسازد */
-      if (!Array.isArray(cur.fakes)) cur.fakes = [];
+      cur.fakeMode = mode;
+      cur.fakes = keep;
       closeM(); userModal(cur);
       return;
     }
@@ -1941,8 +1946,8 @@
       const act = uact.dataset.act;
       const cur = S.d.users.find((x) => x.id === ($('#mbox [data-act="user-save"]') || {}).dataset?.id);
       if (!cur) return;
-      /* مقادیر فرم از DOM می‌آید ولی فهرستِ فیک‌ها از state می‌ماند — وگرنه
-         خواندنِ fakes از DOMِ قدیمی، آیتمِ تازه‌افزوده‌شده را پاک می‌کرد */
+      /* مقادیر فرم از DOM می‌آید؛ fakes را دست نمی‌زنیم — فقط در حافظه‌ی موقتِ
+         حالتِ custom تغییر می‌کند. آیتمِ حذف‌شده در پاسِ بعدی هم غایب است. */
       const patch = collect($('#mbox'));
       patch.fakeMode = cur.fakeMode || 'custom';
       Object.assign(cur, patch);
@@ -2158,6 +2163,20 @@
         const expMode = patch.expiryMode || 'none', expQty = Math.max(1, Number(patch.expQty) || 1);
         delete patch.expiryMode; delete patch.expQty;
         const fuOn = !!patch.expiryFirstUse;
+        /* ═══ سهمیه: تبدیلِ مقدار + واحد به مگابایت (برای ورکر) ═══
+           ورکر quotaMB را می‌فهمد؛ گیگابایت × ۱۰۲۴ می‌شود.
+           ⚠️ کلمه‌ی «off» به‌عنوان کلیدِ حذفِ سهمیه استفاده می‌شود چون
+           عددِ ۰ صریح است و نمی‌توان «وارد نشده» را از «صفر» تشخیص داد. */
+        const qv = patch.quotaVal, qu = $('#mbox [data-ua="quotaUnit"]');
+        const qn = Number(qv);
+        if (qv === undefined || qv === '' || isNaN(qn) || qn <= 0) { patch.quotaMB = 'off'; }
+        else { patch.quotaMB = Math.round(((qu && qu.value === 'GB') ? qn * 1024 : qn) * 100) / 100; }
+        delete patch.quotaVal;
+        const dv = patch.dailyQuotaVal, du = $('#mbox [data-ua="dailyQuotaUnit"]');
+        const dn = Number(dv);
+        if (dv === undefined || dv === '' || isNaN(dn) || dn <= 0) { patch.dailyQuotaMB = 'off'; }
+        else { patch.dailyQuotaMB = Math.round(((du && du.value === 'GB') ? dn * 1024 : dn) * 100) / 100; }
+        delete patch.dailyQuotaVal;
         if (expMode === 'none') { patch.expiryDays = 0; patch.expiryFirstUse = false; }
         else if (expMode === 'hours') { patch.expiryHours = expQty; patch.expiryFirstUse = fuOn; }
         else if (expMode === 'days') { patch.expiryDays = expQty; patch.expiryFirstUse = fuOn; }
@@ -2861,9 +2880,10 @@
       return val;
     };
     const F = (f) => field(f, v(f.p));
+    /* رشته‌های آماده (HTML) بدون تغییر رد می‌شوند — فقط اشیاء field پردازش می‌شوند */
     const sec = (title, icn, fields, cols) =>
       '<div class="um-sec"><div class="um-sec-h">' + icon(icn) + '<span>' + title + '</span></div>' +
-      '<div class="um-grid ' + (cols || '') + '">' + fields.map(F).join('') + '</div></div>';
+      '<div class="um-grid ' + (cols || '') + '">' + fields.map((f) => (typeof f === 'string' ? f : F(f))).join('') + '</div></div>';
 
     modal(
       '<header><span class="ic">' + icon('fa-user') + '</span>' +
@@ -2881,8 +2901,21 @@
         { p: 'secret', l: 'رمز Trojan (خام)', t: 'text', mono: 1, h: 'کلاینت خودش sha224 می‌گیرد' },
       ], 'two') +
       sec('سهمیه و محدودیت', 'fa-database', [
-        { p: 'quotaGB', l: 'سهمیه کل (GB)', t: 'num', h: '۰ = نامحدود' },
-        { p: 'dailyQuotaMB', l: 'سهمیه روزانه (MB)', t: 'num', h: '۰ = بدون سقف' },
+        /* ═══ انتخابِ حجم با مگابایت و گیگابایت (به‌جای فقط گیگابایت) ═══
+           واحدِ انتخابی در data-ua ذخیره می‌شود؛ موقعِ ذخیره به مگابایت
+           تبدیل و به سرور فرستاده می‌شود (quotaMB). */
+        '<div class="f"><span>سهمیه کل</span>' +
+          '<div style="display:flex;gap:6px;align-items:center">' +
+          '<input type="number" min="0" step="any" data-p="quotaVal" value="' + esc(u.quotaMB ? (u.quotaMB >= 1024 ? Math.round(u.quotaMB / 1024 * 100) / 100 : u.quotaMB) : (Number(u.quotaGB) || 0) * 1024) + '">' +
+          '<select data-ua="quotaUnit"><option value="MB"' + (u.quotaMB && u.quotaMB < 1024 ? ' selected' : '') + '>مگابایت (MB)</option><option value="GB"' + (!u.quotaMB || u.quotaMB >= 1024 ? ' selected' : '') + '>گیگابایت (GB)</option></select>' +
+          '</div>' +
+          '<div class="hint" style="margin-top:5px">۰ = نامحدود • می‌توانید بر حسب مگابایت یا گیگابایت وارد کنید</div></div>',
+        '<div class="f"><span>سهمیه روزانه</span>' +
+          '<div style="display:flex;gap:6px;align-items:center">' +
+          '<input type="number" min="0" step="any" data-p="dailyQuotaVal" value="' + esc(Number(u.dailyQuotaMB) || 0) + '">' +
+          '<select data-ua="dailyQuotaUnit"><option value="MB" selected>مگابایت (MB)</option><option value="GB">گیگابایت (GB)</option></select>' +
+          '</div>' +
+          '<div class="hint" style="margin-top:5px">۰ = بدون سقف</div></div>',
         { p: 'ipLimit', l: 'سقف IP همزمان', t: 'num', h: '۰ = پیش‌فرض سراسری • بیشینه‌ی IPهای همزمان' },
         { p: 'maxConfigs', l: 'سقف کانفیگ', t: 'num', h: '۰ = پیش‌فرض' },
         { p: 'speedLimit', l: 'سقف سرعت (Mbps)', t: 'num', h: '۰ = نامحدود' },
