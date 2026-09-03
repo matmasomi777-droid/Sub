@@ -663,12 +663,21 @@
     }
     if (!d || !d.servers) return '<div class="empty">در حال دریافتِ فهرستِ سرورهای خروجی…</div>';
     const servers = d.servers || [];
+    /* حالتِ سراسری — خروجی‌ها اصلاً در تونل به کار بروند؟ */
+    const on = d.enabled !== false;
+    /* فقط سرورهای فعال انتخاب‌پذیرند */
+    const act = servers.filter((x) => x.enabled !== false);
+    const master = '<div class="row-item" style="margin-bottom:8px">' + icon('fa-power-off') +
+      '<div class="grow"><b>' + (on ? 'مسیرِ خروجی فعال است' : 'مسیرِ خروجی خاموش است') + '</b>' +
+      '<div class="cell-sub">' + (on ? 'فقط کانفیگ‌هایی که این سرور را انتخاب کرده‌اند از آن عبور می‌کنند' : 'همه‌ی کانفیگ‌ها مستقیم می‌روند — فهرستِ سرورها حفظ می‌شود') + '</div></div>' +
+      '<button class="btn sm ' + (on ? 'd' : 'p') + '" data-act="exit-master">' + icon('fa-power-off') + ' ' + (on ? 'خاموش‌کردن' : 'فعال‌کردن') + '</button></div>';
+    const offNote = on ? '' : '<div class="badge warn" style="margin:0 0 8px">' + icon('fa-circle-info') + ' مسیرِ خروجی خاموش است — همه‌ی کانفیگ‌ها مستقیم می‌روند (خاموش‌کردن، فهرست را پاک نمی‌کند)</div>';
     /* پیش‌فرضِ سراسری */
     const defSel = '<div class="row-item" style="margin-bottom:10px">' + icon('fa-route') +
       '<div class="grow"><b>پیش‌فرضِ سراسری</b><div class="cell-sub">کانفیگ‌هایی که روی «پیروی از پیش‌فرض» هستند از این مسیر می‌روند' +
       '<br>مؤثر در حال حاضر: <b>' + esc(((d.effective || {}).name) || 'مستقیم') + '</b></div></div>' +
-      '<select id="exDefault" style="max-width:200px"><option value="">مستقیم (بدون واسطه)</option>' +
-      servers.map((s) => '<option value="' + esc(s.id) + '"' + (d.defaultMode === 'exit' && d.defaultExit === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') +
+      '<select id="exDefault" style="max-width:200px"' + (on ? '' : ' disabled') + '><option value="">مستقیم (بدون واسطه)</option>' +
+      act.map((s) => '<option value="' + esc(s.id) + '"' + (d.defaultMode === 'exit' && d.defaultExit === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') +
       '</select><button class="btn sm p" data-act="exit-default">' + icon('fa-floppy-disk') + ' ذخیره</button></div>';
     /* فهرستِ سرورها */
     const list = servers.length
@@ -677,6 +686,7 @@
           '<div class="grow"><b>' + esc(s.name) + '</b> ' +
           '<span class="badge ' + (s.enabled ? 'ok' : 'bad') + '">' + (s.enabled ? 'فعال' : 'غیرفعال') + '</span>' +
           '<div class="mono cell-sub">' + esc(s.address) + ':' + fa(s.port) + ' • ' + esc(s.security) + '/' + esc(s.transport) + '</div></div>' +
+          '<button class="btn sm ' + (s.enabled !== false ? 'd' : 'p') + '" data-act="exit-onoff" data-id="' + esc(s.id) + '" title="' + (s.enabled !== false ? 'غیرفعال‌کردن — هیچ کانفیگی دیگر از آن عبور نمی‌کند' : 'فعال‌کردن این سرور') + '">' + icon('fa-power-off') + '</button>' +
           '<button class="btn sm s" data-act="exit-test" data-id="' + esc(s.id) + '" title="تست اتصال">' + icon('fa-stethoscope') + '</button>' +
           '<button class="btn sm" data-act="exit-edit" data-id="' + esc(s.id) + '" title="ویرایش">' + icon('fa-pen') + '</button>' +
           '<button class="btn sm d" data-act="exit-del" data-id="' + esc(s.id) + '" title="حذف">' + icon('fa-trash-can') + '</button>' +
@@ -687,13 +697,13 @@
       ? '<div class="hint" style="margin:12px 0 6px"><b>انتخاب برای هر کانفیگ</b> — بر پیش‌فرضِ سراسری مقدم است:</div>' +
         '<div class="list">' + d.perConfig.map((c) => '<div class="row-item">' + icon('fa-user') +
           '<div class="grow"><b>' + esc(c.name) + '</b><div class="cell-sub">مؤثر: ' + esc(c.effectiveId ? ((servers.find((s) => s.id === c.effectiveId) || {}).name || c.effectiveMode) : 'مستقیم') + '</div></div>' +
-          '<select id="exSel-' + esc(c.id) + '" style="max-width:200px">' +
+          '<select id="exSel-' + esc(c.id) + '" style="max-width:200px"' + (on ? '' : ' disabled') + '>' +
           '<option value="inherit"' + (c.mode === 'inherit' ? ' selected' : '') + '>پیروی از پیش‌فرضِ سراسری</option>' +
           '<option value="direct"' + (c.mode === 'direct' ? ' selected' : '') + '>مستقیم (بدون واسطه)</option>' +
-          servers.map((s) => '<option value="' + esc(s.id) + '"' + (c.mode === 'exit' && c.exitId === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') +
+          act.map((s) => '<option value="' + esc(s.id) + '"' + (c.mode === 'exit' && c.exitId === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') +
           '</select></div>').join('') + '</div>'
       : '';
-    return defSel + list + exTestHtml() +
+    return master + offNote + defSel + list + exTestHtml() +
       (EX.form ? exitFormHtml(EX.form) : '') + per;
   };
   async function exLoad() {
@@ -2468,6 +2478,28 @@
         if (r && r.ok) { EX.form = null; EX.test = null; await exLoad(); toast(r.msg || 'حذف شد', 'ok'); }
         else toast((r && r.error) || 'حذف انجام نشد', 'err');
       }
+      else if (a === 'exit-master') {
+        busy(t, 'در حال ذخیره');
+        const cur = !((EX.data || {}).enabled !== false);
+        const r = await api('POST', '/api/exits', { op: 'master', enabled: cur });
+        free(t);
+        if (r && r.ok) { EX.form = null; await exLoad(); toast(r.msg || 'وضعیتِ مسیر خروجی ذخیره شد', 'ok'); }
+        else toast((r && r.error) || 'ذخیره انجام نشد', 'err');
+      }
+      else if (a === 'exit-onoff') {
+        const srv = ((EX.data && EX.data.servers) || []).find((x) => x.id === id);
+        if (!srv) { toast('سرور پیدا نشد — فهرست را بارخوانی کنید', 'err'); return; }
+        const cur = srv.enabled !== false;
+        const goOn = !cur;
+        if (!confirm('سرور خروجیِ «' + srv.name + '» ' + (goOn
+          ? 'فعال شود؟' + '\nبعد از فعال‌شدن باید آن را برای هر کانفیگ (یا به‌عنوان پیش‌فرضِ سراسری) انتخاب کنید.'
+          : 'غیرفعال شود؟' + '\nپیش‌فرضِ سراسری و کانفیگ‌هایی که آن را انتخاب کرده‌اند مستقیم می‌شوند.'))) return;
+        busy(t, 'در حال ذخیره');
+        const r = await api('POST', '/api/exits', { op: 'toggle', id, enabled: goOn });
+        free(t);
+        if (r && r.ok) { EX.form = null; await exLoad(); toast(r.msg || 'وضعیتِ سرور ذخیره شد', 'ok'); }
+        else toast((r && r.error) || 'ذخیره انجام نشد', 'err');
+      }
       else if (a === 'exit-test') {
         /* فرم دیگر فیلدی ندارد که بشود بدون ذخیره تستش کرد، پس تست فقط روی
            یک سرورِ ذخیره‌شده معنا دارد. */
@@ -2507,6 +2539,11 @@
     /* انتخابِ خروجی برای هر کانفیگ — بر پیش‌فرضِ سراسری مقدم است.
        مقدارِ select یا inherit/direct است یا شناسه‌ی یکی از سرورها. */
     if (e.target.id && e.target.id.indexOf('exSel-') === 0) {
+      if (!EX.data || EX.data.enabled === false) {
+        await exLoad();
+        toast('مسیرِ خروجی خاموش است — اول آن را از دکمه‌ی «فعال‌کردن» روشن کنید', 'info');
+        return;
+      }
       const uid = e.target.id.slice(6);
       const val = String(e.target.value || 'inherit');
       const named = val === 'inherit' || val === 'direct';

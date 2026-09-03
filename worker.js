@@ -5568,19 +5568,23 @@ async function apiHandler(req, env, url, ctx) {
   if (route === 'exits' && m === 'GET') {
     if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
     const ex = exitsOf(st);
+    /* کلیدِ سراسری: وقتی خاموش است، «مؤثرِ» همه مستقیماً مستقیم است —
+       حتی اگر پیش‌فرض یا انتخابِ کانفیگ به سروری اشاره کند. */
+    const on = ex.enabled !== false;
+    const DIRECT = { mode: 'direct', id: '', name: 'مستقیم (بدون واسطه)' };
     return json({
       ok: true,
-      enabled: ex.enabled !== false,
+      enabled: on,
       defaultMode: ex.defaultMode,
       defaultExit: ex.defaultExit,
       /* پیش‌فرضِ مؤثر — همان چیزی که مسیر تونل استفاده می‌کند */
-      effective: (() => { const r = resolveExit(st, null); return { mode: r.mode, id: r.id, name: r.name }; })(),
+      effective: (() => { const r = on ? resolveExit(st, null) : { mode: 'direct' }; return { mode: r.mode, id: r.id || '', name: r.name || DIRECT.name }; })(),
       servers: ex.servers.map((x) => ({ ...x })),
       stats: { ...EXIT_STATS, lastError: EXIT_LAST_ERR || null },
       /* انتخابِ هر کانفیگ — برای نمایشِ وضعیت در پنل */
       perConfig: st.users.map((u) => {
-        const r = resolveExit(st, u);
-        return { id: u.id, name: u.name, mode: u.exitMode || 'inherit', exitId: u.exitId || '', effectiveMode: r.mode, effectiveId: r.id };
+        const r = on ? resolveExit(st, u) : { mode: 'direct' };
+        return { id: u.id, name: u.name, mode: u.exitMode || 'inherit', exitId: u.exitId || '', effectiveMode: r.mode, effectiveId: r.id || '' };
       }),
     });
   }
@@ -5640,6 +5644,53 @@ async function apiHandler(req, env, url, ctx) {
       return json({ ok: true, op, servers: ex.servers, msg: 'سرور خروجی حذف شد — کانفیگ‌هایی که به آن وابسته بودند مستقیم شدند' });
     }
 
+    /* کلیدِ فعال/غیرفعالِ یک سرور — همان «برای چه کسی کار کند»:
+       خاموش‌کردن، سرور را از مسیرِ تونلِ همه حذف می‌کند: اگر پیش‌فرضِ سراسری
+       به آن اشاره داشت مستقیم می‌شود و کانفیگ‌هایی که صریحاً آن را انتخاب
+       کرده بودند هم مستقیم می‌شوند (مثل حذف). روشن‌کردن هیچ انتخابی را خودکار
+       فعال نمی‌کند — سرور باید جداگانه انتخاب شود. */
+    if (op === 'toggle') {
+      const id = String((b && b.id) || '').trim();
+      const srv = exitById(st, id);
+      if (!srv) return json({ ok: false, error: 'سرور خروجی با این شناسه پیدا نشد' }, 404);
+      const cur = srv.enabled !== false;
+      const want = b.enabled === undefined ? !cur : !!b.enabled;
+      if (want === cur) {
+        return json({ ok: true, op, id, enabled: want, servers: ex.servers, msg: 'وضعیتِ «' + srv.name + '» تغییری نکرد' });
+      }
+      srv.enabled = want;
+      if (!want) {
+        if (ex.defaultExit === id) { ex.defaultExit = ''; ex.defaultMode = 'direct'; }
+        let n = 0;
+        st.users.forEach((u) => { if (u.exitId === id) { u.exitId = ''; u.exitMode = 'direct'; n++; } });
+        addLog(st, 'warn', 'core', 'غیرفعال‌کردن سرور خروجی', srv.name + (n ? ' • ' + fa(n) + ' کانفیگ مستقیم شد' : ''));
+      } else {
+        addLog(st, 'success', 'core', 'فعال‌کردن سرور خروجی', srv.name);
+      }
+      await save(env, st);
+      return json({
+        ok: true, op, id, enabled: want, servers: ex.servers, defaultMode: ex.defaultMode, defaultExit: ex.defaultExit,
+        msg: 'سرور خروجی «' + srv.name + '» ' + (want
+          ? 'فعال شد — حالا می‌توانید آن را به‌عنوانِ پیش‌فرض یا روی کانفیگ‌ها انتخاب کنید'
+          : 'غیرفعال شد — هیچ کانفیگی دیگر از آن عبور نمی‌کند'),
+      });
+    }
+
+    /* کلیدِ سراسری: خروجی‌ها اصلاً در مسیرِ تونل به کار بروند یا نه؟
+       خاموش = فهرستِ سرورها دست‌نخورده می‌ماند اما همه‌ی کانفیگ‌ها مستقیم می‌روند. */
+    if (op === 'master') {
+      const want = !!b.enabled;
+      if (want === (ex.enabled !== false)) {
+        return json({ ok: true, op, enabled: want, msg: 'تغییری لازم نبود' });
+      }
+      ex.enabled = want;
+      addLog(st, want ? 'success' : 'warn', 'core',
+        want ? 'فعال‌سازی مسیر خروجی' : 'خاموش‌کردن مسیر خروجی',
+        want ? 'سرورهای خروجی در تونل به کار می‌روند' : 'همه‌ی کانفیگ‌ها مستقیم می‌روند (فهرستِ سرورها حفظ شد)');
+      await save(env, st);
+      return json({ ok: true, op, enabled: want, msg: want ? 'مسیر خروجی فعال شد' : 'مسیر خروجی خاموش شد — همه‌ی کانفیگ‌ها مستقیم می‌روند' });
+    }
+
     /* انتخاب برای هر کانفیگ: پیش‌فرضِ سراسری / یکی از سرورها / مستقیم */
     if (op === 'select') {
       const uuid = String((b && b.uuid) || '').trim();
@@ -5652,6 +5703,9 @@ async function apiHandler(req, env, url, ctx) {
       if (mode === 'exit') {
         const srv = exitById(st, b.exitId);
         if (!srv) return json({ ok: false, error: 'سرور خروجی انتخاب‌شده پیدا نشد' }, 404);
+        if (srv.enabled === false) {
+          return json({ ok: false, error: 'سرور خروجی «' + srv.name + '» غیرفعال است — اول آن را فعال کنید', issues: ['exit-disabled'] }, 400);
+        }
         u.exitMode = 'exit'; u.exitId = srv.id;
       } else if (mode === 'direct') { u.exitMode = 'direct'; u.exitId = ''; }
       else { u.exitMode = 'inherit'; u.exitId = ''; }
@@ -5682,6 +5736,9 @@ async function apiHandler(req, env, url, ctx) {
     }
     const srv = exitById(st, (b && b.exitId !== undefined) ? b.exitId : b.id);
     if (!srv) return json({ ok: false, error: 'سرور خروجی با این شناسه پیدا نشد' }, 404);
+    if (srv.enabled === false) {
+      return json({ ok: false, error: 'سرور خروجی «' + srv.name + '» غیرفعال است — اول آن را فعال کنید', issues: ['exit-disabled'] }, 400);
+    }
     ex.defaultMode = 'exit'; ex.defaultExit = srv.id;
     addLog(st, 'info', 'core', 'پیش‌فرضِ سراسریِ خروجی', srv.name);
     await save(env, st);
@@ -6720,7 +6777,10 @@ function parseVlessLink(link) {
     uuid: safeDecode(url.username),
     address: url.hostname,
     port: url.port ? Number(url.port) : 443,
-    enabled: true,
+    /* ⚠️ enabled عمداً اینجا نیست: لینکِ vless// هیچ کلیدی برای «فعال/غیرفعال» ندارد.
+       افزودن (add) پیش‌فرض فعال می‌شود، ولی ویرایش (update) از روی لینک نباید
+       سرورِ غیرفعال‌شده را بی‌صدا دوباره فعال کند — قبلاً enabled:true اینجا بود
+       و هر ویرایشی کلیدِ «غیرفعال» را می‌شکست. */
   };
   Object.keys(VLESS_QUERY_MAP).forEach((k) => {
     if (!q.has(k)) return;
@@ -6796,9 +6856,15 @@ function resolveExit(st, u) {
   const mode = perConfig ? String(u.exitMode) : (ex.defaultMode === 'exit' ? 'exit' : 'direct');
   if (mode !== 'exit') return DIRECT;
   const id = perConfig ? String(u.exitId || '') : String(ex.defaultExit || '');
-  const srv = id ? (ex.servers || []).find((x) => x && x.id === id && x.enabled !== false) : null;
+  /* سرورِ هدف فقط وقتی فعال باشد در مسیر می‌نشیند؛ در غیر این‌صورت مستقیم.
+     دلیلِ دقیق گزارش می‌شود تا پنل «چرا غیرفعال شد» را نشان دهد. */
+  const any = id ? (ex.servers || []).find((x) => x && x.id === id) : null;
+  const srv = any && any.enabled !== false ? any : null;
   if (!srv) {
-    return { mode: 'direct', id: '', name: 'مستقیم (بدون واسطه)', server: null, reason: id ? 'سرور خروجی انتخاب‌شده یافت نشد' : 'هیچ سرور خروجی‌ای انتخاب نشده است' };
+    const reason = !any
+      ? (id ? 'سرور خروجی انتخاب‌شده یافت نشد' : 'هیچ سرور خروجی‌ای انتخاب نشده است')
+      : 'سرور خروجی «' + any.name + '» غیرفعال است';
+    return { mode: 'direct', id: '', name: 'مستقیم (بدون واسطه)', server: null, reason };
   }
   return { mode: 'exit', id: srv.id, name: srv.name, server: srv };
 }
@@ -7599,6 +7665,49 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
     const s = st.settings;
     const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
+    /* ═══ ProxyIP / NAT64 مؤثر برای همین کاربر (روش BPB) ═══
+       لیستِ ProxyIP: اول لیستِ اختصاصیِ خودِ کاربر (u.proxyIPs) وگرنه لیستِ پنل
+       (s.proxyIPs) — قبلاً فقط لیستِ سراسری خوانده می‌شد و «Proxy IP اختصاصیِ
+       کاربر» که در مودالِ کاربر وارد می‌شد هرگز در مسیرِ تونل اثر نداشت.
+       NAT64 هم: prefixِ اختصاصیِ کاربر وگرنه prefixِ سراسری. ترتیبِ استفاده مثل
+       BPB است: proxyIP مقدم بر NAT64 (دو حالتِ جایگزین، نه هم‌زمان). */
+    const effProxyIPs = () => {
+      const own = Array.isArray(user.proxyIPs) && user.proxyIPs.length ? user.proxyIPs : null;
+      return (own || s.proxyIPs || []).map((x) => String(x).trim()).filter(Boolean);
+    };
+    const effPrefixes = () => {
+      const pu = String((user && user.nat64) || '').trim();
+      const all = pu ? pu : String((s.nat64 && s.nat64.prefix) || '');
+      return all.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
+    };
+    /* کاندیدهای relay: proxyIPها به‌ترتیبِ تصادفی و بعد (فقط اگر proxyIP نبود) NAT64 */
+    const relayCands = () => {
+      const out = [];
+      const pips = effProxyIPs();
+      if (pips.length) {
+        const ps = pips.slice();
+        for (let i = ps.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = ps[i]; ps[i] = ps[j]; ps[j] = t; }
+        ps.forEach((p) => { const hp = parseHostPort(p, 443); if (hp.host) out.push({ addr: hp.host, port: hp.port, via: 'proxyip' }); });
+      } else {
+        effPrefixes().forEach((pr) => { const nat = toNat64(info.addr, pr); if (nat) out.push({ addr: nat, port: 443, via: 'nat64' }); });
+      }
+      return out;
+    };
+    /* همه‌ی کاندیدها تا موفقیت امتحان می‌شوند — قبلاً فقط یکی به‌صورتِ تصادفی
+       انتخاب می‌شد و اگر همان یکی می‌مرد، کلِ retry بی‌نتیجه تمام می‌شد. */
+    const relayViaCands = async (cands) => {
+      for (const c of cands) {
+        if (!c || (c.addr === info.addr && c.port === info.port)) continue;  /* همان مقصد — فایده ندارد */
+        try {
+          const tcpSock = await connectAndWrite(c.addr, c.port, info.payload);
+          sock = tcpSock;
+          remoteToWs(tcpSock, respHeader, null);
+          return true;
+        } catch (e) { sock = null; }
+      }
+      return false;
+    };
+
     /* ── مرحله ۰: مقصد خودِ ورکر (تست ترافیک پنل) ──
        cloudflare:sockets اجازه‌ی اتصال به دامنه‌های روی CF را نمی‌دهد،
        پس مستقیم می‌رویم سراغ fallback با fetch() و از ProxyIP رد می‌شویم
@@ -7610,28 +7719,11 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
       return;
     }
 
-    /* ── مرحله ۲: retry با ProxyIP (وقتی وصل شد ولی داده‌ای برنگشت) ── */
+    /* ── مرحله ۲: retry با ProxyIP (وقتی وصل شد ولی داده‌ای برنگشت) ──
+       روش BPB: اولِ کار مستقیم؛ اگر وصل شد ولی هیچ داده‌ای برنگشت، همان بارِ
+       اولیه از ProxyIP/NAT64ِ مؤثرِ همین کاربر دوباره فرستاده می‌شود. */
     const retry = async () => {
-      let addr = info.addr, port = info.port;
-      try {
-        if (s.nat64 && s.nat64.prefix && String(s.nat64.prefix).trim()) {
-          /* حالت prefix: ساخت IP داینامیک با NAT64 */
-          const prefixes = String(s.nat64.prefix).split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
-          if (prefixes.length) {
-            const nat = toNat64(addr, pick(prefixes));
-            if (nat) { addr = nat; port = 443; }
-          }
-        }
-        const pips = (s.proxyIPs || []).filter(Boolean);
-        if (pips.length) {
-          /* حالت proxyip: انتخاب تصادفی از لیست */
-          const hp = parseHostPort(pick(pips), 443);
-          if (hp.host) { addr = hp.host; port = hp.port; }
-        }
-        if (addr === info.addr && port === info.port) { await finish(); return; }   /* چیزی برای retry نیست */
-        const tcpSock = await connectAndWrite(addr, port, info.payload);
-        remoteToWs(tcpSock, respHeader, null);
-      } catch (e) { await finish(); }
+      if (!(await relayViaCands(relayCands()))) await finish();
     };
 
     /* ═══ مرحله ۰/۵: خروجی (exit) — تنها نقطه‌ی اتصالِ بالادست به مسیر تونل ═══
@@ -7671,22 +7763,8 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
       return;
     } catch (e) { sock = null; }
 
-    /* ── مرحله ۱ب: اتصال مستقیم ناموفق بود → مستقیم با ProxyIP ── */
-    const pips = (s.proxyIPs || []).filter(Boolean);
-    const prefixes = (s.nat64 && s.nat64.prefix ? String(s.nat64.prefix).split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean) : []);
-    if (pips.length || prefixes.length) {
-      for (let attempt = 0; attempt < Math.max(pips.length, prefixes.length, 1); attempt++) {
-        let addr = info.addr, port = info.port;
-        if (pips.length) { const hp = parseHostPort(pick(pips), 443); if (hp.host) { addr = hp.host; port = hp.port; } }
-        else if (prefixes.length) { const nat = toNat64(addr, pick(prefixes)); if (nat) { addr = nat; port = 443; } }
-        if (addr === info.addr && port === info.port) break;
-        try {
-          const tcpSock = await connectAndWrite(addr, port, info.payload);
-          remoteToWs(tcpSock, respHeader, null);
-          return;
-        } catch (e) { sock = null; }
-      }
-    }
+    /* ── مرحله ۱ب: اتصال مستقیم ناموفق بود → relay با ProxyIP / NAT64 ── */
+    if (await relayViaCands(relayCands())) return;
 
     /* ── مرحله ۳: fallback با fetch ── */
     if (await httpFallback(info)) { await finish(); return; }
