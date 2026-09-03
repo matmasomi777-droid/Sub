@@ -5,7 +5,7 @@
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-  const S = { token: sessionStorage.getItem('sg_t') || '', d: null, view: 'dash', tab: {}, sel: null, fmt: 'base64', range: 'd', q: '' };
+  const S = { token: sessionStorage.getItem('sg_t') || '', d: null, view: 'dash', tab: {}, sel: null, fmt: 'base64', range: 'd', q: '', lang: 'fa', skin: 'normal', pal: '1', theme: 'dark' };
   /* انتخاب‌های «تست واقعی ترافیک» — بین رفرش‌ها حفظ می‌شوند */
   const TT = { uuid: '', mb: 1, last: null };
   /* ═══ گزارش تست ترافیک تا وقتی تستِ تازه‌ای گرفته نشود باقی می‌ماند ═══
@@ -150,10 +150,14 @@
 
   /* ─────────── ابزارها ─────────── */
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const fa = (v) => String(v).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
+  /* اعداد و واحدها بر اساس زبانِ انتخاب‌شده — در فارسی ارقامِ فارسی، در بقیه ارقام لاتین */
+  const L = () => (S && S.lang) || 'fa';
+  const fa = (v) => String(v).replace(/\d/g, (d) => (L() === 'fa' ? '۰۱۲۳۴۵۶۷۸۹'[d] : d));
   const n = (v) => (v == null || isNaN(v) ? '—' : fa(Number(v).toLocaleString('en-US')));
-  const bytes = (b) => { if (!b || b < 0) return '۰ بایت'; const u = ['بایت', 'کیلوبایت', 'مگابایت', 'گیگابایت', 'ترابایت']; const i = Math.min(4, Math.floor(Math.log(b) / Math.log(1024))); return fa((b / 1024 ** i).toFixed(i ? 1 : 0)) + ' ' + u[i]; };
-  const ago = (t) => { if (!t) return '—'; const s = (Date.now() - t) / 1000; if (s < 60) return 'همین حالا'; if (s < 3600) return fa(Math.floor(s / 60)) + ' دقیقه پیش'; if (s < 86400) return fa(Math.floor(s / 3600)) + ' ساعت پیش'; return fa(Math.floor(s / 86400)) + ' روز پیش'; };
+  const BYTE_U = { fa: ['بایت', 'کیلوبایت', 'مگابایت', 'گیگابایت', 'ترابایت'], en: ['B', 'KB', 'MB', 'GB', 'TB'], tr: ['B', 'KB', 'MB', 'GB', 'TB'], ar: ['بايت', 'كيلوبايت', 'ميجابايت', 'جيجابايت', 'تيرابايت'] };
+  const bytes = (b) => { if (!b || b < 0) return fa(0) + ' ' + BYTE_U[L()][0]; const u = BYTE_U[L()]; const i = Math.min(4, Math.floor(Math.log(b) / Math.log(1024))); return fa((b / 1024 ** i).toFixed(i ? 1 : 0)) + ' ' + u[i]; };
+  const AGO_U = { fa: ['همین حالا', 'دقیقه پیش', 'ساعت پیش', 'روز پیش'], en: ['just now', 'min ago', 'hr ago', 'days ago'], tr: ['az önce', 'dk önce', 'sa önce', 'gün önce'], ar: ['الآن', 'دقائق مضت', 'ساعات مضت', 'أيام مضت'] };
+  const ago = (t) => { if (!t) return '—'; const s = (Date.now() - t) / 1000, u = AGO_U[L()] || AGO_U.fa; if (s < 60) return u[0]; if (s < 3600) return fa(Math.floor(s / 60)) + ' ' + u[1]; if (s < 86400) return fa(Math.floor(s / 3600)) + ' ' + u[2]; return fa(Math.floor(s / 86400)) + ' ' + u[3]; };
   /* مدتِ اتصال به فارسی — برای ستون‌های «مدت اتصال» و «زمان باقی‌مانده» */
   const durFa = (sec) => {
     const s = Math.max(0, Math.round(Number(sec) || 0));
@@ -234,6 +238,7 @@
     terminal: '<path d="M4 17l6-6-6-6"/><path d="M12 19h8"/>',
     bolt: '<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>',
     telegram: '<path d="M21.9 4.3l-3.1 14.6c-.2 1-.8 1.2-1.7.8l-4.6-3.4-2.2 2.1c-.2.2-.5.4-.9.4l.3-4.7L18.4 6c.4-.3-.1-.5-.6-.2L7.3 12.2 2.8 10.8c-1-.3-1-1 .2-1.4l17.3-6.7c.8-.3 1.5.2 1.2 1.2z"/>',
+    palette: '<circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="10.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12.5" r="2.5"/><path d="M12 2a10 10 0 1 0 10 10"/>',
   };
   /* نگاشت نام‌های Font Awesome → کلیدهای SVG بالا */
   const ICON_MAP = {
@@ -256,6 +261,7 @@
     'fa-spinner': 'spinner', 'fa-compass': 'compass', 'fa-database': 'database',
     'fa-code-branch': 'branch', 'fa-bolt': 'bolt', 'fa-server': 'server', 'fa-route': 'route',
     'fa-box-open': 'package', 'fa-activity': 'activity', 'fa-terminal': 'terminal',
+    'fa-palette': 'palette', 'fa-droplet': 'palette', 'fa-brush': 'palette', 'fa-paintbrush': 'palette',
   };
   const icon = (c, cls = '') => {
     const names = String(c || '').split(/\s+/).filter(Boolean);
@@ -292,14 +298,299 @@
       return { error: e.name === 'AbortError' ? 'سرور پاسخ نداد' : 'خطای شبکه' };
     }
   }
-  const toast = (msg, kind = 'ok') => { const d = document.createElement('div'); d.className = 'toast ' + kind; const ic = kind === 'err' ? 'fa-circle-xmark' : kind === 'info' ? 'fa-circle-info' : 'fa-circle-check'; d.innerHTML = icon(ic) + '<span>' + esc(msg) + '</span>'; $('#toastRoot').appendChild(d); setTimeout(() => d.remove(), 3400); };
+  const toast = (msg, kind = 'ok') => { const d = document.createElement('div'); d.className = 'toast ' + kind; const ic = kind === 'err' ? 'fa-circle-xmark' : kind === 'info' ? 'fa-circle-info' : 'fa-circle-check'; d.innerHTML = icon(ic) + '<span>' + esc(tr(msg)) + '</span>'; $('#toastRoot').appendChild(d); setTimeout(() => d.remove(), 3400); };
   const copy = (t) => { (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('در کلیپ‌بورد کپی شد')).catch(() => toast('کپی نشد', 'err')); };
   /* مودال تکی: قبل از بازکردن، مودال‌های قبلی پاک می‌شوند — دوبارِ بازکردن
      (کلیک روی ردیف + دکمه‌ی ویرایش) دیگر مودال‌های روی‌هم نمی‌سازد */
-  const modal = (html, wide) => { $('#modalRoot').innerHTML = ''; const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = '<div class="box' + (wide ? ' wide' : '') + '" id="mbox">' + html + '</div>'; m.onmousedown = (e) => { if (e.target === m) m.remove(); }; $('#modalRoot').appendChild(m); return m; };
+  const modal = (html, wide) => { $('#modalRoot').innerHTML = ''; const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = '<div class="box' + (wide ? ' wide' : '') + '" id="mbox">' + tr(html) + '</div>'; m.onmousedown = (e) => { if (e.target === m) m.remove(); }; $('#modalRoot').appendChild(m); return m; };
   const closeM = () => { $('#modalRoot').innerHTML = ''; };
   const busy = (el, label) => { if (el) { el.disabled = true; el.dataset.old = el.innerHTML; el.innerHTML = icon('fa-spinner fa-spin') + ' ' + label; } };
   const free = (el) => { if (el && el.dataset.old) { el.disabled = false; el.innerHTML = el.dataset.old; delete el.dataset.old; } };
+
+  /* ═══════════════════════════════════════════════════════════════
+     نسخه ۴ — چندزبانه + موتور ظاهر (سبک × پالت × شب/روز)
+     هر کلیدِ فارسی یک آرایه [en, tr, ar] دارد. یک پاسِ «پس از رندر»
+     (tr) روی خروجیِ همه‌ی نماها، مودال‌ها و توست‌ها اعمال می‌شود تا
+     بدون بازنویسیِ هزاران رشته، کل پنل ترجمه شود (کلیدهای بلندتر اول).
+     ═══════════════════════════════════════════════════════════════ */
+  const I18N = {
+    /* پوسته و ناوبری */
+    'اصلی': ['Main', 'Ana', 'الرئيسية'],
+    'شبکه': ['Network', 'Ağ', 'الشبكة'],
+    'پیکربندی': ['Configuration', 'Yapılandırma', 'الإعدادات'],
+    'سیستم': ['System', 'Sistem', 'النظام'],
+    'نمای کلی': ['Overview', 'Genel Bakış', 'نظرة عامة'],
+    'کاربران': ['Users', 'Kullanıcılar', 'المستخدمون'],
+    'اتصال‌های زنده': ['Live Connections', 'Canlı Bağlantılar', 'الاتصالات المباشرة'],
+    'آمار مصرف': ['Usage Stats', 'Kullanım İstatistikleri', 'إحصائيات الاستخدام'],
+    'لینک ساب': ['Subscription Link', 'Abonelik Bağlantısı', 'رابط الاشتراك'],
+    'امنیت': ['Security', 'Güvenlik', 'الأمان'],
+    'لاگ': ['Logs', 'Günlükler', 'السجلات'],
+    'پشتیبان': ['Backup', 'Yedekleme', 'النسخ الاحتياطي'],
+    'در حال بارگذاری…': ['Loading…', 'Yükleniyor…', 'جارٍ التحميل…'],
+    'سرویس فعال': ['Service Active', 'Hizmet Aktif', 'الخدمة نشطة'],
+    'Panic Mode فعال است': ['Panic Mode Active', 'Panik Modu Aktif', 'وضع الطوارئ نشط'],
+    'جستجو…': ['Search…', 'Ara…', 'بحث…'],
+    'ذخیره‌سازی': ['Storage', 'Depolama', 'التخزين'],
+    'نسخه': ['Version', 'Sürüm', 'الإصدار'],
+    'ذخیره': ['Save', 'Kaydet', 'حفظ'],
+    'بستن': ['Close', 'Kapat', 'إغلاق'],
+    'انصراف': ['Cancel', 'İptal', 'إلغاء'],
+    'کپی': ['Copy', 'Kopyala', 'نسخ'],
+    'حذف': ['Delete', 'Sil', 'حذف'],
+    'ویرایش': ['Edit', 'Düzenle', 'تعديل'],
+    'خروج': ['Logout', 'Çıkış', 'تسجيل الخروج'],
+    'از پنل خارج شوید؟': ['Leave the panel?', 'Panelden çıkılsın mı?', 'هل تريد مغادرة اللوحة؟'],
+    'خارج شدید': ['Signed out', 'Çıkış yapıldı', 'تم تسجيل الخروج'],
+    'تغییر رمز عبور': ['Change Password', 'Şifre Değiştir', 'تغيير كلمة المرور'],
+    'رمز فعلی': ['Current Password', 'Mevcut Şifre', 'كلمة المرور الحالية'],
+    'رمز جدید': ['New Password', 'Yeni Şifre', 'كلمة المرور الجديدة'],
+    'تکرارِ رمز جدید': ['Repeat New Password', 'Yeni Şifreyi Tekrarla', 'إعادة كلمة المرور الجديدة'],
+    /* ورود */
+    'ورود': ['Login', 'Giriş', 'تسجيل الدخول'],
+    'ورود مدیر': ['Admin Login', 'Yönetici Girişi', 'دخول المدير'],
+    'رمز عبور': ['Password', 'Şifre', 'كلمة المرور'],
+    'کد دو مرحله‌ای (TOTP)': ['2FA Code (TOTP)', '2FA Kodu (TOTP)', 'رمز المصادقة (TOTP)'],
+    'ورود به پنل': ['Sign In', 'Giriş Yap', 'تسجيل الدخول'],
+    /* داشبورد */
+    'کل کاربران': ['Total Users', 'Toplam Kullanıcı', 'إجمالي المستخدمين'],
+    'مصرف کل': ['Total Usage', 'Toplam Kullanım', 'الاستخدام الكلي'],
+    'درخواست‌ها': ['Requests', 'İstekler', 'الطلبات'],
+    'گره‌ها': ['Nodes', 'Düğümler', 'العقد'],
+    'فعال': ['Active', 'Aktif', 'نشط'],
+    'غیرفعال': ['Disabled', 'Devre Dışı', 'معطّل'],
+    'خاموش': ['Off', 'Kapalı', 'معطّل'],
+    'منقضی': ['Expired', 'Süresi Dolmuş', 'منتهي الصلاحية'],
+    'نامحدود': ['Unlimited', 'Sınırsız', 'غير محدود'],
+    'بدون سقف': ['No Limit', 'Limitsiz', 'بدون حد'],
+    'کاربر': ['User', 'Kullanıcı', 'مستخدم'],
+    'کاربری وجود ندارد': ['No users yet', 'Henüz kullanıcı yok', 'لا يوجد مستخدمون بعد'],
+    'جریان ترافیک': ['Traffic Flow', 'Trafik Akışı', 'تدفق المرور'],
+    'بیشترین مصرف‌کنندگان': ['Top Consumers', 'En Çok Tüketenler', 'الأكثر استهلاكاً'],
+    'وضعیت زنده': ['Live Status', 'Canlı Durum', 'الحالة المباشرة'],
+    'پروتکل‌ها': ['Protocols', 'Protokoller', 'البروتوكولات'],
+    '۶ کاربر اول': ['Top 6 users', 'İlk 6 kullanıcı', 'أول 6 مستخدمين'],
+    'موس را روی نمودار ببرید': ['Hover over the chart', 'Grafiğin üzerine gelin', 'مرر فوق الرسم البياني'],
+    'از Cloudflare API': ['via Cloudflare API', 'Cloudflare API üzerinden', 'عبر Cloudflare API'],
+    'داده‌ی واقعی همین لحظه': ['Real-time data', 'Gerçek zamanlı veriler', 'بيانات لحظية'],
+    'کاربران فعال': ['Active Users', 'Aktif Kullanıcılar', 'المستخدمون النشطون'],
+    'اشتراک منقضی': ['Expired Subscriptions', 'Süresi Dolan Abonelikler', 'الاشتراكات المنتهية'],
+    'وضعیت سرویس': ['Service Status', 'Hizmet Durumu', 'حالة الخدمة'],
+    'Panic فعال': ['Panic Active', 'Panik Aktif', 'الطوارئ نشط'],
+    'ترنسپورت': ['Transport', 'Taşıma', 'النقل'],
+    'مسیر تونل': ['Tunnel Path', 'Tünel Yolu', 'مسار النفق'],
+    'D1 پایدار': ['D1 Persistent', 'D1 Kalıcı', 'D1 مستمر'],
+    'موقت': ['Temporary', 'Geçici', 'مؤقت'],
+    /* کاربران */
+    'مدیریت کاربران': ['User Management', 'Kullanıcı Yönetimi', 'إدارة المستخدمين'],
+    'کاربر جدید': ['New User', 'Yeni Kullanıcı', 'مستخدم جديد'],
+    'کاربر فعال باشد': ['User is active', 'Kullanıcı etkin olsun', 'المستخدم مفعّل'],
+    'جستجوی نام، UUID، یادداشت…': ['Search name, UUID, note…', 'İsim, UUID, not ara…', 'بحث بالاسم أو UUID أو ملاحظة…'],
+    'مصرف': ['Usage', 'Kullanım', 'الاستهلاك'],
+    'سهمیه': ['Quota', 'Kota', 'الحصة'],
+    'انقضا': ['Expiry', 'Bitiş', 'الانتهاء'],
+    'حالت': ['Mode', 'Mod', 'الوضع'],
+    'اختصاصی': ['Custom', 'Özel', 'مخصص'],
+    'آخرین فعالیت': ['Last Activity', 'Son Aktivite', 'آخر نشاط'],
+    'عملیات': ['Actions', 'İşlemler', 'الإجراءات'],
+    'ریست مصرف': ['Reset Usage', 'Kullanımı Sıfırla', 'إعادة تعيين الاستهلاك'],
+    'قطع دسترسی': ['Disable Access', 'Erişimi Kapat', 'تعطيل الوصول'],
+    'فعال‌سازی': ['Enable', 'Etkinleştir', 'تفعيل'],
+    'کپی لینک ساب': ['Copy Sub Link', 'Abonelik Bağlantısını Kopyala', 'نسخ رابط الاشتراك'],
+    'منتظر اولین اتصال': ['Awaiting first connection', 'İlk bağlantı bekleniyor', 'بانتظار أول اتصال'],
+    'روز': ['days', 'gün', 'يوم'],
+    'روزهای باقی‌مانده': ['Remaining days', 'Kalan günler', 'الأيام المتبقية'],
+    'کاربر-پورت': ['User-Port', 'Kullanıcı-Port', 'مستخدم-منفذ'],
+    'پروتکل-کاربر-پورت': ['Proto-User-Port', 'Protokol-Kullanıcı-Port', 'بروتوكول-مستخدم-منفذ'],
+    'هاست-پورت-کاربر': ['Host-Port-User', 'Sunucu-Port-Kullanıcı', 'مضيف-منفذ-مستخدم'],
+    'فقط IP': ['IP only', 'Sadece IP', 'عنوان فقط'],
+    /* ساب */
+    'ابتدا یک کاربر بسازید': ['Create a user first', 'Önce bir kullanıcı oluşturun', 'أنشئ مستخدماً أولاً'],
+    'هیچ کاربری وجود ندارد — از بخش «کاربران» یکی بسازید': ['No users — create one in Users', 'Kullanıcı yok — Kullanıcılar bölümünden oluşturun', 'لا يوجد مستخدمون — أنشئ واحداً من «المستخدمون»'],
+    'کپی کانفیگ': ['Copy Config', 'Yapılandırmayı Kopyala', 'نسخ الإعداد'],
+    'کپی همه': ['Copy All', 'Tümünü Kopyala', 'نسخ الكل'],
+    'کپی لینک': ['Copy Link', 'Bağlantıyı Kopyala', 'نسخ الرابط'],
+    /* مانیتورینگ */
+    'مانیتورینگ و آمار': ['Monitoring and Stats', 'İzleme ve İstatistikler', 'المراقبة والإحصائيات'],
+    'مصرف روزانه/ماهانه/سالانه، اتصال‌های فعال و سلامت سرویس': ['Daily/monthly/yearly usage, active connections and service health', 'Günlük/aylık/yıllık kullanım, aktif bağlantılar ve hizmet sağlığı', 'الاستهلاك اليومي/الشهري/السنوي والاتصالات النشطة وصحة الخدمة'],
+    'روزانه': ['Daily', 'Günlük', 'يومي'],
+    'ماهانه': ['Monthly', 'Aylık', 'شهري'],
+    'سالانه': ['Yearly', 'Yıllık', 'سنوي'],
+    'آپلود کل': ['Total Upload', 'Toplam Yükleme', 'إجمالي الرفع'],
+    'دانلود کل': ['Total Download', 'Toplam İndirme', 'إجمالي التنزيل'],
+    'اتصال فعال': ['Active Connections', 'Aktif Bağlantılar', 'اتصالات نشطة'],
+    'نسخه / بیلد': ['Version / Build', 'Sürüm / Yapı', 'الإصدار / البناء'],
+    'توزیع مصرف کاربران': ['Usage Distribution', 'Kullanım Dağılımı', 'توزيع الاستهلاك'],
+    'مصرف به تفکیک کاربر': ['Usage per User', 'Kullanıcı Başına Kullanım', 'الاستهلاك لكل مستخدم'],
+    'با درصد پیشرفت': ['with progress percentage', 'ilerleme yüzdesi ile', 'مع نسبة الاستهلاك'],
+    'درصد سهمیه': ['Quota Percent', 'Kota Yüzdesi', 'نسبة الحصة'],
+    'سلامت شمارش مصرف': ['Usage Counter Health', 'Kullanım Sayacı Sağlığı', 'سلامة عداد الاستهلاك'],
+    'بررسی سلامت': ['Health Check', 'Sağlık Kontrolü', 'فحص الصحة'],
+    'تست واقعی ترافیک': ['Real Traffic Test', 'Gerçek Trafik Testi', 'اختبار حركة مرور حقيقي'],
+    'اتصال': ['connection', 'bağlantı', 'اتصالاً'],
+    'اتصال‌ها': ['Connections', 'Bağlantılar', 'الاتصالات'],
+    /* لاگ */
+    'لاگ فعالیت': ['Activity Log', 'Etkinlik Günlüğü', 'سجل النشاط'],
+    'همه': ['All', 'Tümü', 'الكل'],
+    'رادار': ['Radar', 'Radar', 'الرادار'],
+    'موفق': ['Success', 'Başarılı', 'ناجح'],
+    'اطلاعات': ['Info', 'Bilgi', 'معلومات'],
+    'هشدار': ['Warning', 'Uyarı', 'تحذير'],
+    'خطا': ['Error', 'Hata', 'خطأ'],
+    'رویدادی ثبت نشده': ['No events recorded', 'Kayıtlı olay yok', 'لا توجد أحداث مسجلة'],
+    'رویداد': ['events', 'olay', 'حدث'],
+    /* تنظیمات */
+    'تنظیمات و پشتیبان': ['Settings and Backup', 'Ayarlar ve Yedekleme', 'الإعدادات والنسخ الاحتياطي'],
+    'کلیدهای API': ['API Keys', 'API Anahtarları', 'مفاتيح API'],
+    'کلید جدید': ['New Key', 'Yeni Anahtar', 'مفتاح جديد'],
+    'پشتیبان و بازیابی': ['Backup and Restore', 'Yedekleme ve Geri Yükleme', 'النسخ والاستعادة'],
+    'ساخت پشتیبان': ['Create Backup', 'Yedek Oluştur', 'إنشاء نسخة احتياطية'],
+    'فقط‌خواندنی': ['Read-only', 'Salt Okunur', 'للقراءة فقط'],
+    'دسترسی کامل': ['Full Access', 'Tam Erişim', 'وصول كامل'],
+    'کلیدی ساخته نشده': ['No keys created', 'Anahtar oluşturulmadı', 'لم تُنشأ مفاتيح'],
+    'حداکثر ۱۰ کلید': ['Up to 10 keys', 'En fazla 10 anahtar', 'حتى 10 مفاتيح'],
+    /* امنیت و پیکربندی */
+    'امنیت و محدودیت اتصال': ['Security and Connection Limits', 'Güvenlik ve Bağlantı Sınırları', 'الأمان وحدود الاتصال'],
+    'محدودیت اتصال': ['Connection Limit', 'Bağlantı Sınırı', 'حد الاتصال'],
+    'احراز هویت': ['Authentication', 'Kimlik Doğrulama', 'المصادقة'],
+    'مسیر ورود و سایت پوششی': ['Login Path and Disguise Site', 'Giriş Yolu ve Gizleme Sitesi', 'مسار الدخول والموقع الوهمي'],
+    'سقف IP همزمان': ['Concurrent IP Limit', 'Eşzamanlı IP Sınırı', 'حد العناوين المتزامنة'],
+    'Kill Switch': ['Kill Switch', 'Kill Switch', 'قاطع الاتصال'],
+    'مرجع محدودیت': ['Limit Store', 'Sınır Kaynağı', 'مصدر الحد'],
+    'حافظه': ['Memory', 'Bellek', 'الذاكرة'],
+    'حالت اصلی': ['Main Mode', 'Ana Mod', 'الوضع الرئيسي'],
+    'میان‌برها': ['Shortcuts', 'Kısayollar', 'الاختصارات'],
+    'روشن/خاموش': ['on/off', 'aç/kapat', 'تشغيل/إيقاف'],
+    'رمزنگاری ترافیک': ['Traffic Encryption', 'Trafik Şifreleme', 'تشفير حركة المرور'],
+    'نمایش در کلاینت': ['Show in Client', 'İstemcide Göster', 'العرض في العميل'],
+    'ورود دومرحله‌ای': ['Two-Factor Login', 'İki Aşamalı Giriş', 'دخول بخطوتين'],
+    'مدیریت راه دور': ['Remote Management', 'Uzaktan Yönetim', 'الإدارة عن بُعد'],
+    'از GitHub': ['from GitHub', 'GitHub üzerinden', 'من GitHub'],
+    'سبک و سریع': ['Fast and Lightweight', 'Hafif ve Hızlı', 'خفيف وسريع'],
+    'مبهم‌سازی قوی': ['Strong Obfuscation', 'Güçlü Gizleme', 'تمويه قوي'],
+    /* سرورهای خروجی و پروکسی */
+    'سرورهای خروجی': ['Exit Servers', 'Çıkış Sunucuları', 'خوادم الخروج'],
+    'سرور خروجی': ['Exit Server', 'Çıkış Sunucusu', 'خادم خروج'],
+    'مسیر خروجی': ['Exit Routing', 'Çıkış Yönlendirmesi', 'توجيه الخروج'],
+    'پیش‌فرض سراسری': ['Global Default', 'Genel Varsayılan', 'الافتراضي العام'],
+    'انتخاب برای هر کانفیگ': ['Selection per Config', 'Her Yapılandırma İçin Seçim', 'اختيار لكل إعداد'],
+    'افزودن از لینک': ['Add from Link', 'Bağlantıdan Ekle', 'إضافة من رابط'],
+    'تست اتصال': ['Test Connection', 'Bağlantı Testi', 'اختبار الاتصال'],
+    'پروکسی پشتیبان': ['Backup Proxy', 'Yedek Proxy', 'بروكسي احتياطي'],
+    'تست از ورکر': ['Test from Worker', 'Worker Üzerinden Test', 'اختبار من العامل'],
+    /* مودال کاربر */
+    'اطلاعات پایه': ['Basic Information', 'Temel Bilgiler', 'المعلومات الأساسية'],
+    'شناسه‌های اتصال': ['Connection Credentials', 'Bağlantı Kimlikleri', 'بيانات الاتصال'],
+    'سهمیه و محدودیت': ['Quota and Limits', 'Kota ve Sınırlar', 'الحصة والحدود'],
+    'تعداد کانفیگ': ['Config Count', 'Yapılandırma Sayısı', 'عدد الإعدادات'],
+    'نام‌گذاری و تنظیمات اختصاصی': ['Naming and Custom Settings', 'Adlandırma ve Özel Ayarlar', 'التسمية والإعدادات المخصصة'],
+    'IPها و نودها': ['IPs and Nodes', 'IPler ve Düğümler', 'العناوين والعقد'],
+    'فیلترینگ و وضعیت': ['Filtering and Status', 'Filtreleme ve Durum', 'التصفية والحالة'],
+    'سهمیه کل': ['Total Quota', 'Toplam Kota', 'الحصة الكلية'],
+    'سهمیه روزانه': ['Daily Quota', 'Günlük Kota', 'الحصة اليومية'],
+    'آخرین اتصال': ['Last Connection', 'Son Bağlantı', 'آخر اتصال'],
+    'یادداشت': ['Note', 'Not', 'ملاحظة'],
+    'نام کاربر': ['Username', 'Kullanıcı Adı', 'اسم المستخدم'],
+    'بلاک محتوای بزرگسال': ['Block adult content', 'Yetişkin içeriği engelle', 'حظر المحتوى للبالغين'],
+    'بلاک تبلیغات': ['Block ads', 'Reklamları engelle', 'حظر الإعلانات'],
+    'ساخت UUID جدید': ['Generate New UUID', 'Yeni UUID Oluştur', 'إنشاء UUID جديد'],
+    'پیش‌فرض پنل': ['Panel Default', 'Panel Varsayılanı', 'افتراضي اللوحة'],
+    /* مودال ظاهر */
+    'ظاهر و زبان': ['Appearance and Language', 'Görünüm ve Dil', 'المظهر واللغة'],
+    'سبک، پالت رنگی، حالت شب و روز و زبان': ['Style, color palette, day/night mode and language', 'Stil, renk paleti, gece/gündüz modu ve dil', 'النمط ولوحة الألوان ووضع الليل والنهار واللغة'],
+    'زبان': ['Language', 'Dil', 'اللغة'],
+    'سبک': ['Style', 'Stil', 'النمط'],
+    'پالت رنگ': ['Color Palette', 'Renk Paleti', 'لوحة الألوان'],
+    'حالت شب و روز': ['Day and Night Mode', 'Gece ve Gündüz Modu', 'وضع الليل والنهار'],
+    'شب': ['Dark', 'Gece', 'ليلي'],
+    'روز': ['Light', 'Gündüz', 'نهاري'],
+    'عادی': ['Normal', 'Normal', 'عادي'],
+    'ماینکرفت': ['Minecraft', 'Minecraft', 'ماينكرافت'],
+    'سایبرپانک': ['Cyberpunk', 'Cyberpunk', 'سايبربانك'],
+    'آرکید': ['Arcade', 'Arcade', 'أركيد'],
+    'تغییرات بلافاصله اعمال و در همین مرورگر ذخیره می‌شوند. هر سبک پالت‌های مخصوص خودش را برای شب و روز دارد.': ['Changes apply instantly and are saved in this browser. Each style has its own palettes for day and night.', 'Değişiklikler anında uygulanır ve bu tarayıcıda kaydedilir. Her stilin gece ve gündüz için kendi paletleri vardır.', 'تُطبَّق التغييرات فوراً وتُحفظ في هذا المتصفح. لكل نمط لوحاته الخاصة للنهار والليل.'],
+    /* پیام‌های عمومی */
+    'در کلیپ‌بورد کپی شد': ['Copied to clipboard', 'Panoya kopyalandı', 'تم النسخ إلى الحافظة'],
+    'کپی نشد': ['Copy failed', 'Kopyalama başarısız', 'فشل النسخ'],
+    'ذخیره شد': ['Saved', 'Kaydedildi', 'تم الحفظ'],
+    'محدودیت: ۵ تلاش در ۱۰ دقیقه.': ['Rate limit: 5 tries in 10 minutes.', 'Hız sınırı: 10 dakikada 5 deneme.', 'الحد: 5 محاولات خلال 10 دقائق.'],
+    'رمز پیش‌فرض:': ['Default password:', 'Varsayılan şifre:', 'كلمة المرور الافتراضية:'],
+    'سرور پاسخ نداد': ['Server timed out', 'Sunucu yanıt vermedi', 'لم يستجب الخادم'],
+    'خطای شبکه': ['Network error', 'Ağ hatası', 'خطأ الشبكة'],
+    'هیچ': ['None', 'Hiçbiri', 'لا شيء'],
+    'همه‌ی تنظیمات ذخیره شد': ['All settings saved', 'Tüm ayarlar kaydedildi', 'تم حفظ جميع الإعدادات'],
+  };
+  const TR_KEYS = Object.keys(I18N).sort((a, b) => b.length - a.length);
+  const LIDX = { fa: -1, en: 0, tr: 1, ar: 2 };
+  const T = (fa) => { const v = I18N[fa], i = LIDX[L()]; if (!v || i < 0) return fa; return v[i] || fa; };
+  /* پاسِ ترجمه روی رشته‌ی آماده — کلیدهای بلندتر اول تا تداخل نشود */
+  const tr = (h) => { const i = LIDX[L()]; if (i < 0 || !h) return h; for (const k of TR_KEYS) { const t = I18N[k][i]; if (t && t !== k) h = h.split(k).join(t); } return h; };
+  const lgGet = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } };
+  const lgSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+
+  /* متادیتای سبک‌ها و پالت‌ها برای مودالِ انتخابِ ظاهر */
+  const SKINS = [
+    { k: 'normal', fa: 'عادی', cs: ['#6366F1', '#8B5CF6', '#22D3EE'] },
+    { k: 'minecraft', fa: 'ماینکرفت', cs: ['#22C55E', '#84CC16', '#FACC15'] },
+    { k: 'cyberpunk', fa: 'سایبرپانک', cs: ['#B4FF3A', '#00F0FF', '#FF2E97'] },
+    { k: 'arcade', fa: 'آرکید', cs: ['#FF4D4D', '#FF7A00', '#FFB000'] },
+  ];
+  const PALS = {
+    normal: [['#6366F1', '#8B5CF6', '#22D3EE'], ['#0EA5E9', '#2DD4BF', '#818CF8'], ['#F43F5E', '#FB923C', '#A855F7']],
+    minecraft: [['#22C55E', '#84CC16', '#FACC15'], ['#EF4444', '#F97316', '#FBBF24'], ['#A855F7', '#22D3EE', '#E879F9']],
+    cyberpunk: [['#B4FF3A', '#00F0FF', '#FF2E97'], ['#FF2E97', '#00F0FF', '#B4FF3A'], ['#00FF9F', '#00E5FF', '#B4FF3A']],
+    arcade: [['#FF4D4D', '#FF7A00', '#FFB000'], ['#4D9BFF', '#00C8FF', '#FFD700'], ['#FF5CDB', '#00F0D0', '#FFB000']],
+  };
+  const LANGS = [['fa', 'فارسی'], ['en', 'English'], ['tr', 'Türkçe'], ['ar', 'العربية']];
+
+  /* اعمالِ ظاهر روی <html> + ذخیره + برچسب‌های ایستای پوسته */
+  const applyLook = () => {
+    const r = document.documentElement;
+    r.dataset.skin = S.skin;
+    r.dataset.palette = S.pal;
+    r.dataset.theme = S.theme;
+    const isFa = S.lang === 'fa';
+    r.lang = isFa ? 'fa' : S.lang;
+    r.dir = isFa ? 'rtl' : 'ltr';
+    lgSet('sg_skin', S.skin); lgSet('sg_pal', S.pal); lgSet('sg_lang', S.lang); lgSet('sg_theme', S.theme);
+    const tb = $('#tbSearch'); if (tb) tb.placeholder = T('جستجو…');
+    const lo = $('#logoutT'); if (lo) lo.textContent = T('خروج');
+    const lb = $('#lookBtn'); if (lb) lb.title = T('ظاهر و زبان');
+    [['sfStoreL', 'ذخیره‌سازی'], ['sfUsersL', 'کاربران'], ['sfVerL', 'نسخه']].forEach(([id, k]) => { const el = $(id); if (el) el.textContent = T(k); });
+  };
+
+  /* مودالِ انتخابِ ظاهر و زبان */
+  function lookModal() {
+    const langChips = LANGS.map(([k, name]) => '<button class="lk-chip' + (S.lang === k ? ' on' : '') + '" data-lk-lang="' + k + '">' + name + '</button>').join('');
+    const skinCards = SKINS.map((s) => '<button class="lk-skin' + (S.skin === s.k ? ' on' : '') + '" data-lk-skin="' + s.k + '">' +
+      '<span class="lk-prev" style="background:linear-gradient(135deg,' + s.cs.join(',') + ')">' +
+      s.cs.map((c) => '<i style="background:' + c + '"></i>').join('') + '</span><b>' + s.fa + '</b></button>').join('');
+    const palDots = (PALS[S.skin] || PALS.normal).map((p, i) =>
+      '<button class="lk-pal' + (Number(S.pal) === i + 1 ? ' on' : '') + '" data-lk-pal="' + (i + 1) + '" title="Palette ' + (i + 1) + '" style="background:linear-gradient(135deg,' + p.join(',') + ')"></button>').join('');
+    const themeSeg = [['dark', T('شب')], ['light', T('روز')]].map(([k, l]) =>
+      '<button data-lk-theme="' + k + '" class="' + (S.theme === k ? 'on' : '') + '">' + l + '</button>').join('');
+    modal('<header><span class="ic">' + icon('fa-palette') + '</span><div><h3>' + T('ظاهر و زبان') + '</h3>' +
+      '<p>' + T('سبک، پالت رنگی، حالت شب و روز و زبان') + '</p></div>' +
+      '<div class="acts"><button class="btn sm ghost" data-act="close">' + icon('fa-xmark') + '</button></div></header>' +
+      '<div class="bd">' +
+      '<div class="lk-sec"><span class="lk-t">' + T('زبان') + '</span><div class="lk-chips">' + langChips + '</div></div>' +
+      '<div class="lk-sec"><span class="lk-t">' + T('سبک') + '</span><div class="lk-grid">' + skinCards + '</div></div>' +
+      '<div class="lk-sec lk-row"><span class="lk-t">' + T('پالت رنگ') + '</span><div class="lk-pals">' + palDots + '</div></div>' +
+      '<div class="lk-sec lk-row"><span class="lk-t">' + T('حالت شب و روز') + '</span><div class="seg">' + themeSeg + '</div></div>' +
+      '<div class="lk-note">' + T('تغییرات بلافاصله اعمال و در همین مرورگر ذخیره می‌شوند. هر سبک پالت‌های مخصوص خودش را برای شب و روز دارد.') + '</div>' +
+      '</div>');
+  }
+  /* رویدادهای مودال ظاهر — مستقل از data-act */
+  $('#modalRoot').addEventListener('click', (e) => {
+    const sk = e.target.closest('[data-lk-skin]');
+    if (sk) { S.skin = sk.dataset.lkSkin; applyLook(); lookModal(); return; }
+    const pa = e.target.closest('[data-lk-pal]');
+    if (pa) { S.pal = pa.dataset.lkPal; applyLook(); lookModal(); return; }
+    const lg = e.target.closest('[data-lk-lang]');
+    if (lg) { S.lang = lg.dataset.lkLang; applyLook(); lookModal(); refresh(); return; }
+    const th = e.target.closest('[data-lk-theme]');
+    if (th) { S.theme = th.dataset.lkTheme; applyLook(); setThemeIcon(); lookModal(); refresh(); return; }
+  });
 
   /* ─────────── نمودار سطحی (SVG دقیق با تولتیپ) ───────────
      ⚠️ viewBox با preserveAspectRatio="none" کشیده می‌شود؛ هر متنی یا
@@ -1007,11 +1298,12 @@
      کاربرانی که انقضای ساعتی دارند (مثلاً ۲ ساعت) قبلاً «۱ روز» نشان داده می‌شد.
      hours < 48  → «۲ ساعت و ۱۵ دقیقه» / «۴۵ دقیقه»  •  >= 48  → روز */
   function expTxt(ms) {
+    const U = L() === 'fa' ? ['دقیقه', 'ساعت', ' و ', 'روز'] : L() === 'tr' ? ['dk', 'sa', ' ve ', 'gün'] : L() === 'ar' ? ['دقيقة', 'ساعة', ' و ', 'يوم'] : ['min', 'hr', ' and ', 'days'];
     const m = Math.ceil(ms / 60000);
-    if (m < 60) return fa(m) + ' دقیقه';
+    if (m < 60) return fa(m) + ' ' + U[0];
     const h = Math.floor(m / 60);
-    if (m < 48 * 60) return fa(h) + ' ساعت' + (m % 60 ? ' و ' + fa(m % 60) + ' دقیقه' : '');
-    return fa(Math.ceil(m / 1440)) + ' روز';
+    if (m < 48 * 60) return fa(h) + ' ' + U[1] + (m % 60 ? U[2] + fa(m % 60) + ' ' + U[0] : '');
+    return fa(Math.ceil(m / 1440)) + ' ' + U[3];
   }
   function usersView() {
     const us = S.d.users;
@@ -1787,7 +2079,7 @@
       /* در صفحه‌ی ورود هیچ هدر، سایدبار یا فوتر وجود ندارد */
       document.body.classList.add('auth');
       closeDrawer();
-      $('#view').innerHTML = loginView();
+      $('#view').innerHTML = tr(loginView());
       setTimeout(() => { const e = $('#lgPw'); if (e) e.focus(); }, 60);
       return;
     }
@@ -1797,20 +2089,20 @@
     $('#brandName').textContent = s.panel.name;
     $('#brandVer').textContent = 'v' + d.version;
     $('#pageTitle').textContent = s.panel.name;
-    $('#sfStore').textContent = d.storage === 'd1' ? 'D1 پایدار' : 'موقت';
-    $('#sfUsers').textContent = fa(d.users.length) + ' کاربر';
+    $('#sfStore').textContent = d.storage === 'd1' ? T('D1 پایدار') : T('موقت');
+    $('#sfUsers').textContent = fa(d.users.length) + ' ' + T('کاربر');
     $('#sfVer').textContent = d.version;
     const panic = s.auth.panic;
-    $('#tbState').textContent = panic ? 'Panic Mode فعال است' : 'سرویس فعال';
+    $('#tbState').textContent = panic ? T('Panic Mode فعال است') : T('سرویس فعال');
     $('#tbState').style.color = panic ? 'var(--bad)' : '';
     $('#tbDot').className = 'dot ' + (panic ? 'bad' : 'on');
     $('#tbReq').innerHTML = icon('fa-arrow-up-right-dots') + ' ' + n((d.stats && d.stats.requests) || 0) + ' req';
     $('#panicBtn').className = 'btn sm ' + (panic ? 'd' : 's');
-    nav.innerHTML = NAV.map((g) => '<div class="nav-group"><span>' + g.g + '</span>' + g.items.map(([id, l, ic]) =>
+    nav.innerHTML = tr(NAV.map((g) => '<div class="nav-group"><span>' + g.g + '</span>' + g.items.map(([id, l, ic]) =>
       '<button class="nav-item ' + (S.view === id ? 'on' : '') + '" data-act="nav" data-view="' + id + '">' + icon(ic) + '<span>' + l + '</span>' +
       (id === 'users' ? '<span class="cnt">' + fa(d.users.length) + '</span>' : '') +
-      (id === 'logs' ? '<span class="cnt">' + fa((d.logs || []).length) + '</span>' : '') + '</button>').join('') + '</div>').join('');
-    $('#view').innerHTML = '<div class="fade">' + (VIEWS[S.view] || dashView)() + '</div>';
+      (id === 'logs' ? '<span class="cnt">' + fa((d.logs || []).length) + '</span>' : '') + '</button>').join('') + '</div>').join(''));
+    $('#view').innerHTML = '<div class="fade">' + tr((VIEWS[S.view] || dashView)()) + '</div>';
     if (S.view === 'sub') setTimeout(refreshPreview, 30);
     /* اتصال‌های زنده: داده‌ی قبلی همان لحظه رندر می‌شود و بارخوانی فقط همان
        دو بلوک را به‌روز می‌کند — جدول هیچ وقت خالی نمی‌شود. */
@@ -1825,7 +2117,7 @@
         : chartSeries(d, 'dsh');
       bindCharts(cw, ser);
     }
-    $('#foot').innerHTML = esc(s.panel.name) + ' • ' + esc(location.hostname) + ' • ورود: <span class="mono">/' + esc(s.auth.path) + '</span> • ساب: <span class="mono">/' + esc(s.sub.path) + '</span>';
+    $('#foot').innerHTML = tr(esc(s.panel.name) + ' • ' + esc(location.hostname) + ' • ' + T('ورود') + ': <span class="mono">/' + esc(s.auth.path) + '</span> • ' + T('لینک ساب') + ': <span class="mono">/' + esc(s.sub.path) + '</span>');
   }
 
   async function refresh() {
@@ -1840,7 +2132,7 @@
     const t = (term || '').trim().toLowerCase();
     if (!t || !S.d) { drop.classList.remove('show'); drop.innerHTML = ''; return; }
     const out = [];
-    NAV.forEach((g) => g.items.forEach(([id, l]) => { if (l.toLowerCase().includes(t)) out.push({ ic: 'fa-compass', txt: l, sub: g.g, act: 'nav', view: id }); }));
+    NAV.forEach((g) => g.items.forEach(([id, l]) => { if ([l, T(l)].join(' ').toLowerCase().includes(t)) out.push({ ic: 'fa-compass', txt: T(l), sub: T(g.g), act: 'nav', view: id }); }));
     S.d.users.forEach((u) => {
       if ([u.name, u.uuid, u.note].join(' ').toLowerCase().includes(t))
         out.push({ ic: 'fa-user', txt: u.name, sub: String(u.uuid).slice(0, 16) + '…', act: 'user-edit', id: u.id });
@@ -2719,18 +3011,17 @@
 
   /* خروج */
   $('#logoutBtn').addEventListener('click', () => {
-    if (!confirm('از پنل خارج شوید؟')) return;
-    S.token = ''; sessionStorage.removeItem('sg_t'); S.d = null; render(); toast('خارج شدید', 'info');
+    if (!confirm(T('از پنل خارج شوید؟'))) return;
+    S.token = ''; sessionStorage.removeItem('sg_t'); S.d = null; render(); toast(T('خارج شدید'), 'info');
   });
 
-  /* تم */
-  const setThemeIcon = () => { $('#themeBtn').innerHTML = icon(document.documentElement.dataset.theme === 'light' ? 'fa-moon' : 'fa-sun'); };
+  /* تم سریع شب/روز + بازکردن مودالِ ظاهر */
+  const setThemeIcon = () => { $('#themeBtn').innerHTML = icon(S.theme === 'light' ? 'fa-moon' : 'fa-sun'); };
   $('#themeBtn').addEventListener('click', () => {
-    const cur = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
-    document.documentElement.dataset.theme = cur;
-    try { localStorage.setItem('sg_theme', cur); } catch (e) {}
-    setThemeIcon();
+    S.theme = S.theme === 'light' ? 'dark' : 'light';
+    applyLook(); setThemeIcon();
   });
+  $('#lookBtn').addEventListener('click', lookModal);
 
   /* Panic */
   $('#panicBtn').addEventListener('click', async () => {
@@ -3077,7 +3368,11 @@
   }
 
   /* ─────────── راه‌اندازی ─────────── */
-  try { document.documentElement.dataset.theme = localStorage.getItem('sg_theme') || 'dark'; } catch (e) { document.documentElement.dataset.theme = 'dark'; }
+  S.theme = lgGet('sg_theme', 'dark');
+  S.skin = lgGet('sg_skin', 'normal');
+  S.pal = lgGet('sg_pal', '1');
+  S.lang = lgGet('sg_lang', 'fa');
+  applyLook();
   setThemeIcon();
   render();
   window.__sgBooted = true;
