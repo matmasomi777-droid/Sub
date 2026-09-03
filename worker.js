@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  پنل مدیریت کانفیگ — Cloudflare Worker (تک‌فایل)
- *  نسخه 3.0.0 • UI از گیت‌هاب خوانده می‌شود (fragment enhancement / FR)
+ *  نسخه 4.0.0 • UI از گیت‌هاب خوانده می‌شود (fragment enhancement / FR)
  * ───────────────────────────────────────────────────────────────────────────
  *  نصب: داشبورد کلاودفلر → Workers & Pages → Create Worker → Edit code →
  *        کل این فایل را جایگذاری کنید → Deploy
@@ -64,7 +64,7 @@ function exitDialHost(srv) {
   return dialableAddr(srv.address);
 }
 
-const VERSION = '3.0.0';
+const VERSION = '4.0.0';
 const BUILD = '2026.08.30';
 const BOOT = Date.now();
 /* ذخیره‌سازی فقط با D1 — KV حذف شد */
@@ -2468,7 +2468,7 @@ const FALLBACK = `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="
 /* ═══════════ منبع ثابت UI — فقط همین سه فایل، غیرقابل تغییر ═══════════ */
 /* UI_REV: با هر تغییرِ UI یک واحد زیاد شود تا کشِ Cloudflare/گیت‌هاب نسخه‌ی
    قدیمی را برگرداند (کلیدِ کش‌شکن در URL) */
-const UI_REV = '20260904b';
+const UI_REV = '20260905a';
 const UI_SRC = {
   html: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/index.html?r=' + UI_REV,
   css: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/style.css?r=' + UI_REV,
