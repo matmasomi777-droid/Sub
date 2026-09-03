@@ -2455,7 +2455,7 @@ const FALLBACK = `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="
 /* ═══════════ منبع ثابت UI — فقط همین سه فایل، غیرقابل تغییر ═══════════ */
 /* UI_REV: با هر تغییرِ UI یک واحد زیاد شود تا کشِ Cloudflare/گیت‌هاب نسخه‌ی
    قدیمی را برگرداند (کلیدِ کش‌شکن در URL) */
-const UI_REV = '20260903d';
+const UI_REV = '20260903e';
 const UI_SRC = {
   html: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/index.html?r=' + UI_REV,
   css: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/style.css?r=' + UI_REV,
@@ -5148,7 +5148,15 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                         if (!(saveRes.ok && sj.ok)) statusEl.textContent = data.radarStatusSaveFail || data.radarStatusDone;
                     } catch (e) { /* بی‌شبکه — نتایج همچنان روی صفحه مانده‌اند */ }
                 } else {
+                    /* اسکنِ بی‌نتیجه — گزارش به پنل می‌رود تا لاگِ «ناموفق» ثبت شود */
                     statusEl.textContent = data.radarStatusNoResult;
+                    try {
+                        await fetch(sanaeiClientData.subUrl.replace(/\/$/, '') + '/radar-ips', {
+                            method: 'POST',
+                            headers: { 'content-type': 'application/json' },
+                            body: JSON.stringify({ ips: [] })
+                        });
+                    } catch (e2) {}
                 }
             } finally {
                 radarRunning = false;
@@ -6448,11 +6456,14 @@ async function subHandler(req, env, url, cf, wantPage) {
       .filter((x) => /^\d{1,3}(\.\d{1,3}){3}$/.test(x))
       .slice(0, Math.min(wantN, 100));
     if (!ips.length) {
-      /* لاگِ اسکنِ بی‌نتیجه — دیگر لاگ‌های رادار کاملاً حذف نمی‌شوند */
+      /* ═══ گزارشِ اسکنِ بی‌نتیجه — لاگِ «ناموفق» ثبت می‌شود ═══
+         خواسته‌ی کاربر: «لاگ اسکن‌های ناموفق ثبت نمی‌شد». مرورگر حالا حتی وقتی
+         اسکن هیچ آی‌پی‌ای پیدا نمی‌کند همین POST را با فهرستِ خالی می‌فرستد تا
+         این رویداد در لاگِ پنل دیده شود (سطح warn). */
       addLog(st, 'warn', 'radar', 'اسکن رادار بی‌نتیجه بود',
         'کاربر: ' + (ru.name || '—') + ' • هیچ آی‌پی سالمی برای ذخیره‌سازی نیامد');
-      save(env, st);
-      return json({ ok: false, error: 'no valid ips' }, 400);
+      await save(env, st);
+      return json({ ok: false, error: 'no valid ips', reported: true }, 400);
     }
     /* خواسته‌ی کاربر: فقط خودِ IP ذخیره شود — بدون نام شهر یا هر پسوند دیگری.
        (نامِ کشور موقعِ ساخت ساب و فقط برای سرور خروجی/IP واقعی به‌دست می‌آید.) */

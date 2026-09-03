@@ -2466,34 +2466,6 @@
             return (n > 0 && n <= 100) ? n : 5;
         })();
 
-        /* ═══ تأییدِ نهایی در مرورگر ═══
-           بعد از اسکن، هر آی‌پیِ کاندید یک‌بارِ دیگر واقعاً پروب می‌شود تا فقط
-           آی‌پی‌هایی که همین حالا (در همین مرورگر) پاسخ می‌دهند ذخیره شوند. */
-        async function radarVerifyIps(candidates, ports) {
-            const data = locales[currentLang] || locales.fa;
-            const statusEl = document.getElementById('radar-status');
-            const ok = [];
-            let i = 0;
-            async function worker() {
-                while (i < candidates.length) {
-                    if (radarCancelRequested) return;
-                    const r = candidates[i++];
-                    let alive = false;
-                    for (const port of ports) {
-                        const rtt = await pingIp(r.ip, port, RADAR_TIMEOUT);
-                        if (rtt !== null && rtt >= RADAR_MIN_RTT) { alive = true; break; }
-                    }
-                    if (alive) ok.push(r);
-                    if (statusEl && data.radarStatusVerify) statusEl.textContent = data.radarStatusVerify
-                        .replace('{done}', i).replace('{total}', candidates.length);
-                }
-            }
-            const ws = [];
-            for (let w = 0; w < RADAR_CONCURRENCY; w++) ws.push(worker());
-            await Promise.all(ws);
-            return ok;
-        }
-
         let radarRunning = false;
         let radarCancelRequested = false;
 
@@ -2630,33 +2602,28 @@
                 }
                 radarCancelRequested = false;
 
-                /* آی‌پی‌ها در صفحه نمایش داده نمی‌شوند — به پنل ارسال و
-                   روی کانفیگ‌های همین کاربر اعمال می‌شوند */
+                /* ═══ نتیجه‌ی اسکن: مستقیم ذخیره می‌شود ═══
+                   هر آی‌پیِ «یافت‌شده» در همان لحظه با چند پروب و فیلترِ تأخیرِ
+                   اسکنر (RADAR_PROBES + RADAR_MIN_RTT) تأیید شده است؛ مرحله‌ی
+                   «تأییدِ دوباره» حذف شد چون پروبِ دوم می‌توانست همه را مرده نشان
+                   بدهد و نتیجه: با اینکه تعدادِ لازم آی‌پیِ تمیز پیدا شده بود، پیامِ
+                   «اسکن ناموفق / آی‌پی یافت نشد» می‌آمد و هیچ ذخیره‌ای انجام نمی‌شد. */
                 results.sort(function(a, b) { return a.score - b.score; });
-                /* کاندیدها = بهترین‌ها تا حداکثرِ دو برابرِ تعدادِ لازم —
-                   بعد از تأییدِ مجدد در همین مرورگر، تعدادِ نهاییِ درست ذخیره می‌شود */
-                const candidates = results.slice(0, RADAR_KEEP * 2);
+                const top = results.slice(0, RADAR_KEEP).map(function(r) { return r.ip; });
 
-                if (candidates.length === 0) {
-                    /* اسکنِ بی‌نتیجه — هیچ لاگ موفقی ثبت نمی‌شود و هیچ آی‌پی‌ای
-                       ذخیره نمی‌شود؛ فقط پیامِ «آی‌پی سالمی یافت نشد». */
+                if (top.length === 0) {
+                    /* اسکنِ بی‌نتیجه — گزارش به پنل ارسال می‌شود تا لاگِ «ناموفق»
+                       ثبت شود (لاگ‌های اسکنِ ناموفق قبلاً هیچ‌جا ثبت نمی‌شدند). */
                     statusEl.textContent = data.radarStatusNoResult;
+                    try {
+                        await fetch(sanaeiClientData.subUrl.replace(/\/$/, '') + '/radar-ips', {
+                            method: 'POST',
+                            headers: { 'content-type': 'application/json' },
+                            body: JSON.stringify({ ips: [] })
+                        });
+                    } catch (e2) {}
                     return;
                 }
-
-                /* ═══ تأییدِ نهایی در همین مرورگر ═══
-                   فقط آی‌پی‌هایی که همین حالا هم پاسخ می‌دهند ذخیره می‌شوند */
-                const verified = await radarVerifyIps(candidates, ports);
-                if (radarCancelRequested) {
-                    statusEl.textContent = data.radarStatusStopped;
-                    return;
-                }
-                if (verified.length === 0) {
-                    /* هیچ آی‌پی سالمی تأیید نشد — ذخیره/لاگی انجام نمی‌شود */
-                    statusEl.textContent = data.radarStatusNoResult;
-                    return;
-                }
-                const top = verified.slice(0, RADAR_KEEP).map(function(r) { return r.ip; });
 
                 statusEl.textContent = data.radarStatusSaving;
                 try {
@@ -2670,7 +2637,7 @@
                         statusEl.textContent = data.radarStatusSaved
                             .replace('{count}', sj.applied || top.length);
                         /* کانفیگ‌های سابِ صفحه باید با آی‌پی‌های تازه دوباره لود شوند —
-                           ورکر بعد از حذفِ کانفیگ‌های مرده، ساب را بازسازی کرده است */
+                           ورکر بعد از ذخیره، ساب را با آی‌پی‌های تمیزِ جدید بازسازی کرده است */
                         await fetchLiveSubscriptionData();
                         renderAll();
                     } else {
