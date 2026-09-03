@@ -2453,9 +2453,17 @@
         /* تعداد آی‌پی‌هایی که باید ذخیره شود = سقف کانفیگِ همین کاربر
            (maxConfigs یا nodeLimit پنل) — از ورکر با placeholder می‌آید؛
            اگر نبود، مقدارِ قبلی (۸) پیش‌فرض می‌ماند. */
+        /* ═══ خواسته‌ی کاربر: به‌محضِ رسیدن به ۵ آی‌پیِ تمیز، اسکن «موفق» قطع شود ═══
+           قبلاً اسکن تا ۱۰۲۴ آی‌پی ادامه می‌یافت و حتی وقتی «چند آی‌پی پیدا شد»
+           نشان داده می‌شد، در پایان به‌عنوانِ ناموفق/بی‌نتیجه تمام می‌شد و اقداماتِ
+           بعد از اسکن هم اجرا نمی‌شد. حالا هر worker با رسیدنِ تعدادِ لازم متوقف
+           می‌شود؛ در نهایتِ اسکنِ موفق، تأییدِ مجدد → ذخیره در پنل → به‌روزرسانیِ
+           کانفیگ‌ها انجام می‌شود. تعدادِ لازم = سقفِ کانفیگِ این کاربر
+           (maxConfigs یا nodeLimit پنل) که از ورکر با placeholder می‌آید؛ اگر
+           جایگزین نشده یا نامعتبر است، پیش‌فرضِ ۵ استفاده می‌شود. */
         const RADAR_KEEP = (() => {
             const n = parseInt("__NODE_LIMIT__", 10);
-            return (n > 0 && n <= 100) ? n : 8;
+            return (n > 0 && n <= 100) ? n : 5;
         })();
 
         /* ═══ تأییدِ نهایی در مرورگر ═══
@@ -2594,6 +2602,8 @@
 
                 async function worker() {
                     while (cursor < ips.length) {
+                        /* هدفِ تعدادِ لازم قبلاً پر شده → توقفِ موفقِ همه‌ی workerها */
+                        if (results.length >= RADAR_KEEP) return;
                         if (radarCancelRequested) return;
                         const ip = ips[cursor++];
                         const res = await radarProbeIp(ip, ports);
@@ -2611,12 +2621,14 @@
                 for (let w = 0; w < RADAR_CONCURRENCY; w++) workers.push(worker());
                 await Promise.all(workers);
 
-                if (radarCancelRequested) {
-                    /* توقف‌شده — نتیجه‌ی ناقص به‌عنوان «پایان اسکن» جعل نمی‌شود */
+                /* اگر توقفِ دستی نبود ولی به هدفِ تعدادِ لازم رسیده‌ایم، اسکن «موفق» است */
+                if (radarCancelRequested && results.length < RADAR_KEEP) {
+                    /* توقف‌شده قبل از رسیدن به هدف — نتیجه‌ی ناقص به‌عنوان «پایان اسکن» جعل نمی‌شود */
                     document.getElementById('radar-progress-bar').style.width = '0%';
                     statusEl.textContent = data.radarStatusStopped;
                     return;
                 }
+                radarCancelRequested = false;
 
                 /* آی‌پی‌ها در صفحه نمایش داده نمی‌شوند — به پنل ارسال و
                    روی کانفیگ‌های همین کاربر اعمال می‌شوند */

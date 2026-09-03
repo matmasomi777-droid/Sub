@@ -635,7 +635,9 @@
       esc(v.link) + '</textarea>' +
       '<div class="hint" style="margin-top:5px">فقط لینک را اینجا بچسبانید — چیزِ دیگری لازم نیست. ' +
       'نام از بخشِ بعد از <span class="mono">#</span> خوانده می‌شود و بقیه (آدرس، پورت، یو‌یو‌آی‌دی، امنیت، ' +
-      'انتقال، مسیر، SNI و…) از خودِ لینک.</div></label>' +
+      'انتقال، مسیر، SNI و…) از خودِ لینک. ' +
+      '<b>توجه:</b> روی سرور خروجیِ داخل ورکرِ کلاودفلر فقط <span class="mono">security=tls</span> (یا none) کار می‌کند — ' +
+      'لینکِ reality پذیرفته نمی‌شود چون TLS در لبه‌ی کلودفلر خاتمه می‌یابد.</div></label>' +
       '</div>' +
       '<input type="hidden" id="ex_id" value="' + esc(v.id) + '">' +
       '<div class="btn-row" style="margin-top:10px;gap:6px">' +
@@ -2999,7 +3001,7 @@
   render();
   window.__sgBooted = true;
   refresh();
-  setInterval(() => { if (S.token && (S.view === 'dash' || S.view === 'monitor')) refresh(); }, 20000);
+  setInterval(() => { if (S.token && (S.view === 'dash' || S.view === 'monitor' || S.view === 'logs')) refresh(); }, 20000);
   /* اتصال‌های زنده هر ۱۰ ثانیه به‌روز می‌شود — با بارخوانیِ هدفمند (cnLoad)،
      نه رندرِ کل صفحه، تا جدول نپرد و فیلتر/مکانِ اسکرول از بین نرود. */
   setInterval(() => { if (S.token && S.view === 'conns') cnLoad(); }, 10000);
