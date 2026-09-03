@@ -3001,7 +3001,7 @@
   render();
   window.__sgBooted = true;
   refresh();
-  setInterval(() => { if (S.token && (S.view === 'dash' || S.view === 'monitor' || S.view === 'logs')) refresh(); }, 20000);
+  setInterval(() => { if (S.token && (S.view === 'dash' || S.view === 'monitor' || S.view === 'logs' || S.view === 'users')) refresh(); }, 20000);
   /* اتصال‌های زنده هر ۱۰ ثانیه به‌روز می‌شود — با بارخوانیِ هدفمند (cnLoad)،
      نه رندرِ کل صفحه، تا جدول نپرد و فیلتر/مکانِ اسکرول از بین نرود. */
   setInterval(() => { if (S.token && S.view === 'conns') cnLoad(); }, 10000);

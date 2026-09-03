@@ -228,6 +228,8 @@ async function totp(secret, t = Date.now()) {
 const D1_KEY = 'state';
 
 let MEM = null;                       // کش در حافظه
+let MEM_TS = 0;                       // زمان آخرین بارگذاری کش
+const MEM_TTL = 4000;                 // تازگی کش state (۴ ثانیه) — تغییراتِ ایزوله‌های دیگر دیده شود
 let DIRTY = null;                     // تغییرات ذخیره‌نشده
 let LAST_WRITE = 0;                   // زمان آخرین نوشتن در D1
 let WRITING = false;                  // جلوگیری از نوشتن همزمان
@@ -1667,9 +1669,19 @@ async function usageFresh(env, uuid) {
 
 /** بارگذاری — فقط یک‌بار در طول عمر isolate */
 async function load(env) {
-  if (MEM) return MEM;                        // کش در حافظه
+  /* ⚠️ کشِ کوتاهِ ۴ ثانیه‌ای: قبلاً MEM تا پایانِ عمرِ isolate کش می‌ماند و
+     تغییراتِ ایزوله‌های دیگر (مسلح‌شدنِ انقضا در dial، لاگِ اسکنِ رادار،
+     کاربرِ تازه) هرگز به پنل نمی‌رسید — برای همین «منتظر اولین اتصال»
+     و لاگ‌های ثبت‌شده‌ی جاهای دیگر دیده نمی‌شدند. حالا حداکثر ۴ ثانیه
+     بعد، پنل state را از D1 دوباره می‌خواند. */
+  if (MEM && (Date.now() - MEM_TS < MEM_TTL || (!env.DB && !env.KV))) return MEM;
   const raw = await d1Read(env);
-  MEM = raw ? merge(DEF(), JSON.parse(raw)) : DEF();
+  if (raw !== null && raw !== undefined) {
+    try { MEM = merge(DEF(), JSON.parse(raw)); } catch (e) { /* blob خراب — کشِ فعلی می‌ماند */ }
+  } else if (!MEM) {
+    MEM = DEF();
+  }
+  MEM_TS = Date.now();
   return MEM;
 }
 
@@ -1692,6 +1704,7 @@ function d1WriteSafe(env, json) {
 async function save(env, st) {
   try { normalize(st); } catch (e) {}
   MEM = st;                                   // فوری در حافظه — همیشه کار می‌کند
+  MEM_TS = Date.now();                        // کش تازه شد — بارگذاریِ بعدی از D1 نمی‌خواند
   DIRTY = st;
   if (!env.DB) return st;
 
@@ -6861,6 +6874,11 @@ function vlessRequestHeader(srv, addr, port, payload) {
        خطای مبهمِ connect؛ مسیرِ مستقیم (fallback) خودش httpFallback دارد. */
     throw new Error('پورتِ ' + p2 + ' (HTTP) از سرورِ خروجیِ روی کلاودفلر قابل استفاده نیست — فقط پورت‌های TLS مثل ۴۴۳');
   }
+  /* ⚠️ آدرسِ داخلِ هدر باید از «target» ساخته شود نه خودِ addr:
+     IPv4 با sslip.io دامنه‌دار می‌شود تا سرورِ خروجیِ روی کلاودفلر بتواند
+     connect() کند. قبلاً target محاسبه می‌شد ولی هرگز استفاده نمی‌شد و هدر
+     با IP لخت (atyp=1) ساخته می‌شد — سرورِ خروجیِ بدونِ wrapper به خطای
+     «HTTP-based service» می‌خورد و chain کار نمی‌کرد. */
   const target = dialableAddr(addr);
   const hex = String(srv.uuid || '').replace(/-/g, '');
   const uuidBytes = new Uint8Array(16);
@@ -6871,8 +6889,8 @@ function vlessRequestHeader(srv, addr, port, payload) {
   const addons = vlessAddons(srv.flow);
 
   let atyp = 2, addrBytes;
-  const v4 = String(addr).match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  const v6 = v4 ? null : ipv6ToBytes(addr);
+  const v4 = String(target).match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  const v6 = v4 ? null : ipv6ToBytes(target);
   if (v4 && v4.slice(1).every((n) => Number(n) <= 255)) {
     atyp = 1;
     addrBytes = new Uint8Array(v4.slice(1).map(Number));
@@ -6880,7 +6898,7 @@ function vlessRequestHeader(srv, addr, port, payload) {
     atyp = 3;
     addrBytes = v6;
   } else {
-    const d = new TextEncoder().encode(String(addr));
+    const d = new TextEncoder().encode(String(target));
     addrBytes = new Uint8Array(1 + d.length);
     addrBytes[0] = Math.min(255, d.length);
     addrBytes.set(d.subarray(0, addrBytes[0]), 1);
@@ -7082,8 +7100,14 @@ async function openExitSocket(srv, info, opt) {
     };
   }
 
-  /* ── انتقالِ ws: ارتقای HTTP، سپس هندشیک داخلِ اولین قابِ دودویی ── */
-  const host = srv.host || srv.address;
+  /* ── انتقالِ ws: ارتقای HTTP، سپس هندشیک داخلِ اولین قابِ دودویی ──
+     ⚠️ Host باید دامنه‌ی واقعیِ خودِ سرورِ خروجی باشد: وقتی address دامنه
+     است (مثلاً workers.dev)، Hostِ متفاوت یعنی لبه‌ی کلاودفلر درخواست را
+     به مسیرِ دیگری می‌فرستد و سرورِ خروجی هرگز ارتقای وب‌سوکت را نمی‌بیند
+     (chain خاموش‌وار به مسیرِ مستقیم برمی‌گردد). hostِ پارامتریِ لینک فقط
+     وقتی address آی‌پی است (سرورِ پشتِ CDN) به‌کار می‌رود. */
+  const isIpAddr = /^(\d{1,3}\.){3}\d{1,3}$/.test(String(srv.address || '').trim());
+  const host = isIpAddr ? (srv.host || srv.address) : srv.address;
   const path = String(srv.path || '/').startsWith('/') ? srv.path : '/' + srv.path;
   const req = 'GET ' + path + ' HTTP/1.1\r\n'
     + 'Host: ' + host + '\r\n'
@@ -7499,30 +7523,31 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
     return { host: s, port: defPort };
   };
 
+  /* ═══ مسلح‌کردنِ «انقضا از اولین استفاده» ═══
+     اولین ترافیکِ واقعیِ کاربر (رسیدن به dial، یا اولین کوئریِ DNS/UDP)
+     شمارش را آغاز می‌کند. گذشته از blobِ همین isolate: ردیفِ مصرف فعال
+     می‌شود (usageDelta با دلتای -۱) و وضعیت فوراً در D1 ذخیره می‌شود تا
+     پنل — حتی در ایزوله‌ی دیگر — «منتظر اولین اتصال» را نشان ندهد.
+     اگر مدتِ (expiryDurMs/expiryAt) هم نباشد، فقط پرچم برداشته می‌شود و
+     پنل برای همیشه «منتظر اولین اتصال» نمی‌ماند (نمایش: نامحدود). */
+  const armExpiry = (u) => {
+    if (!u || !u.expiryFirstUse || u.expiryArmed) return;
+    u.expiryArmed = true;
+    user = u;
+    const dur = Number(u.expiryDurMs) || (u.expiryAt ? Math.max(60000, u.expiryAt - Date.now()) : 0);
+    u.expiryAt = dur ? Date.now() + dur : null;
+    if (ctx && ctx.waitUntil) {
+      ctx.waitUntil(usageDelta(env, u.uuid, 0, 0, -1).catch(() => {}));
+      ctx.waitUntil(Promise.resolve().then(async () => { try { await save(env, st); } catch (e) {} }));
+    }
+    addLog(st, 'info', 'user', 'انقضا از اولین اتصال شروع شد',
+      (u.name || '') + ' • پایان: ' + (u.expiryAt ? new Date(u.expiryAt).toLocaleString('fa-IR') : 'نامحدود'));
+    maybeFlush(true);
+  };
+
   const dial = async (info) => {
     user = info.user;
-    /* ═══ شروعِ انقضا از اولین استفاده ═══
-       وقتی expiryFirstUse فعال است و انقضا هنوز «مسلح» نشده، اولین اتصالِ
-       واقعی (رسیدن به dial یعنی کلاینت واقعاً ترافیک فرستاده) شمارش را
-       آغاز می‌کند. با یک flush فوریِ صفر بایتی هم activation دائمی می‌شود،
-       پس حتی اگر اتصال بلافاصله قطع شود، شمارش ادامه می‌یابد. */
-    if (user && user.expiryFirstUse && user.expiryAt && !user.expiryArmed) {
-      user.expiryArmed = true;
-      /* انقضا از «همین لحظه» بازمحاسبه می‌شود: لحظه‌ی اولین اتصالِ واقعی */
-      user.expiryAt = Date.now() + (Number(user.expiryDurMs) || Math.max(60000, user.expiryAt - Date.now()));
-      /* ⚠️ قبلاً مسلح‌شدن فقط روی blobِ همین isolate می‌نشست (یا اصلاً نوشته
-         نمی‌شد چون دلتای صفر در usageDelta رد می‌شد) — پنل همیشه «منتظر
-         اولین اتصال» می‌دید. حالا: (۱) دلتای فعال‌سازی ردیفِ مصرف را واقعاً
-         می‌سازد، (۲) ذخیره‌ی وضعیت فوری انجام می‌شود، (۳) رویداد در لاگ
-         ثبت می‌شود تا شروعِ انقضا در پنل دیده شود. */
-      if (ctx && ctx.waitUntil) {
-        ctx.waitUntil(usageDelta(env, user.uuid, 0, 0, -1).catch(() => {}));
-        ctx.waitUntil(Promise.resolve().then(async () => { try { await save(env, st); } catch (e) {} }));
-      }
-      addLog(st, 'info', 'user', 'انقضا از اولین اتصال شروع شد',
-        (user.name || '') + ' • پایان: ' + new Date(user.expiryAt).toLocaleString('fa-IR'));
-      maybeFlush(true);
-    }
+    armExpiry(user);
     if (info.cmd === 2) { await finish(); return; }
     if (!info.addr || !info.port) return finish();
 
@@ -7784,6 +7809,8 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
           if (v.port === 53) {
             /* ⚠️ user را ست می‌کنیم تا مصرف DNS هم شمرده شود */
             user = info.user;
+            /* اولین ترافیکِ کاربر می‌تواند فقط همین کوئریِ DNS باشد — انقضا هم مسلح شود */
+            armExpiry(user);
             const respHeader = new Uint8Array([info.version || 0, 0]);
             const qLen = v.payload ? (v.payload.byteLength || v.payload.length || 0) : 0;
             up += qLen; pendUp += qLen;
