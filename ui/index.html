@@ -1,73 +1,10 @@
 <!doctype html>
-<html lang="fa" dir="rtl">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5">
-<meta name="robots" content="noindex,nofollow">
-<title id="pageTitle">پنل مدیریت</title>
-<!-- فونت فارسی: دو منبع پشتیبان — اگر یکی لود نشود، دیگری کار می‌کند -->
-<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/vazirmatn-font-face.css">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
-<style>
-  /* اگر CDN کند بود، فونت سیستمی سریع‌تر نمایش داده می‌شود (FOUT جلوگیری) */
-  @font-face{font-family:'Vazirmatn';src:local('Vazirmatn');font-display:swap}
-</style>
-<!--STYLESHEET-->
-</head>
-<body>
-<div class="app" id="app">
-
-  <aside class="sidebar" id="sidebar">
-    <div class="brand">
-      <span class="brand-mark"><svg class="ic" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></span>
-      <div class="brand-txt"><b id="brandName">پنل</b><span class="mono" id="brandVer">v—</span></div>
-    </div>
-    <nav class="nav" id="nav"></nav>
-    <div class="side-foot">
-      <div class="sf-row"><span>ذخیره‌سازی</span><b id="sfStore">—</b></div>
-      <div class="sf-row"><span>کاربران</span><b id="sfUsers">—</b></div>
-      <div class="sf-row"><span>نسخه</span><b class="mono" id="sfVer">—</b></div>
-    </div>
-  </aside>
-  <div class="scrim" id="scrim"></div>
-
-  <div class="main">
-    <header class="topbar" id="topbar">
-      <button class="icon-btn" id="menuBtn" title="منو">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
-      </button>
-      <div class="tb-live"><span class="dot on" id="tbDot"></span><span id="tbState">در حال بارگذاری…</span></div>
-      <span class="badge" id="tbReq"></span>
-      <div class="spacer"></div>
-
-      <div class="search" id="searchBox">
-        <svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-        <input id="tbSearch" placeholder="جستجو…" autocomplete="off">
-        <div class="search-drop" id="searchDrop"></div>
-      </div>
-
-      <button class="icon-btn" id="themeBtn" title="تم">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-      </button>
-      <button class="btn danger sm" id="panicBtn" title="Panic">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
-        Panic
-      </button>
-      <button class="btn sm" id="logoutBtn" title="خروج">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
-        خروج
-      </button>
-    </header>
-
-    <main class="content" id="view"></main>
-    <footer class="foot" id="foot"></footer>
-  </div>
-</div>
-
-<div id="modalRoot"></div>
-<div id="toastRoot"></div>
-<!--APPJS-->
-</body>
-</html>
+<html lang="fa" dir="rtl" data-theme="dark" data-ui-mode="classic" data-ui-palette="indigo">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5"><meta name="robots" content="noindex,nofollow"><title id="pageTitle">پنل مدیریت — v4</title><link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/vazirmatn-font-face.css"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap"><style>
+:root{--v4-bg:#f4f6f8;--v4-surface:#fff;--v4-surface-2:#eef1f4;--v4-border:#d9dee5;--v4-text:#17202a;--v4-muted:#687585;--v4-accent:#3157d5;--v4-accent-2:#243f9f;--v4-on-accent:#fff;--v4-radius:14px;--v4-shadow:0 8px 28px rgba(23,32,42,.08)}html[data-theme="dark"]{--v4-bg:#101318;--v4-surface:#171b21;--v4-surface-2:#1d232b;--v4-border:#303844;--v4-text:#edf1f5;--v4-muted:#9aa6b4;--v4-accent:#6f8cff;--v4-accent-2:#526fe0;--v4-shadow:0 10px 34px rgba(0,0,0,.25)}html[data-ui-palette="emerald"]{--v4-accent:#16866a;--v4-accent-2:#0e604d}html[data-ui-palette="amber"]{--v4-accent:#b26a00;--v4-accent-2:#814c00}html[data-ui-palette="rose"]{--v4-accent:#b33d62;--v4-accent-2:#812b47}html[data-ui-palette="cyan"]{--v4-accent:#087f9b;--v4-accent-2:#075f73}html[data-theme="dark"][data-ui-palette="emerald"]{--v4-accent:#45c9a5;--v4-accent-2:#2da486}html[data-theme="dark"][data-ui-palette="amber"]{--v4-accent:#e5ad50;--v4-accent-2:#c88c32}html[data-theme="dark"][data-ui-palette="rose"]{--v4-accent:#ed7096;--v4-accent-2:#c95176}html[data-theme="dark"][data-ui-palette="cyan"]{--v4-accent:#45c5df;--v4-accent-2:#2ca4c0}
+html[data-ui-mode="classic"] body{background:var(--v4-bg);background-image:none}html[data-ui-mode="classic"] .sidebar,html[data-ui-mode="classic"] .topbar,html[data-ui-mode="classic"] .card,html[data-ui-mode="classic"] .stat,html[data-ui-mode="classic"] .search,html[data-ui-mode="classic"] .icon-btn,html[data-ui-mode="classic"] .side-foot{background:var(--v4-surface);background-image:none;backdrop-filter:none;box-shadow:none;border-color:var(--v4-border)}html[data-ui-mode="classic"] .sidebar{width:264px}html[data-ui-mode="classic"] .card{border-radius:var(--v4-radius);box-shadow:var(--v4-shadow)}html[data-ui-mode="classic"] .card>header{background:var(--v4-surface-2);border-bottom:1px solid var(--v4-border)}html[data-ui-mode="classic"] .card>header .ic,html[data-ui-mode="classic"] .brand-mark{background:var(--v4-accent);box-shadow:none}html[data-ui-mode="classic"] .page-head h1{background:none;color:var(--v4-text)}html[data-ui-mode="classic"] .nav-item.on{background:var(--v4-surface-2);color:var(--v4-accent)}html[data-ui-mode="classic"] .nav-item.on::before{background:var(--v4-accent)}
+html[data-ui-mode="minecraft"]{--v4-radius:6px}html[data-ui-mode="minecraft"] body{background:#dfe7d3;background-image:none}html[data-theme="dark"][data-ui-mode="minecraft"] body{background:#172017}html[data-ui-mode="minecraft"] .card,html[data-ui-mode="minecraft"] .stat,html[data-ui-mode="minecraft"] .sidebar,html[data-ui-mode="minecraft"] .topbar,html[data-ui-mode="minecraft"] .search,html[data-ui-mode="minecraft"] .icon-btn{border:2px solid var(--v4-border);border-radius:6px;background:var(--v4-surface);box-shadow:3px 3px 0 rgba(0,0,0,.16);backdrop-filter:none}html[data-ui-mode="minecraft"] .card>header{background:var(--v4-surface-2);border-bottom:2px solid var(--v4-border)}html[data-ui-mode="minecraft"] .card>header .ic,html[data-ui-mode="minecraft"] .brand-mark{background:var(--v4-accent);border-radius:4px;box-shadow:2px 2px 0 rgba(0,0,0,.2)}html[data-ui-mode="minecraft"] .page-head h1{background:none;color:var(--v4-text);font-weight:900}html[data-ui-mode="minecraft"] .nav-item.on{background:var(--v4-accent);color:#fff;border-radius:4px}html[data-ui-mode="minecraft"] .nav-item.on::before{display:none}
+html[data-ui-mode="cyberpunk"]{--v4-radius:3px}html[data-ui-mode="cyberpunk"] body{background:#0b0c12;background-image:none}html[data-theme="light"][data-ui-mode="cyberpunk"] body{background:#eef1f3}html[data-ui-mode="cyberpunk"] .card,html[data-ui-mode="cyberpunk"] .stat,html[data-ui-mode="cyberpunk"] .sidebar,html[data-ui-mode="cyberpunk"] .topbar,html[data-ui-mode="cyberpunk"] .search,html[data-ui-mode="cyberpunk"] .icon-btn{background:var(--v4-surface);border:1px solid var(--v4-accent);border-radius:3px;box-shadow:4px 4px 0 rgba(0,0,0,.22);backdrop-filter:none}html[data-ui-mode="cyberpunk"] .card>header{background:#111722;border-bottom:1px solid var(--v4-accent)}html[data-theme="light"][data-ui-mode="cyberpunk"] .card>header{background:#e4e8ed}html[data-ui-mode="cyberpunk"] .card>header .ic,html[data-ui-mode="cyberpunk"] .brand-mark{background:var(--v4-accent);border-radius:2px;box-shadow:3px 3px 0 var(--v4-accent-2)}html[data-ui-mode="cyberpunk"] .page-head h1{background:none;color:var(--v4-accent)}html[data-ui-mode="cyberpunk"] .nav-item.on{background:var(--v4-accent);color:#080a0f;border-radius:2px}html[data-ui-mode="cyberpunk"] .nav-item.on::before{display:none}
+html[data-ui-mode="arcade"]{--v4-radius:10px}html[data-ui-mode="arcade"] body{background:#14111b;background-image:none}html[data-theme="light"][data-ui-mode="arcade"] body{background:#f1edf6}html[data-ui-mode="arcade"] .card,html[data-ui-mode="arcade"] .stat,html[data-ui-mode="arcade"] .sidebar,html[data-ui-mode="arcade"] .topbar,html[data-ui-mode="arcade"] .search,html[data-ui-mode="arcade"] .icon-btn{background:var(--v4-surface);border:2px solid var(--v4-accent);border-radius:var(--v4-radius);box-shadow:5px 5px 0 rgba(0,0,0,.18);backdrop-filter:none}html[data-ui-mode="arcade"] .card>header{background:var(--v4-accent-2);color:#fff;border-bottom:0}html[data-ui-mode="arcade"] .card>header p{color:rgba(255,255,255,.76)}html[data-ui-mode="arcade"] .card>header .ic,html[data-ui-mode="arcade"] .brand-mark{background:var(--v4-accent);box-shadow:none}html[data-ui-mode="arcade"] .page-head h1{background:none;color:var(--v4-accent);font-weight:900}html[data-ui-mode="arcade"] .nav-item.on{background:var(--v4-accent);color:#fff}html[data-ui-mode="arcade"] .nav-item.on::before{display:none}
+.v4-control{display:flex;align-items:center;gap:6px;height:34px;padding:0 10px;border:1px solid var(--v4-border);border-radius:9px;background:var(--v4-surface);color:var(--v4-text);font:600 11px 'Vazirmatn',sans-serif;cursor:pointer}.v4-control:hover{border-color:var(--v4-accent);color:var(--v4-accent)}.v4-panel{position:fixed;top:62px;inset-inline-start:18px;width:310px;z-index:100;background:var(--v4-surface);border:1px solid var(--v4-border);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.25);padding:14px;display:none}.v4-panel.open{display:block}.v4-panel h4{margin:0 0 10px;font-size:13px}.v4-section{margin-top:12px}.v4-label{font-size:10px;color:var(--v4-muted);margin-bottom:6px}.v4-options{display:grid;grid-template-columns:1fr 1fr;gap:6px}.v4-option{border:1px solid var(--v4-border);background:var(--v4-surface-2);color:var(--v4-text);border-radius:8px;padding:8px;text-align:center;font:600 10px 'Vazirmatn';cursor:pointer}.v4-option.active{border-color:var(--v4-accent);background:var(--v4-accent);color:#fff}@media(max-width:800px){.sidebar{width:0!important;padding:0!important;border:0!important}.v4-panel{inset-inline:12px;width:auto}.content{padding:14px 12px 40px}}
+</style><!--STYLESHEET--></head><body><div class="app" id="app"><aside class="sidebar" id="sidebar"><div class="brand"><span class="brand-mark"><svg class="ic" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><div class="brand-txt"><b id="brandName">پنل</b><span class="mono" id="brandVer">v4</span></div></div><nav class="nav" id="nav"></nav><div class="side-foot"><div class="sf-row"><span>ذخیره‌سازی</span><b id="sfStore">—</b></div><div class="sf-row"><span>کاربران</span><b id="sfUsers">—</b></div><div class="sf-row"><span>نسخه</span><b class="mono" id="sfVer">v4</b></div></div></aside><div class="scrim" id="scrim"></div><div class="main"><header class="topbar" id="topbar"><button class="icon-btn" id="menuBtn" title="منو"><svg class="ic" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></svg></button><div class="tb-live"><span class="dot on" id="tbDot"></span><span id="tbState">در حال بارگذاری…</span></div><span class="badge" id="tbReq"></span><div class="spacer"></div><div class="search" id="searchBox"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><input id="tbSearch" placeholder="جستجو…" autocomplete="off"><div class="search-drop" id="searchDrop"></div></div><button class="v4-control" id="v4StyleBtn">ظاهر V4</button><button class="icon-btn" id="themeBtn" title="تم"><svg class="ic" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button><button class="btn danger sm" id="panicBtn" title="Panic">Panic</button><button class="btn sm" id="logoutBtn" title="خروج">خروج</button></header><main class="content" id="view"></main><footer class="foot" id="foot"></footer></div></div><div class="v4-panel" id="v4StylePanel"><h4>V4 · ظاهر و شخصی‌سازی</h4><div class="v4-section"><div class="v4-label">سبک رابط</div><div class="v4-options"><button class="v4-option" data-mode="classic">معمولی</button><button class="v4-option" data-mode="minecraft">Minecraft</button><button class="v4-option" data-mode="cyberpunk">Cyberpunk</button><button class="v4-option" data-mode="arcade">Arcade</button></div></div><div class="v4-section"><div class="v4-label">پالت رنگ</div><div class="v4-options"><button class="v4-option" data-palette="indigo">Indigo</button><button class="v4-option" data-palette="emerald">Emerald</button><button class="v4-option" data-palette="amber">Amber</button><button class="v4-option" data-palette="rose">Rose</button><button class="v4-option" data-palette="cyan">Cyan</button></div></div><div class="v4-section"><div class="v4-label">زبان</div><div class="v4-options"><button class="v4-option active" data-lang="fa">فارسی</button><button class="v4-option" data-lang="en">English</button></div></div><div class="v4-section"><div class="v4-label">حالت نمایش</div><div class="v4-options"><button class="v4-option" data-theme="light">روز</button><button class="v4-option active" data-theme="dark">شب</button></div></div></div><div id="modalRoot"></div><div id="toastRoot"></div><script>(function(){const r=document.documentElement,p=document.getElementById('v4StylePanel'),b=document.getElementById('v4StyleBtn');const load=(k,d)=>{try{return localStorage.getItem(k)||d}catch(e){return d}},save=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};r.dataset.uiMode=load('v4_mode','classic');r.dataset.uiPalette=load('v4_palette','indigo');r.dataset.theme=load('v4_theme','dark');function sync(){document.querySelectorAll('[data-mode]').forEach(x=>x.classList.toggle('active',x.dataset.mode===r.dataset.uiMode));document.querySelectorAll('[data-palette]').forEach(x=>x.classList.toggle('active',x.dataset.palette===r.dataset.uiPalette));document.querySelectorAll('[data-theme]').forEach(x=>x.classList.toggle('active',x.dataset.theme===r.dataset.theme))}b.onclick=e=>{e.stopPropagation();p.classList.toggle('open')};p.onclick=e=>{const m=e.target.closest('[data-mode]'),q=e.target.closest('[data-palette]'),t=e.target.closest('[data-theme]');if(m){r.dataset.uiMode=m.dataset.mode;save('v4_mode',m.dataset.mode)}if(q){r.dataset.uiPalette=q.dataset.palette;save('v4_palette',q.dataset.palette)}if(t){r.dataset.theme=t.dataset.theme;save('v4_theme',t.dataset.theme)}sync()};document.addEventListener('click',e=>{if(p.classList.contains('open')&&!p.contains(e.target)&&e.target!==b)p.classList.remove('open')});sync()})()</script><!--APPJS--></body></html>
