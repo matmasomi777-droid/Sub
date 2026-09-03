@@ -2468,7 +2468,7 @@ const FALLBACK = `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="
 /* ═══════════ منبع ثابت UI — فقط همین سه فایل، غیرقابل تغییر ═══════════ */
 /* UI_REV: با هر تغییرِ UI یک واحد زیاد شود تا کشِ Cloudflare/گیت‌هاب نسخه‌ی
    قدیمی را برگرداند (کلیدِ کش‌شکن در URL) */
-const UI_REV = '20260903e';
+const UI_REV = '20260904a';
 const UI_SRC = {
   html: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/index.html?r=' + UI_REV,
   css: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/style.css?r=' + UI_REV,
@@ -5581,10 +5581,12 @@ async function apiHandler(req, env, url, ctx) {
       effective: (() => { const r = on ? resolveExit(st, null) : { mode: 'direct' }; return { mode: r.mode, id: r.id || '', name: r.name || DIRECT.name }; })(),
       servers: ex.servers.map((x) => ({ ...x })),
       stats: { ...EXIT_STATS, lastError: EXIT_LAST_ERR || null },
-      /* انتخابِ هر کانفیگ — برای نمایشِ وضعیت در پنل */
+      /* انتخابِ هر کانفیگ — برای نمایشِ وضعیت در پنل
+         reason علتِ «مستقیم‌شدن» را می‌گوید (مثلاً سرور غیرفعال است) تا ادمین
+         بفهمد چرا ترافیکِ آن کانفیگ از سرور رد نمی‌شود. */
       perConfig: st.users.map((u) => {
-        const r = on ? resolveExit(st, u) : { mode: 'direct' };
-        return { id: u.id, name: u.name, mode: u.exitMode || 'inherit', exitId: u.exitId || '', effectiveMode: r.mode, effectiveId: r.id || '' };
+        const r = on ? resolveExit(st, u) : { mode: 'direct', name: DIRECT.name };
+        return { id: u.id, name: u.name, mode: u.exitMode || 'inherit', exitId: u.exitId || '', effectiveMode: r.mode, effectiveId: r.id || '', effectiveName: r.name || DIRECT.name, reason: r.reason || '' };
       }),
     });
   }
@@ -5644,11 +5646,11 @@ async function apiHandler(req, env, url, ctx) {
       return json({ ok: true, op, servers: ex.servers, msg: 'سرور خروجی حذف شد — کانفیگ‌هایی که به آن وابسته بودند مستقیم شدند' });
     }
 
-    /* کلیدِ فعال/غیرفعالِ یک سرور — همان «برای چه کسی کار کند»:
-       خاموش‌کردن، سرور را از مسیرِ تونلِ همه حذف می‌کند: اگر پیش‌فرضِ سراسری
-       به آن اشاره داشت مستقیم می‌شود و کانفیگ‌هایی که صریحاً آن را انتخاب
-       کرده بودند هم مستقیم می‌شوند (مثل حذف). روشن‌کردن هیچ انتخابی را خودکار
-       فعال نمی‌کند — سرور باید جداگانه انتخاب شود. */
+    /* کلیدِ فعال/غیرفعالِ یک سرور — توقفِ موقت، نه حذفِ انتخاب‌ها:
+       خاموش‌کردن فقط مسیر را می‌بندد؛ پیش‌فرضِ سراسری و انتخابِ کانفیگ‌ها
+       دست‌نخورده می‌مانند تا با فعال‌کردنِ دوباره همان مسیرِ قبلی برگردد.
+       (قبلاً این‌جا انتخاب‌ها پاک می‌شد — بعد از فعال‌کردنِ مجدد، ترافیک دیگر
+       از سرور رد نمی‌شد و مستقیم می‌رفت = نشتِ IP.) */
     if (op === 'toggle') {
       const id = String((b && b.id) || '').trim();
       const srv = exitById(st, id);
@@ -5659,20 +5661,15 @@ async function apiHandler(req, env, url, ctx) {
         return json({ ok: true, op, id, enabled: want, servers: ex.servers, msg: 'وضعیتِ «' + srv.name + '» تغییری نکرد' });
       }
       srv.enabled = want;
-      if (!want) {
-        if (ex.defaultExit === id) { ex.defaultExit = ''; ex.defaultMode = 'direct'; }
-        let n = 0;
-        st.users.forEach((u) => { if (u.exitId === id) { u.exitId = ''; u.exitMode = 'direct'; n++; } });
-        addLog(st, 'warn', 'core', 'غیرفعال‌کردن سرور خروجی', srv.name + (n ? ' • ' + fa(n) + ' کانفیگ مستقیم شد' : ''));
-      } else {
-        addLog(st, 'success', 'core', 'فعال‌کردن سرور خروجی', srv.name);
-      }
+      addLog(st, want ? 'success' : 'warn', 'core',
+        want ? 'فعال‌کردن سرور خروجی' : 'غیرفعال‌کردن سرور خروجی',
+        srv.name + ' — انتخابِ کانفیگ‌ها حفظ شد');
       await save(env, st);
       return json({
         ok: true, op, id, enabled: want, servers: ex.servers, defaultMode: ex.defaultMode, defaultExit: ex.defaultExit,
         msg: 'سرور خروجی «' + srv.name + '» ' + (want
-          ? 'فعال شد — حالا می‌توانید آن را به‌عنوانِ پیش‌فرض یا روی کانفیگ‌ها انتخاب کنید'
-          : 'غیرفعال شد — هیچ کانفیگی دیگر از آن عبور نمی‌کند'),
+          ? 'فعال شد — کانفیگ‌هایی که قبلاً آن را انتخاب کرده بودند دوباره از آن عبور می‌کنند'
+          : 'غیرفعال شد (توقفِ موقت) — تا فعال‌کردنِ دوباره هیچ کانفیگی از آن عبور نمی‌کند؛ انتخاب‌ها پاک نشدند'),
       });
     }
 
@@ -7693,19 +7690,32 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
       }
       return out;
     };
-    /* همه‌ی کاندیدها تا موفقیت امتحان می‌شوند — قبلاً فقط یکی به‌صورتِ تصادفی
-       انتخاب می‌شد و اگر همان یکی می‌مرد، کلِ retry بی‌نتیجه تمام می‌شد. */
+    /* همه‌ی کاندیدها تا موفقیت امتحان می‌شوند — هم موقعِ خطایِ اتصال و هم وقتی
+       وصل شد ولی هیچ داده‌ای برنگشت (روش BPB: وصلِ بی‌پاسخ = تلاش با کاندیدِ
+       بعدی؛ قبلاً فقط یکی به‌صورتِ تصادفی انتخاب می‌شد و اگر همان یکی بی‌پاسخ
+       می‌ماند، کلِ اتصال می‌بست). */
     const relayViaCands = async (cands) => {
-      for (const c of cands) {
-        if (!c || (c.addr === info.addr && c.port === info.port)) continue;  /* همان مقصد — فایده ندارد */
-        try {
-          const tcpSock = await connectAndWrite(c.addr, c.port, info.payload);
-          sock = tcpSock;
-          remoteToWs(tcpSock, respHeader, null);
-          return true;
-        } catch (e) { sock = null; }
-      }
-      return false;
+      const go = async (i, fromRetry) => {
+        for (let j = i; j < cands.length; j++) {
+          const c = cands[j];
+          if (!c || (c.addr === info.addr && c.port === info.port)) continue;  /* همان مقصد — فایده ندارد */
+          try {
+            const tcpSock = await connectAndWrite(c.addr, c.port, info.payload);
+            sock = tcpSock;
+            /* وصل شد ولی هیچ داده‌ای برنگشت → کاندیدِ بعدی؛ اگر کاندیدی نماند، ببند */
+            remoteToWs(tcpSock, respHeader, () => {
+              try { tcpSock.close(); } catch (e) {}
+              sock = null;
+              go(j + 1, true);
+            });
+            return true;
+          } catch (e) { sock = null; }
+        }
+        /* از داخلِ زنجیره‌ی «بی‌پاسخ» آمدیم و دیگر کاندیدی نمانده → اتصال را ببند */
+        if (fromRetry) { try { finish(); } catch (e) {} }
+        return false;
+      };
+      return go(0, false);
     };
 
     /* ── مرحله ۰: مقصد خودِ ورکر (تست ترافیک پنل) ──
@@ -7725,6 +7735,7 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
     const retry = async () => {
       if (!(await relayViaCands(relayCands()))) await finish();
     };
+
 
     /* ═══ مرحله ۰/۵: خروجی (exit) — تنها نقطه‌ی اتصالِ بالادست به مسیر تونل ═══
        این بلوک تنها جایی است که منطقِ سرور خروجی وارد مسیر تونل می‌شود. قبلش

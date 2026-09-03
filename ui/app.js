@@ -678,6 +678,9 @@
       '<br>مؤثر در حال حاضر: <b>' + esc(((d.effective || {}).name) || 'مستقیم') + '</b></div></div>' +
       '<select id="exDefault" style="max-width:200px"' + (on ? '' : ' disabled') + '><option value="">مستقیم (بدون واسطه)</option>' +
       act.map((s) => '<option value="' + esc(s.id) + '"' + (d.defaultMode === 'exit' && d.defaultExit === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') +
+      ((d.defaultMode === 'exit' && d.defaultExit && !servers.some((x) => x.id === d.defaultExit && x.enabled !== false))
+        ? '<option value="' + esc(d.defaultExit) + '" selected disabled>' + esc(((servers.find((x) => x.id === d.defaultExit) || {}).name) || 'سرور') + ' (غیرفعال)' + '</option>'
+        : '') +
       '</select><button class="btn sm p" data-act="exit-default">' + icon('fa-floppy-disk') + ' ذخیره</button></div>';
     /* فهرستِ سرورها */
     const list = servers.length
@@ -696,11 +699,14 @@
     const per = (d.perConfig || []).length
       ? '<div class="hint" style="margin:12px 0 6px"><b>انتخاب برای هر کانفیگ</b> — بر پیش‌فرضِ سراسری مقدم است:</div>' +
         '<div class="list">' + d.perConfig.map((c) => '<div class="row-item">' + icon('fa-user') +
-          '<div class="grow"><b>' + esc(c.name) + '</b><div class="cell-sub">مؤثر: ' + esc(c.effectiveId ? ((servers.find((s) => s.id === c.effectiveId) || {}).name || c.effectiveMode) : 'مستقیم') + '</div></div>' +
+          '<div class="grow"><b>' + esc(c.name) + '</b><div class="cell-sub">مؤثر: ' + esc(c.effectiveName || (c.effectiveId ? ((servers.find((s) => s.id === c.effectiveId) || {}).name || c.effectiveMode) : 'مستقیم')) + (c.reason ? ' <span class="badge bad">' + esc(c.reason) + '</span>' : '') + '</div></div>' +
           '<select id="exSel-' + esc(c.id) + '" style="max-width:200px"' + (on ? '' : ' disabled') + '>' +
           '<option value="inherit"' + (c.mode === 'inherit' ? ' selected' : '') + '>پیروی از پیش‌فرضِ سراسری</option>' +
           '<option value="direct"' + (c.mode === 'direct' ? ' selected' : '') + '>مستقیم (بدون واسطه)</option>' +
           act.map((s) => '<option value="' + esc(s.id) + '"' + (c.mode === 'exit' && c.exitId === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') +
+          ((c.mode === 'exit' && c.exitId && !servers.some((x) => x.id === c.exitId && x.enabled !== false))
+            ? '<option value="' + esc(c.exitId) + '" selected disabled>' + esc(((servers.find((x) => x.id === c.exitId) || {}).name) || 'سرور') + ' (غیرفعال)' + '</option>'
+            : '') +
           '</select></div>').join('') + '</div>'
       : '';
     return master + offNote + defSel + list + exTestHtml() +
@@ -2492,8 +2498,8 @@
         const cur = srv.enabled !== false;
         const goOn = !cur;
         if (!confirm('سرور خروجیِ «' + srv.name + '» ' + (goOn
-          ? 'فعال شود؟' + '\nبعد از فعال‌شدن باید آن را برای هر کانفیگ (یا به‌عنوان پیش‌فرضِ سراسری) انتخاب کنید.'
-          : 'غیرفعال شود؟' + '\nپیش‌فرضِ سراسری و کانفیگ‌هایی که آن را انتخاب کرده‌اند مستقیم می‌شوند.'))) return;
+          ? 'فعال شود؟' + '\nکانفیگ‌هایی که قبلاً آن را انتخاب کرده بودند دوباره از آن عبور می‌کنند.'
+          : 'غیرفعال شود؟ (توقفِ موقت)' + '\nتا فعال‌کردنِ دوباره هیچ کانفیگی از آن عبور نمی‌کند؛ انتخاب‌ها پاک نمی‌شوند.'))) return;
         busy(t, 'در حال ذخیره');
         const r = await api('POST', '/api/exits', { op: 'toggle', id, enabled: goOn });
         free(t);
