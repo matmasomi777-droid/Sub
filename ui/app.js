@@ -294,7 +294,9 @@
   }
   const toast = (msg, kind = 'ok') => { const d = document.createElement('div'); d.className = 'toast ' + kind; const ic = kind === 'err' ? 'fa-circle-xmark' : kind === 'info' ? 'fa-circle-info' : 'fa-circle-check'; d.innerHTML = icon(ic) + '<span>' + esc(msg) + '</span>'; $('#toastRoot').appendChild(d); setTimeout(() => d.remove(), 3400); };
   const copy = (t) => { (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('در کلیپ‌بورد کپی شد')).catch(() => toast('کپی نشد', 'err')); };
-  const modal = (html, wide) => { const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = '<div class="box' + (wide ? ' wide' : '') + '" id="mbox">' + html + '</div>'; m.onmousedown = (e) => { if (e.target === m) m.remove(); }; $('#modalRoot').appendChild(m); return m; };
+  /* مودال تکی: قبل از بازکردن، مودال‌های قبلی پاک می‌شوند — دوبارِ بازکردن
+     (کلیک روی ردیف + دکمه‌ی ویرایش) دیگر مودال‌های روی‌هم نمی‌سازد */
+  const modal = (html, wide) => { $('#modalRoot').innerHTML = ''; const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = '<div class="box' + (wide ? ' wide' : '') + '" id="mbox">' + html + '</div>'; m.onmousedown = (e) => { if (e.target === m) m.remove(); }; $('#modalRoot').appendChild(m); return m; };
   const closeM = () => { $('#modalRoot').innerHTML = ''; };
   const busy = (el, label) => { if (el) { el.disabled = true; el.dataset.old = el.innerHTML; el.innerHTML = icon('fa-spinner fa-spin') + ' ' + label; } };
   const free = (el) => { if (el && el.dataset.old) { el.disabled = false; el.innerHTML = el.dataset.old; delete el.dataset.old; } };
@@ -633,7 +635,9 @@
       esc(v.link) + '</textarea>' +
       '<div class="hint" style="margin-top:5px">فقط لینک را اینجا بچسبانید — چیزِ دیگری لازم نیست. ' +
       'نام از بخشِ بعد از <span class="mono">#</span> خوانده می‌شود و بقیه (آدرس، پورت، یو‌یو‌آی‌دی، امنیت، ' +
-      'انتقال، مسیر، SNI و…) از خودِ لینک.</div></label>' +
+      'انتقال، مسیر، SNI و…) از خودِ لینک. ' +
+      '<b>توجه:</b> روی سرور خروجیِ داخل ورکرِ کلاودفلر فقط <span class="mono">security=tls</span> (یا none) کار می‌کند — ' +
+      'لینکِ reality پذیرفته نمی‌شود چون TLS در لبه‌ی کلودفلر خاتمه می‌یابد.</div></label>' +
       '</div>' +
       '<input type="hidden" id="ex_id" value="' + esc(v.id) + '">' +
       '<div class="btn-row" style="margin-top:10px;gap:6px">' +
@@ -659,12 +663,24 @@
     }
     if (!d || !d.servers) return '<div class="empty">در حال دریافتِ فهرستِ سرورهای خروجی…</div>';
     const servers = d.servers || [];
+    /* حالتِ سراسری — خروجی‌ها اصلاً در تونل به کار بروند؟ */
+    const on = d.enabled !== false;
+    /* فقط سرورهای فعال انتخاب‌پذیرند */
+    const act = servers.filter((x) => x.enabled !== false);
+    const master = '<div class="row-item" style="margin-bottom:8px">' + icon('fa-power-off') +
+      '<div class="grow"><b>' + (on ? 'مسیرِ خروجی فعال است' : 'مسیرِ خروجی خاموش است') + '</b>' +
+      '<div class="cell-sub">' + (on ? 'فقط کانفیگ‌هایی که این سرور را انتخاب کرده‌اند از آن عبور می‌کنند' : 'همه‌ی کانفیگ‌ها مستقیم می‌روند — فهرستِ سرورها حفظ می‌شود') + '</div></div>' +
+      '<button class="btn sm ' + (on ? 'd' : 'p') + '" data-act="exit-master">' + icon('fa-power-off') + ' ' + (on ? 'خاموش‌کردن' : 'فعال‌کردن') + '</button></div>';
+    const offNote = on ? '' : '<div class="badge warn" style="margin:0 0 8px">' + icon('fa-circle-info') + ' مسیرِ خروجی خاموش است — همه‌ی کانفیگ‌ها مستقیم می‌روند (خاموش‌کردن، فهرست را پاک نمی‌کند)</div>';
     /* پیش‌فرضِ سراسری */
     const defSel = '<div class="row-item" style="margin-bottom:10px">' + icon('fa-route') +
       '<div class="grow"><b>پیش‌فرضِ سراسری</b><div class="cell-sub">کانفیگ‌هایی که روی «پیروی از پیش‌فرض» هستند از این مسیر می‌روند' +
       '<br>مؤثر در حال حاضر: <b>' + esc(((d.effective || {}).name) || 'مستقیم') + '</b></div></div>' +
-      '<select id="exDefault" style="max-width:200px"><option value="">مستقیم (بدون واسطه)</option>' +
-      servers.map((s) => '<option value="' + esc(s.id) + '"' + (d.defaultMode === 'exit' && d.defaultExit === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') +
+      '<select id="exDefault" style="max-width:200px"' + (on ? '' : ' disabled') + '><option value="">مستقیم (بدون واسطه)</option>' +
+      act.map((s) => '<option value="' + esc(s.id) + '"' + (d.defaultMode === 'exit' && d.defaultExit === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') +
+      ((d.defaultMode === 'exit' && d.defaultExit && !servers.some((x) => x.id === d.defaultExit && x.enabled !== false))
+        ? '<option value="' + esc(d.defaultExit) + '" selected disabled>' + esc(((servers.find((x) => x.id === d.defaultExit) || {}).name) || 'سرور') + ' (غیرفعال)' + '</option>'
+        : '') +
       '</select><button class="btn sm p" data-act="exit-default">' + icon('fa-floppy-disk') + ' ذخیره</button></div>';
     /* فهرستِ سرورها */
     const list = servers.length
@@ -673,6 +689,7 @@
           '<div class="grow"><b>' + esc(s.name) + '</b> ' +
           '<span class="badge ' + (s.enabled ? 'ok' : 'bad') + '">' + (s.enabled ? 'فعال' : 'غیرفعال') + '</span>' +
           '<div class="mono cell-sub">' + esc(s.address) + ':' + fa(s.port) + ' • ' + esc(s.security) + '/' + esc(s.transport) + '</div></div>' +
+          '<button class="btn sm ' + (s.enabled !== false ? 'd' : 'p') + '" data-act="exit-onoff" data-id="' + esc(s.id) + '" title="' + (s.enabled !== false ? 'غیرفعال‌کردن — هیچ کانفیگی دیگر از آن عبور نمی‌کند' : 'فعال‌کردن این سرور') + '">' + icon('fa-power-off') + '</button>' +
           '<button class="btn sm s" data-act="exit-test" data-id="' + esc(s.id) + '" title="تست اتصال">' + icon('fa-stethoscope') + '</button>' +
           '<button class="btn sm" data-act="exit-edit" data-id="' + esc(s.id) + '" title="ویرایش">' + icon('fa-pen') + '</button>' +
           '<button class="btn sm d" data-act="exit-del" data-id="' + esc(s.id) + '" title="حذف">' + icon('fa-trash-can') + '</button>' +
@@ -682,14 +699,17 @@
     const per = (d.perConfig || []).length
       ? '<div class="hint" style="margin:12px 0 6px"><b>انتخاب برای هر کانفیگ</b> — بر پیش‌فرضِ سراسری مقدم است:</div>' +
         '<div class="list">' + d.perConfig.map((c) => '<div class="row-item">' + icon('fa-user') +
-          '<div class="grow"><b>' + esc(c.name) + '</b><div class="cell-sub">مؤثر: ' + esc(c.effectiveId ? ((servers.find((s) => s.id === c.effectiveId) || {}).name || c.effectiveMode) : 'مستقیم') + '</div></div>' +
-          '<select id="exSel-' + esc(c.id) + '" style="max-width:200px">' +
+          '<div class="grow"><b>' + esc(c.name) + '</b><div class="cell-sub">مؤثر: ' + esc(c.effectiveName || (c.effectiveId ? ((servers.find((s) => s.id === c.effectiveId) || {}).name || c.effectiveMode) : 'مستقیم')) + (c.reason ? ' <span class="badge bad">' + esc(c.reason) + '</span>' : '') + '</div></div>' +
+          '<select id="exSel-' + esc(c.id) + '" style="max-width:200px"' + (on ? '' : ' disabled') + '>' +
           '<option value="inherit"' + (c.mode === 'inherit' ? ' selected' : '') + '>پیروی از پیش‌فرضِ سراسری</option>' +
           '<option value="direct"' + (c.mode === 'direct' ? ' selected' : '') + '>مستقیم (بدون واسطه)</option>' +
-          servers.map((s) => '<option value="' + esc(s.id) + '"' + (c.mode === 'exit' && c.exitId === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') +
+          act.map((s) => '<option value="' + esc(s.id) + '"' + (c.mode === 'exit' && c.exitId === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') +
+          ((c.mode === 'exit' && c.exitId && !servers.some((x) => x.id === c.exitId && x.enabled !== false))
+            ? '<option value="' + esc(c.exitId) + '" selected disabled>' + esc(((servers.find((x) => x.id === c.exitId) || {}).name) || 'سرور') + ' (غیرفعال)' + '</option>'
+            : '') +
           '</select></div>').join('') + '</div>'
       : '';
-    return defSel + list + exTestHtml() +
+    return master + offNote + defSel + list + exTestHtml() +
       (EX.form ? exitFormHtml(EX.form) : '') + per;
   };
   async function exLoad() {
@@ -879,13 +899,62 @@
       '</div></div></div>';
   }
 
+  /* ═══════════ کنترل‌های نمودار: بازه‌ی زمانی + واحد GB/MB ═══════════
+     انتخاب‌ها در localStorage ذخیره می‌شوند تا با رفرش پنل پاک نشوند.
+     سری‌های دمِ دست: روزانه (۳۰ روز از تاریخچه)، ماهانه، سالانه.
+     بازه‌ی کوتاه‌تر از انتهای همان سری بریده می‌شود؛ بازه‌ی ۹۰ روزه اگر
+     تاریخچه کمتر داشته باشد، همان مقدار موجود را نشان می‌دهد. */
+  const DASH_CHART_KEY = 'sg_dash_chart';
+  /* ⚠️ یک واحد برای همه‌ی نمودارها — باگِ قبلی: داشبورد واحد را از
+     sg_dash_chart می‌خواند ولی تبدیلِ سری از sg_mon_unit؛ دو کلید از هم جدا
+     می‌افتادند و «مگابایت» انتخاب می‌شد ولی نمودار گیگ نشان می‌داد. */
+  const MON_UNIT_KEY = 'sg_mon_unit';
+  const tryGet = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } };
+  const trySet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  const DASH_RANGES = [['7', '۷ روز'], ['14', '۱۴ روز'], ['30', '۳۰ روز'], ['90', '۹۰ روز']];
+  function dashChartCfg() {
+    const raw = tryGet(DASH_CHART_KEY, '');
+    const p = raw.split('|');
+    return { range: DASH_RANGES.some(([k]) => k === p[0]) ? p[0] : '30', unit: chartUnitKey() };
+  }
+  const dashChartSave = (c) => { trySet(DASH_CHART_KEY, c.range + '|' + chartUnitKey()); trySet(MON_UNIT_KEY, chartUnitKey()); };
+  const chartUnitKey = () => (tryGet(MON_UNIT_KEY, 'GB') === 'MB' ? 'MB' : 'GB');
+  const chartUnit = () => (chartUnitKey() === 'MB' ? ' MB' : ' GB');
+  /* گیگابایت → واحد انتخابی */
+  const convSeries = (arr) => chartUnitKey() === 'MB' ? (arr || []).map((x) => (Number(x) || 0) * 1024) : (arr || []);
+  function chartSeries(d, which) {
+    const st = (d && d.stats) || {};
+    let arr;
+    if (which === 'dsh') {
+      const days = Number(dashChartCfg().range) || 30;
+      const full = (st.daily || []).slice(-Math.min(days, (st.daily || []).length || days));
+      arr = full.length ? full : [0];
+    } else {
+      const r = S.range;
+      arr = (r === 'm' ? st.monthly : r === 'y' ? st.yearly : st.daily) || st.daily || [0];
+    }
+    return convSeries(arr);
+  }
+  function chartCtlHtml(prefix) {
+    const c = dashChartCfg();
+    return '<div class="chart-ctl" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:0 14px;margin-top:4px">' +
+      '<div class="seg">' + DASH_RANGES.map(([k, l]) => '<button data-act="dash-range" data-v="' + k + '" class="' + (c.range === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
+      '<div class="seg">' + [['GB', 'گیگابایت'], ['MB', 'مگابایت']].map(([k, l]) => '<button data-act="dash-unit" data-v="' + k + '" class="' + (chartUnitKey() === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
+      '</div>';
+  }
+
   function dashView() {
     const d = S.d, us = d.users, s = d.settings;
     const used = us.reduce((a, u) => a + (u.up || 0) + (u.down || 0), 0);
     const quota = us.reduce((a, u) => a + (u.quotaGB || 0) * 1073741824, 0);
     const on = us.filter((u) => u.enabled).length, exp = us.filter((u) => u.expiryAt && u.expiryAt < Date.now()).length;
+    const panic = !!(s.auth && s.auth.panic);
+    const activeConns = us.reduce((a, u) => a + (u.activeConns || 0), 0);
     const top = [...us].sort((a, b) => (b.up + b.down) - (a.up + a.down)).slice(0, 6);
-    const ser = (d.stats && d.stats.trafficSeries) || Array(24).fill(.2);
+    /* ── انتخاب بازه و واحد نمودار داشبورد — بین رفرش‌ها حفظ می‌شود ── */
+    const CD = dashChartCfg();
+    const cLabel = CD.range === '90' ? '۹۰ روز اخیر' : CD.range === '30' ? '۳۰ روز اخیر' : CD.range === '14' ? '۱۴ روز اخیر' : '۷ روز اخیر';
+    const cUnitL = CD.unit === 'MB' ? 'مگابایت' : 'گیگابایت';
     const p = (s.auth && s.auth.path) || 'panel';
     return '<div class="page-head"><div><h1>نمای کلی</h1><p>' + esc(s.panel.name) + ' • ' + esc(location.hostname) + ' • نسخه ' + esc(d.version) + '</p></div>' +
       '<div class="btn-row">' +
@@ -903,7 +972,9 @@
       '<div class="stat"><div class="lbl">' + icon('fa-tower-broadcast') + ' گره‌ها</div><div class="val">' + fa(s.cleanIPs.length) + '</div><div class="sub">' + fa(s.ports.length) + ' پورت • ' + fa(s.proxyIPs.length) + ' پروکسی</div></div>' +
       '</div>' +
       '<div class="grid g2" style="margin-top:12px">' +
-      '<div class="card"><header><span class="ic">' + icon('fa-chart-line') + '</span><div><h3>جریان ترافیک</h3><p>۲۴ روز اخیر (گیگابایت) — موس را روی نمودار ببرید</p></div></header><div class="bd" id="chartWrap">' + area(ser, { unit: ' GB' }) + '</div></div>' +
+      '<div class="card"><header><span class="ic">' + icon('fa-chart-line') + '</span><div><h3>جریان ترافیک</h3><p>' + cLabel + ' (' + cUnitL + ') — موس را روی نمودار ببرید</p></div></header>' +
+      chartCtlHtml('dsh') +
+      '<div class="bd" id="chartWrap">' + area(chartSeries(d, 'dsh'), { unit: chartUnit() }) + '</div></div>' +
       '<div class="card"><header><span class="ic b2">' + icon('fa-ranking-star') + '</span><div><h3>بیشترین مصرف‌کنندگان</h3><p>۶ کاربر اول</p></div></header><div class="bd">' +
       (top.map((u) => { const q = (u.quotaGB || 0) * 1073741824, pc = q ? (u.up + u.down) / q * 100 : 0; return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' +
         '<span class="dot ' + (u.enabled ? 'on' : 'bad') + '"></span>' +
@@ -918,12 +989,30 @@
       '<div class="kv"><span>fingerprint</span><b class="mono">' + esc(s.fingerprint) + '</b></div>' +
       '<div class="kv"><span>Trojan hash</span><b class="mono">' + esc(s.trojanHash) + '</b></div>' +
       '<div class="kv"><span>مسیر تونل</span><b class="mono">' + esc(s.path) + '</b></div></div></div>' +
-      '<div class="card"><header><span class="ic b2">' + icon('fa-gauge-high') + '</span><div><h3>سهمیه‌ی مصرف</h3></div></header><div class="bd" style="display:flex;justify-content:space-around;gap:12px;flex-wrap:wrap">' +
-      ring(quota ? used / quota * 100 : 0, 'سهمیه') + ring(quota ? 100 - used / quota * 100 : 100, 'باقیمانده', 'var(--ac2)') +
+      /* ═══ وضعیت زنده — جایگزین کارت معیوب «سهمیه‌ی مصرف» ═══
+         (آن کارت همیشه ۰٪ نشان می‌داد؛ رینگ‌ها به داده‌ی واقعی متصل نبودند.
+         این کارت وضعیت واقعیِ همین لحظه را نشان می‌دهد.) */
+      '<div class="card"><header><span class="ic b2">' + icon('fa-gauge-high') + '</span><div><h3>وضعیت زنده</h3><p>داده‌ی واقعیِ همین لحظه</p></div></header><div class="bd">' +
+      '<div class="status-row">' + icon('fa-database') + ' ذخیره‌سازی<b>' + (d.storage === 'd1' ? 'D1 پایدار' : 'موقت') + '</b></div>' +
+      '<div class="status-row">' + icon('fa-plug-circle-check') + ' کاربران فعال<b>' + fa(on) + ' از ' + fa(us.length) + '</b></div>' +
+      '<div class="status-row">' + icon('fa-clock') + ' اشتراک منقضی<b>' + fa(exp) + '</b></div>' +
+      '<div class="status-row">' + icon('fa-globe') + ' اتصال‌های زنده<b>' + fa(activeConns) + '</b></div>' +
+      '<div class="status-row">' + icon('fa-arrow-up-right-dots') + ' درخواست‌ها<b>' + n((d.stats && d.stats.requests) || 0) + '</b></div>' +
+      '<div class="status-row">' + icon('fa-shield-halved') + ' وضعیت سرویس<b style="color:' + (panic ? 'var(--bad)' : 'var(--ok, #2ee6a8)') + '">' + (panic ? 'Panic فعال' : 'فعال') + '</b></div>' +
       '</div></div>' +
       '</div></div>';
   }
 
+  /* ═══ متنِ زمانیِ انقضا — ساعت‌وار اگر کمتر از ۴۸ ساعت مانده باشد ═══
+     کاربرانی که انقضای ساعتی دارند (مثلاً ۲ ساعت) قبلاً «۱ روز» نشان داده می‌شد.
+     hours < 48  → «۲ ساعت و ۱۵ دقیقه» / «۴۵ دقیقه»  •  >= 48  → روز */
+  function expTxt(ms) {
+    const m = Math.ceil(ms / 60000);
+    if (m < 60) return fa(m) + ' دقیقه';
+    const h = Math.floor(m / 60);
+    if (m < 48 * 60) return fa(h) + ' ساعت' + (m % 60 ? ' و ' + fa(m % 60) + ' دقیقه' : '');
+    return fa(Math.ceil(m / 1440)) + ' روز';
+  }
   function usersView() {
     const us = S.d.users;
     const searchHits = (u) => {
@@ -939,12 +1028,19 @@
       (us.map((u) => {
         const q2 = (u.quotaGB || 0) * 1073741824, pc = q2 ? (u.up + u.down) / q2 * 100 : 0;
         const dl = u.expiryAt ? Math.ceil((u.expiryAt - Date.now()) / 86400000) : null;
+        /* انقضای ساعتی‌وار: وقتی کمتر از ۴۸ ساعت مانده، ساعت/دقیقه نشان داده می‌شود */
+        const expCell = u.expiryAt === null ? '<span class="badge ok">نامحدود</span>'
+          : (u.expiryFirstUse && !u.expiryArmed) ? '<span class="badge ac">' + icon('fa-hourglass-start') + ' منتظر اولین اتصال</span>'
+          : u.expiryAt < Date.now() ? '<span class="badge bad">منقضی</span>'
+          : (u.expiryAt - Date.now() < 48 * 3600000
+            ? '<span class="badge' + (u.expiryAt - Date.now() < 2 * 3600000 ? ' bad' : ' warn') + '">' + expTxt(u.expiryAt - Date.now()) + '</span>'
+            : '<span class="badge' + (dl <= 7 ? ' warn' : '') + '">' + fa(dl) + ' روز</span>');
         const own = [(u.mode && u.mode !== 'inherit') ? 'mode' : '', u.ports ? 'ports' : '', (u.cleanIPs || []).length ? 'ips' : '', u.panelUrl ? 'url' : '', u.speedLimit ? 'speed' : ''].filter(Boolean);
         return '<tr data-hit="' + searchHits(u) + '" data-uid="' + esc(u.id) + '"><td><div style="display:flex;align-items:center;gap:8px"><span class="dot ' + (u.enabled ? 'on' : 'bad') + '"></span><span class="cell-main">' + esc(u.name) + '</span></div><div class="cell-sub">' + esc(u.note || '—') + '</div></td>' +
           '<td><div class="mono" style="font-size:10.5px">' + esc(String(u.uuid).slice(0, 13)) + '…</div><button class="btn sm ghost" data-act="copy" data-v="' + esc(u.uuid) + '">' + icon('fa-copy') + ' کپی</button></td>' +
           '<td><b class="mono" style="font-size:11px">' + bytes(u.up + u.down) + '</b><div class="bar ' + (pc > 90 ? 'bad' : pc > 70 ? 'warn' : '') + '" style="margin-top:5px"><i style="width:' + pc + '%"></i></div><div class="cell-sub">↓' + bytes(u.down) + ' ↑' + bytes(u.up) + '</div></td>' +
           '<td class="mono">' + (u.quotaGB ? fa(u.quotaGB) + ' GB' : '∞') + '<div class="cell-sub">' + (u.dailyQuotaMB ? fa(u.dailyQuotaMB) + ' MB/روز' : '—') + '</div></td>' +
-          '<td>' + (dl === null ? '<span class="badge ok">نامحدود</span>' : dl < 0 ? '<span class="badge bad">منقضی</span>' : '<span class="badge' + (dl <= 7 ? ' warn' : '') + '">' + fa(dl) + ' روز</span>') + '</td>' +
+          '<td>' + expCell + '</td>' +
           '<td><span class="badge ' + (u.mode === 'both' ? 'ac' : 'b2') + '">' + esc(u.mode || 'inherit') + '</span></td>' +
           '<td>' + (own.length ? own.map((o) => '<span class="badge ac">' + esc(o) + '</span>').join(' ') : '<span class="cell-sub">—</span>') + '</td>' +
           '<td class="cell-sub">' + ago(u.lastSeen) +
@@ -1011,7 +1107,7 @@
       '<div class="sub-stats">' +
         '<div class="sub-stat"><span>مصرف</span><b>' + bytes(used) + '</b><i>از ' + (q ? fa(u.quotaGB) + ' GB' : 'نامحدود') + '</i></div>' +
         '<div class="sub-stat"><span>باقیمانده</span><b>' + (q ? bytes(Math.max(0, q - used)) : '∞') + '</b><i>' + (q ? fa(pct.toFixed(0)) + '٪ مصرف شده' : 'بدون سقف') + '</i></div>' +
-        '<div class="sub-stat"><span>انقضا</span><b>' + (dl === null ? 'نامحدود' : dl < 0 ? 'منقضی' : fa(dl) + ' روز') + '</b><i>' + (dl === null ? '—' : dl < 0 ? 'غیرفعال' : 'تا ' + new Date(u.expiryAt).toLocaleDateString('fa-IR')) + '</i></div>' +
+        '<div class="sub-stat"><span>انقضا</span><b>' + (u.expiryAt ? (u.expiryAt < Date.now() ? 'منقضی' : expTxt(u.expiryAt - Date.now())) : 'نامحدود') + '</b><i>' + (u.expiryAt ? 'تا ' + new Date(u.expiryAt).toLocaleString('fa-IR') : '—') + '</i></div>' +
         '<div class="sub-stat"><span>وضعیت</span><b>' + (u.enabled ? 'فعال' : 'غیرفعال') + '</b><i>' + fa(u.totalReq || 0) + ' اتصال</i></div>' +
       '</div>' +
       (q ? '<div class="bar' + (pct > 90 ? ' bad' : pct > 70 ? ' warn' : '') + '" style="margin-top:10px"><i style="width:' + pct + '%"></i></div>' : '') +
@@ -1201,9 +1297,12 @@
 
   function monitorView() {
     const st = S.d.stats || {}, u = S.d.users, r = S.range;
-    const ser = (r === 'm' ? st.monthly : r === 'y' ? st.yearly : st.daily) || st.daily || Array(14).fill(.3);
+    const cUnitL = chartUnitKey() === 'MB' ? 'مگابایت' : 'گیگابایت';
     return '<div class="page-head"><div><h1>مانیتورینگ و آمار</h1><p>مصرف روزانه/ماهانه/سالانه، اتصال‌های فعال و سلامت سرویس</p></div>' +
-      '<div class="seg">' + [['d', 'روزانه'], ['m', 'ماهانه'], ['y', 'سالانه']].map(([k, l]) => '<button data-act="range" data-v="' + k + '" class="' + (r === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div></div>' +
+      '<div class="btn-row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+      '<div class="seg">' + [['d', 'روزانه'], ['m', 'ماهانه'], ['y', 'سالانه']].map(([k, l]) => '<button data-act="range" data-v="' + k + '" class="' + (r === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
+      '<div class="seg">' + [['GB', 'گیگابایت'], ['MB', 'مگابایت']].map(([k, l]) => '<button data-act="chart-unit" data-v="' + k + '" class="' + (chartUnitKey() === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
+      '</div></div>' +
       '<div class="grid g4">' +
       '<div class="stat"><div class="lbl">آپلود کل</div><div class="val">' + bytes(u.reduce((a, x) => a + (x.up || 0), 0)) + '</div><div class="sub">' + fa(u.length) + ' کاربر</div></div>' +
       '<div class="stat"><div class="lbl">دانلود کل</div><div class="val">' + bytes(u.reduce((a, x) => a + (x.down || 0), 0)) + '</div><div class="sub">اتصال فعال: ' + fa(st.connections || 0) + '</div></div>' +
@@ -1211,8 +1310,8 @@
       '<div class="stat"><div class="lbl">نسخه / بیلد</div><div class="val" style="font-size:15px">' + esc(S.d.version) + '</div><div class="sub">' + esc(S.d.build || '—') + '</div></div>' +
       '</div>' +
       '<div class="grid g2" style="margin-top:12px">' +
-      '<div class="card"><header><span class="ic">' + icon('fa-chart-area') + '</span><div><h3>مصرف ' + (r === 'd' ? 'روزانه' : r === 'm' ? 'ماهانه' : 'سالانه') + '</h3><p>گیگابایت در هر بازه</p></div></header><div class="bd" id="chartWrap">' + area(ser, { color: 'var(--ac2)', color2: 'var(--ac)', unit: ' GB' }) + '</div></div>' +
-      '<div class="card"><header><span class="ic b2">' + icon('fa-chart-column') + '</span><div><h3>توزیع مصرف کاربران</h3><p>گیگابایت</p></div></header><div class="bd">' + bars(u.slice(0, 14).map((x) => (x.up + x.down) / 1073741824 || .01), 'GB') + '</div></div></div>' +
+      '<div class="card"><header><span class="ic">' + icon('fa-chart-area') + '</span><div><h3>مصرف ' + (r === 'd' ? 'روزانه' : r === 'm' ? 'ماهانه' : 'سالانه') + '</h3><p>' + cUnitL + ' در هر بازه</p></div></header><div class="bd" id="chartWrap">' + area(chartSeries(S.d, 'mon'), { color: 'var(--ac2)', color2: 'var(--ac)', unit: chartUnit() }) + '</div></div>' +
+      '<div class="card"><header><span class="ic b2">' + icon('fa-chart-column') + '</span><div><h3>توزیع مصرف کاربران</h3><p>' + cUnitL + '</p></div></header><div class="bd">' + bars(convSeries(u.slice(0, 14).map((x) => (x.up + x.down) / 1073741824 || .01)), chartUnit()) + '</div></div></div>' +
       '<div class="card"><header><span class="ic">' + icon('fa-users') + '</span><div><h3>مصرف به تفکیک کاربر</h3><p>با درصد پیشرفت</p></div></header><div class="bd" style="padding:0"><div class="tbl-wrap"><table>' +
       '<thead><tr><th>کاربر</th><th>آپلود</th><th>دانلود</th><th>کل</th><th>درصد سهمیه</th><th>درخواست</th></tr></thead><tbody>' +
       u.map((x) => { const q = (x.quotaGB || 0) * 1073741824, p = q ? (x.up + x.down) / q * 100 : 0; return '<tr><td class="cell-main">' + esc(x.name) + '</td><td class="mono">' + bytes(x.up) + '</td><td class="mono">' + bytes(x.down) + '</td><td class="mono"><b>' + bytes(x.up + x.down) + '</b></td>' +
@@ -1262,9 +1361,10 @@
 
   function logsView() {
     const logs = S.d.logs || [], lv = S.tab.log || 'all';
-    const list = logs.filter((l) => lv === 'all' || l.level === lv);
+    /* فیلترِ «رادار» هم کنار سطوح — اسکنر صفحه‌ی کاربر اینجا لاگ می‌گذارد */
+    const list = logs.filter((l) => lv === 'all' || (lv === 'radar' ? l.actor === 'radar' : l.level === lv));
     return '<div class="page-head"><div><h1>لاگ فعالیت</h1><p>' + fa(logs.length) + ' رویداد • audit trail تغییرات ادمین</p></div>' +
-      '<div class="seg">' + [['all', 'همه'], ['success', 'موفق'], ['info', 'اطلاعات'], ['warn', 'هشدار'], ['error', 'خطا']].map(([k, l]) => '<button data-act="loglv" data-v="' + k + '" class="' + (lv === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div></div>' +
+      '<div class="seg">' + [['all', 'همه'], ['radar', 'رادار'], ['success', 'موفق'], ['info', 'اطلاعات'], ['warn', 'هشدار'], ['error', 'خطا']].map(([k, l]) => '<button data-act="loglv" data-v="' + k + '" class="' + (lv === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div></div>' +
       '<div class="card"><div class="bd">' +
       (list.map((l) => '<div class="log"><span class="dot ' + (l.level === 'success' ? 'on' : l.level === 'error' ? 'bad' : 'warn') + '"></span>' +
         '<div class="l"><b>' + esc(l.action) + '</b> <span class="badge">' + esc(l.actor) + '</span> <span class="badge ' + (l.level === 'error' ? 'bad' : l.level === 'success' ? 'ok' : 'b2') + '">' + esc(l.level) + '</span>' +
@@ -1496,6 +1596,24 @@
       '<button class="btn sm" data-act="exit-reload">' + icon('fa-rotate') + ' بارخوانی</button></div></header>' +
       '<div class="bd"><div id="exitsOut">' + exitsHtml(EX.data) + '</div></div></div>';
 
+    /* ═══ Proxy IP — تستِ در دسترس بودن از سمتِ ورکر (روش BPB) ═══ */
+    const proxyCard = () => {
+      const list = (Array.isArray(S.d.settings.proxyIPs) ? S.d.settings.proxyIPs : []).map((x) => String(x).trim()).filter(Boolean);
+      const ps = (EX.data && EX.data.proxyStats) || null;
+      const statTxt = ps
+        ? '<span class="badge">در مسیر تونل — تلاش: ' + fa(ps.attempts) + ' • وصل: ' + fa(ps.connects) + ' • خطا: ' + fa(ps.fails) + '</span>'
+        : '<span class="badge">هنوز تلاشی در مسیر تونل ثبت نشده</span>';
+      return '<div class="card" id="proxyCard"><header><span class="ic">' + icon('fa-tower-broadcast') + '</span>' +
+        '<div><h3>Proxy IP — خروجیِ پشتیبان</h3>' +
+        '<p>وقتی اتصالِ مستقیم به مقصد برقرار نشود یا بی‌پاسخ بماند، همان بارِ اولیه از این ورودی‌ها relay می‌شود (روش BPB؛ فقط برای مقصدهایی که پشت Cloudflare‌اند)</p></div>' +
+        '<div class="acts"><button class="btn sm p" data-act="proxy-test">' + icon('fa-stethoscope') + ' تست از ورکر</button></div></header>' +
+        '<div class="bd"><div id="proxyOut">' +
+        (list.length
+          ? list.map((x) => '<div class="row-item">' + icon('fa-globe') + '<div class="grow"><span class="mono">' + esc(x) + '</span></div><span class="badge">—</span></div>').join('')
+          : '<div class="empty">Proxy IPی تعریف نشده — از «شبکه ← IPهای پروکسی» چند مورد وارد کنید</div>') +
+        '</div><div id="proxyStat" style="margin-top:8px">' + statTxt + '</div></div></div>';
+    };
+
     /* ═══ نام‌گذاری کانفیگ‌ها — الگوی کاملاً دلخواه + الگوهای آماده ═══ */
     const naming = () => {
       const pat = getP(s, 'sub.namePattern') || '';
@@ -1632,7 +1750,7 @@
 
       modeCard() + quickCard() +
       '<div style="padding:0 2px">' + essential() + portsAcc() + naming() + network() + telegram() + stealth() + advanced() + '</div>' +
-      pwCard() + exitsCard() +
+      pwCard() + exitsCard() + proxyCard() +
 
       '<div class="btn-row" style="justify-content:center;margin-top:10px">' +
       '<button class="btn p lg" data-act="save-config">' + icon('fa-floppy-disk') + ' ذخیره</button></div>';
@@ -1703,8 +1821,8 @@
     const cw = $('#chartWrap');
     if (cw) {
       const ser = S.view === 'monitor'
-        ? ((S.range === 'm' ? d.stats.monthly : S.range === 'y' ? d.stats.yearly : d.stats.daily) || [])
-        : (d.stats.trafficSeries || []);
+        ? chartSeries(d, 'mon')
+        : chartSeries(d, 'dsh');
       bindCharts(cw, ser);
     }
     $('#foot').innerHTML = esc(s.panel.name) + ' • ' + esc(location.hostname) + ' • ورود: <span class="mono">/' + esc(s.auth.path) + '</span> • ساب: <span class="mono">/' + esc(s.sub.path) + '</span>';
@@ -1842,21 +1960,49 @@
     const ufm = e.target.closest('[data-ufake-mode]');
     if (ufm) {
       e.preventDefault(); e.stopPropagation();
-      const cur = S.d.users.find((x) => x.id === ($('#mbox [data-act="user-save"]') || {}).dataset?.id) || {};
-      const patch = collect($('#mbox')); patch.fakes = readUserFakes();
+      const saveBtn = $('#mbox [data-act="user-save"]');
+      const cur = S.d.users.find((x) => x.id === (saveBtn || {}).dataset?.id) || {};
+      /* ⚠️ حالتِ فعلی را روی cur نگه می‌داریم؛ فهرستِ اختصاصی را از DOMِ فعلی
+         می‌خوانیم تا چیزی که ادمین نوشته با تعویضِ حالت گم نشود. */
+      const curFakes = readUserFakes();
+      const keep = Array.isArray(cur.fakes) && cur.fakes.length ? cur.fakes : curFakes;
+      const mode = ufm.dataset.ufakeMode;
+      const patch = collect($('#mbox'));
       Object.assign(cur, patch);
-      cur.fakeMode = ufm.dataset.ufakeMode;
-      if (cur.fakeMode === 'custom' && (!Array.isArray(cur.fakes) || !cur.fakes.length)) {
-        cur.fakes = [
-          { id: 'usage',     name: '📊 {usage}',     enabled: true, proto: 'vless',  pos: 1 },
-          { id: 'remaining', name: '🟢 {remaining}', enabled: true, proto: 'vless',  pos: 2 },
-          { id: 'expiry',    name: '📅 {expiry}',    enabled: true, proto: 'vless',  pos: 3 },
-          { id: 'channel',   name: '📢 {channel}',   enabled: true, proto: 'trojan', pos: 4 },
-        ];
-      }
+      cur.fakeMode = mode;
+      cur.fakes = keep;
       closeM(); userModal(cur);
       return;
     }
+    /* افزودن/پیش‌فرض/حذف کانفیگ فیک اختصاصی — پیش از نگهبانِ [data-act]
+       چون مودالِ کاربر ممکن است بسته و دوباره باز شود و رویدادِ فعلی گم شود */
+    const uact = e.target.closest('[data-act="ufake-add"], [data-act="ufake-reset"], [data-act="ufake-del"]');
+    if (uact) {
+      e.preventDefault(); e.stopPropagation();
+      const act = uact.dataset.act;
+      const cur = S.d.users.find((x) => x.id === ($('#mbox [data-act="user-save"]') || {}).dataset?.id);
+      if (!cur) return;
+      /* مقادیر فرم از DOM می‌آید؛ fakes را دست نمی‌زنیم — فقط در حافظه‌ی موقتِ
+         حالتِ custom تغییر می‌کند. آیتمِ حذف‌شده در پاسِ بعدی هم غایب است. */
+      const patch = collect($('#mbox'));
+      patch.fakeMode = cur.fakeMode || 'custom';
+      Object.assign(cur, patch);
+      if (!Array.isArray(cur.fakes)) cur.fakes = [];
+      const idx = Number(uact.dataset.i);
+      if (act === 'ufake-add') {
+        cur.fakes.push({ id: 'uf_' + Date.now().toString(36), name: '', enabled: true, proto: 'vless', pos: cur.fakes.length + 1 });
+      } else if (act === 'ufake-reset') {
+        cur.fakes = []; /* هیچ کانفیگ ثابتی وجود ندارد — فهرست فقط خالی می‌شود */
+      } else {
+        cur.fakes.splice(idx, 1);
+      }
+      cur.fakeMode = 'custom';
+      closeM(); userModal(cur);
+      if (act === 'ufake-add') setTimeout(() => { const el = $('#ufkList .fk-row:last-child .fk-name'); if (el) el.focus(); }, 80);
+      else toast(act === 'ufake-del' ? 'حذف شد' : 'همه پاک شد — برای اعمال، ذخیره کنید', act === 'ufake-del' ? 'err' : 'info');
+      return;
+    }
+
     /* سوییچ کانفیگ فیک کاربر */
     const ufsw = e.target.closest('[data-ufake-sw]');
     if (ufsw) {
@@ -1941,6 +2087,10 @@
       else if (a === 'open') window.open(v, '_blank');
       else if (a === 'fmt') { S.fmt = v; render(); }
       else if (a === 'range') { S.range = v; render(); }
+      /* ═══ کنترل‌های نمودار: بازه و واحد ═══ */
+      else if (a === 'dash-range') { const c = dashChartCfg(); c.range = v; dashChartSave(c); render(); }
+      else if (a === 'dash-unit') { trySet(MON_UNIT_KEY, v); render(); }
+      else if (a === 'chart-unit') { trySet(MON_UNIT_KEY, v); render(); }
       else if (a === 'loglv') { S.tab.log = v; render(); }
       /* ═══════ اتصال‌های زنده — فقط بارخوانی ═══════
          عملیاتِ روی نشستِ زنده (قطعِ موقت، مسدودسازیِ آی‌پی، آزادسازی) کاملاً
@@ -2001,15 +2151,10 @@
         toast('حذف شد', 'err');
       }
       else if (a === 'fake-reset') {
-        S.d.settings.sub.fakes = [
-          { id: 'usage',     name: '📊 {usage}',        enabled: true,  proto: 'vless',  pin: true, pos: 1 },
-          { id: 'remaining', name: '🟢 {remaining}',    enabled: true,  proto: 'vless',  pin: true, pos: 2 },
-          { id: 'expiry',    name: '📅 {expiry}',       enabled: true,  proto: 'vless',  pin: true, pos: 3 },
-          { id: 'channel',   name: '📢 {channel}',      enabled: true,  proto: 'trojan', pin: true, pos: 4 },
-          { id: 'panel',     name: '⚙️ {panel} v{ver}', enabled: false, proto: 'trojan', pin: true, pos: 5 },
-        ];
+        /* هیچ کانفیگ ثابتی وجود ندارد — همه پاک می‌شود */
+        S.d.settings.sub.fakes = [];
         render(); refreshPreview();
-        toast('به پیش‌فرض بازگشت — برای اعمال، ذخیره کنید', 'info');
+        toast('همه پاک شد — برای اعمال، ذخیره کنید', 'info');
       }
       else if (a === 'user-new') { const r = await api('POST', '/api/users', { name: 'کاربر ' + (S.d.users.length + 1) }); if (r.user) { S.sel = r.user.id; await refresh(); userModal(S.d.users.find((u) => u.id === r.user.id) || r.user, true); } }
       else if (a === 'user-edit') userModal(S.d.users.find((u) => u.id === id));
@@ -2030,9 +2175,56 @@
         const out = $('#subOut');
         if (out) out.innerHTML = '<pre class="code"><div class="hd"><span>' + esc(S.fmt) + ' • ' + esc(tx.length) + ' کاراکتر</span><button class="btn sm" data-act="copy" data-v="' + esc(tx.slice(0, 100000)).replace(/"/g, '&quot;') + '">کپی</button></div>' + esc(tx.slice(0, 6000)) + (tx.length > 6000 ? '\n…' : '') + '</pre>';
       }
+      else if (a === 'exp-mode') {
+        /* تغییرِ حالتِ انقضا — چیپ فعال + فیلدِ پنهان + نمایش/پنهانِ تعداد یا تاریخ */
+        const hm = $('#mbox [data-p="expiryMode"]'); if (hm) hm.value = v;
+        const cur = $('#mbox [data-act="exp-mode"].on');
+        if (cur) { cur.classList.remove('on'); cur.style.background = ''; cur.style.borderColor = ''; cur.style.color = ''; }
+        t.classList.add('on'); t.style.background = 'var(--ac)'; t.style.borderColor = 'var(--ac)'; t.style.color = '#fff';
+        const row = $('#mbox #expQtyRow'), lbl = row && row.querySelector('.hint');
+        if (row) {
+          const show = v === 'hours' || v === 'days';
+          row.style.display = show ? 'flex' : 'none';
+          if (lbl) lbl.textContent = v === 'days' ? 'روز — از همین لحظه' : 'ساعت — از همین لحظه';
+        }
+        const drow = $('#mbox #expDateRow');
+        if (drow) drow.style.display = v === 'date' ? 'flex' : 'none';
+        return;
+      }
       else if (a === 'user-save') {
         busy(t, 'ذخیره');
         const patch = collect($('#mbox'));
+        /* ═══ انقضا: ترجمه‌ی حالتِ انتخابی به فیلدهای سرور ═══
+           expiryMode/expQty فقط برای همین لحظه‌اند و به سرور نمی‌روند. */
+        const expMode = patch.expiryMode || 'none', expQty = Math.max(1, Number(patch.expQty) || 1);
+        delete patch.expiryMode; delete patch.expQty;
+        const fuOn = !!patch.expiryFirstUse;
+        /* ═══ سهمیه: تبدیلِ مقدار + واحد به مگابایت (برای ورکر) ═══
+           ورکر quotaMB را می‌فهمد؛ گیگابایت × ۱۰۲۴ می‌شود.
+           ⚠️ کلمه‌ی «off» به‌عنوان کلیدِ حذفِ سهمیه استفاده می‌شود چون
+           عددِ ۰ صریح است و نمی‌توان «وارد نشده» را از «صفر» تشخیص داد. */
+        const qv = patch.quotaVal, qu = $('#mbox [data-ua="quotaUnit"]');
+        const qn = Number(qv);
+        if (qv === undefined || qv === '' || isNaN(qn) || qn <= 0) { patch.quotaMB = 'off'; }
+        else { patch.quotaMB = Math.round(((qu && qu.value === 'GB') ? qn * 1024 : qn) * 100) / 100; }
+        delete patch.quotaVal;
+        const dv = patch.dailyQuotaVal, du = $('#mbox [data-ua="dailyQuotaUnit"]');
+        const dn = Number(dv);
+        if (dv === undefined || dv === '' || isNaN(dn) || dn <= 0) { patch.dailyQuotaMB = 'off'; }
+        else { patch.dailyQuotaMB = Math.round(((du && du.value === 'GB') ? dn * 1024 : dn) * 100) / 100; }
+        delete patch.dailyQuotaVal;
+        if (expMode === 'none') { patch.expiryDays = 0; patch.expiryFirstUse = false; }
+        else if (expMode === 'hours') { patch.expiryHours = expQty; patch.expiryFirstUse = fuOn; }
+        else if (expMode === 'days') { patch.expiryDays = expQty; patch.expiryFirstUse = fuOn; }
+        else if (expMode === 'date') {
+          /* تاریخِ مشخص — مقدارِ datetime-local به timestamp تبدیل می‌شود؛
+             ورکر فیلدِ expiryAt را بدون expiryDays/expiryHours عیناً ذخیره می‌کند */
+          const ts = patch.expDate ? new Date(patch.expDate).getTime() : NaN;
+          delete patch.expDate;
+          if (!isNaN(ts) && ts > 0) { patch.expiryAt = ts; patch.expiryFirstUse = fuOn; if (!fuOn) patch.expiryArmed = true; }
+          else { toast('تاریخ انقضا نامعتبر است', 'err'); free(t); return; }
+        }
+        else { patch.expiryFirstUse = fuOn; }
         /* کانفیگ‌های فیک اختصاصی از DOM خوانده می‌شوند */
         patch.fakes = readUserFakes();
         patch.fakeMode = patch.fakeMode || 'inherit';
@@ -2040,35 +2232,16 @@
         free(t);
         if (r.ok) { toast('ذخیره شد'); closeM(); await refresh(); } else toast(r.error || 'خطا', 'err');
       }
-      else if (a === 'ufake-add') {
-        if (!Array.isArray(u.fakes)) u.fakes = [];
-        u.fakes.push({ id: 'uf_' + Date.now().toString(36), name: '', enabled: true, proto: 'vless', pos: u.fakes.length + 1 });
-        /* بازتولید مودال برای نمایش ردیف جدید */
-        const patch = collect($('#mbox')); patch.fakes = readUserFakes(); patch.fakeMode = u.fakeMode || 'custom';
-        Object.assign(u, patch); u.fakeMode = 'custom';
-        closeM(); userModal(u);
-        setTimeout(() => { const el = $('#ufkList .fk-row:last-child .fk-name'); if (el) el.focus(); }, 80);
-      }
-      else if (a === 'ufake-reset') {
-        u.fakes = [
-          { id: 'usage',     name: '📊 {usage}',        enabled: true,  proto: 'vless',  pos: 1 },
-          { id: 'remaining', name: '🟢 {remaining}',    enabled: true,  proto: 'vless',  pos: 2 },
-          { id: 'expiry',    name: '📅 {expiry}',       enabled: true,  proto: 'vless',  pos: 3 },
-          { id: 'channel',   name: '📢 {channel}',      enabled: true,  proto: 'trojan', pos: 4 },
-          { id: 'panel',     name: '⚙️ {panel} v{ver}', enabled: false, proto: 'trojan', pos: 5 },
-        ];
-        const patch = collect($('#mbox')); patch.fakes = readUserFakes(); patch.fakeMode = 'custom';
-        Object.assign(u, patch); u.fakeMode = 'custom';
-        closeM(); userModal(u);
-        toast('به پیش‌فرض بازگشت', 'info');
-      }
-      else if (a === 'ufake-del') {
-        if (!Array.isArray(u.fakes)) u.fakes = [];
-        const patch = collect($('#mbox')); patch.fakes = readUserFakes(); patch.fakeMode = 'custom';
-        Object.assign(u, patch); u.fakeMode = 'custom';
-        u.fakes.splice(Number(t.dataset.i), 1);
-        closeM(); userModal(u);
-        toast('حذف شد', 'err');
+      /* این سه عملیات بالاتر (پیش از نگهبان data-act) مدیریت می‌شوند تا مودال بسته/باز نشود */
+      else if (a === 'cfg-cnt') {
+        /* انتخابِ سریعِ تعدادِ کانفیگ — فیلدِ «سقف کانفیگ» را پر می‌کند */
+        const inp = $('#mbox [data-p="maxConfigs"]'); if (inp) inp.value = v;
+        $$('#mbox [data-act="cfg-cnt"]').forEach((x) => {
+          const on = String(x.dataset.v) === String(v);
+          x.classList.toggle('on', on);
+          x.style.background = on ? 'var(--ac)' : ''; x.style.borderColor = on ? 'var(--ac)' : ''; x.style.color = on ? '#fff' : '';
+        });
+        return;
       }
       else if (a === 'regen') { const inp = $('#mbox [data-p="uuid"]'); if (inp) { inp.value = crypto.randomUUID(); toast('UUID جدید ساخته شد', 'info'); } }
       else if (a === 'close') closeM();
@@ -2329,6 +2502,48 @@
         if (r && r.ok) { EX.form = null; EX.test = null; await exLoad(); toast(r.msg || 'حذف شد', 'ok'); }
         else toast((r && r.error) || 'حذف انجام نشد', 'err');
       }
+      else if (a === 'exit-master') {
+        busy(t, 'در حال ذخیره');
+        const cur = !((EX.data || {}).enabled !== false);
+        const r = await api('POST', '/api/exits', { op: 'master', enabled: cur });
+        free(t);
+        if (r && r.ok) { EX.form = null; await exLoad(); toast(r.msg || 'وضعیتِ مسیر خروجی ذخیره شد', 'ok'); }
+        else toast((r && r.error) || 'ذخیره انجام نشد', 'err');
+      }
+      else if (a === 'exit-onoff') {
+        const srv = ((EX.data && EX.data.servers) || []).find((x) => x.id === id);
+        if (!srv) { toast('سرور پیدا نشد — فهرست را بارخوانی کنید', 'err'); return; }
+        const cur = srv.enabled !== false;
+        const goOn = !cur;
+        if (!confirm('سرور خروجیِ «' + srv.name + '» ' + (goOn
+          ? 'فعال شود؟' + '\nکانفیگ‌هایی که قبلاً آن را انتخاب کرده بودند دوباره از آن عبور می‌کنند.'
+          : 'غیرفعال شود؟ (توقفِ موقت)' + '\nتا فعال‌کردنِ دوباره هیچ کانفیگی از آن عبور نمی‌کند؛ انتخاب‌ها پاک نمی‌شوند.'))) return;
+        busy(t, 'در حال ذخیره');
+        const r = await api('POST', '/api/exits', { op: 'toggle', id, enabled: goOn });
+        free(t);
+        if (r && r.ok) { EX.form = null; await exLoad(); toast(r.msg || 'وضعیتِ سرور ذخیره شد', 'ok'); }
+        else toast((r && r.error) || 'ذخیره انجام نشد', 'err');
+      }
+      else if (a === 'proxy-test') {
+        busy(t, 'در حال تست از ورکر');
+        const r = await api('POST', '/api/proxyips/test', {});
+        free(t);
+        const box = $('#proxyOut'), stBox = $('#proxyStat');
+        if (box) {
+          const rows = (r && Array.isArray(r.results)) ? r.results : [];
+          box.innerHTML = rows.length
+            ? rows.map((x) => '<div class="row-item">' + icon(x.ok ? 'fa-circle-check' : 'fa-circle-xmark') +
+                '<div class="grow"><span class="mono">' + esc(x.input) + '</span>' +
+                (x.error ? '<div class="cell-sub">' + esc(x.error) + '</div>' : '') + '</div>' +
+                '<span class="badge ' + (x.ok ? 'ok' : 'bad') + '">' + (x.ok ? fa(x.ms) + ' ms' : 'ناموفق') + '</span></div>').join('')
+            : '<div class="empty">پاسخی نیامد</div>';
+        }
+        if (stBox && r && r.stats) {
+          stBox.innerHTML = '<div class="hint">در مسیر تونل: تلاش ' + fa(r.stats.attempts) + ' • وصلِ موفق ' + fa(r.stats.connects) + ' • خطا ' + fa(r.stats.fails) +
+            (r.stats.lastError ? ' — آخرین خطا: <span class="mono">' + esc(r.stats.lastError) + '</span>' : '') + '</div>';
+        }
+        toast((r && r.msg) || 'تست انجام شد', (r && r.reachable > 0) ? 'ok' : 'err');
+      }
       else if (a === 'exit-test') {
         /* فرم دیگر فیلدی ندارد که بشود بدون ذخیره تستش کرد، پس تست فقط روی
            یک سرورِ ذخیره‌شده معنا دارد. */
@@ -2368,6 +2583,11 @@
     /* انتخابِ خروجی برای هر کانفیگ — بر پیش‌فرضِ سراسری مقدم است.
        مقدارِ select یا inherit/direct است یا شناسه‌ی یکی از سرورها. */
     if (e.target.id && e.target.id.indexOf('exSel-') === 0) {
+      if (!EX.data || EX.data.enabled === false) {
+        await exLoad();
+        toast('مسیرِ خروجی خاموش است — اول آن را از دکمه‌ی «فعال‌کردن» روشن کنید', 'info');
+        return;
+      }
       const uid = e.target.id.slice(6);
       const val = String(e.target.value || 'inherit');
       const named = val === 'inherit' || val === 'direct';
@@ -2540,7 +2760,7 @@
       '<div><h3>کانفیگ‌های فیک (اطلاعاتی)</h3>' +
       '<p>در ابتدای لیست ساب کلاینت نمایش داده می‌شوند تا مصرف و انقضا در برنامه دیده شود</p></div>' +
       '<div class="acts">' +
-      '<button class="btn sm" data-act="fake-reset" title="بازگشت به ۵ کانفیگ پیش‌فرض">' + icon('fa-rotate-left') + ' پیش‌فرض</button>' +
+      '<button class="btn sm" data-act="fake-reset" title="پاک‌کردن همه‌ی کانفیگ‌های فیک">' + icon('fa-eraser') + ' پاک‌کردن همه</button>' +
       '<button class="btn sm s" data-act="fake-add">' + icon('fa-plus') + ' افزودن</button>' +
       '<button class="btn sm p" data-act="fake-save">' + icon('fa-floppy-disk') + ' ذخیره</button>' +
       '</div></header>' +
@@ -2652,7 +2872,7 @@
       '</div></div>' +
       '<div class="btn-row" style="margin-bottom:8px">' +
       '<button class="btn sm s" data-act="ufake-add">' + icon('fa-plus') + ' افزودن</button>' +
-      '<button class="btn sm" data-act="ufake-reset">' + icon('fa-rotate-left') + ' پیش‌فرض</button></div>' +
+      '<button class="btn sm" data-act="ufake-reset">' + icon('fa-eraser') + ' پاک‌کردن همه</button></div>' +
       '<div class="fk-list" id="ufkList">' +
       (fakes.map((f, i) => userFakeRow(f, i)).join('') || '<div class="empty">موردی نیست</div>') +
       '</div>';
@@ -2691,6 +2911,48 @@
     return out;
   }
 
+  /* ═══ بخشِ انقضا در مودال کاربر ═══
+     سه حالت: «نامحدود»، «ساعت» (مثلاً ۱ یا ۲ ساعته)، «روز» + حالتِ ویژه‌ی
+     «تاریخِ مشخص». به‌علاوه یک کلید برای «شروع انقضا از اولین استفاده»:
+     وقتی روشن باشد expiryAt الان نوشته نمی‌شود؛ اولین بار که کاربر واقعاً
+     وصل شد، ورکر از همان لحظه انقضا را فعال می‌کند. */
+  function expirySection(u) {
+    const hasExpiry = !!u.expiryAt;
+    const remainH = hasExpiry ? Math.max(1, Math.ceil((u.expiryAt - Date.now()) / 3600000)) : 0;
+    const remainD = hasExpiry ? Math.max(1, Math.ceil((u.expiryAt - Date.now()) / 86400000)) : 0;
+    const fu = !!u.expiryFirstUse;
+    /* حالتِ پیش‌فرض: اگر کاربر انقضا دارد، «تاریخ مشخص» فعال است تا تاریخِ دقیق
+       قابل ویرایش باشد — قبلاً این حالت هرگز انتخاب نمی‌شد و هیچ فیلدی نشان داده نمی‌شد. */
+    const mode = !hasExpiry ? 'none' : (remainD >= 1 && remainH >= remainD * 24 ? 'days' : 'hours');
+    const qty = mode === 'days' ? remainD : remainH;
+    /* مقدارِ فیلدِ تاریخ — همین حالا + ۳۰ روز برای کاربرِ بدون انقضا */
+    const dtLocal = (ts) => { const d = new Date(ts); d.setSeconds(0, 0);
+      const p = (n) => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes()); };
+    const curDate = hasExpiry ? dtLocal(u.expiryAt) : dtLocal(Date.now() + 30 * 86400000);
+    const segBtn = (k, l) => '<button type="button" class="chip' + (mode === k ? ' on" style="background:var(--ac);border-color:var(--ac);color:#fff"' : '"') + ' data-act="exp-mode" data-v="' + k + '">' + l + '</button>';
+    return '<div class="um-sec"><div class="um-sec-h">' + icon('fa-hourglass-half') + '<span>انقضا</span></div>' +
+      '<input type="hidden" data-p="expiryMode" value="' + mode + '">' +
+      '<div class="seg" style="flex-wrap:wrap">' +
+        segBtn('none', 'نامحدود') + segBtn('hours', 'ساعتی') + segBtn('days', 'روزی') + segBtn('date', 'تاریخ مشخص') +
+      '</div>' +
+      '<div id="expQtyRow" style="display:' + (mode === 'hours' || mode === 'days' ? 'flex' : 'none') + ';align-items:center;gap:10px;margin-top:10px">' +
+        '<input type="number" min="1" step="1" data-p="expQty" value="' + esc(qty || 1) + '" style="max-width:110px">' +
+        '<span class="hint" style="margin:0">' + (mode === 'days' ? 'روز — از همین لحظه' : 'ساعت — از همین لحظه') + '</span>' +
+      '</div>' +
+      /* ═══ انتخابگرِ تاریخِ مشخص — قبلاً وجود نداشت و «هیچی» نشان نمی‌داد ═══ */
+      '<div id="expDateRow" style="display:' + (mode === 'date' ? 'flex' : 'none') + ';align-items:center;gap:10px;margin-top:10px">' +
+        '<input type="datetime-local" data-p="expDate" value="' + esc(curDate) + '" style="max-width:230px" class="mono">' +
+        '<span class="hint" style="margin:0">تاریخ و ساعتِ دقیقِ انقضا</span>' +
+      '</div>' +
+      '<div style="margin-top:12px">' +
+        field({ p: 'expiryFirstUse', l: 'شروع انقضا از اولین استفاده', t: 'sw' }, fu) +
+        '<div class="hint" style="margin-top:6px">روشن باشد → مدتِ انتخابی (ساعت/روز) از <b>اولین اتصالِ واقعی</b> کاربر شمرده می‌شود؛ تا آن لحظه انقضا فعال نیست و در کلاینت «نامحدود» دیده می‌شود.</div>' +
+      '</div>' +
+      (hasExpiry ? '<div class="hint" style="margin-top:6px">انقضای فعلی: ' + new Date(u.expiryAt).toLocaleString('fa-IR') + (fu && !u.expiryArmed ? ' — هنوز شروع نشده (منتظر اولین اتصال)' : ' (' + expTxt(u.expiryAt - Date.now()) + ' مانده)') + '</div>' : '') +
+      '</div>';
+  }
+
   function userModal(u, isNew) {
     if (!u) return;
     const v = (p) => {
@@ -2701,9 +2963,10 @@
       return val;
     };
     const F = (f) => field(f, v(f.p));
+    /* رشته‌های آماده (HTML) بدون تغییر رد می‌شوند — فقط اشیاء field پردازش می‌شوند */
     const sec = (title, icn, fields, cols) =>
       '<div class="um-sec"><div class="um-sec-h">' + icon(icn) + '<span>' + title + '</span></div>' +
-      '<div class="um-grid ' + (cols || '') + '">' + fields.map(F).join('') + '</div></div>';
+      '<div class="um-grid ' + (cols || '') + '">' + fields.map((f) => (typeof f === 'string' ? f : F(f))).join('') + '</div></div>';
 
     modal(
       '<header><span class="ic">' + icon('fa-user') + '</span>' +
@@ -2721,14 +2984,34 @@
         { p: 'secret', l: 'رمز Trojan (خام)', t: 'text', mono: 1, h: 'کلاینت خودش sha224 می‌گیرد' },
       ], 'two') +
       sec('سهمیه و محدودیت', 'fa-database', [
-        { p: 'quotaGB', l: 'سهمیه کل (GB)', t: 'num', h: '۰ = نامحدود' },
-        { p: 'dailyQuotaMB', l: 'سهمیه روزانه (MB)', t: 'num', h: '۰ = بدون سقف' },
-        { p: 'expiryDays', l: 'انقضا (روز)', t: 'num', h: '۰ = نامحدود' },
-        /* محدودیت دستگاهی حذف شد — فقط IP واقعی کلاینت شمرده می‌شود */
+        /* ═══ انتخابِ حجم با مگابایت و گیگابایت (به‌جای فقط گیگابایت) ═══
+           واحدِ انتخابی در data-ua ذخیره می‌شود؛ موقعِ ذخیره به مگابایت
+           تبدیل و به سرور فرستاده می‌شود (quotaMB). */
+        '<div class="f"><span>سهمیه کل</span>' +
+          '<div style="display:flex;gap:6px;align-items:center">' +
+          '<input type="number" min="0" step="any" data-p="quotaVal" value="' + esc(u.quotaMB ? (u.quotaMB >= 1024 ? Math.round(u.quotaMB / 1024 * 100) / 100 : u.quotaMB) : (Number(u.quotaGB) || 0) * 1024) + '">' +
+          '<select data-ua="quotaUnit"><option value="MB"' + (u.quotaMB && u.quotaMB < 1024 ? ' selected' : '') + '>مگابایت (MB)</option><option value="GB"' + (!u.quotaMB || u.quotaMB >= 1024 ? ' selected' : '') + '>گیگابایت (GB)</option></select>' +
+          '</div>' +
+          '<div class="hint" style="margin-top:5px">۰ = نامحدود • می‌توانید بر حسب مگابایت یا گیگابایت وارد کنید</div></div>',
+        '<div class="f"><span>سهمیه روزانه</span>' +
+          '<div style="display:flex;gap:6px;align-items:center">' +
+          '<input type="number" min="0" step="any" data-p="dailyQuotaVal" value="' + esc(Number(u.dailyQuotaMB) || 0) + '">' +
+          '<select data-ua="dailyQuotaUnit"><option value="MB" selected>مگابایت (MB)</option><option value="GB">گیگابایت (GB)</option></select>' +
+          '</div>' +
+          '<div class="hint" style="margin-top:5px">۰ = بدون سقف</div></div>',
         { p: 'ipLimit', l: 'سقف IP همزمان', t: 'num', h: '۰ = پیش‌فرض سراسری • بیشینه‌ی IPهای همزمان' },
         { p: 'maxConfigs', l: 'سقف کانفیگ', t: 'num', h: '۰ = پیش‌فرض' },
         { p: 'speedLimit', l: 'سقف سرعت (Mbps)', t: 'num', h: '۰ = نامحدود' },
       ], 'three') +
+      /* ═══ انتخابگرِ سریعِ تعدادِ کانفیگ — قبلاً فقط ورودیِ عددی بود ═══ */
+      '<div class="um-sec"><div class="um-sec-h">' + icon('fa-list-ol') + '<span>تعداد کانفیگ</span></div>' +
+      '<div class="chips" style="flex-wrap:wrap">' +
+        [0, 5, 10, 12, 15, 20, 30, 50].map((n) =>
+          '<button type="button" class="chip' + ((Number(u.maxConfigs) || 0) === n ? ' on" style="background:var(--ac);border-color:var(--ac);color:#fff"' : '"') +
+          ' data-act="cfg-cnt" data-v="' + n + '">' + (n === 0 ? 'پیش‌فرض پنل' : n) + '</button>').join('') +
+      '</div>' +
+      '<div class="hint" style="margin-top:6px">تعداد کانفیگ‌هایی که در ساب این کاربر ساخته می‌شود — «پیش‌فرض پنل» از Node limit تنظیمات پیروی می‌کند. انتخابِ سریع = پر شدن فیلدِ «سقف کانفیگ».</div></div>' +
+      expirySection(u) +
       sec('نام‌گذاری و تنظیمات اختصاصی', 'fa-gear', [
         { p: 'mode', l: 'حالت پروتکل', t: 'sel', o: ['inherit', 'alpha', 'beta', 'both'], lbls: { inherit: 'از پنل', alpha: 'Alpha — VLESS', beta: 'Beta — Trojan', both: 'Both' } },
         { p: 'fakeMode', l: 'کانفیگ‌های فیک', t: 'sel', o: ['inherit', 'custom', 'off'], lbls: { inherit: 'از پنل', custom: 'اختصاصی', off: 'خاموش' } },
@@ -2799,7 +3082,7 @@
   render();
   window.__sgBooted = true;
   refresh();
-  setInterval(() => { if (S.token && (S.view === 'dash' || S.view === 'monitor')) refresh(); }, 20000);
+  setInterval(() => { if (S.token && (S.view === 'dash' || S.view === 'monitor' || S.view === 'logs' || S.view === 'users')) refresh(); }, 20000);
   /* اتصال‌های زنده هر ۱۰ ثانیه به‌روز می‌شود — با بارخوانیِ هدفمند (cnLoad)،
      نه رندرِ کل صفحه، تا جدول نپرد و فیلتر/مکانِ اسکرول از بین نرود. */
   setInterval(() => { if (S.token && S.view === 'conns') cnLoad(); }, 10000);

@@ -300,6 +300,11 @@ tbody tr:hover{background:var(--acsoft)}
 .bar.warn>i{background:linear-gradient(90deg,var(--warn),var(--ac2))}
 .bar.bad>i{background:linear-gradient(90deg,var(--bad),var(--warn))}
 
+/* ═══════════ ردیف وضعیت (کارت وضعیت زنده) ═══════════ */
+.status-row{display:flex;align-items:center;gap:9px;font-size:11.5px;color:var(--mut);margin-bottom:10px}
+.status-row .ic{font-size:13px;color:var(--mut)}
+.status-row b{margin-inline-start:auto;color:var(--fg);font-size:11px}
+
 /* ═══════════ نمودار ═══════════ */
 .chart-wrap{position:relative}
 .chart{display:block;width:100%;height:170px;overflow:visible}

@@ -436,7 +436,7 @@
             height: 120%;
             top: calc(100% - (var(--remaining-percent) * 1%));
             min-height: 18%;
-            background: linear-gradient(180deg, var(--accent) 0%, #2AA0CE 42%, var(--accent-2) 100%);
+            background: linear-gradient(180deg, var(--accent) 0%, color-mix(in oklab, var(--accent) 55%, var(--accent-2)) 42%, var(--accent-2) 100%);
             border-radius: 42% 48% 0 0;
             box-shadow: 0 -8px 24px rgba(var(--accent-rgb), .35), inset 0 12px 18px rgba(255,255,255,.1);
             transition: top .8s cubic-bezier(.2,.8,.2,1);
@@ -750,13 +750,21 @@
             overflow-y: auto;
             overflow-x: hidden;
             min-height: 60px;
-            align-items: center;
-            justify-content: center;
+            /* ⚠️ باگ قبلی: align/justify «center» باعث می‌شد وقتی آیتم‌ها از
+               ارتفاعِ کادر بیشتر می‌شدند، سرِ لیست (شامل دکمه‌ی کپی همه) و
+               تهِ لیست هر دو بیرون از ناحیه‌ی قابل‌اسکرول بریده می‌شدند —
+               با flex-start + min-height:0 اسکرول از اولین ردیف درست است */
+            align-items: stretch;
+            justify-content: flex-start;
+            flex: 1 1 auto;
+            min-height: 0;
             color: var(--text-muted);
             font-size: 13px;
             scrollbar-width: thin;
             scrollbar-color: rgba(var(--accent-rgb), 0.35) transparent;
         }
+        /* حالتِ خالی همچنان وسط‌چین بماند */
+        .action-dropdown-body > span { align-self: center; text-align: center; width: 100%; }
         .action-dropdown-body::-webkit-scrollbar { width: 5px; }
         .action-dropdown-body::-webkit-scrollbar-thumb {
             background: rgba(var(--accent-rgb), 0.35);
@@ -876,7 +884,7 @@
         .ip-copy-btn:hover { background: var(--accent); color: #06110F; }
 
         .copy-all-btn {
-            background: rgba(var(--accent-rgb), 0.15);
+            background: var(--surface);
             border: 1px solid rgba(var(--accent-rgb), 0.3);
             color: var(--text);
             padding: 8px 14px;
@@ -891,6 +899,12 @@
             width: 100%;
             transition: all 0.25s;
             flex-shrink: 0;
+            /* چسبان به بالای لیست — با هر تعداد کانفیگ همیشه دیده می‌شود */
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
         }
         .copy-all-btn:hover { background: var(--accent); color: #06110F; }
 
@@ -1063,32 +1077,6 @@
         .radar-progress-track { width: 100%; height: 6px; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
         .radar-progress-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.2s; }
         .radar-status { font-size: 11px; color: var(--text-muted); padding: 0 4px; min-height: 14px; }
-        .radar-table-wrap { width: 100%; overflow-x: auto; display: none; }
-        .radar-table-wrap.show { display: block; }
-        .radar-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-        .radar-table th { color: var(--text-muted); font-weight: 600; text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--border); }
-        html[dir="ltr"] .radar-table th { text-align: left; }
-        .radar-table td { color: var(--text); padding: 6px 8px; border-bottom: 1px solid var(--border); }
-        .radar-table tbody tr:last-child td { border-bottom: none; }
-        .radar-table tr.radar-row-best td { background: rgba(var(--accent-rgb), 0.12); color: var(--accent); font-weight: 700; }
-        .radar-port-tag { color: var(--text-muted); font-size: 10px; }
-        .radar-best { display: none; flex-direction: column; gap: 6px; width: 100%; }
-        .radar-best.show { display: flex; }
-        .radar-best-label { font-size: 11px; color: var(--text-muted); padding: 0 4px; }
-        .radar-best-row { display: flex; gap: 6px; align-items: center; width: 100%; }
-        .radar-best-input {
-            flex: 1; min-width: 0;
-            background: var(--surface-alt);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            color: var(--text);
-            font-size: 10px;
-            padding: 7px 10px;
-            direction: ltr;
-            text-overflow: ellipsis;
-        }
-        .radar-best-input:focus { outline: none; border-color: rgba(var(--accent-rgb), 0.4); }
-        .radar-best-note { font-size: 10px; color: var(--text-muted); padding: 0 4px; }
         /* ===== حالت روز — کارت اشتراک و حلقه‌ی درصد ===== */
         body.light-mode .subscription-card { border-color: rgba(var(--accent-rgb), 0.25); }
         body.light-mode .subscription-card.disconnected {
@@ -1150,16 +1138,32 @@
         .qr-big-remark { font-size: 12px; color: var(--text-muted); text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
         /* ===== ریسپانسیو (انتهای استایل تا بر قوانین پایه غلبه کند) ===== */
-        @media (min-width: 640px) {
-            body { max-width: 640px; }
-            .details-grid { grid-template-columns: repeat(4, 1fr); }
-            .subscription-card { padding: 26px; }
-            .days-left { font-size: 38px; }
+        /* دسکتاپ — دقیقاً هم‌رویکرد صفحه‌ی ساب قبلی: body بدون سقف عرض،
+           محتوا تا ۱۱۸۰px وسط‌چین و داشبورد گرید دوستونه (کارت اشتراک و
+           رادار و جزئیات و دکمه‌ها تمام‌عرض) */
+        @media (min-width: 769px) {
+            body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
+            .header, #screen-dashboard, #screen-download-apps { width: 100%; max-width: 1180px; margin-left: auto; margin-right: auto; }
+            .bottom-nav { max-width: 1180px; width: calc(100% - 48px); border: 1px solid var(--border); border-bottom: 0; border-radius: 18px 18px 0 0; }
+            #screen-dashboard { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; align-items: stretch; }
+            #screen-dashboard > .subscription-card { grid-column: 1/-1; }
+            #screen-dashboard > .stats-card { grid-column: 1; margin-bottom: 0; }
+            #screen-dashboard > .promo-card { grid-column: 2; margin-bottom: 0; height: 100%; }
+            #screen-dashboard > .radar-card,
+            #screen-dashboard > .action-dropdown-container { grid-column: 1/-1; }
+            #screen-dashboard > .details-grid { grid-column: 1/-1; grid-template-columns: repeat(4,minmax(0,1fr)); }
+            #screen-dashboard > .actions-grid { grid-column: 1/-1; gap: 12px; }
+            .subscription-card { min-height: 180px; padding: 28px 32px; }
+            .progress-circle { width: 132px; height: 132px; }
+            .days-left { font-size: 42px; }
+            .action-card { padding: 20px 10px; }
+            .action-label { font-size: 12px; }
         }
 
-        @media (min-width: 1024px) {
-            body { max-width: 760px; }
-            .subscription-card { padding: 30px; }
+        @media (min-width: 1200px) {
+            body { padding-left: 40px; padding-right: 40px; }
+            .header, #screen-dashboard, #screen-download-apps { max-width: 1280px; }
+            .bottom-nav { max-width: 1280px; width: calc(100% - 80px); }
         }
 
         @media (max-width: 480px) {
@@ -1189,8 +1193,6 @@
             .ip-address-text { font-size: 12px; }
             .action-dropdown-container { padding: 12px; }
             .action-dropdown-menu { padding: 12px; max-height: 82vh; }
-            .radar-best-row { flex-wrap: wrap; }
-            .radar-table { font-size: 10px; }
         }
 
         @media (max-width: 360px) {
@@ -1206,6 +1208,7 @@
 
     <svg style="position: absolute; width: 0; height: 0;" width="0" height="0">
         <defs>
+            <!-- گرادیانِ آیکنِ سلام — هم‌خانواده‌ی پالت پنل (تیل/فیروزه‌ای)، نامِ id برای سازگاری حفظ شده -->
             <linearGradient id="premiumPurpleNeon" x1="0%" y1="0%" x2="0%" y2="100%">
                 <stop offset="0%" stop-color="#5EEAD4"/>
                 <stop offset="50%" stop-color="#2DD4BF"/>
@@ -1284,7 +1287,7 @@
         <div class="stats-card">
             <div class="stat-item">
                 <div class="stat-header-row">
-                    <div class="stat-icon-wrapper"><i class="fa-solid fa-database" style="color: #4C8DFF;"></i></div>
+                    <div class="stat-icon-wrapper"><i class="fa-solid fa-database" style="color: var(--accent-2);"></i></div>
                     <div class="stat-title" id="title-limit">حجم کلی</div>
                 </div>
                 <div class="stat-value purple-value en-font" id="stat-limit">0 GB</div>
@@ -1292,7 +1295,7 @@
             <div class="stat-divider"></div>
             <div class="stat-item">
                 <div class="stat-header-row">
-                    <div class="stat-icon-wrapper"><i class="fa-solid fa-chart-pie" style="color: #2DD4BF;"></i></div>
+                    <div class="stat-icon-wrapper"><i class="fa-solid fa-chart-pie" style="color: var(--accent);"></i></div>
                     <div class="stat-title" id="title-total">مصرف کل</div>
                 </div>
                 <div class="stat-value en-font" id="stat-total-val">0 B</div>
@@ -1300,7 +1303,7 @@
             <div class="stat-divider"></div>
             <div class="stat-item">
                 <div class="stat-header-row">
-                    <div class="stat-icon-wrapper"><i class="fa-solid fa-arrow-down" style="color: #4C8DFF;"></i></div>
+                    <div class="stat-icon-wrapper"><i class="fa-solid fa-arrow-down" style="color: var(--accent-2);"></i></div>
                     <div class="stat-title" id="title-download">دانلود</div>
                 </div>
                 <div class="stat-value en-font" id="stat-dl-val">0 B</div>
@@ -1308,7 +1311,7 @@
             <div class="stat-divider"></div>
             <div class="stat-item">
                 <div class="stat-header-row">
-                    <div class="stat-icon-wrapper"><i class="fa-solid fa-arrow-up" style="color: #F4A94A;"></i></div>
+                    <div class="stat-icon-wrapper"><i class="fa-solid fa-arrow-up" style="color: var(--warn);"></i></div>
                     <div class="stat-title" id="title-upload">آپلود</div>
                 </div>
                 <div class="stat-value en-font" id="stat-ul-val">0 B</div>
@@ -1341,30 +1344,6 @@
                 <div class="radar-progress-bar" id="radar-progress-bar"></div>
             </div>
             <div class="radar-status" id="radar-status">آماده برای اسکن</div>
-            <div class="radar-table-wrap" id="radar-table-wrap">
-                <table class="radar-table">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>IP</th>
-                            <th id="radar-th-ping">تأخیر</th>
-                            <th id="radar-th-jitter">جیتر</th>
-                            <th id="radar-th-loss">لاس٪</th>
-                        </tr>
-                    </thead>
-                    <tbody id="radar-results-body"></tbody>
-                </table>
-            </div>
-            <div class="radar-best" id="radar-best">
-                <div class="radar-best-label" id="radar-best-label">کانفیگ بهترین آی‌پی</div>
-                <div class="radar-best-row">
-                    <input type="text" class="radar-best-input en-font" id="radar-best-link" readonly value="">
-                    <button class="ip-copy-btn" id="radar-copy-btn">
-                        <i class="fa-solid fa-copy"></i> <span id="radar-copy-label">کپی</span>
-                    </button>
-                </div>
-                <div class="radar-best-note" id="radar-best-note"></div>
-            </div>
         </div>
 
         <!-- گرید جزئیات -->
@@ -1422,7 +1401,7 @@
                     <button class="dropdown-close-btn" id="close-qr-dropdown"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <div class="action-dropdown-body" id="list-qr-ips">
-                    <span style="color:#6c6c8c;" id="qr-empty-msg">خالی</span>
+                    <span style="color:var(--text-muted);" id="qr-empty-msg">خالی</span>
                 </div>
             </div>
         </div>
@@ -1434,7 +1413,7 @@
                     <button class="dropdown-close-btn" id="close-config-dropdown"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <div class="action-dropdown-body" id="list-config-ips">
-                    <span style="color:#6c6c8c;" id="config-empty-msg">خالی</span>
+                    <span style="color:var(--text-muted);" id="config-empty-msg">خالی</span>
                 </div>
             </div>
         </div>
@@ -1546,11 +1525,34 @@
         let liveRefreshTimer = null;
 
         // ===== توابع کمکی =====
+        /* نمایشِ دقیقِ باقی‌مانده — وقتی کمتر از یک روز مانده، ساعت و دقیقه هم نشان داده می‌شود */
         function calculateDaysLeft(expireSeconds) {
             if (!expireSeconds || expireSeconds <= 0) return null;
             const now = Date.now();
             const diff = (expireSeconds * 1000) - now;
             return diff > 0 ? Math.ceil(diff / (1000 * 60 * 60 * 24)) : -1;
+        }
+
+        /* «۲ روز و ۵ ساعت» / «۷ ساعت و ۱۳ دقیقه» / «۴۵ دقیقه» —
+           برچسبِ واحدِ بزرگ (days-label) برای سازگاری با CSS حفظ می‌شود */
+        function formatRemainingText(expireSeconds, daysUnit, hourLabel, minuteLabel) {
+            if (!expireSeconds || expireSeconds <= 0) return null;
+            const diff = (expireSeconds * 1000) - Date.now();
+            if (diff <= 0) return null;
+            const totalMin = Math.max(1, Math.ceil(diff / 60000));
+            const days = Math.floor(totalMin / 1440);
+            const hours = Math.floor((totalMin % 1440) / 60);
+            const mins = totalMin % 60;
+            if (days >= 2) return days + ' ' + (daysUnit || 'روز');
+            if (days >= 1) {
+                if (hours > 0) return days + ' ' + (daysUnit || 'روز') + ' و ' + hours + ' ' + (hourLabel || 'ساعت');
+                return days + ' ' + (daysUnit || 'روز');
+            }
+            if (hours >= 1) {
+                if (mins > 0) return hours + ' ' + (hourLabel || 'ساعت') + ' و ' + mins + ' ' + (minuteLabel || 'دقیقه');
+                return hours + ' ' + (hourLabel || 'ساعت');
+            }
+            return mins + ' ' + (minuteLabel || 'دقیقه');
         }
 
         function generateExpiryDates(expireSeconds) {
@@ -1606,10 +1608,10 @@
             updateConnectionStatus();
         }
 
-        /* لینک‌های رسمی — بررسی‌شده:
+        /* لینک‌های رسمی — همه با iTunes Lookup API و HTTP 200 بررسی شدند:
            V2Box: dev.hexasoftware.v2box (Play) / id6446814690 (App Store)
            Hiddify: app.hiddify.com (Play) / id6596777532 (App Store)
-           sing-box: io.nekohasekai.sfa (Play) / id6447586568 (App Store) */
+           Streisand: id6450534064 (App Store) — کلاینت sing-box/xray اپل */
         const appDownloadLinks = {
             android: {
                 c1: { name: "V2Box", url: "https://play.google.com/store/apps/details?id=dev.hexasoftware.v2box" },
@@ -1619,7 +1621,7 @@
             ios: {
                 c1: { name: "V2Box", url: "https://apps.apple.com/us/app/v2box-v2ray-client/id6446814690" },
                 c2: { name: "Hiddify", url: "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532" },
-                c3: { name: "sing-box", url: "https://apps.apple.com/us/app/sing-box/id6447586568" }
+                c3: { name: "Streisand", url: "https://apps.apple.com/us/app/streisand/id6450534064" }
             },
             desktop: {
                 c1: { name: "v2rayN (Windows)", url: "https://github.com/2dust/v2rayN/releases" },
@@ -1639,16 +1641,16 @@
             fa: {
                 dir: "rtl", greet: "سلام ", badgeActive: "فعال", badgeInactive: "غیرفعال",
                 badgeBlocked: "مسدود", badgeExpired: "منقضی", badgeLimit: "اتمام حجم", badgeDailyLimit: "سهمیه روزانه",
-                daysUnit: "روز", remainingLabel: "باقی‌مانده", titleLimit: "حجم کلی", titleTotal: "مصرف کل",
+                daysUnit: "روز", hoursUnit: "ساعت", minutesUnit: "دقیقه", remainingLabel: "باقی‌مانده", titleLimit: "حجم کلی", titleTotal: "مصرف کل",
                 titleDownload: "دانلود", titleUpload: "آپلود",
                 detailTotal: "مصرف کل", detailRemaining: "باقی‌مانده", detailRemainingVolume: "حجم باقی‌مانده", detailLastConnect: "آخرین اتصال",
                 actionRenew: "تمدید ساب", actionCopy: "کپی لینک ساب", actionCopied: "کپی شد!",
-                actionQr: "QR Code", actionConfig: "کپی کانفیگ", copyAllBtn: "کپی همه کانفیگ‌ها",
+                actionQr: "دیدن QR کد", actionConfig: "کپی کانفیگ", copyAllBtn: "کپی همه کانفیگ‌ها",
                 navDashboard: "<i class='fa-solid fa-house'></i>داشبورد", navDownload: "<i class='fa-solid fa-download'></i>دانلود برنامه",
                 dlScreenTitle: "دانلود برنامه ها", dlSubtitle: "کلاینت رسمی فروشگاه", btnDl: "دانلود",
                 tabAndroid: "اندروید", tabIos: "آیفون / آیپد", tabDesktop: "ویندوز / مک",
                 expiredText: "منقضی", unlimitedText: "نامحدود", emptyConfigs: "خالی", copyBtnText: "کپی",
-                showQrText: "نمایش QR کد",
+                showQrText: "دیدن QR کد",
                 lastConnectUnknown: "--", onlineText: "آنلاین", offlineText: "آفلاین",
                 promoText: "آیا نیاز به <span>خرید</span> یا <span>تمدید ساب</span> دارید؟<br>با پشتیبانی تماس بگیرید.",
                 promoTelegram: "تلگرام",
@@ -1656,17 +1658,18 @@
                 radarStart: "شروع اسکن", radarStop: "توقف", radarStatusReady: "آماده برای اسکن",
                 radarStatusScan: "در حال اسکن... {done} از {total} - یافت‌شده: {found}",
                 radarStatusDone: "پایان اسکن - {found} آی‌پی سالم یافت شد",
+                radarStatusSaving: "در حال ذخیره در پنل...", radarStatusSaved: "{count} آی‌پی تمیز ذخیره و روی کانفیگ‌های شما اعمال شد", radarStatusSaveFail: "ذخیره‌ی آی‌پی‌ها در پنل ناموفق بود",
+                radarStatusVerify: "تأیید نهایی در مرورگر... {done} از {total}",
+                radarStatusStopping: "در حال توقف...", radarStatusStopped: "اسکن متوقف شد",
                 radarStatusNoTlsPort: "هیچ پورت TLS قابل‌اسکنی در کانفیگ‌ها یافت نشد",
                 radarStatusNoResult: "آی‌پی سالمی یافت نشد",
                 radarStatusNoConfig: "کانفیگ vless در این ساب یافت نشد",
-                radarThPing: "تأخیر", radarThJitter: "جیتر", radarThLoss: "لاس٪",
-                radarBestLabel: "کانفیگ بهترین آی‌پی", radarBestNote: "پورت برتر: {port}",
                 qrModalTitle: "QR Code", configModalTitle: "کپی کانفیگ"
             },
             en: {
                 dir: "ltr", greet: "Hello ", badgeActive: "Active", badgeInactive: "Inactive",
                 badgeBlocked: "Blocked", badgeExpired: "Expired", badgeLimit: "Quota Used", badgeDailyLimit: "Daily Limit",
-                daysUnit: "Days", remainingLabel: "Remaining", titleLimit: "Total Limit", titleTotal: "Total Usage",
+                daysUnit: "Days", hoursUnit: "h", minutesUnit: "min", remainingLabel: "Remaining", titleLimit: "Total Limit", titleTotal: "Total Usage",
                 titleDownload: "Download", titleUpload: "Upload",
                 detailTotal: "Total Usage", detailRemaining: "Remaining", detailRemainingVolume: "Remaining Volume", detailLastConnect: "Last Connect",
                 actionRenew: "Renew", actionCopy: "Copy Sub Link", actionCopied: "Copied!",
@@ -1675,7 +1678,7 @@
                 dlScreenTitle: "Download Clients", dlSubtitle: "Official Store Client", btnDl: "Get App",
                 tabAndroid: "Android", tabIos: "iPhone / iPad", tabDesktop: "Win / Mac",
                 expiredText: "Expired", unlimitedText: "Unlimited", emptyConfigs: "Empty", copyBtnText: "Copy",
-                showQrText: "Show QR Code",
+                showQrText: "View QR Code",
                 lastConnectUnknown: "--", onlineText: "Online", offlineText: "Offline",
                 promoText: "Need to <span>buy</span> or <span>renew</span> your subscription?<br>Contact support.",
                 promoTelegram: "Telegram",
@@ -1683,17 +1686,18 @@
                 radarStart: "Start Scan", radarStop: "Stop", radarStatusReady: "Ready to scan",
                 radarStatusScan: "Scanning... {done} of {total} - found: {found}",
                 radarStatusDone: "Scan finished - {found} healthy IPs found",
+                radarStatusSaving: "Saving to panel...", radarStatusSaved: "{count} clean IPs saved and applied to your configs", radarStatusSaveFail: "Failed to save IPs to the panel",
+                radarStatusVerify: "Verifying in browser... {done} of {total}",
+                radarStatusStopping: "Stopping...", radarStatusStopped: "Scan stopped",
                 radarStatusNoTlsPort: "No probeable TLS port found in configs",
                 radarStatusNoResult: "No healthy IP found",
                 radarStatusNoConfig: "No vless config found in this subscription",
-                radarThPing: "Ping", radarThJitter: "Jitter", radarThLoss: "Loss%",
-                radarBestLabel: "Best IP config", radarBestNote: "Winning port: {port}",
                 qrModalTitle: "QR Code", configModalTitle: "Copy Config"
             },
             tr: {
                 dir: "ltr", greet: "Merhaba ", badgeActive: "Aktif", badgeInactive: "Pasif",
                 badgeBlocked: "Engellendi", badgeExpired: "Süresi Doldu", badgeLimit: "Kota Bitti", badgeDailyLimit: "Günlük Limit",
-                daysUnit: "Gün", remainingLabel: "Kalan", titleLimit: "Toplam Kota", titleTotal: "Toplam",
+                daysUnit: "Gün", hoursUnit: "sa", minutesUnit: "dk", remainingLabel: "Kalan", titleLimit: "Toplam Kota", titleTotal: "Toplam",
                 titleDownload: "İndirme", titleUpload: "Yükleme",
                 detailTotal: "Toplam", detailRemaining: "Kalan", detailRemainingVolume: "Kalan Hacim", detailLastConnect: "Son Bağlantı",
                 actionRenew: "Yenile", actionCopy: "Sub Linki Kopyala", actionCopied: "Kopyalandı!",
@@ -1702,7 +1706,7 @@
                 dlScreenTitle: "Uygulamaları İndir", dlSubtitle: "Resmi Mağaza İstemcisi", btnDl: "İndir",
                 tabAndroid: "Android", tabIos: "iPhone / iPad", tabDesktop: "Win / Mac",
                 expiredText: "Süresi Doldu", unlimitedText: "Sınırsız", emptyConfigs: "Boş", copyBtnText: "Kopyala",
-                showQrText: "QR Kodu Göster",
+                showQrText: "QR Kodu Görüntüle",
                 lastConnectUnknown: "--", onlineText: "Çevrimiçi", offlineText: "Çevrimdışı",
                 promoText: "Aboneliğinizi <span>satın</span> veya <span>yenile</span> mi gerekiyor?<br>Destek ile iletişime geçin.",
                 promoTelegram: "Telegram",
@@ -1710,17 +1714,18 @@
                 radarStart: "Taramayı Başlat", radarStop: "Durdur", radarStatusReady: "Taramaya hazır",
                 radarStatusScan: "Taranıyor... {done} / {total} - bulunan: {found}",
                 radarStatusDone: "Tarama bitti - {found} sağlıklı IP bulundu",
+                radarStatusSaving: "Panele kaydediliyor...", radarStatusSaved: "{count} temiz IP kaydedildi ve yapılandırmalarınıza uygulandı", radarStatusSaveFail: "IP'ler panele kaydedilemedi",
+                radarStatusVerify: "Tarayıcıda doğrulanıyor... {done} / {total}",
+                radarStatusStopping: "Durduruluyor...", radarStatusStopped: "Tarama durduruldu",
                 radarStatusNoTlsPort: "Yapılandırmalarda taranabilir TLS portu bulunamadı",
                 radarStatusNoResult: "Sağlıklı IP bulunamadı",
                 radarStatusNoConfig: "Bu abonelikte vless konfigi bulunamadı",
-                radarThPing: "Gecikme", radarThJitter: "Jitter", radarThLoss: "Kayıp%",
-                radarBestLabel: "En iyi IP konfigi", radarBestNote: "Kazanan port: {port}",
                 qrModalTitle: "QR Kodu", configModalTitle: "Konfig Kopyala"
             },
             ar: {
                 dir: "rtl", greet: "أهلاً ", badgeActive: "نشط", badgeInactive: "غير نشط",
                 badgeBlocked: "محجوب", badgeExpired: "منتهي", badgeLimit: "انتهت الحصة", badgeDailyLimit: "الحصة اليومية",
-                daysUnit: "يوم", remainingLabel: "المتبقي", titleLimit: "الحجم الكلي", titleTotal: "الإجمالي",
+                daysUnit: "يوم", hoursUnit: "ساعة", minutesUnit: "دقيقة", remainingLabel: "المتبقي", titleLimit: "الحجم الكلي", titleTotal: "الإجمالي",
                 titleDownload: "تحميل", titleUpload: "رفع",
                 detailTotal: "الإجمالي", detailRemaining: "المتبقي", detailRemainingVolume: "الحجم المتبقي", detailLastConnect: "آخر اتصال",
                 actionRenew: "تجديد", actionCopy: "نسخ رابط الساب", actionCopied: "تم النسخ!",
@@ -1737,11 +1742,12 @@
                 radarStart: "بدء الفحص", radarStop: "إيقاف", radarStatusReady: "جاهز للفحص",
                 radarStatusScan: "جارٍ الفحص... {done} من {total} - تم العثور: {found}",
                 radarStatusDone: "انتهى الفحص - تم العثور على {found} آي‌بي سليم",
+                radarStatusSaving: "جارٍ الحفظ في اللوحة...", radarStatusSaved: "تم حفظ {count} آي‌بي نظيف وتطبيقه على تكويناتك", radarStatusSaveFail: "فشل حفظ عناوين IP في اللوحة",
+                radarStatusVerify: "التحقق في المتصفح... {done} من {total}",
+                radarStatusStopping: "جارٍ الإيقاف...", radarStatusStopped: "تم إيقاف الفحص",
                 radarStatusNoTlsPort: "لم يتم العثور على منفذ TLS قابل للفحص في الإعدادات",
                 radarStatusNoResult: "لا يوجد آي‌بي سليم",
                 radarStatusNoConfig: "لا يوجد تكوين vless في هذا الاشتراك",
-                radarThPing: "زمن الاستجابة", radarThJitter: "الاهتزاز", radarThLoss: "الفقد٪",
-                radarBestLabel: "تكوين أفضل آي‌بي", radarBestNote: "المنفذ الفائز: {port}",
                 qrModalTitle: "رمز QR", configModalTitle: "نسخ التكوين"
             }
         };
@@ -1848,10 +1854,10 @@
         }
 
         function getColorForPercentage(percent) {
-            if (percent >= 75) return '#2DD4BF';
-            if (percent >= 50) return '#F4A94A';
-            if (percent >= 25) return '#F4A94A';
-            return '#F0655F';
+            if (percent >= 75) return 'var(--accent)';
+            if (percent >= 50) return 'var(--warn)';
+            if (percent >= 25) return 'var(--warn)';
+            return 'var(--alert)';
         }
 
         function renderPanelData() {
@@ -1867,11 +1873,22 @@
             `;
 
             if (sanaeiClientData.daysLeft === -1) {
-                document.getElementById("live-days-count").innerHTML = `<span style="font-size:22px; color:#F0655F;">${data.expiredText}</span>`;
+                document.getElementById("live-days-count").innerHTML = `<span style="font-size:22px; color:var(--alert);">${data.expiredText}</span>`;
             } else if (sanaeiClientData.daysLeft === null) {
                 document.getElementById("live-days-count").innerHTML = `<span style="font-size:22px;">${data.unlimitedText}</span>`;
             } else {
-                document.getElementById("live-days-count").innerHTML = `${sanaeiClientData.daysLeft} <span id="days-label">${data.daysUnit}</span>`;
+                /* باقی‌ماندهٔ دقیق — کمتر از یک روز: ساعت و دقیقه هم نمایش داده می‌شود */
+                const remainText = formatRemainingText(
+                    sanaeiClientData.expireSeconds,
+                    data.daysUnit,
+                    data.hoursUnit || 'ساعت',
+                    data.minutesUnit || 'دقیقه'
+                );
+                if (remainText && sanaeiClientData.daysLeft < 2) {
+                    document.getElementById("live-days-count").innerHTML = `<span style="font-size:20px;" class="en-font" dir="auto">${remainText}</span>`;
+                } else {
+                    document.getElementById("live-days-count").innerHTML = `${sanaeiClientData.daysLeft} <span id="days-label">${data.daysUnit}</span>`;
+                }
             }
 
             document.getElementById("stat-limit").innerText = sanaeiClientData.totalByte > 0 ? formatBytes(sanaeiClientData.totalByte) : data.unlimitedText;
@@ -2155,24 +2172,24 @@
                 const flagUrl = flagInfo.countryCode !== 'unknown' ? `https://flagcdn.com/w80/${flagInfo.countryCode}.png` : '';
                 const flagHtml = flagUrl
                     ? `<div class="action-mini-flag" style="background-image: url('${flagUrl}');"></div>`
-                    : `<div class="action-mini-flag" style="background: #2C2C3E; display: flex; align-items: center; justify-content: center; color: #6c6c8c;"><i class="fa-solid fa-globe"></i></div>`;
+                    : `<div class="action-mini-flag" style="background: var(--surface-alt); display: flex; align-items: center; justify-content: center; color: var(--text-muted);"><i class="fa-solid fa-globe"></i></div>`;
 
                 const protocolDetails = getProtocolDetails(parsed.link);
                 const encoded = encodeURIComponent(parsed.link);
+                /* خواسته‌ی کاربر: در بخش QR هیچ ردیفِ تصویرِ کوچک و هیچ دکمه‌ی
+                   «نمایش» جداگانه وجود ندارد — فقط یک دکمه‌ی «دیدن QR کد» که
+                   نمایشگرِ بزرگ را باز می‌کند */
                 const item = document.createElement("div");
                 item.className = "ip-row-item";
                 item.innerHTML = `
                     <div class="ip-row-top">
                         <div class="ip-details-left">
                             ${flagHtml}
-                            <div class="qr-modern-wrapper">
-                                <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encoded}" alt="QR" loading="lazy" />
-                            </div>
                             <div class="ip-meta-block">
                                 <div class="ip-address-text en-font">${parsed.remark || parsed.host}</div>
                             </div>
                         </div>
-                        <button class="ip-copy-btn" data-qr-link="${encodeURIComponent(parsed.link)}">
+                        <button class="ip-copy-btn" data-qr-link="${encoded}">
                             <i class="fa-solid fa-qrcode"></i> ${data.showQrText}
                         </button>
                     </div>
@@ -2195,7 +2212,7 @@
                 const flagUrl = flagInfo.countryCode !== 'unknown' ? `https://flagcdn.com/w80/${flagInfo.countryCode}.png` : '';
                 const flagHtml = flagUrl
                     ? `<div class="action-mini-flag" style="background-image: url('${flagUrl}');"></div>`
-                    : `<div class="action-mini-flag" style="background: #2C2C3E; display: flex; align-items: center; justify-content: center; color: #6c6c8c;"><i class="fa-solid fa-globe"></i></div>`;
+                    : `<div class="action-mini-flag" style="background: var(--surface-alt); display: flex; align-items: center; justify-content: center; color: var(--text-muted);"><i class="fa-solid fa-globe"></i></div>`;
 
                 const protocolDetails = getProtocolDetails(parsed.link);
                 const item = document.createElement("div");
@@ -2223,8 +2240,8 @@
                     const textToCopy = decodeURIComponent(this.getAttribute('data-config-text'));
                     navigator.clipboard.writeText(textToCopy).then(() => {
                         this.innerHTML = `<i class="fa-solid fa-check"></i> ${data.actionCopied}`;
-                        this.style.background = "#22C55E";
-                        this.style.color = "#fff";
+                        this.style.background = "var(--accent)";
+                        this.style.color = "var(--bg)";
                         setTimeout(() => {
                             this.innerHTML = `<i class="fa-solid fa-copy"></i> ${data.copyBtnText}`;
                             this.style.background = "";
@@ -2240,8 +2257,8 @@
             configContainer.innerHTML = "";
 
             if (links.length === 0) {
-                qrContainer.innerHTML = `<span style="color:#6c6c8c;" id="qr-empty-msg">${data.emptyConfigs}</span>`;
-                configContainer.innerHTML = `<span style="color:#6c6c8c;" id="config-empty-msg">${data.emptyConfigs}</span>`;
+                qrContainer.innerHTML = `<span style="color:var(--text-muted);" id="qr-empty-msg">${data.emptyConfigs}</span>`;
+                configContainer.innerHTML = `<span style="color:var(--text-muted);" id="config-empty-msg">${data.emptyConfigs}</span>`;
             } else {
                 const copyAllBtn = document.createElement("button");
                 copyAllBtn.className = "copy-all-btn";
@@ -2250,7 +2267,7 @@
                     const allLinks = links.join('\n');
                     navigator.clipboard.writeText(allLinks).then(() => {
                         this.innerHTML = `<i class="fa-solid fa-check"></i> ${data.actionCopied}`;
-                        this.style.background = "#22C55E";
+                        this.style.background = "var(--accent)";
                         setTimeout(() => {
                             this.innerHTML = `<i class="fa-solid fa-copy"></i> ${data.copyAllBtn}`;
                             this.style.background = "";
@@ -2310,11 +2327,6 @@
             document.getElementById("config-modal-title").innerText = data.configModalTitle;
             document.getElementById("radar-title").innerText = data.radarTitle;
             document.getElementById("radar-hint").innerText = data.radarHint;
-            document.getElementById("radar-th-ping").innerText = data.radarThPing;
-            document.getElementById("radar-th-jitter").innerText = data.radarThJitter;
-            document.getElementById("radar-th-loss").innerText = data.radarThLoss;
-            document.getElementById("radar-best-label").innerText = data.radarBestLabel;
-            document.getElementById("radar-copy-label").innerText = data.copyBtnText;
             if (!radarRunning) {
                 document.getElementById("radar-start-label").innerText = data.radarStart;
                 document.getElementById("radar-status").innerText = data.radarStatusReady;
@@ -2344,7 +2356,7 @@
             navigator.clipboard.writeText(linkToCopy).then(() => {
                 const labelNode = document.getElementById("action-copy");
                 labelNode.innerText = data.actionCopied;
-                labelNode.style.color = "#22C55E";
+                labelNode.style.color = "var(--accent)";
                 setTimeout(() => {
                     labelNode.innerText = data.actionCopy;
                     labelNode.style.color = "";
@@ -2396,17 +2408,63 @@
             document.getElementById('title-client3').innerText = data.c3.name;
             document.getElementById('btn-dl-client3').href = data.c3.url;
             document.getElementById('sub-client3').innerText = currentLocale.dlSubtitle;
+            /* آیکن کارت سوم per-OS: sing-box اندروید / Streisand آیفون / NekoRay دسکتاپ */
+            const c3Icon = { android: 'fa-box-open', ios: 'fa-bars-staggered', desktop: 'fa-window-maximize' }[os] || 'fa-box-open';
+            const c3El = document.getElementById('icon-client3');
+            if (c3El) c3El.className = 'fa-solid ' + c3Icon;
 
             document.querySelectorAll('.client-download-btn').forEach(btn => {
                 btn.innerText = currentLocale.btnDl;
             });
         }
 
-        const RADAR_TIMEOUT = 2000;
-        const RADAR_PROBES = 3;
-        const RADAR_CONCURRENCY = 12;
-        const RADAR_IP_COUNT = 140;
-        const RADAR_KEEP = 8;
+        /* ⚠️ رنج‌های رسمیِ کلودفلر (cloudflare.com/ips-v4) — رنجِ قبلی
+           «172.0.0.0/8» غلط بود: 172.0–172.63 اصلاً کلودفلر نیست و بخشی از آن
+           حتی رنجِ خصوصی است؛ به همین دلیل اسکن نتیجه‌ی درست نمی‌داد.
+           رنج 104.16.0.0/13 هم که قبلاً کامل اسکن می‌شد (104.0–104.255) شامل
+           ۱۲۸ بلاکِ غیر-CF بود. حالا دقیقاً رنج‌های رسمی اسکن می‌شوند. */
+        const CF_RANGES = [
+            ['104.16.', 0, 255], ['104.17.', 0, 255], ['104.18.', 0, 255], ['104.19.', 0, 255],
+            ['104.20.', 0, 255], ['104.21.', 0, 255], ['104.22.', 0, 255], ['104.23.', 0, 255],
+            ['104.24.', 0, 255], ['104.25.', 0, 255], ['104.26.', 0, 255], ['104.27.', 0, 255],
+            ['104.28.', 0, 255], ['104.29.', 0, 255], ['104.30.', 0, 255], ['104.31.', 0, 255],
+            ['172.64.', 0, 255], ['172.65.', 0, 255], ['172.66.', 0, 255], ['172.67.', 0, 255],
+            ['172.68.', 0, 255], ['172.69.', 0, 255], ['172.70.', 0, 255], ['172.71.', 0, 255],
+            ['162.158.', 0, 255],
+            ['188.114.96.', 0, 15], ['188.114.97.', 0, 15], ['188.114.98.', 0, 15], ['188.114.99.', 0, 15],
+            ['108.162.192.', 0, 255], ['108.162.193.', 0, 255], ['108.162.194.', 0, 255], ['108.162.195.', 0, 255],
+            ['141.101.64.', 0, 255], ['141.101.65.', 0, 255], ['141.101.66.', 0, 255], ['141.101.67.', 0, 255],
+            ['190.93.240.', 0, 255], ['197.234.240.', 0, 3], ['131.0.72.', 0, 7],
+            ['173.245.48.', 0, 255], ['103.21.244.', 0, 7], ['103.22.200.', 0, 7], ['103.31.4.', 0, 7],
+        ];
+        const RADAR_PORTS = [443, 8443, 2053, 2083, 2087, 2096];
+        /* پروب با fetch + فیلترِ تأخیر — روشِ اسکنرهای مرجع (IRCF و…):
+           – fetch روی https://IP همیشه خطای گواهی می‌دهد؛ اما «سرعتِ رسیدنِ خطا»
+             خودش سیگنال است: لبه‌ی زنده‌ی کلودفلر بلافاصله RST/خطا می‌دهد.
+           – خطای سریع‌تر از RADAR_MIN_RTT = پاسخِ جعلی/بازپخشِ محلی (فیلترشکن روشن)
+             → مردود؛ کندتر از تایم‌اوت → آی‌پی مرده → مردود. */
+        const RADAR_TIMEOUT = 1200;
+        const RADAR_MIN_RTT = 60;      /* میلی‌ثانیه — کمتر از این = جعلی */
+        const RADAR_PROBES = 2;
+        /* ⚠️ تعداد اسکن ۱۰۲۴ شد (قبلاً ۱۸۰ بود) — برای پوششِ کاملِ فضای آی‌پی،
+           همروندی هم بالا رفت تا اسکن در مدتِ معقول تمام شود. */
+        const RADAR_CONCURRENCY = 48;
+        const RADAR_IP_COUNT = 1024;
+        /* تعداد آی‌پی‌هایی که باید ذخیره شود = سقف کانفیگِ همین کاربر
+           (maxConfigs یا nodeLimit پنل) — از ورکر با placeholder می‌آید؛
+           اگر نبود، مقدارِ قبلی (۸) پیش‌فرض می‌ماند. */
+        /* ═══ خواسته‌ی کاربر: به‌محضِ رسیدن به ۵ آی‌پیِ تمیز، اسکن «موفق» قطع شود ═══
+           قبلاً اسکن تا ۱۰۲۴ آی‌پی ادامه می‌یافت و حتی وقتی «چند آی‌پی پیدا شد»
+           نشان داده می‌شد، در پایان به‌عنوانِ ناموفق/بی‌نتیجه تمام می‌شد و اقداماتِ
+           بعد از اسکن هم اجرا نمی‌شد. حالا هر worker با رسیدنِ تعدادِ لازم متوقف
+           می‌شود؛ در نهایتِ اسکنِ موفق، تأییدِ مجدد → ذخیره در پنل → به‌روزرسانیِ
+           کانفیگ‌ها انجام می‌شود. تعدادِ لازم = سقفِ کانفیگِ این کاربر
+           (maxConfigs یا nodeLimit پنل) که از ورکر با placeholder می‌آید؛ اگر
+           جایگزین نشده یا نامعتبر است، پیش‌فرضِ ۵ استفاده می‌شود. */
+        const RADAR_KEEP = (() => {
+            const n = parseInt("__NODE_LIMIT__", 10);
+            return (n > 0 && n <= 100) ? n : 5;
+        })();
 
         let radarRunning = false;
         let radarCancelRequested = false;
@@ -2417,25 +2475,30 @@
             return r[0] + c + '.' + Math.floor(Math.random() * 256);
         }
 
-        // هم onload و هم onerror یعنی «هاست جواب داد»؛ ما دسترسی و تأخیر را می‌سنجیم نه موفقیت تصویر.
+        // پروب با fetch — خطای گواهیِ سریع یعنی لبه‌ی زنده؛ تایم‌اوت یعنی مرده.
+        // (در Image قبلی، RST آنیِ فیلترشکن/مسیرِ مسدود هم «زنده» حساب می‌شد.)
         function pingIp(ip, port, timeout) {
             return new Promise(function(res) {
                 const t0 = performance.now();
                 let done = false;
-                const img = new Image();
                 const fin = function(ok) {
                     if (done) return;
                     done = true;
-                    img.onload = img.onerror = null;
+                    try { ctrl.abort(); } catch (e) {}
                     res(ok ? Math.round(performance.now() - t0) : null);
                 };
+                const ctrl = new AbortController();
                 const timer = setTimeout(function() { fin(false); }, timeout);
-                /* پروب با Image: مرورگر برای https://IP گواهی معتبر ندارد و درخواست
-                   همیشه خطا می‌دهد — اما لحظه‌ی خطا یعنی handshake کامل شده (لبه‌ی زنده).
-                   fetch برخلاف آن روی همان خطای گواهی reject می‌شود و هیچ‌وقت جواب نمی‌دهد. */
-                img.onerror = function() { clearTimeout(timer); fin(true); };
-                img.onload = function() { clearTimeout(timer); fin(true); };
-                img.src = 'https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random();
+                fetch('https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random(), {
+                    signal: ctrl.signal,
+                    mode: 'cors',
+                    cache: 'no-store',
+                }).then(function(r) { fin(true); }).catch(function(err) {
+                    /* AbortError یعنی تایم‌اوت خودمان — مرده */
+                    if (err && err.name === 'AbortError') { fin(false); return; }
+                    /* بقیه‌ی خطاها (گواهی/CORS/رفض) یعنی TCP+TLS بسته شد و جواب آمد */
+                    fin(true);
+                });
             });
         }
 
@@ -2461,7 +2524,9 @@
                 for (let p = 0; p < RADAR_PROBES; p++) {
                     if (radarCancelRequested) return null;
                     const rtt = await pingIp(ip, port, RADAR_TIMEOUT);
-                    if (rtt !== null) samples.push(rtt);
+                    /* فیلترِ تأخیر: خطای سریع‌تر از RADAR_MIN_RTT پاسخِ جعلیِ محلی
+                       است (فیلترشکن روشن/بازپخش) — مثل اسکنرهای مرجع مردود می‌شود */
+                    if (rtt !== null && rtt >= RADAR_MIN_RTT) samples.push(rtt);
                 }
                 if (samples.length === 0) continue;
                 const avg = Math.round(samples.reduce(function(a, b) { return a + b; }, 0) / samples.length);
@@ -2472,67 +2537,15 @@
             return null;
         }
 
-        function radarRenderResults(list) {
-            const tbody = document.getElementById('radar-results-body');
-            tbody.innerHTML = '';
-            list.forEach(function(r, idx) {
-                const tr = document.createElement('tr');
-                if (idx === 0) tr.className = 'radar-row-best';
-                tr.innerHTML = '<td>' + (idx + 1) + '</td>' +
-                    '<td class="en-font">' + r.ip + '<span class="radar-port-tag">:' + r.port + '</span></td>' +
-                    '<td class="en-font">' + r.avg + ' ms</td>' +
-                    '<td class="en-font">' + r.jitter + '</td>' +
-                    '<td class="en-font">' + r.loss + '%</td>';
-                tbody.appendChild(tr);
-            });
-            document.getElementById('radar-table-wrap').classList.toggle('show', list.length > 0);
-        }
-
-        function radarFindVlessLink() {
-            const links = sanaeiClientData.links || [];
-            for (let i = 0; i < links.length; i++) {
-                if (/^vless:\/\//i.test(links[i])) return links[i];
-            }
-            return null;
-        }
-
-        function radarBuildBestConfig(best) {
-            const data = locales[currentLang] || locales.fa;
-            const noteEl = document.getElementById('radar-best-note');
-            document.getElementById('radar-best').classList.add('show');
-            document.getElementById('radar-best-link').value = '';
-
-            const sourceLink = radarFindVlessLink();
-            if (!sourceLink) {
-                noteEl.textContent = data.radarStatusNoConfig;
-                return;
-            }
-            const uuidMatch = sourceLink.match(/^vless:\/\/([^@]+)@/i);
-            const queryStart = sourceLink.indexOf('?');
-            if (!uuidMatch || queryStart < 0) {
-                noteEl.textContent = data.radarStatusNoConfig;
-                return;
-            }
-            const uuid = uuidMatch[1];
-            const afterQuery = sourceLink.slice(queryStart + 1);
-            const hashIdx = afterQuery.indexOf('#');
-            const query = hashIdx >= 0 ? afterQuery.slice(0, hashIdx) : afterQuery;
-
-            const parsed = parseConfigLink(sourceLink);
-            const baseName = (parsed.remark || sanaeiClientData.username || 'Sub').trim();
-            const newLink = 'vless://' + uuid + '@' + best.ip + ':' + best.port + '?' + query + '#' + encodeURIComponent(baseName + ' - Radar');
-
-            document.getElementById('radar-best-link').value = newLink;
-            noteEl.textContent = data.radarBestNote.replace('{port}', best.port);
-        }
-
         async function radarRun() {
             const data = locales[currentLang] || locales.fa;
             const statusEl = document.getElementById('radar-status');
             const startBtn = document.getElementById('radar-start-btn');
 
             if (radarRunning) {
+                /* توقف: بازخورد فوری — unwind حداکثر تا پایان پروب جاری (کمتر از ۱.۲ ثانیه) */
                 radarCancelRequested = true;
+                statusEl.textContent = data.radarStatusStopping;
                 return;
             }
 
@@ -2546,54 +2559,99 @@
             radarCancelRequested = false;
             startBtn.classList.add('running');
             document.getElementById('radar-start-label').textContent = data.radarStop;
-            document.getElementById('radar-best').classList.remove('show');
-            document.getElementById('radar-best-note').textContent = '';
-            document.getElementById('radar-results-body').innerHTML = '';
-            document.getElementById('radar-table-wrap').classList.remove('show');
             document.getElementById('radar-progress-bar').style.width = '0%';
             statusEl.textContent = data.radarStatusScan.replace('{done}', '0').replace('{total}', RADAR_IP_COUNT).replace('{found}', '0');
 
-            const ips = [];
-            for (let i = 0; i < RADAR_IP_COUNT; i++) ips.push(randCfIp());
+            /* try/finally: حتی اگر وسط اسکن خطایی رخ دهد radarRunning ریست می‌شود
+               و دکمه هرگز روی «توقف» قفل نمی‌ماند */
+            try {
+                const ips = [];
+                for (let i = 0; i < RADAR_IP_COUNT; i++) ips.push(randCfIp());
 
-            const results = [];
-            let cursor = 0;
-            let doneCount = 0;
+                const results = [];
+                let cursor = 0;
+                let doneCount = 0;
 
-            async function worker() {
-                while (cursor < ips.length) {
-                    if (radarCancelRequested) return;
-                    const ip = ips[cursor++];
-                    const res = await radarProbeIp(ip, ports);
-                    if (res) results.push(res);
-                    doneCount++;
-                    document.getElementById('radar-progress-bar').style.width = Math.round(doneCount / ips.length * 100) + '%';
-                    statusEl.textContent = data.radarStatusScan
-                        .replace('{done}', doneCount)
-                        .replace('{total}', ips.length)
-                        .replace('{found}', results.length);
+                async function worker() {
+                    while (cursor < ips.length) {
+                        /* هدفِ تعدادِ لازم قبلاً پر شده → توقفِ موفقِ همه‌ی workerها */
+                        if (results.length >= RADAR_KEEP) return;
+                        if (radarCancelRequested) return;
+                        const ip = ips[cursor++];
+                        const res = await radarProbeIp(ip, ports);
+                        if (res) results.push(res);
+                        doneCount++;
+                        document.getElementById('radar-progress-bar').style.width = Math.round(doneCount / ips.length * 100) + '%';
+                        statusEl.textContent = data.radarStatusScan
+                            .replace('{done}', doneCount)
+                            .replace('{total}', ips.length)
+                            .replace('{found}', results.length);
+                    }
                 }
+
+                const workers = [];
+                for (let w = 0; w < RADAR_CONCURRENCY; w++) workers.push(worker());
+                await Promise.all(workers);
+
+                /* اگر توقفِ دستی نبود ولی به هدفِ تعدادِ لازم رسیده‌ایم، اسکن «موفق» است */
+                if (radarCancelRequested && results.length < RADAR_KEEP) {
+                    /* توقف‌شده قبل از رسیدن به هدف — نتیجه‌ی ناقص به‌عنوان «پایان اسکن» جعل نمی‌شود */
+                    document.getElementById('radar-progress-bar').style.width = '0%';
+                    statusEl.textContent = data.radarStatusStopped;
+                    return;
+                }
+                radarCancelRequested = false;
+
+                /* ═══ نتیجه‌ی اسکن: مستقیم ذخیره می‌شود ═══
+                   هر آی‌پیِ «یافت‌شده» در همان لحظه با چند پروب و فیلترِ تأخیرِ
+                   اسکنر (RADAR_PROBES + RADAR_MIN_RTT) تأیید شده است؛ مرحله‌ی
+                   «تأییدِ دوباره» حذف شد چون پروبِ دوم می‌توانست همه را مرده نشان
+                   بدهد و نتیجه: با اینکه تعدادِ لازم آی‌پیِ تمیز پیدا شده بود، پیامِ
+                   «اسکن ناموفق / آی‌پی یافت نشد» می‌آمد و هیچ ذخیره‌ای انجام نمی‌شد. */
+                results.sort(function(a, b) { return a.score - b.score; });
+                const top = results.slice(0, RADAR_KEEP).map(function(r) { return r.ip; });
+
+                if (top.length === 0) {
+                    /* اسکنِ بی‌نتیجه — گزارش به پنل ارسال می‌شود تا لاگِ «ناموفق»
+                       ثبت شود (لاگ‌های اسکنِ ناموفق قبلاً هیچ‌جا ثبت نمی‌شدند). */
+                    statusEl.textContent = data.radarStatusNoResult;
+                    try {
+                        await fetch(sanaeiClientData.subUrl.replace(/\/$/, '') + '/radar-ips', {
+                            method: 'POST',
+                            headers: { 'content-type': 'application/json' },
+                            body: JSON.stringify({ ips: [] })
+                        });
+                    } catch (e2) {}
+                    return;
+                }
+
+                statusEl.textContent = data.radarStatusSaving;
+                try {
+                    const saveRes = await fetch(sanaeiClientData.subUrl.replace(/\/$/, '') + '/radar-ips', {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({ ips: top })
+                    });
+                    const sj = await saveRes.json().catch(() => ({}));
+                    if (saveRes.ok && sj.ok) {
+                        statusEl.textContent = data.radarStatusSaved
+                            .replace('{count}', sj.applied || top.length);
+                        /* کانفیگ‌های سابِ صفحه باید با آی‌پی‌های تازه دوباره لود شوند —
+                           ورکر بعد از ذخیره، ساب را با آی‌پی‌های تمیزِ جدید بازسازی کرده است */
+                        await fetchLiveSubscriptionData();
+                        renderAll();
+                    } else {
+                        statusEl.textContent = data.radarStatusSaveFail;
+                    }
+                } catch (e) {
+                    statusEl.textContent = data.radarStatusSaveFail;
+                }
+            } finally {
+                radarRunning = false;
+                radarCancelRequested = false;
+                startBtn.classList.remove('running');
+                document.getElementById('radar-start-label').textContent = data.radarStart;
             }
-
-            const workers = [];
-            for (let w = 0; w < RADAR_CONCURRENCY; w++) workers.push(worker());
-            await Promise.all(workers);
-
-            results.sort(function(a, b) { return a.score - b.score; });
-            const top = results.slice(0, RADAR_KEEP);
-            radarRenderResults(top);
-
-            if (top.length > 0) {
-                statusEl.textContent = data.radarStatusDone.replace('{found}', results.length);
-                radarBuildBestConfig(top[0]);
-            } else {
-                statusEl.textContent = data.radarStatusNoResult;
-            }
-
-            radarRunning = false;
-            radarCancelRequested = false;
-            startBtn.classList.remove('running');
-            document.getElementById('radar-start-label').textContent = data.radarStart;
         }
 
         /* دکمه‌ی باز کردنِ رادار حذف شده — کارت همیشه نمایان است */
@@ -2601,24 +2659,6 @@
         document.getElementById("radar-start-btn").addEventListener("click", function(e) {
             e.stopPropagation();
             radarRun();
-        });
-
-        document.getElementById("radar-copy-btn").addEventListener("click", function(e) {
-            e.stopPropagation();
-            const data = locales[currentLang] || locales.fa;
-            const value = document.getElementById('radar-best-link').value;
-            if (!value) return;
-            const label = document.getElementById('radar-copy-label');
-            navigator.clipboard.writeText(value).then(() => {
-                label.textContent = data.actionCopied;
-                this.style.background = "#22C55E";
-                this.style.color = "#fff";
-                setTimeout(() => {
-                    label.textContent = data.copyBtnText;
-                    this.style.background = "";
-                    this.style.color = "";
-                }, 2000);
-            });
         });
 
         // ===== راه‌اندازی اولیه =====
