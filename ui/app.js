@@ -1,11 +1,146 @@
 /* ═══════════════════════════════════════════════════════════════
-   پنل مدیریت — منطق سمت کلاینت
-   آیکون: Font Awesome 6  •  فونت: Vazirmatn + JetBrains Mono
+   Panel v4.0.0 — client logic
+   • Skin engine: modern / minecraft / cyberpunk / terminal (default: modern)
+   • Mode: dark / light (default: dark) • palettes per skin+mode
+   • Multi-language: fa / en / ar / ru / zh (auto-detected, RTL/LTR aware)
+   Icons: Font Awesome 6 • Fonts: Vazirmatn + JetBrains Mono
    ═══════════════════════════════════════════════════════════════ */
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const S = { token: sessionStorage.getItem('sg_t') || '', d: null, view: 'dash', tab: {}, sel: null, fmt: 'base64', range: 'd', q: '' };
+
+  /* ═══════════════════════════════════════════════════════════════
+     v4 — چندزبانه (i18n) • fa / en / ar / ru / zh
+     زبان در localStorage ذخیره می‌شود؛ پیش‌فرض زبانِ مرورگر است و اگر
+     پشتیبانی نشود فارسی. fa و ar راست‌به‌چپ‌اند؛ بقیه چپ‌به‌راست.
+     ═══════════════════════════════════════════════════════════════ */
+  const I18N = {
+    fa: { _dir: 'rtl', _name: 'فارسی',
+      skin: 'پوسته', mode: 'حالت رنگ', palette: 'پالت رنگی', appearance: 'ظاهر و زبان',
+      skinModern: 'مدرن', skinMinecraft: 'ماینکرفت', skinCyberpunk: 'سایبرپانک', skinTerminal: 'ترمینال',
+      skinModernD: 'طراحی مسطح امروزی', skinMinecraftD: 'بلوکی پیکسلی', skinCyberpunkD: 'نئون آینده‌نگر', skinTerminalD: 'کنسول سبز کلاسیک',
+      dark: 'تاریک', light: 'روشن', defaultSkin: 'مدرن',
+      langTitle: 'زبان', langFa: 'فارسی', langEn: 'English', langAr: 'العربية', langRu: 'Русский', langZh: '中文',
+      langNote: 'زبان رابط کاربری — بلافاصله اعمال می‌شود',
+      palNote: 'برای هر پوسته در هر حالت چند پالت رنگی هست — روی هر پالت کلیک کنید',
+      store: 'ذخیره‌سازی', users: 'کاربران', version: 'نسخه', panic: 'Panic', logout: 'خروج', searchPh: 'جستجو…',
+      navMain: 'اصلی', navDash: 'نمای کلی', navUsers: 'کاربران', navNetwork: 'شبکه', navConns: 'اتصال‌های زنده', navMonitor: 'آمار مصرف', navConfig: 'پیکربندی', navSub: 'لینک ساب', navSecurity: 'امنیت', navSystem: 'سیستم', navLogs: 'لاگ', navSettings: 'پشتیبان',
+    },
+    en: { _dir: 'ltr', _name: 'English',
+      skin: 'Skin', mode: 'Color mode', palette: 'Palette', appearance: 'Appearance & Language',
+      skinModern: 'Modern', skinMinecraft: 'Minecraft', skinCyberpunk: 'Cyberpunk', skinTerminal: 'Terminal',
+      skinModernD: 'Flat contemporary design', skinMinecraftD: 'Blocky pixel style', skinCyberpunkD: 'Neon futuristic', skinTerminalD: 'Classic green console',
+      dark: 'Dark', light: 'Light', defaultSkin: 'Modern',
+      langTitle: 'Language', langFa: 'فارسی', langEn: 'English', langAr: 'العربية', langRu: 'Русский', langZh: '中文',
+      langNote: 'UI language — applied immediately',
+      palNote: 'Each skin × mode has several color palettes — click to apply',
+      store: 'Storage', users: 'Users', version: 'Version', panic: 'Panic', logout: 'Logout', searchPh: 'Search…',
+      navMain: 'Main', navDash: 'Overview', navUsers: 'Users', navNetwork: 'Network', navConns: 'Live connections', navMonitor: 'Usage stats', navConfig: 'Configuration', navSub: 'Sub link', navSecurity: 'Security', navSystem: 'System', navLogs: 'Logs', navSettings: 'Backup',
+    },
+    ar: { _dir: 'rtl', _name: 'العربية',
+      skin: 'الغلاف', mode: 'نمط الألوان', palette: 'لوحة الألوان', appearance: 'المظهر واللغة',
+      skinModern: 'حديث', skinMinecraft: 'ماينكرافت', skinCyberpunk: 'سايبربانك', skinTerminal: 'طرفية',
+      skinModernD: 'تصميم عصري مسطح', skinMinecraftD: 'نمط بكسلي', skinCyberpunkD: 'نيون مستقبلي', skinTerminalD: 'كونسول أخضر كلاسيكي',
+      dark: 'داكن', light: 'فاتح', defaultSkin: 'حديث',
+      langTitle: 'اللغة', langFa: 'فارسی', langEn: 'English', langAr: 'العربية', langRu: 'Русский', langZh: '中文',
+      langNote: 'لغة الواجهة — تُطبَّق فوراً',
+      palNote: 'لكل غلاف ووضع عدة لوحات ألوان — انقر للتطبيق',
+      store: 'التخزين', users: 'المستخدمون', version: 'الإصدار', panic: 'Panic', logout: 'خروج', searchPh: 'بحث…',
+      navMain: 'الرئيسية', navDash: 'نظرة عامة', navUsers: 'المستخدمون', navNetwork: 'الشبكة', navConns: 'الاتصالات الحية', navMonitor: 'إحصاءات الاستخدام', navConfig: 'الإعدادات', navSub: 'رابط الاشتراك', navSecurity: 'الأمان', navSystem: 'النظام', navLogs: 'السجلات', navSettings: 'النسخ الاحتياطي',
+    },
+    ru: { _dir: 'ltr', _name: 'Русский',
+      skin: 'Обложка', mode: 'Цветовой режим', palette: 'Палитра', appearance: 'Внешний вид и язык',
+      skinModern: 'Современный', skinMinecraft: 'Minecraft', skinCyberpunk: 'Киберпанк', skinTerminal: 'Терминал',
+      skinModernD: 'Плоский современный дизайн', skinMinecraftD: 'Блочный пиксельный стиль', skinCyberpunkD: 'Неоновое будущее', skinTerminalD: 'Классическая зелёная консоль',
+      dark: 'Тёмный', light: 'Светлый', defaultSkin: 'Современный',
+      langTitle: 'Язык', langFa: 'فارسی', langEn: 'English', langAr: 'العربية', langRu: 'Русский', langZh: '中文',
+      langNote: 'Язык интерфейса — применяется сразу',
+      palNote: 'У каждой обложки и режима несколько палитр — нажмите для применения',
+      store: 'Хранилище', users: 'Пользователи', version: 'Версия', panic: 'Panic', logout: 'Выход', searchPh: 'Поиск…',
+      navMain: 'Главное', navDash: 'Обзор', navUsers: 'Пользователи', navNetwork: 'Сеть', navConns: 'Активные соединения', navMonitor: 'Статистика', navConfig: 'Настройка', navSub: 'Ссылка подписки', navSecurity: 'Безопасность', navSystem: 'Система', navLogs: 'Журнал', navSettings: 'Резерв',
+    },
+    zh: { _dir: 'ltr', _name: '中文',
+      skin: '外观主题', mode: '颜色模式', palette: '调色板', appearance: '外观与语言',
+      skinModern: '现代', skinMinecraft: '我的世界', skinCyberpunk: '赛博朋克', skinTerminal: '终端',
+      skinModernD: '现代扁平设计', skinMinecraftD: '像素方块风格', skinCyberpunkD: '霓虹未来风', skinTerminalD: '经典绿色控制台',
+      dark: '深色', light: '浅色', defaultSkin: '现代',
+      langTitle: '语言', langFa: 'فارسی', langEn: 'English', langAr: 'العربية', langRu: 'Русский', langZh: '中文',
+      langNote: '界面语言 — 立即生效',
+      palNote: '每个主题和模式有多种配色 — 点击即可应用',
+      store: '存储', users: '用户', version: '版本', panic: 'Panic', logout: '退出', searchPh: '搜索…',
+      navMain: '主要', navDash: '概览', navUsers: '用户', navNetwork: '网络', navConns: '实时连接', navMonitor: '用量统计', navConfig: '配置', navSub: '订阅链接', navSecurity: '安全', navSystem: '系统', navLogs: '日志', navSettings: '备份',
+    },
+  };
+  const LANGS = [['fa', 'langFa'], ['en', 'langEn'], ['ar', 'langAr'], ['ru', 'langRu'], ['zh', 'langZh']];
+  let LANG = 'fa';
+  try {
+    const savedLang = localStorage.getItem('sg_lang');
+    if (savedLang && I18N[savedLang]) LANG = savedLang;
+    else {
+      const nav = (navigator.language || 'fa').slice(0, 2).toLowerCase();
+      LANG = I18N[nav] ? nav : 'fa';
+    }
+  } catch (e) { LANG = 'fa'; }
+  const T = () => I18N[LANG] || I18N.fa;
+  /* ترجمه — از فرهنگ زبانِ فعلی، سپس انگلیسی، سپس خودِ کلید */
+  const tr = (k) => { const d = T(); return (d[k] !== undefined ? d[k] : (I18N.en[k] !== undefined ? I18N.en[k] : k)); };
+  /* اعمال زبان روی سند: dir + lang + المان‌های data-i18n */
+  function applyLang() {
+    const d = T();
+    document.documentElement.lang = LANG;
+    document.documentElement.dir = d._dir;
+    try { localStorage.setItem('sg_lang', LANG); } catch (e) {}
+    $$('[data-i18n]').forEach((el) => { el.textContent = tr(el.dataset.i18n) || el.textContent; });
+    $$('[data-i18n-ph]').forEach((el) => { el.placeholder = tr(el.dataset.i18nPh) || el.placeholder; });
+    const lb = $('#langBtn'); if (lb) { lb.title = d._name; }
+    if (!S.d) $('#pageTitle').textContent = LANG === 'fa' ? 'پنل مدیریت' : LANG === 'ar' ? 'لوحة الإدارة' : LANG === 'ru' ? 'Панель управления' : LANG === 'zh' ? '管理面板' : 'Management Panel';
+  }
+  const setLang = (l) => { if (!I18N[l]) return; LANG = l; applyLang(); render(); };
+
+  /* ═══════════════════════════════════════════════════════════════
+     v4 — موتور پوسته (Skin Engine)
+     سه لایه‌ی مستقل: پوسته (شکل و شخصیت) × حالت (شب/روز) × پالت (رنگ‌ها).
+     پوسته‌ها: modern (پیش‌فرض)، minecraft، cyberpunk، terminal.
+     هر ترکیبِ پوسته×حالت چند پالت دارد. انتخاب‌ها در localStorage می‌مانند.
+     ═══════════════════════════════════════════════════════════════ */
+  const SKINS = [
+    { id: 'modern',    l: 'skinModern',    d: 'skinModernD',    ic: 'fa-swatchbook', pal: ['midnight', 'forest', 'sunset', 'rose'] },
+    { id: 'minecraft', l: 'skinMinecraft', d: 'skinMinecraftD', ic: 'fa-cubes',      pal: ['midnight', 'diamond', 'redstone', 'gold'] },
+    { id: 'cyberpunk', l: 'skinCyberpunk', d: 'skinCyberpunkD', ic: 'fa-microchip',  pal: ['midnight', 'neon', 'toxic', 'arashi'] },
+    { id: 'terminal',  l: 'skinTerminal',  d: 'skinTerminalD',  ic: 'fa-terminal',   pal: ['midnight', 'amber', 'ice', 'magenta'] },
+  ];
+  const PAL_NAMES = { midnight: 'Midnight', forest: 'Forest', sunset: 'Sunset', rose: 'Rose', diamond: 'Diamond', redstone: 'Redstone', gold: 'Gold', neon: 'Neon', toxic: 'Toxic', arashi: 'Arashi', amber: 'Amber', ice: 'Ice', magenta: 'Magenta' };
+  /* رنگ‌نمونه‌ی هر پالت — فقط برای پیش‌نمایشِ دکمه‌ها */
+  const PAL_DOTS = {
+    midnight: ['#6366F1', '#22D3EE', '#0B0E17'], forest: ['#10B981', '#84CC16', '#0A1210'],
+    sunset: ['#F97316', '#FB7185', '#140E0A'], rose: ['#F43F5E', '#EC4899', '#140A0F'],
+    diamond: ['#4ED0D0', '#7BE8E8', '#1D1F21'], redstone: ['#E05B4B', '#F08678', '#1D1F21'],
+    gold: ['#E0B93B', '#F2D96B', '#1D1F21'], neon: ['#BC13FE', '#00F0FF', '#080A12'],
+    toxic: ['#05F2A0', '#F9F002', '#080A12'], arashi: ['#FF6D00', '#FF2A6D', '#080A12'],
+    amber: ['#F59E0B', '#FBBF24', '#050805'], ice: ['#38BDF8', '#7DD3FC', '#050805'],
+    magenta: ['#E879F9', '#F0ABFC', '#050805'],
+  };
+  const PAL_DOTS_LIGHT = {
+    midnight: ['#4F46E5', '#0E7490', '#F2F4FB'], forest: ['#047857', '#4D7C0F', '#F1F7F2'],
+    sunset: ['#C2410C', '#BE123C', '#FBF4EC'], rose: ['#BE123C', '#A21CAF', '#FBF2F5'],
+    diamond: ['#0E8F8F', '#2FB0B0', '#EDEBE6'], redstone: ['#BC3B2E', '#D95F50', '#EDEBE6'],
+    gold: ['#A88417', '#C4A22E', '#EDEBE6'], neon: ['#8E24AA', '#00889E', '#EAF2F5'],
+    toxic: ['#00805E', '#8A7D00', '#EAF2F5'], arashi: ['#C24B00', '#D9005B', '#EAF2F5'],
+    amber: ['#B45309', '#A16207', '#F2F5F0'], ice: ['#0369A1', '#0E7490', '#F2F5F0'],
+    magenta: ['#A21CAF', '#86198F', '#F2F5F0'],
+  };
+  /* اعمال پوسته: سه data-attribute روی <html> — CSS از این‌ها متغیرها را می‌سازد */
+  function applySkin(skin, mode, pal) {
+    const h = document.documentElement;
+    h.dataset.skin = skin; h.dataset.mode = mode; h.dataset.pal = pal;
+    try { localStorage.setItem('sg_skin', skin); localStorage.setItem('sg_mode', mode); localStorage.setItem('sg_pal', pal); } catch (e) {}
+    const tb = $('#themeBtn'); if (tb) tb.innerHTML = icon(mode === 'light' ? 'fa-moon' : 'fa-sun');
+  }
+  const getSkin = () => document.documentElement.dataset.skin || 'modern';
+  const getMode = () => document.documentElement.dataset.mode || 'dark';
+  const getPal = () => document.documentElement.dataset.pal || 'midnight';
+
   /* انتخاب‌های «تست واقعی ترافیک» — بین رفرش‌ها حفظ می‌شوند */
   const TT = { uuid: '', mb: 1, last: null };
   /* ═══ گزارش تست ترافیک تا وقتی تستِ تازه‌ای گرفته نشود باقی می‌ماند ═══
@@ -799,12 +934,12 @@
   };
 
   /* ─────────── ناوبری و اسکیمای تنظیمات ─────────── */
-  /* ناوبری — تمیز، بدون تکرار */
+  /* ناوبری — برچسب‌ها از i18n می‌آیند تا با تعویض زبان عوض شوند */
   const NAV = [
-    { g: 'اصلی', items: [['dash', 'نمای کلی', 'fa-gauge-high'], ['users', 'کاربران', 'fa-users']] },
-    { g: 'شبکه', items: [['conns', 'اتصال‌های زنده', 'fa-activity'], ['monitor', 'آمار مصرف', 'fa-chart-line']] },
-    { g: 'پیکربندی', items: [['config', 'پیکربندی', 'fa-gear'], ['sub', 'لینک ساب', 'fa-link'], ['security', 'امنیت', 'fa-shield-halved']] },
-    { g: 'سیستم', items: [['logs', 'لاگ', 'fa-list-check'], ['settings', 'پشتیبان', 'fa-database']] },
+    { g: () => tr('navMain'), items: [['dash', 'navDash', 'fa-gauge-high'], ['users', 'navUsers', 'fa-users']] },
+    { g: () => tr('navNetwork'), items: [['conns', 'navConns', 'fa-activity'], ['monitor', 'navMonitor', 'fa-chart-line']] },
+    { g: () => tr('navConfig'), items: [['config', 'navConfig', 'fa-gear'], ['sub', 'navSub', 'fa-link'], ['security', 'navSecurity', 'fa-shield-halved']] },
+    { g: () => tr('navSystem'), items: [['logs', 'navLogs', 'fa-list-check'], ['settings', 'navSettings', 'fa-database']] },
   ];
 
   /* ═══ اسکیمای تنظیمات ═══
@@ -886,6 +1021,36 @@
   ];
 
   /* ─────────── نماها ─────────── */
+  /* ═══════ v4 — مدالِ ظاهر: پوسته × حالت × پالت × زبان ═══════ */
+  function appearanceModal() {
+    const skin = getSkin(), mode = getMode(), pal = getPal();
+    const dots = (p) => (mode === 'light' ? PAL_DOTS_LIGHT : PAL_DOTS)[p] || [];
+    const skinCard = (s) =>
+      '<button class="ap-card' + (skin === s.id ? ' on' : '') + '" data-ap="skin" data-v="' + s.id + '">' +
+      '<span class="ap-ic">' + icon(s.ic) + '</span><b>' + tr(s.l) + '</b><i>' + tr(s.d) + '</i></button>';
+    const palCard = (p) =>
+      '<button class="ap-pal' + (pal === p ? ' on' : '') + '" data-ap="pal" data-v="' + p + '" title="' + esc(PAL_NAMES[p] || p) + '">' +
+      '<span class="ap-dots">' + dots(p).map((c) => '<i style="background:' + c + '"></i>').join('') + '</span>' +
+      '<b>' + esc(PAL_NAMES[p] || p) + '</b></button>';
+    const modeCard = (m) =>
+      '<button class="ap-card' + (mode === m ? ' on' : '') + '" data-ap="mode" data-v="' + m + '">' +
+      '<span class="ap-ic">' + icon(m === 'dark' ? 'fa-moon' : 'fa-sun') + '</span><b>' + tr(m) + '</b></button>';
+    const langCard = (l) =>
+      '<button class="ap-pal' + (LANG === l ? ' on' : '') + '" data-ap="lang" data-v="' + l + '"><b>' + tr('lang' + l.charAt(0).toUpperCase() + l.slice(1)) + '</b></button>';
+    modal(
+      '<header><span class="ic">' + icon('fa-palette') + '</span><div><h3>' + tr('appearance') + '</h3>' +
+      '<p>' + tr('palNote') + '</p></div>' +
+      '<div class="acts"><button class="btn sm ghost" data-act="close">' + icon('fa-xmark') + '</button></div></header>' +
+      '<div class="bd">' +
+      '<div class="ap-row"><h4>' + icon('fa-shapes') + ' ' + tr('skin') + '</h4><div class="ap-opts">' + SKINS.map(skinCard).join('') + '</div></div>' +
+      '<div class="ap-row"><h4>' + icon('fa-circle-half-stroke') + ' ' + tr('mode') + '</h4><div class="ap-opts">' + ['dark', 'light'].map(modeCard).join('') + '</div></div>' +
+      '<div class="ap-row"><h4>' + icon('fa-droplet') + ' ' + tr('palette') + ' — ' + esc(PAL_NAMES[pal] || pal) + '</h4><div class="ap-swatches">' +
+      ((SKINS.find((s) => s.id === skin) || SKINS[0]).pal).map(palCard).join('') + '</div></div>' +
+      '<div class="ap-row"><h4>' + icon('fa-language') + ' ' + tr('langTitle') + '</h4><div class="ap-swatches">' + LANGS.map(([l]) => langCard(l)).join('') + '</div>' +
+      '<div class="hint" style="margin-top:6px">' + tr('langNote') + '</div></div>' +
+      '</div>');
+  }
+
   function loginView() {
     const nm = (S.d && S.d.settings && S.d.settings.panel && S.d.settings.panel.name) || 'پنل مدیریت';
     const totp = S.d && S.d.settings && S.d.settings.auth && S.d.settings.auth.totp;
@@ -1806,8 +1971,8 @@
     $('#tbDot').className = 'dot ' + (panic ? 'bad' : 'on');
     $('#tbReq').innerHTML = icon('fa-arrow-up-right-dots') + ' ' + n((d.stats && d.stats.requests) || 0) + ' req';
     $('#panicBtn').className = 'btn sm ' + (panic ? 'd' : 's');
-    nav.innerHTML = NAV.map((g) => '<div class="nav-group"><span>' + g.g + '</span>' + g.items.map(([id, l, ic]) =>
-      '<button class="nav-item ' + (S.view === id ? 'on' : '') + '" data-act="nav" data-view="' + id + '">' + icon(ic) + '<span>' + l + '</span>' +
+    nav.innerHTML = NAV.map((g) => '<div class="nav-group"><span>' + g.g() + '</span>' + g.items.map(([id, lk, ic]) =>
+      '<button class="nav-item ' + (S.view === id ? 'on' : '') + '" data-act="nav" data-view="' + id + '">' + icon(ic) + '<span>' + tr(lk) + '</span>' +
       (id === 'users' ? '<span class="cnt">' + fa(d.users.length) + '</span>' : '') +
       (id === 'logs' ? '<span class="cnt">' + fa((d.logs || []).length) + '</span>' : '') + '</button>').join('') + '</div>').join('');
     $('#view').innerHTML = '<div class="fade">' + (VIEWS[S.view] || dashView)() + '</div>';
@@ -1840,7 +2005,7 @@
     const t = (term || '').trim().toLowerCase();
     if (!t || !S.d) { drop.classList.remove('show'); drop.innerHTML = ''; return; }
     const out = [];
-    NAV.forEach((g) => g.items.forEach(([id, l]) => { if (l.toLowerCase().includes(t)) out.push({ ic: 'fa-compass', txt: l, sub: g.g, act: 'nav', view: id }); }));
+    NAV.forEach((g) => g.items.forEach(([id, lk]) => { const l = tr(lk); if (l.toLowerCase().includes(t)) out.push({ ic: 'fa-compass', txt: l, sub: g.g(), act: 'nav', view: id }); }));
     S.d.users.forEach((u) => {
       if ([u.name, u.uuid, u.note].join(' ').toLowerCase().includes(t))
         out.push({ ic: 'fa-user', txt: u.name, sub: String(u.uuid).slice(0, 16) + '…', act: 'user-edit', id: u.id });
@@ -2723,14 +2888,25 @@
     S.token = ''; sessionStorage.removeItem('sg_t'); S.d = null; render(); toast('خارج شدید', 'info');
   });
 
-  /* تم */
-  const setThemeIcon = () => { $('#themeBtn').innerHTML = icon(document.documentElement.dataset.theme === 'light' ? 'fa-moon' : 'fa-sun'); };
+  /* تم و پوسته — v4: چرخه‌ی شب/روز + مدالِ ظاهر (پوسته/پالت/زبان) */
   $('#themeBtn').addEventListener('click', () => {
-    const cur = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
-    document.documentElement.dataset.theme = cur;
-    try { localStorage.setItem('sg_theme', cur); } catch (e) {}
-    setThemeIcon();
+    const cur = getMode() === 'light' ? 'dark' : 'light';
+    applySkin(getSkin(), cur, getPal());
   });
+  $('#appBtn').addEventListener('click', () => { appearanceModal(); });
+  $('#langBtn').addEventListener('click', () => { appearanceModal(); });
+  /* انتخاب‌های درونِ مدالِ ظاهر — تفویض رویداد تا مدال باز بماند و همین لحظه اعمال شود */
+  document.addEventListener('click', (e) => {
+    const ap = e.target.closest('[data-ap]');
+    if (!ap) return;
+    e.preventDefault(); e.stopPropagation();
+    const k = ap.dataset.ap, v = ap.dataset.v;
+    if (k === 'skin') applySkin(v, getMode(), getPal());
+    else if (k === 'mode') applySkin(getSkin(), v, getPal());
+    else if (k === 'pal') applySkin(getSkin(), getMode(), v);
+    else if (k === 'lang') { setLang(v); appearanceModal(); return; }
+    appearanceModal(); /* بازسازیِ مدال با انتخابِ تازه */
+  }, true);
 
   /* Panic */
   $('#panicBtn').addEventListener('click', async () => {
@@ -2812,7 +2988,7 @@
     const vars = { usage: 'مصرف: ۲۹.۸۰ GB از ۵۰.۰۰ GB', remaining: 'باقیمانده: ۲۰.۲۰ GB', percent: '۶۰٪',
       expiry: new Date(u.expiryAt).toLocaleDateString('fa-IR'), days: '۴۵ روز', quota: '۵۰.۰۰ GB',
       up: '۵.۵۰ GB', down: '۲۴.۳۰ GB', req: '۱۲۳۴', channel: s.sub.telegramChannel || '', panel: s.panel.name,
-      ver: S.d.version || '2.0.0', user: u.name, mode: s.mode, date: new Date().toLocaleDateString('fa-IR'),
+      ver: S.d.version || '4.0.0', user: u.name, mode: s.mode, date: new Date().toLocaleDateString('fa-IR'),
       time: new Date().toLocaleTimeString('fa-IR'), ip: s.panel.url || '' };
     const render = (tpl) => { let o = String(tpl || ''); for (const [k, v] of Object.entries(vars)) o = o.split('{' + k + '}').join(v); return o; };
     box.innerHTML = '<div class="fk-help-t" style="margin-bottom:8px">' + icon('fa-eye') + ' پیش‌نمایش خروجی</div>' +
@@ -3077,8 +3253,20 @@
   }
 
   /* ─────────── راه‌اندازی ─────────── */
-  try { document.documentElement.dataset.theme = localStorage.getItem('sg_theme') || 'dark'; } catch (e) { document.documentElement.dataset.theme = 'dark'; }
-  setThemeIcon();
+  /* راه‌اندازیِ اولیه: زبان، پوسته، حالت و پالت — با اولویت localStorage */
+  try {
+    const sk = localStorage.getItem('sg_skin'), md = localStorage.getItem('sg_mode'), pl = localStorage.getItem('sg_pal');
+    document.documentElement.dataset.skin = SKINS.some((s) => s.id === sk) ? sk : 'modern';
+    document.documentElement.dataset.mode = md === 'light' ? 'light' : 'dark';
+    document.documentElement.dataset.pal = pl || 'midnight';
+    /* مهاجرت از نسخه‌های قبلی (sg_theme) */
+    const legacy = localStorage.getItem('sg_theme');
+    if (legacy === 'light' && !md) document.documentElement.dataset.mode = 'light';
+  } catch (e) {
+    document.documentElement.dataset.skin = 'modern'; document.documentElement.dataset.mode = 'dark'; document.documentElement.dataset.pal = 'midnight';
+  }
+  applyLang();
+  applySkin(getSkin(), getMode(), getPal());
   render();
   window.__sgBooted = true;
   refresh();
