@@ -2468,7 +2468,7 @@ const FALLBACK = `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="
 /* ═══════════ منبع ثابت UI — فقط همین سه فایل، غیرقابل تغییر ═══════════ */
 /* UI_REV: با هر تغییرِ UI یک واحد زیاد شود تا کشِ Cloudflare/گیت‌هاب نسخه‌ی
    قدیمی را برگرداند (کلیدِ کش‌شکن در URL) */
-const UI_REV = '20260904a';
+const UI_REV = '20260904b';
 const UI_SRC = {
   html: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/index.html?r=' + UI_REV,
   css: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/style.css?r=' + UI_REV,
@@ -5581,6 +5581,7 @@ async function apiHandler(req, env, url, ctx) {
       effective: (() => { const r = on ? resolveExit(st, null) : { mode: 'direct' }; return { mode: r.mode, id: r.id || '', name: r.name || DIRECT.name }; })(),
       servers: ex.servers.map((x) => ({ ...x })),
       stats: { ...EXIT_STATS, lastError: EXIT_LAST_ERR || null },
+      proxyStats: { attempts: PROXY_STATS.attempts, connects: PROXY_STATS.connects, fails: PROXY_STATS.fails, lastAt: PROXY_STATS.lastAt, lastError: PROXY_STATS.lastError || null },
       /* انتخابِ هر کانفیگ — برای نمایشِ وضعیت در پنل
          reason علتِ «مستقیم‌شدن» را می‌گوید (مثلاً سرور غیرفعال است) تا ادمین
          بفهمد چرا ترافیکِ آن کانفیگ از سرور رد نمی‌شود. */
@@ -5792,6 +5793,38 @@ async function apiHandler(req, env, url, ctx) {
     return json({
       ok: true, relogin: true,
       msg: 'رمز عبور تغییر کرد — لطفاً دوباره وارد شوید',
+    });
+  }
+
+  /* ═══════ تستِ در دسترس بودنِ Proxy IPها از سمتِ خودِ ورکر (روش BPB) ═══════
+     هر ورودی دو بار واقعاً وصل می‌شود و زمانِ پاسخ گزارش می‌شود تا ادمین
+     ببیند کدام Proxy IP از شبکه‌ی کلادفلر زنده است — و آیا اصلاً در مسیر
+     تونل تلاش شده یا نه (stats.attempts). */
+  if (route === 'proxyips/test' && m === 'POST') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const b = await req.json().catch(() => ({}));
+    const all = (st.settings.proxyIPs || []).map((x) => String(x).trim()).filter(Boolean);
+    const list = (Array.isArray(b.list) && b.list.length)
+      ? b.list.map((x) => String(x).trim()).filter(Boolean)
+      : all;
+    if (!list.length) return json({ ok: false, error: 'Proxy IPای برای تست نیست — اول در «پیکربندی ← شبکه ← IPهای پروکسی» چند مورد وارد کنید' }, 400);
+    const results = [];
+    for (const raw of list) {
+      const r1 = await probeProxyOnce(raw, 443, 5000);
+      const r2 = r1.ok ? null : await probeProxyOnce(raw, 443, 5000);
+      results.push(r2
+        ? { input: raw, ok: r2.ok, ms: Math.min(r1.ms, r2.ms), error: r2.ok ? '' : (r2.error || r1.error || 'ناموفق') }
+        : { input: raw, ok: true, ms: r1.ms, error: '' });
+    }
+    const okN = results.filter((r) => r.ok).length;
+    addLog(st, okN ? 'success' : 'warn', 'core', 'تست Proxy IPها',
+      fa(okN) + ' از ' + fa(results.length) + ' مورد در دسترس');
+    return json({
+      ok: true, total: results.length, reachable: okN, results,
+      stats: { attempts: PROXY_STATS.attempts, connects: PROXY_STATS.connects, fails: PROXY_STATS.fails, lastAt: PROXY_STATS.lastAt, lastError: PROXY_STATS.lastError || null },
+      msg: okN
+        ? fa(okN) + ' از ' + fa(results.length) + ' مورد در دسترس است'
+        : 'هیچ‌کدام از Proxy IPها از دسترسِ ورکر در دسترس نیستند — لیست را عوض کنید یا از «سرور خروجی» استفاده کنید',
     });
   }
 
@@ -6681,6 +6714,9 @@ let EXIT_LAST_ERR = '';
 const EXIT_STATS = { tunnels: 0, fallbacks: 0, lastMs: 0, lastAt: 0 };
 const exitNote = (msg) => { EXIT_LAST_ERR = String(msg).slice(0, 300); EXIT_STATS.lastAt = Date.now(); };
 
+/* آمارِ تلاشِ ProxyIP/NAT64 در مسیرِ تونل — فقط برای گزارش در پنل */
+const PROXY_STATS = { attempts: 0, connects: 0, fails: 0, lastAt: 0, lastError: '' };
+
 const toU8 = (d) => {
   if (!d) return new Uint8Array(0);
   if (d instanceof Uint8Array) return d;
@@ -7226,6 +7262,58 @@ async function openExitSocket(srv, info, opt) {
   };
 }
 
+/** پارسِ host:port برای تستِ ProxyIP (مثل parseHostPort داخلِ session) */
+function splitHostPortTop(raw, defPort) {
+  let s = String(raw || '').trim().replace(/^[a-z]+:\/\//i, '').split('#')[0].split('@').pop();
+  if (s.startsWith('[')) {
+    const end = s.indexOf(']');
+    return { host: s.slice(1, end), port: Number(s.slice(end + 2)) || defPort };
+  }
+  const i = s.lastIndexOf(':');
+  if (i > 0 && /^\d+$/.test(s.slice(i + 1))) return { host: s.slice(0, i), port: Number(s.slice(i + 1)) };
+  return { host: s, port: defPort };
+}
+
+/**
+ * تستِ واقعیِ TCP به یک ProxyIP از سمتِ خودِ ورکر (روشِ پنل BPB):
+ * یک درخواستِ HTTP ساده با Hostِ سرعت‌سنجِ کلادفلر می‌فرستیم؛ پاسخِ
+ * «HTTP/1.1 400 + cf-ray» یعنی آن آدرس یک لبه‌ی کلادفلرِ زنده است و
+ * می‌شود به آن relay کرد. هر چیزِ دیگر = مرده/نامرتبط.
+ */
+async function probeProxyOnce(raw, defPort, timeoutMs) {
+  const t0 = Date.now();
+  const { host, port } = splitHostPortTop(raw, defPort);
+  if (!host) return { ok: false, ms: 0, error: 'ورودیِ خالی' };
+  /* IP لخت → sslip.io، مثل مسیرِ dial — وگرنه تستِ IPها همیشه «ناموفق» می‌شد */
+  const dialHost = /^(\d{1,3}\.){3}\d{1,3}$/.test(host) ? ('www.' + host + '.sslip.io') : host;
+  let sock = null;
+  try {
+    sock = connect({ hostname: dialHost, port });
+    await Promise.race([
+      sock.opened,
+      new Promise((_, rj) => setTimeout(() => rj(new Error('timeout (open)')), timeoutMs)),
+    ]);
+    const w = sock.writable.getWriter();
+    await w.write(enc.encode('GET /__down?bytes=5000 HTTP/1.1\r\nHost: speed.cloudflare.com\r\nConnection: close\r\n\r\n'));
+    w.releaseLock();
+    const rd = sock.readable.getReader();
+    const { value } = await Promise.race([
+      rd.read(),
+      new Promise((_, rj) => setTimeout(() => rj(new Error('timeout (read)')), timeoutMs)),
+    ]);
+    try { rd.releaseLock(); } catch (e) {}
+    try { sock.close(); } catch (e) {}
+    const ms = Date.now() - t0;
+    if (!value || !value.length) return { ok: false, ms, error: 'بدون پاسخ (اتصال باز شد ولی دادهای نرسید)' };
+    const head = new TextDecoder().decode(value).slice(0, 300);
+    const ok = /^HTTP\/1\.[01] 400/.test(head) && /cf-ray:/i.test(head);
+    return { ok, ms, error: ok ? '' : ('پاسخِ غیرمنتظره: ' + String(head.split('\r\n')[0] || '').slice(0, 60)) };
+  } catch (e) {
+    try { if (sock) sock.close(); } catch (e2) {}
+    return { ok: false, ms: Date.now() - t0, error: String((e && e.message) || e).slice(0, 120) };
+  }
+}
+
 /** تستِ اتصالِ یک سرور خروجی — اندازه‌گیریِ واقعی (وصل شدن + هندشیک) */
 async function testExit(srv, opt) {
   const issues = exitIssues(srv);
@@ -7699,9 +7787,13 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
         for (let j = i; j < cands.length; j++) {
           const c = cands[j];
           if (!c || (c.addr === info.addr && c.port === info.port)) continue;  /* همان مقصد — فایده ندارد */
+          PROXY_STATS.attempts++;
+          PROXY_STATS.lastAt = Date.now();
           try {
             const tcpSock = await connectAndWrite(c.addr, c.port, info.payload);
             sock = tcpSock;
+            PROXY_STATS.connects++;
+            PROXY_STATS.lastError = '';
             /* وصل شد ولی هیچ داده‌ای برنگشت → کاندیدِ بعدی؛ اگر کاندیدی نماند، ببند */
             remoteToWs(tcpSock, respHeader, () => {
               try { tcpSock.close(); } catch (e) {}
@@ -7709,7 +7801,11 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
               go(j + 1, true);
             });
             return true;
-          } catch (e) { sock = null; }
+          } catch (e) {
+            sock = null;
+            PROXY_STATS.fails++;
+            PROXY_STATS.lastError = String((e && e.message) || e).slice(0, 200);
+          }
         }
         /* از داخلِ زنجیره‌ی «بی‌پاسخ» آمدیم و دیگر کاندیدی نمانده → اتصال را ببند */
         if (fromRetry) { try { finish(); } catch (e) {} }

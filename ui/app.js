@@ -1596,6 +1596,24 @@
       '<button class="btn sm" data-act="exit-reload">' + icon('fa-rotate') + ' بارخوانی</button></div></header>' +
       '<div class="bd"><div id="exitsOut">' + exitsHtml(EX.data) + '</div></div></div>';
 
+    /* ═══ Proxy IP — تستِ در دسترس بودن از سمتِ ورکر (روش BPB) ═══ */
+    const proxyCard = () => {
+      const list = (Array.isArray(S.d.settings.proxyIPs) ? S.d.settings.proxyIPs : []).map((x) => String(x).trim()).filter(Boolean);
+      const ps = (EX.data && EX.data.proxyStats) || null;
+      const statTxt = ps
+        ? '<span class="badge">در مسیر تونل — تلاش: ' + fa(ps.attempts) + ' • وصل: ' + fa(ps.connects) + ' • خطا: ' + fa(ps.fails) + '</span>'
+        : '<span class="badge">هنوز تلاشی در مسیر تونل ثبت نشده</span>';
+      return '<div class="card" id="proxyCard"><header><span class="ic">' + icon('fa-tower-broadcast') + '</span>' +
+        '<div><h3>Proxy IP — خروجیِ پشتیبان</h3>' +
+        '<p>وقتی اتصالِ مستقیم به مقصد برقرار نشود یا بی‌پاسخ بماند، همان بارِ اولیه از این ورودی‌ها relay می‌شود (روش BPB؛ فقط برای مقصدهایی که پشت Cloudflare‌اند)</p></div>' +
+        '<div class="acts"><button class="btn sm p" data-act="proxy-test">' + icon('fa-stethoscope') + ' تست از ورکر</button></div></header>' +
+        '<div class="bd"><div id="proxyOut">' +
+        (list.length
+          ? list.map((x) => '<div class="row-item">' + icon('fa-globe') + '<div class="grow"><span class="mono">' + esc(x) + '</span></div><span class="badge">—</span></div>').join('')
+          : '<div class="empty">Proxy IPی تعریف نشده — از «شبکه ← IPهای پروکسی» چند مورد وارد کنید</div>') +
+        '</div><div id="proxyStat" style="margin-top:8px">' + statTxt + '</div></div></div>';
+    };
+
     /* ═══ نام‌گذاری کانفیگ‌ها — الگوی کاملاً دلخواه + الگوهای آماده ═══ */
     const naming = () => {
       const pat = getP(s, 'sub.namePattern') || '';
@@ -1732,7 +1750,7 @@
 
       modeCard() + quickCard() +
       '<div style="padding:0 2px">' + essential() + portsAcc() + naming() + network() + telegram() + stealth() + advanced() + '</div>' +
-      pwCard() + exitsCard() +
+      pwCard() + exitsCard() + proxyCard() +
 
       '<div class="btn-row" style="justify-content:center;margin-top:10px">' +
       '<button class="btn p lg" data-act="save-config">' + icon('fa-floppy-disk') + ' ذخیره</button></div>';
@@ -2505,6 +2523,26 @@
         free(t);
         if (r && r.ok) { EX.form = null; await exLoad(); toast(r.msg || 'وضعیتِ سرور ذخیره شد', 'ok'); }
         else toast((r && r.error) || 'ذخیره انجام نشد', 'err');
+      }
+      else if (a === 'proxy-test') {
+        busy(t, 'در حال تست از ورکر');
+        const r = await api('POST', '/api/proxyips/test', {});
+        free(t);
+        const box = $('#proxyOut'), stBox = $('#proxyStat');
+        if (box) {
+          const rows = (r && Array.isArray(r.results)) ? r.results : [];
+          box.innerHTML = rows.length
+            ? rows.map((x) => '<div class="row-item">' + icon(x.ok ? 'fa-circle-check' : 'fa-circle-xmark') +
+                '<div class="grow"><span class="mono">' + esc(x.input) + '</span>' +
+                (x.error ? '<div class="cell-sub">' + esc(x.error) + '</div>' : '') + '</div>' +
+                '<span class="badge ' + (x.ok ? 'ok' : 'bad') + '">' + (x.ok ? fa(x.ms) + ' ms' : 'ناموفق') + '</span></div>').join('')
+            : '<div class="empty">پاسخی نیامد</div>';
+        }
+        if (stBox && r && r.stats) {
+          stBox.innerHTML = '<div class="hint">در مسیر تونل: تلاش ' + fa(r.stats.attempts) + ' • وصلِ موفق ' + fa(r.stats.connects) + ' • خطا ' + fa(r.stats.fails) +
+            (r.stats.lastError ? ' — آخرین خطا: <span class="mono">' + esc(r.stats.lastError) + '</span>' : '') + '</div>';
+        }
+        toast((r && r.msg) || 'تست انجام شد', (r && r.reachable > 0) ? 'ok' : 'err');
       }
       else if (a === 'exit-test') {
         /* فرم دیگر فیلدی ندارد که بشود بدون ذخیره تستش کرد، پس تست فقط روی
