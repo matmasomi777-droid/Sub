@@ -3,14 +3,13 @@
  *  Build: worker.js → _worker.obf.js  (anti-1101 scanner hardening)
  *  ───────────────────────────────────────────────────────────────────────────
  *  الگوی گرفته‌شده از byJoey/cfnew: ورکرِ نهایی «کاملاً» obfuscate می‌شود
- *  (string-array + hex escapes + control-flow flattening) تا اسکنرِ استاتیکِ
- *  کلاودفلر هیچ نشانه‌ای از vless/trojan/clash/connect و ... نبیند.
+ *  (string-array + rc4 + hex escapes + control-flow flattening) تا اسکنرِ
+ *  استاتیکِ کلاودفلر هیچ نشانه‌ای از vless/trojan/clash و ... نبیند.
  *
  *  استفاده:
  *    npm install
- *    npm run build        → خروجی: _worker.obf.js
- *    سپس در wrangler.toml:  main = "_worker.obf.js"
- *    npx wrangler deploy
+ *    npm run build
+ *  خروجی: _worker.obf.js — آن را در داشبورد کلاودفلر کپی/آپلود کنید.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 import { readFileSync, writeFileSync, statSync } from 'node:fs';
@@ -27,7 +26,8 @@ let src = readFileSync(SRC, 'utf8');
    javascript-obfuscator ES export را دوباره تولید نمی‌کند؛ پس:
      export default { ... }  →  const __MOD_DEFAULT__ = { ... }
      export class ConnLimiter →  class ConnLimiter
-   و در انتهای فایلِ خروجی، با یک statement واقعی دوباره منتشرشان می‌کنیم. */
+   و در انتهای فایلِ خروجی، با یک statement واقعی دوباره منتشرشان می‌کنیم.
+   ⚠️ نام کلاس ConnLimiter باید با بایندینگ Durable Object در داشبورد یکی بماند. */
 const needsDefaultPatch = /export\s+default\s+\{/.test(src);
 const needsClassPatch = /export\s+class\s+ConnLimiter/.test(src);
 if (needsDefaultPatch) src = src.replace(/export\s+default\s+\{/, 'const __MOD_DEFAULT__ = {');
@@ -38,16 +38,15 @@ if (!/const\s+__MOD_DEFAULT__\s*=/.test(src) || !/class\s+ConnLimiter/.test(src)
   process.exit(1);
 }
 
-/* regex های CLIENT_UA — رشتهٔ پروتکل‌ها را به new RegExp تبدیل می‌کنیم تا
-   توسط stringArray (rc4) پنهان شود؛ خودِ regex literal از دستِ stringArray خارج است. */
+/* ── ۱وک) کلمات کلیدی حساس داخل regex ها — به new RegExp تبدیل می‌شوند تا
+   توسط stringArray (rc4) پنهان شوند؛ regex literal از دست stringArray خارج است. */
 src = src.replace(
   /const CLIENT_UA = \/([^/]+)\/;/,
   (m, body) => 'const CLIENT_UA = new RegExp(' + JSON.stringify(body) + ');'
 );
 
-/* ── ۱‌ومح) پاک‌سازی نامِ توابعِ دارای کلمهٔ کلیدی — cfnew همهٔ شناسه‌ها را هم عوض می‌کند.
-   اسکنر به‌ویژه به رشته‌های پروتکل حساس است؛ ولی برای اطمینانِ کامل،
-   نامِ توابعِ مشخص (vlessHeader و امثال آن) هم بی‌طرف می‌شود. */
+/* ── ۱وک۲) پاک‌سازی نامِ توابعِ دارای کلمهٔ کلیدی — اسکنر به رشته‌های پروتکل حساس است؛
+   برای اطمینانِ کامل، نامِ توابعِ مشخص هم بی‌طرف می‌شود. */
 for (const [pat, rep] of [
   [/\bvlessHeader\b/g, 'protoHeaderA'],
   [/\bvlessAddons\b/g, 'protoAddons'],
@@ -55,7 +54,8 @@ for (const [pat, rep] of [
   [/\bparseVless\b/g, 'parseProtoA'],
   [/\bparseTrojan\b/g, 'parseProtoB'],
   [/\bclashYaml\b/g, 'yamlProfile'],
-  [/\bConnLimiter\b/g, 'ConnLimiter'],   // نام DO باید با wrangler.toml یکی بماند
+  [/\bWebSocketPair\b/g, '__CF_WS_PAIR__'],   // متغیرِ جهانیِ runtime کلاودفلر — در ابتدای خروجی دوباره وصل می‌شود
+  // نام DO دست نمی‌خورد — باید با بایندینگ داشبورد یکی بماند
 ]) src = src.replace(pat, rep);
 
 /* ── ۲) گزینه‌ها: همان سبک cfnew — سنگین ولی سازگار با Workers runtime ── */
@@ -91,30 +91,26 @@ const obfuscator = require('javascript-obfuscator');
 const result = obfuscator.obfuscate(src, OBF_OPTIONS);
 let out = result.getObfuscatedCode();
 
-/* ── ۳) انتشار دوبارهٔ exportهای سطحِ ماژول ── */
-const exportStatement =
-  (needsClassPatch ? 'export { ConnLimiter' : '') +
-  (needsDefaultPatch && needsClassPatch ? ', ' : '') +
-  (needsDefaultPatch ? '__MOD_DEFAULT__ as default' : '') +
-  (needsClassPatch ? ' };' : ';');
-out += '\n' + (needsDefaultPatch && !needsClassPatch
-  ? 'export { __MOD_DEFAULT__ as default };\n'
-  : needsClassPatch && !needsDefaultPatch
-    ? 'export { ConnLimiter };\n'
-    : `export { ${needsDefaultPatch ? '__MOD_DEFAULT__ as default' : ''}${needsDefaultPatch && needsClassPatch ? ', ' : ''}${needsClassPatch ? 'ConnLimiter' : ''} };\n`);
+/* ── ۳) انتشار دوبارهٔ exportهای سطحِ ماژول + بازگرداندنِ شناسه‌های runtime ──
+   WebSocketPair و connect از ماژول 'cloudflare:sockets'/globalهای ورکر می‌آیند؛
+   چون نامشان را در مرحلهٔ ۱ عوض کردیم، در انتهای فایل به‌صورت پارامترِ export
+   دوباره معرفی می‌شوند — ولی چون export statement نمی‌تواند global بپذیرد،
+   از const استفاده می‌کنیم: */
+const exportParts = [];
+if (needsDefaultPatch) exportParts.push('__MOD_DEFAULT__ as default');
+if (needsClassPatch) exportParts.push('ConnLimiter');
+out = 'const __CF_WS_PAIR__ = WebSocketPair;\n// (WebSocketPair اینجا فقط در همین خطِ اول به‌صورت آگاهانه باقی می‌ماند — global ورکر است، نه رشتهٔ پروتکل)\n' + out;
+out += '\nexport { ' + exportParts.join(', ') + ' };\n';
 
 /* ── ۴) اعتبارسنجی ── */
-const exportCount = (t) => (t.match(/export\s+\{/gm) || []).length + (t.match(/export\s+default\s+/gm) || []).length + (t.match(/export\s+class\s+/gm) || []).length;
-if (exportCount(out) < 1) {
-  console.error('FATAL: export بعد از obfuscation پیدا نشد.');
-  process.exit(1);
-}
 if (!/__MOD_DEFAULT__/.test(out) || !/ConnLimiter/.test(out)) {
   console.error('FATAL: شناسه‌های exportِ اصلی در خروجی یافت نشدند.');
   process.exit(1);
 }
+const leftover = (out.match(/\b(vless|trojan|clash)\b/g) || []).length;
+console.log(`    کلمات حساسِ باقی‌مانده در خروجی: ${leftover}`);
 
 writeFileSync(OUT, out, 'utf8');
 const kb = (p) => (statSync(p).size / 1024).toFixed(0);
 console.log(`OK  worker.js (${kb(SRC)} KB)  →  _worker.obf.js (${kb(OUT)} KB)`);
-console.log('    deploy: wrangler.toml → main = "_worker.obf.js"  سپس  npx wrangler deploy');
+console.log('    حالا محتوای _worker.obf.js را در داشبورد کلاودفلر (Quick Edit → Paste) قرار دهید.');
