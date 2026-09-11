@@ -1696,6 +1696,13 @@ async function load(env) {
   } else if (!MEM) {
     MEM = DEF();
   }
+  /* Anti-1101 round3 (Nahan): fallback نهایی روی پیش‌فرض‌ها.
+     اگر blob خراب باشد و isolate سرد باشد، MEM تا اینجا null می‌ماند و
+     هر فراخواننده‌ی «(await load(env)).settings» می‌ترکد — یعنی 1101 برای
+     همه‌ی مسیرها، حتی تونل. مثل loadSysConfig در نهان که روی SYSTEM_DEFAULTS
+     برمی‌گردد، این‌جا هم روی DEF() سقوط می‌کنیم؛ پنل بالا می‌آید و ادمین
+     می‌تواند تنظیمات را دوباره ذخیره کند. */
+  if (!MEM) { try { MEM = DEF(); } catch (e2) { MEM = { settings: { auth: { path: 'panel', sub: { path: 'sub' } } }, users: [] }; } }
   MEM_TS = Date.now();
   return MEM;
 }
@@ -7379,6 +7386,12 @@ async function tunnelHandler(request, env, st, ctx) {
   /* طبق مستندات Cloudflare: binaryType قبل از accept() */
   server.binaryType = 'arraybuffer';
   server.accept();
+  /* Anti-1101 round3 (نهان): لیسنرِ خطایِ خاموش — بلافاصله بعد از accept().
+     بین accept() و اتصالِ لیسنرِ error در ReadableStream یک پنجره‌ی بدونِ
+     محافظ هست؛ اگر سوکت در همین پنجره error بدهد، خطایِ کنترل‌نشده بالا
+     می‌رود و isolate را می‌کشد. لیسنرِ خالی مثل نهان (worker.txt خط 6154)
+     این پنجره را می‌بندد؛ ReadableStream بعداً لیسنرِ خودش را سوار می‌کند. */
+  server.addEventListener('error', () => {});
 
   /* IP واقعی کلاینت — فقط هدرهایی که خودِ کلاودفلر می‌گذارد قابل اعتمادند
      (x-forwarded-for را خودِ کلاینت هم می‌تواند جعل کند) */
@@ -8338,8 +8351,13 @@ export default {
 
       /* ۱) تونل: هر درخواست ارتقای WebSocket — مستقل از مسیر (مثل نهان) */
       const isWs = String(request.headers.get('upgrade') || '').toLowerCase() === 'websocket';
-      /* تونل: state از fetch handler می‌آید — بدون await اضافی */
-      if (isWs) return await tunnelHandler(request, env, await load(env), ctx);
+      /* تونل: state از fetch handler می‌آید — بدون await اضافی.
+         Anti-1101 round3: اگر tunnelHandler یا load() به هر دلیلی throw کند،
+         پاسخِ استتار برمی‌گردد نه 500/1101 — همان رفتاری که مسیرهای دیگر دارند. */
+      if (isWs) {
+        try { return await tunnelHandler(request, env, await load(env), ctx); }
+        catch (eTunnel) { return await decoyPage(s, false, request, url); }
+      }
 
       /* ۲) مسیرهای ریشه‌ای زیر مسیر مخفی */
       const route = '/' + String(s.auth.path || 'panel').replace(/^\/+/, '');
@@ -8365,28 +8383,35 @@ export default {
          وگرنه نه راهی برای خاموش کردنش می‌ماند و نه برای مانیتورینگ */
       if (isHealth) { try { return await apiHandler(request, env, url, ctx); } catch (e) { return json({ ok: false, error: String((e && e.message) || e) }, 500); } }
 
-      /* ۳) پنل — روی مسیر مخفی (در وضعیت اضطراری: سایت پوششی) */
+      /* ۳) پنل — روی مسیر مخفی (در وضعیت اضطراری: سایت پوششی).
+         Anti-1101 round3 (نهان): اگر loadUI/panelHtml شکست خورد (گیت‌هاب
+         در دسترس نیست، UI خراب است، …)، سایتِ پوششی برگردد — نه 404 خام
+         که خودش اثرِ انگشتیِ «چیزی این‌جا پنهان است» دارد و نه 500/1101. */
       if (isPanel) {
         if (panicOn) return await cover();
-        return await panelHtml();
+        try { return await panelHtml(); }
+        catch (ePanel) { return await cover(); }
       }
 
-      /* ۴) اشتراک — روی مسیر مخفی (در وضعیت اضطراری: سایت پوششی) */
+      /* ۴) اشتراک — روی مسیر مخفی (در وضعیت اضطراری: سایت پوششی).
+         Anti-1101 round3: خطایِ subHandler → سایتِ پوششی، نه throw به بیرون. */
       if (isSub) {
         if (panicOn) return await cover();
-        const id = path.split('/').pop();
-        const newUrl = new URL(url);
-        newUrl.pathname = '/' + s.sub.path + '/' + (id || '');
-        return await subHandler(request, env, newUrl, cf, false);
+        try {
+          const id = path.split('/').pop();
+          const newUrl = new URL(url);
+          newUrl.pathname = '/' + s.sub.path + '/' + (id || '');
+          return await subHandler(request, env, newUrl, cf, false);
+        } catch (eSub) { return await cover(); }
       }
 
       /* ۵) صفحه‌ی کاربر (اختیاری، مسیر مستقیم) */
-      if (path.startsWith('/status/')) return panicOn ? await cover() : await subHandler(request, env, url, cf, true);
-      if (path.startsWith('/' + s.sub.path + '/')) return panicOn ? await cover() : await subHandler(request, env, url, cf, false);
+      if (path.startsWith('/status/')) { try { return panicOn ? await cover() : await subHandler(request, env, url, cf, true); } catch (eStatus) { return await cover(); } }
+      if (path.startsWith('/' + s.sub.path + '/')) { try { return panicOn ? await cover() : await subHandler(request, env, url, cf, false); } catch (eSub2) { return await cover(); } }
 
       /* ۶) ریشه — با استتارِ خاموش پنل، وگرنه سایت پوششی
          (وضعیت اضطراری همیشه سایت پوششی را نشان می‌دهد) */
-      if (path === '/') return (!panicOn && !disguiseOn) ? await panelHtml() : await cover();
+      if (path === '/') return (!panicOn && !disguiseOn) ? await panelHtml().catch(() => cover()) : await cover();
 
       /* ۷) تست سلامت مسیر — فقط وقتی استتار خاموش است؛ وگرنه هر رباتی با
          یک ?test=1 می‌توانست بفهمد این دامنه یک تونل است */
