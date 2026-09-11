@@ -1,1 +1,3 @@
-_test_page.html
+node_modules/
+_worker.obf.js
+.wrangler/
