@@ -1,0 +1,13 @@
+{
+  "name": "sub-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Build pipeline: obfuscate worker.js before pasting into the Cloudflare dashboard (anti-1101 scanner hardening, like byJoey/cfnew)",
+  "scripts": {
+    "build": "node scripts/build-obfuscated.mjs"
+  },
+  "devDependencies": {
+    "javascript-obfuscator": "^4.1.1"
+  }
+}
