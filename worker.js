@@ -1857,7 +1857,9 @@ function applyBackup(st, data, mode) {
 
 function addLog(st, level, actor, action, detail = '') { st.logs = st.logs || []; st.logs.unshift({ id: randTok(8), ts: Date.now(), level, actor, action, detail }); st.logs = st.logs.slice(0, 50); }
 function seed(st) {
-  if (!st.users.length) st.users = [{ id: randTok(6), name: 'admin', uuid: crypto.randomUUID(), secret: randTok(12), enabled: true, note: 'کاربر اصلی', quotaGB: 0, dailyQuotaMB: 0, expiryAt: null, expiryFirstUse: false, expiryArmed: true, deviceLimit: 3, ipLimit: 0, maxConfigs: 0, speedLimit: 0, mode: 'inherit', ports: '', cleanIPs: [], proxyIPs: [], nodes: [], nat64: '', panelUrl: '', blockAdult: false, blockAds: true, fakes: [], fakeMode: 'inherit', up: 0, down: 0, totalReq: 0, lastSeen: null, createdAt: Date.now() }];
+  try { normalize(st); } catch (e) {} // Anti-1101 round2: canonicalize stored shape on read, like save() does on write
+  if (!st || !st.settings) return st;
+  if (!st.users || !st.users.length) st.users = [{ id: randTok(6), name: 'admin', uuid: crypto.randomUUID(), secret: randTok(12), enabled: true, note: 'کاربر اصلی', quotaGB: 0, dailyQuotaMB: 0, expiryAt: null, expiryFirstUse: false, expiryArmed: true, deviceLimit: 3, ipLimit: 0, maxConfigs: 0, speedLimit: 0, mode: 'inherit', ports: '', cleanIPs: [], proxyIPs: [], nodes: [], nat64: '', panelUrl: '', blockAdult: false, blockAds: true, fakes: [], fakeMode: 'inherit', up: 0, down: 0, totalReq: 0, lastSeen: null, createdAt: Date.now() }];
   st.users.forEach((u) => { if (!Array.isArray(u.fakes)) u.fakes = []; if (!u.fakeMode) u.fakeMode = 'inherit'; });
   return st;
 }
@@ -1985,13 +1987,16 @@ async function geoReal(ip) {
   if (GEO_CACHE.size > 500) { const first = GEO_CACHE.keys().next().value; GEO_CACHE.delete(first); }
   return rec;
 }
-function portsOf(u, s) { const p = (u.ports && u.ports.length ? (typeof u.ports === 'string' ? u.ports.split(/[,\s]+/) : u.ports) : s.ports).map(Number).filter((x) => x > 0); return p.length ? p : [443]; }
+function portsOf(u, s) { const raw = (u.ports && u.ports.length ? u.ports : s.ports); const arr = (typeof raw === 'string' ? raw.split(/[,\s]+/) : (Array.isArray(raw) ? raw : [raw])); const p = (arr || []).map(Number).filter((x) => x > 0); return p.length ? p : [443]; } // Anti-1101 round2: s.ports string-safe (DEF default is a string)
 function ipsOf(u, s, cf) {
-  let list = u.cleanIPs && u.cleanIPs.length ? u.cleanIPs : s.cleanIPs;
+  // Anti-1101 round2: never trust stored shape — strings must not reach .find/.map
+  const toArr = (v) => (Array.isArray(v) ? v : (typeof v === 'string' ? v.split(/[\r\n,;]+/).map((x) => x.trim()).filter(Boolean) : []));
+  let list = (u.cleanIPs && u.cleanIPs.length ? toArr(u.cleanIPs) : toArr(s.cleanIPs));
   if (s.perIsp && s.ispPools && s.ispPools.length) {
+    const pools = toArr(s.ispPools);
     const isp = (cf && cf.asOrganization) || '';
-    const hit = s.ispPools.find((p) => isp && p.toLowerCase().includes(isp.split(' ')[0].toLowerCase()));
-    if (hit) { const ips = hit.split('=')[1].split(',').map((x) => x.trim()); if (ips.length) list = ips; }
+    const hit = pools.find((p) => isp && String(p).toLowerCase().includes(isp.split(' ')[0].toLowerCase()));
+    if (hit) { const seg = String(hit).split('='); if (seg.length > 1) { const ips = seg[1].split(',').map((x) => x.trim()).filter(Boolean); if (ips.length) list = ips; } }
   }
   return list.length ? list : [(s.panel.url || 'simorgh.workers.dev')];
 }
@@ -2402,7 +2407,13 @@ function clashYaml(list, u, s, url, mains) {
 }
 function countryGroups(list, names) {
   const map = {};
-  list.forEach((c, i) => { const g = geo(c.entry.ip); (map[g.name] = map[g.name] || []).push(names[i]); });
+  // Anti-1101 round2: geo() هرگز تعریف نشده بود (ReferenceError → 1101 در ساب Clash)؛ از کش GEO_CACHE همگام می‌خوانیم
+  list.forEach((c, i) => {
+    let gname = '';
+    try { const hit = (typeof GEO_CACHE !== 'undefined' && GEO_CACHE.get(c.entry.ip)) || null; gname = (hit && hit.name) || ''; } catch (e) {}
+    if (!gname) gname = c.entry.ip;
+    (map[gname] = map[gname] || []).push(names[i]);
+  });
   return Object.entries(map).map(([name, items]) => ({ name, items }));
 }
 function metaJson(list, u, s, url, mains) {
@@ -8291,9 +8302,11 @@ export class ConnLimiter {
 /* ════════════════════════════ ورودی ════════════════ */
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    const cf = request.cf || null;
+    // Anti-1101 round2 (Nahan): parse URL inside try — malformed URL must be 404, never a throw
+    let url = null, cf = null;
     try {
+      url = new URL(request.url);
+      cf = request.cf || null;
       // Anti-1101 (Nahan): cap isolate memory, never throw to edge
       try { pruneRateNahan(); if (typeof DECOY_CACHE !== 'undefined' && DECOY_CACHE.size > 200) DECOY_CACHE.clear(); } catch (e) {}
       /* ساخت جدول D1 در اولین درخواست — فقط یک‌بار در طول عمر isolate */
@@ -8304,7 +8317,7 @@ export default {
         } catch (e) {}
       }
       if (request.method === 'OPTIONS') { const s0 = (await load(env)).settings; return new Response(null, { status: 204, headers: secHeaders(s0) }); }
-      if (url.pathname === '/dns-query') return dohHandler(request, env, url);
+      if (url.pathname === '/dns-query') return await dohHandler(request, env, url);
       /* فایل با اندازه‌ی معلوم — برای «تست واقعی ترافیک» از داخل تونل */
       /* فایل با اندازه‌ی معلوم — درخواست از مرورگرِ کاربر می‌آید، سرور با کانفیگِ همان کاربر پاسخ می‌دهد */
       if (url.pathname === '/__speedtest') return await speedtestHandler(url, env, request);
@@ -8326,7 +8339,7 @@ export default {
       /* ۱) تونل: هر درخواست ارتقای WebSocket — مستقل از مسیر (مثل نهان) */
       const isWs = String(request.headers.get('upgrade') || '').toLowerCase() === 'websocket';
       /* تونل: state از fetch handler می‌آید — بدون await اضافی */
-      if (isWs) return tunnelHandler(request, env, await load(env), ctx);
+      if (isWs) return await tunnelHandler(request, env, await load(env), ctx);
 
       /* ۲) مسیرهای ریشه‌ای زیر مسیر مخفی */
       const route = '/' + String(s.auth.path || 'panel').replace(/^\/+/, '');
@@ -8354,26 +8367,26 @@ export default {
 
       /* ۳) پنل — روی مسیر مخفی (در وضعیت اضطراری: سایت پوششی) */
       if (isPanel) {
-        if (panicOn) return cover();
-        return panelHtml();
+        if (panicOn) return await cover();
+        return await panelHtml();
       }
 
       /* ۴) اشتراک — روی مسیر مخفی (در وضعیت اضطراری: سایت پوششی) */
       if (isSub) {
-        if (panicOn) return cover();
+        if (panicOn) return await cover();
         const id = path.split('/').pop();
         const newUrl = new URL(url);
         newUrl.pathname = '/' + s.sub.path + '/' + (id || '');
-        return subHandler(request, env, newUrl, cf, false);
+        return await subHandler(request, env, newUrl, cf, false);
       }
 
       /* ۵) صفحه‌ی کاربر (اختیاری، مسیر مستقیم) */
-      if (path.startsWith('/status/')) return panicOn ? cover() : subHandler(request, env, url, cf, true);
-      if (path.startsWith('/' + s.sub.path + '/')) return panicOn ? cover() : subHandler(request, env, url, cf, false);
+      if (path.startsWith('/status/')) return panicOn ? await cover() : await subHandler(request, env, url, cf, true);
+      if (path.startsWith('/' + s.sub.path + '/')) return panicOn ? await cover() : await subHandler(request, env, url, cf, false);
 
       /* ۶) ریشه — با استتارِ خاموش پنل، وگرنه سایت پوششی
          (وضعیت اضطراری همیشه سایت پوششی را نشان می‌دهد) */
-      if (path === '/') return (!panicOn && !disguiseOn) ? panelHtml() : cover();
+      if (path === '/') return (!panicOn && !disguiseOn) ? await panelHtml() : await cover();
 
       /* ۷) تست سلامت مسیر — فقط وقتی استتار خاموش است؛ وگرنه هر رباتی با
          یک ?test=1 می‌توانست بفهمد این دامنه یک تونل است */
@@ -8382,7 +8395,7 @@ export default {
       }
 
       /* ۸) همه‌ی مسیرهای دیگر = سایت پوششی (استتار مثل نهان) */
-      return cover();
+      return await cover();
     } catch (e) {
       // Anti-1101 (Nahan): any uncaught error -> 404 benign, never 500/throw which shows real 1101 page
       return new Response('Not Found', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } });
