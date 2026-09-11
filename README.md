@@ -23,29 +23,35 @@
 
 ## 🚀 نصب
 
-### روش ۱ — داشبورد کلاودفلر (بدون ترمینال)
+### روش ۱ — داشبورد کلاودفلر با نسخهٔ ضد-1101 (توصیه‌شده)
+
+> **چرا این روش؟** فایل `worker.js` خام، رشته‌های پروتکل (`vless`، `trojan` و…) را به‌صورت متن ساده دارد و می‌تواند اسکنر استاتیک کلاودفلر را فعال کند (نتیجه: خطای ۱۱۰۱ یا محدودسازی حساب). نسخهٔ obfuscate شده هیچ رشتهٔ پروتکلی ندارد — همان روشی که پروژه‌های مثل byJoey/cfnew استفاده می‌کنند.
+
+**گام ۱ — ساخت نسخهٔ obfuscate شده:**
+
+```bash
+npm install
+npm run build
+```
+
+خروجی: فایل **`_worker.obf.js`** (حدود ۵ مگابایت). این فایل نسخهٔ امن و قابل‌دیپلوی است.
+
+**گام ۲ — دیپلوی در داشبورد:**
 
 1. وارد <https://dash.cloudflare.com> شوید
 2. **Workers & Pages → Create application → Create Worker**
 3. نام را `panel` بگذارید → **Deploy**
 4. روی ورکر کلیک کنید → **Edit code**
-5. کل محتوای ادیتور را پاک کنید و **تمام فایل [`worker.js`](./worker.js)** را جایگذاری کنید (`Ctrl+A` → `Ctrl+V`)
+5. کل محتوای ادیتور را پاک کنید و **تمام فایل `_worker.obf.js`** را جایگذاری کنید (`Ctrl+A` → `Ctrl+V`)
 6. **Deploy** را بزنید و آدرس `https://panel.<account>.workers.dev` را باز کنید
 
 > رمز پیش‌فرض: **`simorgh`**
 
-### روش ۲ — Wrangler (یک خط)
+> ⚠️ **نکتهٔ obfuscation:** چون کد obfuscate شده، اشکال‌زدایی (debug) سخت است. برای عیب‌یابی، موقتاً فایل `worker.js` خام را پیست کنید، مشکل را پیدا و رفع کنید، بعد دوباره `npm run build` بزنید.
 
-```bash
-npx wrangler deploy worker.js --name panel --compatibility-date 2026-01-15
-```
+### روش ۲ — داشبورد کلاودفلر با نسخهٔ خام (فقط برای عیب‌یابی)
 
-یا با فایل [`wrangler.toml`](./wrangler.toml):
-
-```bash
-npx wrangler login
-npx wrangler deploy
-```
+همان مراحل روش ۱، ولی فایل [`worker.js`](./worker.js) را جایگذاری کنید. **توصیه نمی‌شود** — رشته‌های پروتکلِ خام ممکن است پرچم بخورد.
 
 ### مرحله‌ی مهم: بارگذاری UI از گیت‌هاب
 
@@ -67,19 +73,9 @@ npx wrangler deploy
 
 بدون KV، کاربران و تنظیمات با سرد شدن ورکر **ریست می‌شوند**:
 
-```bash
-npx wrangler kv namespace create KV_PERSIST
-```
+از داشبورد: **Worker → Settings → Bindings → Add → KV Namespace → Variable name: `KV`**
 
-سپس در `wrangler.toml`:
-
-```toml
-[[kv_namespaces]]
-binding = "KV"
-id = "<KV_ID>"
-```
-
-یا از داشبورد: **Worker → Settings → Bindings → Add → KV Namespace → Variable name: `KV`**
+(اگر قبلاً wrangler داشتید: `npx wrangler kv namespace create KV_PERSIST` — ولی برای این روش، داشبورد کافی است.)
 
 متغیرهای اختیاری:
 
@@ -168,11 +164,12 @@ https://panel.<account>.workers.dev/status/<username>
 
 ```
 worker.js        موتور: هسته‌ی تونل + API + سرویس اشتراک + امنیت
+_worker.obf.js   نسخهٔ obfuscate شده (با `npm run build` ساخته می‌شود — این را دیپلوی کنید)
 ui/index.html    پوسته‌ی پنل (اسپرایت آیکون + جای تزریق CSS/JS)
 ui/style.css     سیستم طراحی (تم تاریک/روشن، RTL، ریسپانسیو)
 ui/app.js        منطق سمت کلاینت (۱۲ نما، فرم‌های اسکیمامحور)
-wrangler.toml    کانفیگ استقرار
-DEPLOY.md        راهنمای استقرار گام‌به‌گام
+scripts/build-obfuscated.mjs  اسکریپت ساخت نسخهٔ ضد-1101
+package.json     وابستگی‌ها (فقط javascript-obfuscator برای build)
 tests/           مجموعه‌ی تست محلی (بدون نیاز به حساب کلاودفلر)
 src/             پنل نمایشی React/Vite (نمونه‌ی بصری، اختیاری)
 ```
