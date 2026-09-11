@@ -851,6 +851,13 @@
       { p: 'sub.countryGroups', l: 'گروه‌بندی خودکار کشورها', t: 'sw' },
       { p: 'sub.namePrefix', l: 'پیشوند نام کانفیگ', t: 'text' },
     ] },
+    { t: 'رادار آی‌پی تمیز (اسکنر صفحه‌ی کاربر)', icon: 'fa-satellite-dish', two: 1, f: [
+      { p: 'sub.radarCount', l: 'تعداد آی‌پی اسکن‌شده', t: 'rng', min: 64, max: 8192, step: 64, u: ' IP', h: 'پیش‌فرض ۲۰۴۸ — تعداد آی‌پی تصادفی از رنج‌های رسمی کلودفلر که در هر اسکن پروب می‌شود' },
+      { p: 'sub.radarConcurrency', l: 'اتصال همزمان اسکن', t: 'rng', min: 8, max: 256, step: 8, u: '×', h: 'پیش‌فرض ۶۴ — بیشتر = سریع‌تر ولی سنگین‌تر روی مرورگر/شبکه' },
+      { p: 'sub.radarTimeout', l: 'تایم‌اوت هر پروب', t: 'rng', min: 300, max: 5000, step: 100, u: ' ms', h: 'پیش‌فرض ۱۲۰۰ — پاسخِ کندتر از این = آی‌پی مرده' },
+      { p: 'sub.radarMinRtt', l: 'کمینهٔ تأخیر معتبر', t: 'rng', min: 0, max: 500, step: 10, u: ' ms', h: 'پیش‌فرض ۶۰ — سریع‌تر از این = پاسخِ جعلیِ فیلترشکنِ محلی (مردود)' },
+      { p: 'sub.radarProbes', l: 'تعداد پروب هر آی‌پی', t: 'rng', min: 1, max: 5, step: 1, u: '×', h: 'پیش‌فرض ۲ — پروبِ بیشتر = نتیجهٔ دقیق‌تر ولی اسکنِ کندتر' },
+    ] },
     { t: 'قواعد روتینگ', icon: 'fa-route', d: 'DOMAIN / IP-CIDR / GEOIP / GEOSITE', two: 1, f: [
       { p: 'sub.rules', l: 'قواعد (هر خط یک قاعده)', t: 'area', dt: 'lines', h: 'GEOIP,IR,DIRECT\nGEOSITE,category-ads-all,REJECT' },
       { p: 'sub.blockAdult', l: 'بلاک محتوای بزرگسال', t: 'sw' },

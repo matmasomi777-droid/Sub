@@ -2059,17 +2059,21 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
 
         // ===== رادار آی‌پی تمیز (کاملاً سمت مرورگر) =====
         /* کل رنج 104.0.0.0/8 و 172.0.0.0/8 کلودفلر اسکن می‌شود */
-        const CF_RANGES = [];
-        for (let b2 = 0; b2 <= 255; b2++) CF_RANGES.push(['104.' + b2 + '.', 0, 255]);
-        for (let b2 = 0; b2 <= 255; b2++) CF_RANGES.push(['172.' + b2 + '.', 0, 255]);
+        /* رنج‌های رسمیِ IPv4 کلودفلر (cloudflare.com/ips-v4) — همگام با صفحه‌ی جدید.
+           قبلاً کل 104.0.0.0/8 و 172.0.0.0/8 اسکن می‌شد که عمدتاً غیر-CF بود. */
+        const CF_RANGES = [
+            ['104.', 16, 31], ['172.', 64, 71], ['162.', 158, 159], ['188.', 114, 115],
+            ['108.', 162, 163], ['141.', 101, 101], ['190.', 93, 94], ['197.', 234, 234],
+            ['131.', 0, 0], ['173.', 245, 245], ['103.', 21, 22], ['103.', 31, 31],
+        ];
         const RADAR_PORTS = [443, 8443, 2053, 2083, 2087, 2096];
         /* تایم‌اوت کوتاه‌تر و پروب کمتر = اسکن چند برابر سریع‌تر؛
            آی‌پی مرده دیگر ۶ ثانیه هم بلاک نمی‌کند */
-        const RADAR_TIMEOUT = 1200;
-        const RADAR_PROBES = 2;
-        /* ⚠️ تعداد اسکن ۱۰۲۴ شد (قبلاً ۱۸۰ بود) — همروندی هم بالا رفت */
-        const RADAR_CONCURRENCY = 48;
-        const RADAR_IP_COUNT = 1024;
+        const RADAR_IP_COUNT = (typeof panelData !== 'undefined' && panelData.radarCount >= 64) ? panelData.radarCount : 2048;
+        const RADAR_CONCURRENCY = (typeof panelData !== 'undefined' && panelData.radarConcurrency >= 8) ? Math.min(panelData.radarConcurrency, RADAR_IP_COUNT) : 64;
+        const RADAR_TIMEOUT = (typeof panelData !== 'undefined' && panelData.radarTimeout >= 300) ? panelData.radarTimeout : 1200;
+        const RADAR_MIN_RTT = (typeof panelData !== 'undefined' && panelData.radarMinRtt >= 0) ? panelData.radarMinRtt : 60;
+        const RADAR_PROBES = (typeof panelData !== 'undefined' && panelData.radarProbes >= 1 && panelData.radarProbes <= 5) ? panelData.radarProbes : 2;
         /* ═══ خواسته‌ی کاربر: به‌محضِ رسیدن به ۵ آی‌پیِ تمیز، اسکن «موفق» قطع شود ═══
            تعدادِ لازم = سقفِ کانفیگِ این کاربر که از ورکر می‌آید (پیش‌فرضِ ۵). */
         const RADAR_KEEP = (typeof panelData !== 'undefined' && panelData.nodeLimit > 0) ? panelData.nodeLimit : 5;
@@ -2078,9 +2082,15 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         let radarCancelRequested = false;
 
         function randCfIp() {
-            var r = CF_RANGES[Math.floor(Math.random() * CF_RANGES.length)];
-            var c = r[1] + Math.floor(Math.random() * (r[2] - r[1] + 1));
-            return r[0] + c + '.' + Math.floor(Math.random() * 256);
+            /* انتخاب وزن‌دار بر اساس اندازهٔ مؤثر هر رنج — خروجی همیشه ۴ اکتتِ معتبر */
+            let total = 0;
+            const weights = CF_RANGES.map(function(r) { total += (r[2] - r[1] + 1) * 256; return total; });
+            let pick = Math.random() * total, idx = 0;
+            while (pick > weights[idx] && idx < weights.length - 1) idx++;
+            const r = CF_RANGES[idx];
+            const c = r[1] + Math.floor(Math.random() * (r[2] - r[1] + 1));
+            /* پیشوند ۱-اکتتی است (مثل '104.') → اکتتِ دوم = c، سوم و چهارم تصادفیِ کامل */
+            return r[0] + c + '.' + Math.floor(Math.random() * 256) + '.' + Math.floor(Math.random() * 256);
         }
 
         // هم onload و هم onerror یعنی «هاست جواب داد»؛ ما دسترسی و تأخیر را می‌سنجیم نه موفقیت تصویر.

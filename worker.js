@@ -142,6 +142,8 @@ const DEF = () => ({
     sec: { cors: true, csp: true, killSwitch: false, ipConnLimit: 0, speedTestUrl: '' },
     sub: {
       path: 'sub', userAgent: '', fakeConfigs: true, nodeLimit: 12, converter: '', telegramChannel: '@simorgh_channel',
+      /* تنظیماتِ رادار آی‌پی تمیز (اسکنر سمت مرورگر) */
+      radarCount: 2048, radarConcurrency: 64, radarTimeout: 1200, radarMinRtt: 60, radarProbes: 2,
       /* آیدی تلگرامی که در صفحه‌ی کاربر و لینک ساب نمایش داده می‌شود */
       telegramSupport: '@simorgh_channel', telegramBuy: '',
       countryGroups: true, namePrefix: 'پنل',
@@ -4215,7 +4217,13 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             subUrl: "__SYNC_NORMAL__",
             subUrlBase64: "__SYNC_NORMAL_BASE64__",
             rawUrl: "__SYNC_RAW__",
-            nodeLimit: parseInt("__NODE_LIMIT__", 10) || 0
+            nodeLimit: parseInt("__NODE_LIMIT__", 10) || 0,
+            /* تنظیماتِ رادار — از پنل (sub.radar*) با placeholder تزریق می‌شود */
+            radarCount: parseInt("__RADAR_COUNT__", 10) || 2048,
+            radarConcurrency: parseInt("__RADAR_CONCURRENCY__", 10) || 64,
+            radarTimeout: parseInt("__RADAR_TIMEOUT__", 10) || 1200,
+            radarMinRtt: parseInt("__RADAR_MIN_RTT__", 10) || 60,
+            radarProbes: parseInt("__RADAR_PROBES__", 10) || 2
         };
 
         // ===== متغیرهای سراسری =====
@@ -4244,7 +4252,9 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             clientIp: null,
             /* سقفِ کانفیگِ این کاربر — رادارِ همین صفحه به‌محضِ رسیدن به این تعداد
                آی‌پیِ تمیز، اسکن را موفق قطع می‌کند (پیش‌فرضِ ۵) */
-            nodeLimit: panelData.nodeLimit > 0 ? panelData.nodeLimit : 5
+            nodeLimit: panelData.nodeLimit > 0 ? panelData.nodeLimit : 5,
+            radarCount: panelData.radarCount, radarConcurrency: panelData.radarConcurrency,
+            radarTimeout: panelData.radarTimeout, radarMinRtt: panelData.radarMinRtt, radarProbes: panelData.radarProbes
         };
 
         function updateConnectionStatus() {
@@ -4966,26 +4976,18 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
 
         // ===== رادار آی‌پی تمیز (کاملاً سمت مرورگر) =====
         /* رنج‌های رسمیِ کلودفلر (cloudflare.com/ips-v4) — همگام با صفحه‌ی جدید */
+        /* رنج‌های رسمیِ IPv4 کلودفلر — قالبِ ۲-اکتتیِ یکنواخت (بدون آی‌پیِ ۵-اکتتیِ خراب) */
         const CF_RANGES = [
-            ['104.16.', 0, 255], ['104.17.', 0, 255], ['104.18.', 0, 255], ['104.19.', 0, 255],
-            ['104.20.', 0, 255], ['104.21.', 0, 255], ['104.22.', 0, 255], ['104.23.', 0, 255],
-            ['104.24.', 0, 255], ['104.25.', 0, 255], ['104.26.', 0, 255], ['104.27.', 0, 255],
-            ['104.28.', 0, 255], ['104.29.', 0, 255], ['104.30.', 0, 255], ['104.31.', 0, 255],
-            ['172.64.', 0, 255], ['172.65.', 0, 255], ['172.66.', 0, 255], ['172.67.', 0, 255],
-            ['172.68.', 0, 255], ['172.69.', 0, 255], ['172.70.', 0, 255], ['172.71.', 0, 255],
-            ['162.158.', 0, 255],
-            ['188.114.96.', 0, 15], ['188.114.97.', 0, 15], ['188.114.98.', 0, 15], ['188.114.99.', 0, 15],
-            ['108.162.192.', 0, 255], ['108.162.193.', 0, 255], ['108.162.194.', 0, 255], ['108.162.195.', 0, 255],
-            ['141.101.64.', 0, 255], ['141.101.65.', 0, 255], ['141.101.66.', 0, 255], ['141.101.67.', 0, 255],
-            ['190.93.240.', 0, 255], ['197.234.240.', 0, 3], ['131.0.72.', 0, 7],
-            ['173.245.48.', 0, 255], ['103.21.244.', 0, 7], ['103.22.200.', 0, 7], ['103.31.4.', 0, 7],
+            ['104.', 16, 31], ['172.', 64, 71], ['162.', 158, 159], ['188.', 114, 115],
+            ['108.', 162, 163], ['141.', 101, 101], ['190.', 93, 94], ['197.', 234, 234],
+            ['131.', 0, 0], ['173.', 245, 245], ['103.', 21, 22], ['103.', 31, 31],
         ];
         const RADAR_PORTS = [443, 8443, 2053, 2083, 2087, 2096];
-        const RADAR_TIMEOUT = 1200;
-        const RADAR_MIN_RTT = 60;      /* میلی‌ثانیه — کمتر از این = جعلی */
-        const RADAR_PROBES = 2;
-        const RADAR_CONCURRENCY = 16;
-        const RADAR_IP_COUNT = 1024;
+        const RADAR_IP_COUNT = (sanaeiClientData.radarCount >= 64) ? sanaeiClientData.radarCount : 2048;
+        const RADAR_CONCURRENCY = (sanaeiClientData.radarConcurrency >= 8) ? Math.min(sanaeiClientData.radarConcurrency, RADAR_IP_COUNT) : 64;
+        const RADAR_TIMEOUT = (sanaeiClientData.radarTimeout >= 300) ? sanaeiClientData.radarTimeout : 1200;
+        const RADAR_MIN_RTT = (sanaeiClientData.radarMinRtt >= 0) ? sanaeiClientData.radarMinRtt : 60;
+        const RADAR_PROBES = (sanaeiClientData.radarProbes >= 1 && sanaeiClientData.radarProbes <= 5) ? sanaeiClientData.radarProbes : 2;
         /* ═══ خواسته‌ی کاربر: به‌محضِ رسیدن به ۵ آی‌پیِ تمیز، اسکن «موفق» قطع شود ═══
            تعدادِ لازم = سقفِ کانفیگِ این کاربر که از ورکر می‌آید (پیش‌فرضِ ۵). */
         const RADAR_KEEP = sanaeiClientData.nodeLimit || 5;
@@ -4994,9 +4996,15 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         let radarCancelRequested = false;
 
         function randCfIp() {
-            var r = CF_RANGES[Math.floor(Math.random() * CF_RANGES.length)];
-            var c = r[1] + Math.floor(Math.random() * (r[2] - r[1] + 1));
-            return r[0] + c + '.' + Math.floor(Math.random() * 256);
+            /* انتخاب وزن‌دار بر اساس اندازهٔ مؤثر هر رنج — خروجی همیشه ۴ اکتتِ معتبر */
+            let total = 0;
+            const weights = CF_RANGES.map(function(r) { total += (r[2] - r[1] + 1) * 256; return total; });
+            let pick = Math.random() * total, idx = 0;
+            while (pick > weights[idx] && idx < weights.length - 1) idx++;
+            const r = CF_RANGES[idx];
+            const c = r[1] + Math.floor(Math.random() * (r[2] - r[1] + 1));
+            /* پیشوند ۱-اکتتی است (مثل '104.') → اکتتِ دوم = c، سوم و چهارم تصادفیِ کامل */
+            return r[0] + c + '.' + Math.floor(Math.random() * 256) + '.' + Math.floor(Math.random() * 256);
         }
 
         // پروب با fetch — همگام با صفحه‌ی جدید: خطای سریع یعنی زنده، تایم‌اوت یعنی مرده
@@ -6524,6 +6532,11 @@ async function renderUserPage(u, st, url, dailyUsed) {
     __LAST_ONLINE_MS__: String(u.lastSeen || 0),
     /* تعدادِ کانفیگِ مؤثرِ این کاربر — رادارِ صفحه‌ی کاربر همین‌قدر آی‌پی ذخیره می‌کند */
     __NODE_LIMIT__: String(Number(u.maxConfigs) || Number(s.sub.nodeLimit) || 0),
+    __RADAR_COUNT__: String(Math.min(8192, Math.max(64, Number(s.sub.radarCount) || 2048))),
+    __RADAR_CONCURRENCY__: String(Math.min(256, Math.max(8, Number(s.sub.radarConcurrency) || 64))),
+    __RADAR_TIMEOUT__: String(Math.min(5000, Math.max(300, Number(s.sub.radarTimeout) || 1200))),
+    __RADAR_MIN_RTT__: String(Math.min(1000, Math.max(0, Number(s.sub.radarMinRtt) || 60))),
+    __RADAR_PROBES__: String(Math.min(5, Math.max(1, Number(s.sub.radarProbes) || 2))),
     __SYNC_NORMAL__: base,
     __SYNC_NORMAL_BASE64__: base + '?format=base64',
     __SYNC_RAW__: base + '?format=raw',
