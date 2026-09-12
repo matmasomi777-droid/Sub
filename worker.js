@@ -161,9 +161,9 @@ const DEF = () => ({
     scanner: {
       enabled: true,     /* نمایش کارت اسکنر در صفحه‌ی کاربر */
       ipCount: 2048,     /* تعداد آی‌پی‌های هر اسکن */
-      concurrency: 64,   /* همروندیِ پروب‌ها */
-      timeout: 1000,     /* تایم‌اوت هر پروب (میلی‌ثانیه) */
-      probes: 2,         /* تعداد پروب برای تأییدِ هر آی‌پی */
+      concurrency: 16,   /* همروندیِ پروب‌ها */
+      timeout: 2000,     /* تایم‌اوت هر پروب (میلی‌ثانیه) */
+      probes: 3,         /* تعداد پروب برای تأییدِ هر آی‌پی */
       minRtt: 0,         /* حداقل تأخیرِ قابل‌قبول (ms) — ۰ = بدون فیلتر */
       maxRtt: 0,         /* حداکثر تأخیرِ قابل‌قبول (ms) — ۰ = بدون سقف */
       keep: 0,           /* تعداد آی‌پیِ ذخیره‌شده — ۰ = سقف کانفیگِ کاربر */
@@ -4996,7 +4996,10 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
               قبلی آی‌پی‌های سالمِ نزدیک را حذف می‌کرد و اسکن بی‌نتیجه می‌ماند).
            ═══════════════════════════════════════════════════════════════════ */
         const SCAN = (function () {
-            const D = { ipCount: 2048, concurrency: 64, timeout: 1000, probes: 2, minRtt: 0, maxRtt: 0, keep: 0, mode: 'even' };
+            /* پیش‌فرض‌های موتورِ فالبک — هم‌راستا با DEF().scanner و scannerCfg().
+               تایم‌اوت ۲ ثانیه: ۱ ثانیه روی شبکه‌ی موبایلِ ایران خیلی از
+               لبه‌های سالم را «مرده» حساب می‌کرد. */
+            const D = { ipCount: 2048, concurrency: 16, timeout: 2000, probes: 3, minRtt: 0, maxRtt: 0, keep: 0, mode: 'even' };
             let c = {};
             try { c = JSON.parse("__SCANNER_CFG_JSON__") || {}; } catch (e) { c = {}; }
             const num = function (k, lo, hi) {
@@ -5067,11 +5070,16 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 let guard = 0;
                 while (out.length < count && guard++ < count * 40) push(randCfIp());
             } else {
+                /* «even»: هر بلوک به‌نوبت سهم می‌گیرد و درونِ هر بلوک آدرس
+                   تصادفی انتخاب می‌شود — نه پشت‌سرهم از یک نقطه (که در
+                   بلوک‌های بزرگ به بازه‌های تخصیص‌نیافته می‌خورد). */
                 const nb = CF_BLOCKS.length;
-                const off = CF_BLOCKS.map(function (b) { return Math.floor(Math.random() * b.size); });
                 for (let i = 0; i < count; i++) {
-                    const bi = i % nb, b = CF_BLOCKS[bi];
-                    push(n2ip(b.start + ((Math.floor(i / nb) + off[bi]) % b.size)));
+                    const b = CF_BLOCKS[i % nb];
+                    for (let t = 0; t < 8; t++) {
+                        const ip = n2ip(b.start + Math.floor(Math.random() * b.size));
+                        if (!seen[ip]) { seen[ip] = 1; out.push(ip); break; }
+                    }
                 }
             }
             return out;
@@ -5087,27 +5095,24 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         let radarRunning = false;
         let radarCancelRequested = false;
 
-        // پروب: هر خطای غیرِ تایم‌اوت یعنی دست‌کم یک سرورِ TLS جواب داد
+        // پروبِ Image (روشِ اثبات‌شده‌ی پنل نوا): onload یا onerror = لبه پاسخ داد
+        // = سالم؛ تایم‌اوت = مرده. هیچ وابستگی به CORS/AbortController.
         function pingIp(ip, port, timeout) {
             return new Promise(function(res) {
                 const t0 = performance.now();
-                let done = false, timer = null;
-                const ctrl = new AbortController();
+                let done = false;
+                const img = new Image();
                 const fin = function(ok) {
                     if (done) return;
                     done = true;
-                    if (timer) clearTimeout(timer);
-                    try { ctrl.abort(); } catch (e) {}
+                    img.onerror = img.onload = null;
                     res(ok ? Math.round(performance.now() - t0) : null);
                 };
-                timer = setTimeout(function() { fin(false); }, timeout);
+                const timer = setTimeout(function() { fin(false); }, timeout);
+                img.onerror = function() { clearTimeout(timer); fin(true); };
+                img.onload = function() { clearTimeout(timer); fin(true); };
                 const host = port == 443 ? ip : ip + ':' + port;
-                fetch('https://' + host + '/cdn-cgi/trace?_=' + Math.random(), {
-                    signal: ctrl.signal, mode: 'no-cors', cache: 'no-store',
-                }).then(function(r) { fin(true); }).catch(function(err) {
-                    if (err && err.name === 'AbortError') { fin(false); return; }
-                    fin(true);
-                });
+                img.src = 'https://' + host + '/cdn-cgi/trace?_=' + Math.random();
             });
         }
 
@@ -5123,6 +5128,9 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 const p = parseInt(parsed.port, 10);
                 if (p > 0 && RADAR_TLS_PORTS.indexOf(p) >= 0 && ports.indexOf(p) < 0) ports.push(p);
             });
+            /* اگر پورتی پیدا نشد، همان 443 اسکن می‌شود — وگرنه اسکنر بی‌صدا
+               با «پورتی برای اسکن نیست» برمی‌گشت و هیچ‌وقت کار نمی‌کرد. */
+            if (!ports.length) ports.push(443);
             return ports;
         }
 
@@ -5255,7 +5263,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                         if (radarCancelRequested) return;
                         const ip = ips[cursor++];
                         const res = await radarProbeIp(ip, ports);
-                        if (res) results.push(res);
+                        if (res && results.length < RADAR_KEEP) results.push(res);
                         doneCount++;
                         document.getElementById('radar-progress-bar').style.width = Math.round(doneCount / ips.length * 100) + '%';
                         statusEl.textContent = data.radarStatusScan
@@ -6616,9 +6624,9 @@ function scannerCfg(s) {
   return {
     enabled: sc.enabled !== false,
     ipCount: int(sc.ipCount, 16, 65536, 2048),
-    concurrency: int(sc.concurrency, 1, 256, 64),
-    timeout: int(sc.timeout, 200, 10000, 1000),
-    probes: int(sc.probes, 1, 5, 2),
+    concurrency: int(sc.concurrency, 1, 256, 16),
+    timeout: int(sc.timeout, 200, 10000, 2000),
+    probes: int(sc.probes, 1, 5, 3),
     minRtt: int(sc.minRtt, 0, 5000, 0),
     maxRtt: int(sc.maxRtt, 0, 20000, 0),
     keep: int(sc.keep, 0, 100, 0),

@@ -2452,7 +2452,10 @@
         /* تنظیمات اسکنر — از پنل می‌آید؛ اگر placeholder جایگزین نشده باشد
            (اجرای مستقیمِ فایل) همین پیش‌فرض‌های امن استفاده می‌شوند. */
         const SCAN = (function () {
-            const D = { ipCount: 2048, concurrency: 64, timeout: 1000, probes: 2, minRtt: 0, maxRtt: 0, keep: 0, mode: 'even' };
+            /* پیش‌فرض‌ها از پیاده‌سازیِ اثبات‌شده‌ی پنل نوا گرفته شده‌اند:
+               تایم‌اوت ۲ ثانیه (۱ ثانیه روی شبکه‌ی موبایلِ ایران خیلی از
+               لبه‌های سالم را «مرده» حساب می‌کرد) و هم‌روندیِ متعادل. */
+            const D = { ipCount: 2048, concurrency: 16, timeout: 2000, probes: 3, minRtt: 0, maxRtt: 0, keep: 0, mode: 'even' };
             let c = {};
             try { c = JSON.parse("__SCANNER_CFG_JSON__") || {}; } catch (e) { c = {}; }
             const num = function (k, lo, hi) {
@@ -2525,11 +2528,18 @@
                 let guard = 0;
                 while (out.length < count && guard++ < count * 40) push(randCfIp());
             } else {
+                /* «even»: هر بلوک به‌نوبت سهم می‌گیرد (پس رنج‌های کوچک هم واقعاً
+                   اسکن می‌شوند) و درونِ هر بلوک آدرس «تصادفی» انتخاب می‌شود.
+                   قبلاً آدرس‌ها از یک نقطه‌ی تصادفی پشت‌سرهم برداشته می‌شدند که
+                   در بلوک‌های بزرگ (مثل 104.16.0.0/13) به بازه‌های
+                   تخصیص‌نیافته می‌خورد و نتیجه‌ی اسکن تقریباً همیشه خالی می‌شد. */
                 const nb = CF_BLOCKS.length;
-                const off = CF_BLOCKS.map(function (b) { return Math.floor(Math.random() * b.size); });
                 for (let i = 0; i < count; i++) {
-                    const bi = i % nb, b = CF_BLOCKS[bi];
-                    push(n2ip(b.start + ((Math.floor(i / nb) + off[bi]) % b.size)));
+                    const b = CF_BLOCKS[i % nb];
+                    for (let t = 0; t < 8; t++) {
+                        const ip = n2ip(b.start + Math.floor(Math.random() * b.size));
+                        if (!seen[ip]) { seen[ip] = 1; out.push(ip); break; }
+                    }
                 }
             }
             return out;
@@ -2548,6 +2558,13 @@
                 const p = parseInt(parsed.port, 10);
                 if (p > 0 && RADAR_TLS_PORTS.indexOf(p) >= 0 && ports.indexOf(p) < 0) ports.push(p);
             });
+            /* ═══ علتِ اصلیِ «اسکنر کار نمی‌کند» ═══
+               اگر کانفیگ‌های کاربر پورتِ TLS نداشتند (مثلاً 80 یا پورتِ دلخواه)
+               یا parseConfigLink مقدارِ درست برنمی‌گرداند، این فهرست خالی می‌شد و
+               radarRun بلافاصله با پیامِ «پورتی برای اسکن نیست» برمی‌گشت — یعنی
+               اسکنر هیچ‌وقت شروع نمی‌شد و کاربر «کار نمی‌کند» می‌دید.
+               مرجعِ اثبات‌شده (پنل نوا): اگر پورتی پیدا نشد، همان 443 اسکن می‌شود. */
+            if (!ports.length) ports.push(443);
             return ports;
         }
 
@@ -2561,30 +2578,32 @@
         let radarRunning = false;
         let radarCancelRequested = false;
 
-        /* پروب: هر خطای غیرِ تایم‌اوت (گواهی/CORS/شبکه) یعنی دست‌کم یک سرورِ TLS
-           جواب داد؛ AbortError یعنی خودمان قطع کردیم = مرده. */
+        /* ═══ پروب — همان روشِ اثبات‌شده‌ی پنل نوا (Image به‌جای fetch) ═══
+           به https://IP/cdn-cgi/trace وصل می‌شویم. لبه‌ی زنده‌ی کلودفلر گواهیِ
+           نامطابق می‌دهد (چون SNI یک آی‌پیِ خام است)، پس مرورگر دستِ‌کم TLS را
+           کامل می‌کند و بعد تصویر را رد می‌کند → onerror سریع. اگر پاسخِ معتبری
+           هم بیاید → onload. پس:
+             • onload یا onerror = لبه پاسخ داد = «سالم»
+             • تایم‌اوت            = هیچ پاسخی نیامد = «مرده»
+           چرا fetch نه: پروبِ fetch به آی‌پیِ خام به mode/CORS/کش و
+           AbortController گره خورده و روی شبکه‌ی ایران نتیجه‌ی ناپایدار
+           می‌دهد؛ Image هیچ‌کدام از این وابستگی‌ها را ندارد. */
         function pingIp(ip, port, timeout) {
             return new Promise(function(res) {
                 const t0 = performance.now();
-                let done = false, timer = null;
-                const ctrl = new AbortController();
+                let done = false;
+                const img = new Image();
                 const fin = function(ok) {
                     if (done) return;
                     done = true;
-                    if (timer) clearTimeout(timer);
-                    try { ctrl.abort(); } catch (e) {}
+                    img.onerror = img.onload = null;
                     res(ok ? Math.round(performance.now() - t0) : null);
                 };
-                timer = setTimeout(function() { fin(false); }, timeout);
+                const timer = setTimeout(function() { fin(false); }, timeout);
+                img.onerror = function() { clearTimeout(timer); fin(true); };
+                img.onload = function() { clearTimeout(timer); fin(true); };
                 const host = port == 443 ? ip : ip + ':' + port;
-                fetch('https://' + host + '/cdn-cgi/trace?_=' + Math.random(), {
-                    signal: ctrl.signal,
-                    mode: 'no-cors',
-                    cache: 'no-store',
-                }).then(function() { fin(true); }).catch(function(err) {
-                    if (err && err.name === 'AbortError') { fin(false); return; }
-                    fin(true);
-                });
+                img.src = 'https://' + host + '/cdn-cgi/trace?_=' + Math.random();
             });
         }
 
@@ -2669,7 +2688,7 @@
                         if (radarCancelRequested) return;
                         const ip = ips[cursor++];
                         const res = await radarProbeIp(ip, ports);
-                        if (res) results.push(res);
+                        if (res && results.length < RADAR_KEEP) results.push(res);
                         doneCount++;
                         document.getElementById('radar-progress-bar').style.width = Math.round(doneCount / ips.length * 100) + '%';
                         statusEl.textContent = data.radarStatusScan

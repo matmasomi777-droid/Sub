@@ -1524,6 +1524,240 @@
   ];
   const SCAN_PORTS_UI = [443, 2053, 2083, 2087, 2096, 8443];
 
+  /* ═══════════════════════════════════════════════════════════════════
+     موتورِ اسکنِ داخلِ پنل
+     ───────────────────────────────────────────────────────────────────
+     همان موتوری که در صفحه‌ی کاربر (رادار) می‌چرخد، اینجا داخلِ خودِ پنل
+     اجرا می‌شود تا ادمین بدون باز کردنِ صفحه‌ی کاربر اسکن کند، نتیجه را
+     ببیند و روی «IPهای پاک» اعمال کند.
+
+     پروب = Image (روشِ اثبات‌شده‌ی پنل نوا):
+       • onload یا onerror → لبه پاسخ داد → سالم
+       • تایم‌اوت           → مرده
+     چرا fetch نه: پروبِ fetch به آی‌پیِ خام به mode/CORS/کش و
+     AbortController گره خورده و روی شبکه‌ی ایران نتیجه‌ی ناپایدار می‌دهد.
+     ═══════════════════════════════════════════════════════════════════ */
+  const PANEL_SCAN = (function () {
+    const ip2n = (s) => s.split('.').reduce((a, x) => a * 256 + Number(x), 0);
+    const n2ip = (v) => { v = v >>> 0; return [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255].join('.'); };
+    const num = (v, lo, hi, d) => { const n = parseInt(v, 10); return (isFinite(n) && n >= lo && n <= hi) ? n : d; };
+
+    let running = false, cancel = false, results = [], done = 0, total = 0, keepN = 0;
+
+    function blocksOf(ranges) {
+      const list = CF_CIDRS_UI.slice();
+      (ranges || []).forEach((c) => {
+        const t = String(c).trim();
+        if (/^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(t) && list.indexOf(t) < 0) list.push(t);
+      });
+      return list.map((c) => {
+        const parts = c.split('/');
+        const size = Math.pow(2, 32 - Number(parts[1]));
+        return { start: ip2n(parts[0]), size: size };
+      }).filter((b) => b.size >= 1 && isFinite(b.start));
+    }
+
+    /* حالتِ even: هر بلوک به‌نوبت سهم می‌گیرد (پس رنج‌های کوچک هم واقعاً اسکن
+       می‌شوند) و درونِ هر بلوک آدرس تصادفی برداشته می‌شود. حالتِ random:
+       احتمالِ انتخاب هر آدرس به اندازه‌ی رنجش. */
+    function buildList(count, ranges, mode) {
+      const blocks = blocksOf(ranges);
+      if (!blocks.length) return [];
+      const out = [], seen = Object.create(null);
+      if (mode === 'random') {
+        const totalSize = blocks.reduce((a, b) => a + b.size, 0);
+        let guard = 0;
+        while (out.length < count && guard++ < count * 40) {
+          let n = Math.floor(Math.random() * totalSize), ip = null;
+          for (let i = 0; i < blocks.length; i++) {
+            if (n < blocks[i].size) { ip = n2ip(blocks[i].start + n); break; }
+            n -= blocks[i].size;
+          }
+          if (ip && !seen[ip]) { seen[ip] = 1; out.push(ip); }
+        }
+        return out;
+      }
+      for (let i = 0; i < count; i++) {
+        const b = blocks[i % blocks.length];
+        for (let t = 0; t < 8; t++) {
+          const ip = n2ip(b.start + Math.floor(Math.random() * b.size));
+          if (!seen[ip]) { seen[ip] = 1; out.push(ip); break; }
+        }
+      }
+      return out;
+    }
+
+    function ping(ip, port, timeout) {
+      return new Promise((res) => {
+        const t0 = performance.now();
+        let fin2 = false;
+        const img = new Image();
+        const fin = (ok) => {
+          if (fin2) return;
+          fin2 = true;
+          img.onerror = img.onload = null;
+          res(ok ? Math.round(performance.now() - t0) : null);
+        };
+        const timer = setTimeout(() => fin(false), timeout);
+        img.onerror = () => { clearTimeout(timer); fin(true); };
+        img.onload = () => { clearTimeout(timer); fin(true); };
+        img.src = 'https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random();
+      });
+    }
+
+    /* پورت‌ها موازی آزموده می‌شوند (آی‌پیِ مرده فقط یک تایم‌اوت هزینه می‌دهد) و
+       پروب‌های تکمیلی فقط برای پورتِ برنده اجرا می‌شوند. */
+    async function probe(ip, ports, cfg) {
+      if (cancel) return null;
+      const first = await Promise.all(ports.map((p) => ping(ip, p, cfg.timeout)
+        .then((rtt) => (rtt === null ? null : { port: p, rtt: rtt }))));
+      const alive = first.filter(Boolean).sort((a, b) => a.rtt - b.rtt);
+      if (!alive.length) return null;
+      const best = alive[0];
+      const samples = [best.rtt];
+      for (let i = 1; i < cfg.probes; i++) {
+        if (cancel) break;
+        const rtt = await ping(ip, best.port, cfg.timeout);
+        if (rtt !== null) samples.push(rtt);
+      }
+      const avg = Math.round(samples.reduce((a, b) => a + b, 0) / samples.length);
+      const jitter = Math.max.apply(null, samples) - Math.min.apply(null, samples);
+      const loss = Math.round((1 - samples.length / cfg.probes) * 100);
+      if (cfg.minRtt > 0 && avg < cfg.minRtt) return null;
+      if (cfg.maxRtt > 0 && avg > cfg.maxRtt) return null;
+      return { ip: ip, port: best.port, avg: avg, jitter: jitter, loss: loss, score: avg + jitter * 0.5 + loss * 20 };
+    }
+
+    /* مقادیر از «همین صفحه» خوانده می‌شوند تا ادمین لازم نباشد اول ذخیره کند */
+    function readCfg() {
+      const g = (p, d) => { const el = $('#view [data-p="scanner.' + p + '"]'); return el ? el.value : d; };
+      const ports = String(g('ports', '')).split(/[,\s\n]+/)
+        .map((x) => parseInt(x, 10)).filter((x) => x > 0 && x < 65536).slice(0, 12);
+      return {
+        ipCount: num(g('ipCount', 2048), 16, 65536, 2048),
+        concurrency: num(g('concurrency', 16), 1, 256, 16),
+        timeout: num(g('timeout', 2000), 200, 10000, 2000),
+        probes: num(g('probes', 3), 1, 5, 3),
+        minRtt: num(g('minRtt', 0), 0, 5000, 0),
+        maxRtt: num(g('maxRtt', 0), 0, 20000, 0),
+        keep: num(g('keep', 0), 0, 100, 0),
+        mode: g('mode', 'even') === 'random' ? 'random' : 'even',
+        ranges: String(g('ranges', '')).split('\n').map((x) => x.trim()).filter(Boolean),
+        /* هرگز خالی نمی‌ماند — وگرنه اسکن بی‌صدا رد می‌شد */
+        ports: ports.length ? ports : [443],
+      };
+    }
+
+    const el = (id) => document.getElementById(id);
+
+    function paint() {
+      const bar = el('pScanBar'), st = el('pScanStatus'), wrap = el('pScanWrap');
+      if (bar) bar.style.width = (total ? Math.round(done / total * 100) : 0) + '%';
+      if (st) {
+        st.textContent = running
+          ? 'در حال اسکن… ' + fa(done) + ' از ' + fa(total) + ' • ' + fa(results.length) + ' آی‌پیِ سالم'
+          : (results.length
+            ? 'پایان — ' + fa(results.length) + ' آی‌پیِ سالم از ' + fa(total) + ' آی‌پیِ اسکن‌شده'
+            : 'آماده');
+      }
+      if (!wrap) return;
+      const top = results.slice().sort((a, b) => a.score - b.score).slice(0, keepN || 20);
+      if (!top.length) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
+      wrap.style.display = '';
+      wrap.innerHTML = '<div class="tbl-wrap"><table><thead><tr>' +
+        '<th>#</th><th>آی‌پی</th><th>تأخیر</th><th>لرزش</th><th>افت</th></tr></thead><tbody>' +
+        top.map((r, i) => '<tr' + (i === 0 ? ' style="color:var(--ac2);font-weight:700"' : '') + '>' +
+          '<td>' + fa(i + 1) + '</td>' +
+          '<td><span class="mono">' + esc(r.ip + ':' + r.port) + '</span></td>' +
+          '<td>' + fa(r.avg) + ' ms</td>' +
+          '<td>' + fa(r.jitter) + ' ms</td>' +
+          '<td>' + fa(r.loss) + '%</td></tr>').join('') +
+        '</tbody></table></div>';
+    }
+
+    function setBtn(text, ico) {
+      const b = el('pScanBtn');
+      if (b) b.innerHTML = icon(ico) + ' ' + text;
+    }
+
+    async function start() {
+      if (running) {
+        cancel = true;
+        const st = el('pScanStatus');
+        if (st) st.textContent = 'در حال توقف…';
+        return;
+      }
+      const cfg = readCfg();
+      const ips = buildList(cfg.ipCount, cfg.ranges, cfg.mode);
+      if (!ips.length) { toast('رنجِ معتبری برای اسکن نیست', 'err'); return; }
+
+      running = true; cancel = false; results = []; done = 0; total = ips.length;
+      keepN = cfg.keep > 0 ? cfg.keep : 20;
+      const wrap = el('pScanWrap');
+      if (wrap) { wrap.style.display = 'none'; wrap.innerHTML = ''; }
+      setBtn('توقف اسکن', 'fa-stop');
+      paint();
+
+      try {
+        let cursor = 0;
+        const worker = async () => {
+          while (cursor < ips.length) {
+            /* هدفِ تعدادِ لازم پر شد یا کاربر توقف زد → همه‌ی workerها تمام می‌شوند */
+            if (cancel || results.length >= keepN) return;
+            const r = await probe(ips[cursor++], cfg.ports, cfg);
+            /* سقفِ نگه‌داری همین‌جا اعمال می‌شود: workerهای هم‌زمان می‌توانند
+               از بررسیِ ابتدای حلقه جلو بزنند و بدون این شرط تعدادِ نتیجه از
+               سقف بیشتر می‌شد (و شمارنده‌ی نمایش‌داده‌شده با فایلِ ذخیره‌شده
+               نمی‌خواند). */
+            if (r && results.length < keepN) results.push(r);
+            done++;
+            paint();
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(cfg.concurrency, ips.length) }, worker));
+
+        if (!results.length) {
+          toast('هیچ آی‌پیِ سالمی پیدا نشد — تایم‌اوت را بالا ببرید یا رنج/پورت را بررسی کنید', 'err');
+        } else {
+          toast(fa(results.length) + ' آی‌پیِ سالم پیدا شد — «اعمال و ذخیره» را بزنید', 'info');
+        }
+      } finally {
+        running = false; cancel = false;
+        setBtn('شروع اسکن', 'fa-satellite-dish');
+        paint();
+      }
+    }
+
+    /* اعمال روی «IPهای پاک» — همان رفتاری که /radar-ips صفحه‌ی کاربر دارد:
+       آی‌پی‌های تازه اول فهرست، بدون تکرار، سقف ۱۰۰. */
+    async function apply() {
+      if (running) { toast('اول اسکن را متوقف کنید', 'err'); return; }
+      const top = results.slice().sort((a, b) => a.score - b.score).slice(0, keepN || 20).map((r) => r.ip);
+      if (!top.length) { toast('اول یک اسکن بگیرید', 'err'); return; }
+      const cur = Array.isArray(S.d.settings.cleanIPs) ? S.d.settings.cleanIPs.map((x) => String(x).split('#')[0]) : [];
+      const add = top.filter((ip) => cur.indexOf(ip) < 0);
+      const merged = top.concat(cur.filter((ip) => top.indexOf(ip) < 0)).slice(0, 100);
+      const r = await api('PUT', '/api/settings', { settings: { cleanIPs: merged } });
+      if (r && r.ok) {
+        S.d.settings.cleanIPs = merged;
+        toast(fa(add.length) + ' آی‌پیِ تازه ذخیره شد — کل فهرست: ' + fa(merged.length));
+      } else {
+        toast((r && r.error) || 'ذخیره نشد', 'err');
+      }
+    }
+
+    function reset() {
+      if (running) { toast('اول اسکن را متوقف کنید', 'err'); return; }
+      results = []; done = 0; total = 0;
+      const wrap = el('pScanWrap');
+      if (wrap) { wrap.style.display = 'none'; wrap.innerHTML = ''; }
+      paint();
+      toast('نتیجه‌ی اسکن پاک شد', 'info');
+    }
+
+    return { start: start, apply: apply, reset: reset };
+  })();
+
   function scannerView() {
     const s = S.d.settings;
     const sc = (s.scanner && typeof s.scanner === 'object' && !Array.isArray(s.scanner)) ? s.scanner : {};
@@ -1535,8 +1769,8 @@
     /* آمارِ سریع — یک نگاه کافی است */
     const stats = '<div class="grid g4" style="margin-bottom:12px">' +
       '<div class="stat"><div class="lbl">تعداد آی‌پی هر اسکن</div><div class="val">' + fa(Number(val('ipCount', 2048))) + '</div><div class="sub">پیش‌فرض ۲۰۴۸</div></div>' +
-      '<div class="stat"><div class="lbl">هم‌روندی</div><div class="val">' + fa(Number(val('concurrency', 64))) + '</div><div class="sub">پروبِ موازی</div></div>' +
-      '<div class="stat"><div class="lbl">تایم‌اوت هر پروب</div><div class="val">' + fa(Number(val('timeout', 1000))) + '<span style="font-size:11px"> ms</span></div><div class="sub">' + fa(Number(val('probes', 2))) + ' پروب برای هر آی‌پی</div></div>' +
+      '<div class="stat"><div class="lbl">هم‌روندی</div><div class="val">' + fa(Number(val('concurrency', 16))) + '</div><div class="sub">پروبِ موازی</div></div>' +
+      '<div class="stat"><div class="lbl">تایم‌اوت هر پروب</div><div class="val">' + fa(Number(val('timeout', 2000))) + '<span style="font-size:11px"> ms</span></div><div class="sub">' + fa(Number(val('probes', 3))) + ' پروب برای هر آی‌پی</div></div>' +
       '<div class="stat"><div class="lbl">رنج‌های اسکن</div><div class="val">' + fa(totalBlocks) + '</div><div class="sub">' + fa(CF_CIDRS_UI.length) + ' رسمی کلودفلر' + (ranges.length ? ' + ' + fa(ranges.length) + ' دلخواه' : '') + '</div></div>' +
       '</div>';
 
@@ -1547,9 +1781,9 @@
       '<div class="um-grid two">' +
       field({ p: 'scanner.enabled', l: 'نمایش کارت اسکنر در صفحه‌ی کاربر', t: 'sw', h: 'خاموش = رادار در صفحه‌ی کاربر پنهان می‌شود' }, val('enabled', true)) +
       field({ p: 'scanner.ipCount', l: 'تعداد آی‌پی هر اسکن', t: 'num', h: 'پیش‌فرض ۲۰۴۸ (قبلاً ۱۰۲۴ بود) • بازه‌ی مجاز ۱۶ تا ۶۵۵۳۶' }, val('ipCount', 2048)) +
-      field({ p: 'scanner.concurrency', l: 'هم‌روندی (پروب موازی)', t: 'num', h: 'بالاتر = سریع‌تر، ولی فشارِ بیشتر روی مرورگر و شبکه • پیش‌فرض ۶۴' }, val('concurrency', 64)) +
-      field({ p: 'scanner.timeout', l: 'تایم‌اوت هر پروب (میلی‌ثانیه)', t: 'num', h: 'کوتاه‌تر = اسکن سریع‌تر • پیش‌فرض ۱۰۰۰' }, val('timeout', 1000)) +
-      field({ p: 'scanner.probes', l: 'تعداد پروب برای هر آی‌پی', t: 'num', h: '۱ تا ۵ • بیشتر = اندازه‌گیریِ دقیق‌ترِ پینگ و لرزش' }, val('probes', 2)) +
+      field({ p: 'scanner.concurrency', l: 'هم‌روندی (پروب موازی)', t: 'num', h: 'بالاتر = سریع‌تر، ولی فشارِ بیشتر روی مرورگر و شبکه • پیش‌فرض ۱۶ (عددِ اثبات‌شده‌ی پنل نوا)' }, val('concurrency', 16)) +
+      field({ p: 'scanner.timeout', l: 'تایم‌اوت هر پروب (میلی‌ثانیه)', t: 'num', h: 'کوتاه‌تر = اسکن سریع‌تر، ولی زیرِ ۱۵۰۰ms روی شبکه‌ی موبایل خیلی از لبه‌های سالم «مرده» حساب می‌شوند • پیش‌فرض ۲۰۰۰' }, val('timeout', 2000)) +
+      field({ p: 'scanner.probes', l: 'تعداد پروب برای هر آی‌پی', t: 'num', h: '۱ تا ۵ • بیشتر = اندازه‌گیریِ دقیق‌ترِ پینگ و لرزش • پیش‌فرض ۳' }, val('probes', 3)) +
       field({ p: 'scanner.keep', l: 'تعداد آی‌پیِ ذخیره‌شده', t: 'num', h: '۰ = همان سقفِ کانفیگِ کاربر • بیشینه ۱۰۰' }, val('keep', 0)) +
       field({ p: 'scanner.minRtt', l: 'حداقل تأخیرِ قابل‌قبول (ms)', t: 'num', h: '۰ = بدون فیلتر (توصیه‌شده). مقدارِ بالا آی‌پی‌های سالمِ نزدیک را حذف می‌کند' }, val('minRtt', 0)) +
       field({ p: 'scanner.maxRtt', l: 'حداکثر تأخیرِ قابل‌قبول (ms)', t: 'num', h: '۰ = بدون سقف • آی‌پی‌های کندتر از این دور ریخته می‌شوند' }, val('maxRtt', 0)) +
@@ -1597,9 +1831,28 @@
       'لاگِ هر اسکن در «لاگ ← رادار» دیده می‌شود.</div>' +
       '</div></div>';
 
+    /* ═══ کارتِ اجرای اسکن از خودِ پنل ═══
+       مقادیرِ همین صفحه استفاده می‌شوند، پس ادمین می‌تواند بدون ذخیره‌ی
+       تنظیمات یک اسکن آزمایشی بگیرد و نتیجه را ببیند. */
+    const runCard = '<div class="card"><header><span class="ic">' + icon('fa-satellite-dish') + '</span>' +
+      '<div><h3>اجرای اسکن از پنل</h3><p>بدون باز کردنِ صفحه‌ی کاربر — نتیجه را همین‌جا ببینید و روی «IPهای پاک» اعمال کنید</p></div>' +
+      '<div class="acts"><button class="btn sm ghost" data-act="panel-scan-reset">' + icon('fa-rotate-left') + ' پاک‌کردن نتیجه</button></div></header>' +
+      '<div class="bd">' +
+      '<div class="btn-row">' +
+      '<button class="btn p" id="pScanBtn" data-act="panel-scan-start">' + icon('fa-satellite-dish') + ' شروع اسکن</button>' +
+      '<button class="btn" data-act="panel-scan-apply">' + icon('fa-floppy-disk') + ' اعمال و ذخیره در «IPهای پاک»</button>' +
+      '</div>' +
+      '<div class="hint" style="margin:10px 0 8px">مقادیرِ <b>همین صفحه</b> استفاده می‌شوند (تعداد، هم‌روندی، تایم‌اوت، پورت‌ها و رنج‌ها) — لازم نیست اول ذخیره کنید. ' +
+      'پروب از مرورگرِ خودتان انجام می‌شود، پس نتیجه همان چیزی است که کاربرانتان می‌بینند.</div>' +
+      '<div style="height:8px;background:var(--panel2);border:1px solid var(--bs);border-radius:999px;overflow:hidden;margin-bottom:8px">' +
+      '<div id="pScanBar" style="height:100%;width:0;background:var(--ac2);transition:width .2s"></div></div>' +
+      '<div class="hint" id="pScanStatus">آماده</div>' +
+      '<div id="pScanWrap" style="display:none;margin-top:10px"></div>' +
+      '</div></div>';
+
     return '<div class="page-head"><div><h1>اسکنر آی‌پی تمیز</h1><p>تنظیماتِ رادارِ صفحه‌ی کاربر — تعداد، سرعت، پورت‌ها و رنج‌ها</p></div>' +
       '<button class="btn p" data-act="save-scanner">' + icon('fa-floppy-disk') + ' ذخیره</button></div>' +
-      stats + mainCard +
+      stats + runCard + mainCard +
       '<div class="grid g2">' + portsCard + rangesCard + '</div>' +
       '<div class="btn-row" style="justify-content:center;margin-top:10px">' +
       '<button class="btn p lg" data-act="save-scanner">' + icon('fa-floppy-disk') + ' ذخیره</button></div>';
@@ -2502,6 +2755,12 @@
         if (ta) ta.value = '';
         toast('رنج‌های دلخواه پاک شد — فقط رنج‌های رسمی کلودفلر اسکن می‌شوند', 'info');
       }
+      /* ═══════ اسکنر — اجرا از خودِ پنل ═══════
+         دکمه‌ی شروع همان دکمه در حین اجرا به «توقف» تبدیل می‌شود، پس هر دو
+         حالت به یک اکشن می‌رسند. */
+      else if (a === 'panel-scan-start') PANEL_SCAN.start();
+      else if (a === 'panel-scan-apply') await PANEL_SCAN.apply();
+      else if (a === 'panel-scan-reset') PANEL_SCAN.reset();
 
       /* ═════════════════════════════════════════════════════════════
          مرحله‌ی ۴ — تغییر رمز عبور

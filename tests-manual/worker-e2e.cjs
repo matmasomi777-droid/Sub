@@ -105,6 +105,17 @@ globalThis.caches = { default: { match: async () => undefined, put: async () => 
     ok(cidrs.length >= 15, 'تمامِ ۱۵ رنج رسمی در صفحه هست', cidrs.length + ' رنج');
     ok(!/'104\.0\.0\.0\/8'/.test(html), 'رنجِ غلطِ قبلی (104.0.0.0/8) حذف شده');
 
+    /* ── ۴ب) پروبِ Image و فالبکِ پورت (دو باگِ «اسکنر کار نمی‌کند») ──
+       پروبِ fetch به آی‌پیِ خام روی شبکه‌ی ایران نتیجه‌ی ناپایدار می‌دهد؛
+       مرجعِ اثبات‌شده (پنل نوا) Image است. و اگر فهرستِ پورت خالی بماند،
+       اسکن بی‌صدا رد می‌شود — پس باید همیشه ۴۴۳ فالبک شود. */
+    ok(html.includes('new Image()'), 'پروبِ اسکنر Image است (نه fetch)');
+    ok(!/fetch\('https:\/\/' \+ host/.test(html), 'پروبِ fetchِ آی‌پیِ خام حذف شده');
+    ok(/if \(!ports\.length\) ports\.push\(443\)/.test(html), 'فالبکِ پورت به ۴۴۳ در موتور هست');
+    ok(html.includes('concurrency: 16'), 'هم‌روندیِ پیش‌فرض ۱۶ است (نه ۶۴)');
+    ok(html.includes('timeout: 2000'), 'تایم‌اوتِ پیش‌فرض ۲۰۰۰ms است (نه ۱۰۰۰)');
+    ok(/results\.length < RADAR_KEEP\) results\.push/.test(html), 'نتایج از سقفِ نگه‌داری بیشتر نمی‌شوند');
+
     /* ── ۵) اسکریپتِ درون‌خطی معتبر است ── */
     const scripts = html.match(/<script(?![^>]*src=)[^>]*>[\s\S]*?<\/script>/gi) || [];
     let bad = 0;
@@ -148,6 +159,8 @@ globalThis.caches = { default: { match: async () => undefined, put: async () => 
     if (htmlF) {
       ok(htmlF.includes('id="radar-card"'), 'کارتِ رادار در فالبک هست');
       ok(htmlF.includes('CF_CIDRS') && htmlF.includes('buildIpList'), 'موتورِ اسکنر در فالبک هست');
+      ok(htmlF.includes('new Image()'), 'پروبِ Image در فالبکِ داخلی هست');
+      ok(/if \(!ports\.length\) ports\.push\(443\)/.test(htmlF), 'فالبکِ پورت به ۴۴۳ در فالبکِ داخلی هست');
       ok((htmlF.match(/'1[0-9.]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+'/g) || []).length >= 15, 'تمامِ ۱۵ رنج رسمی در فالبک هست');
       const sc = htmlF.match(/<script(?![^>]*src=)[^>]*>[\s\S]*?<\/script>/i);
       let badF = 0;
@@ -182,6 +195,8 @@ globalThis.caches = { default: { match: async () => undefined, put: async () => 
     catch (e) { ok(false, 'ساختِ صفحه', e.message); }
     if (htmlU) {
       ok(htmlU.includes('id="radar-card"') && htmlU.includes('CF_CIDRS'), 'کارت و موتورِ اسکنر در ui/user.html هست');
+      ok(htmlU.includes('new Image()'), 'پروبِ Image در ui/user.html هست');
+      ok(/if \(!ports\.length\) ports\.push\(443\)/.test(htmlU), 'فالبکِ پورت به ۴۴۳ در ui/user.html هست');
       ok((htmlU.match(/'1[0-9.]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+'/g) || []).length >= 15, 'تمامِ ۱۵ رنج رسمی هست');
       const scU = htmlU.match(/<script(?![^>]*src=)[^>]*>[\s\S]*?<\/script>/i);
       let badU = 0;
