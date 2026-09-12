@@ -1543,6 +1543,9 @@
     const num = (v, lo, hi, d) => { const n = parseInt(v, 10); return (isFinite(n) && n >= lo && n <= hi) ? n : d; };
 
     let running = false, cancel = false, results = [], done = 0, total = 0, keepN = 0;
+    /* شمارنده‌ی «پاسخ‌های خام» — مستقل از فیلترهای minRtt/maxRtt؛ اگر بعد از یک
+       اسکنِ کامل صفر بماند یعنی هیچ لبه‌ای به پروب جواب نداده است. */
+    let rawResponses = 0;
 
     function blocksOf(ranges) {
       const list = CF_CIDRS_UI.slice();
@@ -1557,15 +1560,25 @@
       }).filter((b) => b.size >= 1 && isFinite(b.start));
     }
 
-    /* حالتِ even: هر بلوک به‌نوبت سهم می‌گیرد (پس رنج‌های کوچک هم واقعاً اسکن
-       می‌شوند) و درونِ هر بلوک آدرس تصادفی برداشته می‌شود. حالتِ random:
-       احتمالِ انتخاب هر آدرس به اندازه‌ی رنجش. */
+    /* حالتِ انتخابِ آی‌پی:
+       ── smart (پیش‌فرض): سهمِ متناسب با اندازه‌ی رنج + کفِ تضمینی برای هر رنج.
+          اندازه‌گیری روی فهرست‌های عمومیِ آی‌پیِ تمیز: ۹۶٪ آی‌پی‌های سالم در ۳
+          رنجِ بزرگ‌اند و ۹ رنجِ دیگر تقریباً خالی‌اند — پس «even» حدود ۸۰٪
+          بودجه را هدر می‌دهد.
+       ── even: هر رنج دقیقاً سهمِ برابر می‌گیرد (پوششِ کاملاً یکنواخت).
+       ── random: انتخابِ تصادفیِ وزنی بر کلِ فضای رنج‌ها (بدون کفِ تضمینی). */
     function buildList(count, ranges, mode) {
       const blocks = blocksOf(ranges);
       if (!blocks.length) return [];
       const out = [], seen = Object.create(null);
-      if (mode === 'random') {
-        const totalSize = blocks.reduce((a, b) => a + b.size, 0);
+      const totalSize = blocks.reduce((a, b) => a + b.size, 0) || 1;
+      const pickIn = (b) => {
+        for (let t = 0; t < 8; t++) {
+          const ip = n2ip(b.start + Math.floor(Math.random() * b.size));
+          if (!seen[ip]) { seen[ip] = 1; out.push(ip); return; }
+        }
+      };
+      const fillRandom = () => {
         let guard = 0;
         while (out.length < count && guard++ < count * 40) {
           let n = Math.floor(Math.random() * totalSize), ip = null;
@@ -1575,15 +1588,29 @@
           }
           if (ip && !seen[ip]) { seen[ip] = 1; out.push(ip); }
         }
+      };
+
+      if (mode === 'random') { fillRandom(); return out; }
+
+      if (mode === 'even') {
+        for (let i = 0; i < count; i++) pickIn(blocks[i % blocks.length]);
         return out;
       }
-      for (let i = 0; i < count; i++) {
-        const b = blocks[i % blocks.length];
-        for (let t = 0; t < 8; t++) {
-          const ip = n2ip(b.start + Math.floor(Math.random() * b.size));
-          if (!seen[ip]) { seen[ip] = 1; out.push(ip); break; }
-        }
+
+      /* smart */
+      const floor = Math.max(4, Math.ceil(count * 0.005));
+      const quotas = blocks.map((b) => Math.max(floor, Math.floor(count * (b.size / totalSize))));
+      let sum = quotas.reduce((a, b) => a + b, 0);
+      while (sum > count) {
+        let big = 0;
+        for (let i = 1; i < quotas.length; i++) if (quotas[i] > quotas[big]) big = i;
+        if (quotas[big] <= floor) break;
+        quotas[big]--; sum--;
       }
+      for (let i = 0; i < blocks.length; i++) {
+        for (let k = 0; k < quotas[i] && out.length < count; k++) pickIn(blocks[i]);
+      }
+      fillRandom();
       return out;
     }
 
@@ -1591,21 +1618,64 @@
        شبیه اسکنر می‌شود و DPI کمتر اتصال را قطع می‌کند (روشِ SenPai Scanner). */
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+    /* پورت‌هایی که کلودفلر روی آن‌ها HTTPS سرو می‌کند — پروبِ مرورگر https است،
+       پس پورتِ غیر-TLS با خطای SSL بی‌درنگ «پاسخ» می‌دهد و نتیجه را خراب می‌کند. */
+    const SCAN_TLS_PORTS = [443, 2053, 2083, 2087, 2096, 8443];
+
+    /* ═══ خودآزماییِ پروب ═══
+       RFC 5737 سه بازه‌ی آزمایشی دارد که هرگز مسیریابی نمی‌شوند (TEST-NET-1/2/3).
+       اگر پروب این‌ها را «سالم» ببیند، یعنی هر خطای سریعِ محلی (RST پروکسی/
+       فایروال) دارد «زنده» تفسیر می‌شود و نتیجه‌ی اسکن بی‌اعتبار است. */
+    const SCAN_CONTROL_IPS = ['192.0.2.1', '198.51.100.1', '203.0.113.1'];
+    async function selfTest(ports, timeout) {
+      const port = ports[0] || 443;
+      const t = Math.min(timeout, 1500);
+      for (const cip of SCAN_CONTROL_IPS) {
+        const rtt = await ping(cip, port, t);
+        if (rtt !== null) return { bad: true, ip: cip, rtt: rtt };
+      }
+      return { bad: false };
+    }
+
+    /* ═══ پروب — دوکاناله (Image + fetch) ═══
+       گواهیِ آی‌پیِ خام هیچ‌وقت معتبر نیست، پس مرورگر بعد از TLS اتصال را رد
+       می‌کند؛ «سرعتِ رسیدنِ خطا» خودش سیگنالِ زنده‌بودنِ لبه است:
+       خطا پیش از تایم‌اوت = سالم • تایم‌اوت = مرده.
+       چرا دو کاناله: نسخه‌ی اصلیِ همین پنل اول Image داشت و بعد به fetch مهاجرت
+       کرد («RST آنیِ فیلترشکن هم زنده حساب می‌شد»)، پنل نوا برعکس. پس هر دو را
+       موازی می‌فرستیم تا از کار افتادنِ یکی، اسکن را بی‌صدا خالی نکند. */
     function ping(ip, port, timeout) {
       return new Promise((res) => {
         const t0 = performance.now();
-        let fin2 = false;
+        let done = false, ctrl = null;
         const img = new Image();
         const fin = (ok) => {
-          if (fin2) return;
-          fin2 = true;
+          if (done) return;
+          done = true;
           img.onerror = img.onload = null;
+          try { if (ctrl) ctrl.abort(); } catch (e) {}
+          if (ok) rawResponses++;
           res(ok ? Math.round(performance.now() - t0) : null);
         };
         const timer = setTimeout(() => fin(false), timeout);
+        const url = 'https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random();
+
+        /* کانالِ ۱ — Image: به CORS/کش/AbortController وابسته نیست */
         img.onerror = () => { clearTimeout(timer); fin(true); };
         img.onload = () => { clearTimeout(timer); fin(true); };
-        img.src = 'https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random();
+        img.src = url;
+
+        /* کانالِ ۲ — fetch(cors): روشِ نسخه‌ی اصلیِ پنل و اسکنرِ IRCF. AbortError
+           فقط از تایم‌اوتِ خودمان می‌آید ⇒ مرده؛ هر خطای دیگر ⇒ سالم. */
+        try {
+          ctrl = new AbortController();
+          fetch(url, { signal: ctrl.signal, mode: 'cors', cache: 'no-store' })
+            .then(() => { clearTimeout(timer); fin(true); })
+            .catch((err) => {
+              if (err && err.name === 'AbortError') return;
+              clearTimeout(timer); fin(true);
+            });
+        } catch (e) {}
       });
     }
 
@@ -1646,10 +1716,15 @@
         minRtt: num(g('minRtt', 0), 0, 5000, 0),
         maxRtt: num(g('maxRtt', 0), 0, 20000, 0),
         keep: num(g('keep', 0), 0, 100, 0),
-        mode: g('mode', 'even') === 'random' ? 'random' : 'even',
+        mode: (function () { const m = g('mode', 'smart'); return (m === 'random' || m === 'even') ? m : 'smart'; })(),
         ranges: String(g('ranges', '')).split('\n').map((x) => x.trim()).filter(Boolean),
-        /* هرگز خالی نمی‌ماند — وگرنه اسکن بی‌صدا رد می‌شد */
-        ports: ports.length ? ports : [443],
+        /* هرگز خالی نمی‌ماند — وگرنه اسکن بی‌صدا رد می‌شد — و فقط پورت‌های TLS:
+           پروبِ مرورگر https است و پورتِ غیر-TLS (مثل ۸۰) با خطای SSL بی‌درنگ
+           «پاسخ» می‌دهد و همه‌چیز زنده دیده می‌شود. */
+        ports: (function () {
+          const tls = ports.filter((p) => SCAN_TLS_PORTS.indexOf(p) >= 0);
+          return tls.length ? tls : [443];
+        })(),
       };
     }
 
@@ -1660,9 +1735,9 @@
       if (bar) bar.style.width = (total ? Math.round(done / total * 100) : 0) + '%';
       if (st) {
         st.textContent = running
-          ? 'در حال اسکن… ' + fa(done) + ' از ' + fa(total) + ' • ' + fa(results.length) + ' آی‌پیِ سالم'
+          ? 'در حال اسکن… ' + fa(done) + ' از ' + fa(total) + ' • ' + fa(results.length) + ' آی‌پیِ سالم • پاسخ: ' + fa(rawResponses)
           : (results.length
-            ? 'پایان — ' + fa(results.length) + ' آی‌پیِ سالم از ' + fa(total) + ' آی‌پیِ اسکن‌شده'
+            ? 'پایان — ' + fa(results.length) + ' آی‌پیِ سالم از ' + fa(total) + ' آی‌پیِ اسکن‌شده • پاسخ: ' + fa(rawResponses)
             : 'آماده');
       }
       if (!wrap) return;
@@ -1696,7 +1771,17 @@
       const ips = buildList(cfg.ipCount, cfg.ranges, cfg.mode);
       if (!ips.length) { toast('رنجِ معتبری برای اسکن نیست', 'err'); return; }
 
+      /* خودآزماییِ پروب پیش از شروع — اگر پروب به آی‌پی‌های آزمایشیِ RFC 5737 هم
+         «پاسخ» بدهد، هر خطای سریعِ محلی دارد «زنده» تفسیر می‌شود و نتیجه
+         بی‌اعتبار است؛ پیش از تلف‌کردنِ وقتِ ادمین این را می‌گوییم. */
+      const st0 = await selfTest(cfg.ports, cfg.timeout);
+      if (st0.bad) {
+        toast('هشدار: پروب به آی‌پیِ آزمایشی ' + st0.ip + ' هم در ' + fa(st0.rtt) +
+              ' میلی‌ثانیه پاسخ داد — نتیجه‌ی اسکن بی‌اعتبار است؛ «حداقل تأخیر» را روی ۶۰ بگذارید', 'err');
+      }
+
       running = true; cancel = false; results = []; done = 0; total = ips.length;
+      rawResponses = 0;
       keepN = cfg.keep > 0 ? cfg.keep : 20;
       const wrap = el('pScanWrap');
       if (wrap) { wrap.style.display = 'none'; wrap.innerHTML = ''; }
@@ -1722,7 +1807,11 @@
         await Promise.all(Array.from({ length: Math.min(cfg.concurrency, ips.length) }, worker));
 
         if (!results.length) {
-          toast('هیچ آی‌پیِ سالمی پیدا نشد — تایم‌اوت را بالا ببرید یا رنج/پورت را بررسی کنید', 'err');
+          /* تفکیکِ دو حالتِ کاملاً متفاوت — «کار نمی‌کند» را به پیامِ قابل‌اقدام
+             تبدیل می‌کند: هیچ پاسخی نیامد (شبکه) در مقابل پاسخ آمد ولی فیلتر شد. */
+          toast(rawResponses === 0
+            ? 'هیچ آی‌پی به پروب پاسخ نداد — شبکه/مرورگر اتصالِ مستقیم TLS به آی‌پیِ خام را می‌بندد. تایم‌اوت را بالا ببرید یا از یک VPS اسکن کنید'
+            : 'هیچ آی‌پیِ سالمی پیدا نشد — «حداقل/حداکثر تأخیر» را بررسی کنید', 'err');
         } else {
           toast(fa(results.length) + ' آی‌پیِ سالم پیدا شد — «اعمال و ذخیره» را بزنید', 'info');
         }
@@ -1796,12 +1885,18 @@
       '<div style="margin-top:10px">' +
       field({
         p: 'scanner.mode', l: 'حالتِ انتخاب آی‌پی', t: 'sel',
-        o: ['even', 'random'],
-        lbls: { even: 'پوششِ یکنواختِ همه‌ی رنج‌ها (پیشنهادی)', random: 'تصادفیِ وزنی بر اساس اندازه‌ی رنج' },
-      }, val('mode', 'even')) +
+        o: ['smart', 'even', 'random'],
+        lbls: {
+          smart: 'هوشمند — سهمِ متناسب با اندازه‌ی رنج (پیشنهادی)',
+          even: 'پوششِ یکنواختِ همه‌ی رنج‌ها',
+          random: 'تصادفیِ وزنی بر اساس اندازه‌ی رنج',
+        },
+      }, val('mode', 'smart')) +
       '</div>' +
-      '<div class="hint" style="margin-top:8px">در حالت «یکنواخت»، هر رنج به‌نوبت سهم می‌گیرد تا رنج‌های کوچک هم واقعاً اسکن شوند؛ ' +
-      'در حالت «تصادفی» احتمالِ انتخاب هر آدرس به اندازه‌ی رنجش است و رنج‌های کوچک تقریباً نادیده می‌مانند.</div>' +
+      '<div class="hint" style="margin-top:8px">«هوشمند» بودجه‌ی اسکن را به‌تناسبِ اندازه‌ی هر رنج تقسیم می‌کند و به هر رنج یک کفِ ' +
+      'کوچک می‌دهد. اندازه‌گیری روی فهرست‌های عمومیِ آی‌پیِ تمیز نشان می‌دهد حدود ۹۶٪ آی‌پی‌های سالم در ۳ رنجِ بزرگ ' +
+      '(104.16.0.0/13 • 172.64.0.0/13 • 104.24.0.0/14) هستند و ۹ رنجِ دیگر تقریباً هیچ آی‌پیِ سالمی ندارند؛ پس «یکنواخت» ' +
+      'حدود ۸۰٪ بودجه را هدر می‌دهد. «تصادفی» هم وزنی است ولی کفِ تضمینی ندارد.</div>' +
       '</div></div>';
 
     /* ═══ پورت‌ها ═══ */

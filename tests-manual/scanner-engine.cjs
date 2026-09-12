@@ -4,9 +4,10 @@
  *  کدِ واقعیِ اسکنر از new-subscription.html استخراج و در یک محیطِ شبیه‌سازی‌شده
  *  اجرا می‌شود. بدون نیاز به مرورگر یا حساب کلادفلر.
  *
- *  پروبِ اسکنر Image است (روشِ اثبات‌شده‌ی پنل نوا)، پس اینجا یک Image جعلی
- *  ساخته می‌شود: آی‌پیِ «زنده» رویداد onerror می‌دهد (لبه TLS را کامل می‌کند و
- *  تصویر رد می‌شود) و آی‌پیِ «مرده» هیچ رویدادی نمی‌دهد تا تایم‌اوت بخورد.
+ *  پروبِ اسکنر «دوکاناله» است (Image + fetch موازی، اولین سیگنال برنده است)، پس
+ *  اینجا هر دو کانال جعلی ساخته می‌شود: آی‌پیِ «زنده» خطای سریع می‌دهد (لبه TLS
+ *  را کامل می‌کند و گواهی رد می‌شود) و آی‌پیِ «مرده» هیچ رویدادی نمی‌دهد تا
+ *  تایم‌اوت/اَبورتِ خودِ اسکنر تعیین‌کننده باشد.
  *
  *  اجرا:  node tests-manual/scanner-engine.cjs
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -50,6 +51,32 @@ function makeFakeImage() {
   };
 }
 
+/* fetch جعلی — همان معناشناسیِ Image، تا کانالِ دومِ پروب هم شبیه‌سازی شود:
+   آی‌پیِ زنده خطای سریع می‌دهد (گواهی/CORS ⇒ TypeError) و آی‌پیِ مرده معلق
+   می‌ماند تا خودِ اسکنر abort کند (AbortError ⇒ مرده). */
+function makeFakeFetch() {
+  return function fakeFetch(url, opts) {
+    return new Promise((resolve, reject) => {
+      const host = String(url).replace('https://', '').split('/')[0];
+      const sig = opts && opts.signal;
+      const dead = host.startsWith('9.9.9.9');
+      let timer = null;
+      const onAbort = () => {
+        if (timer) clearTimeout(timer);
+        const e = new Error('aborted');
+        e.name = 'AbortError';
+        reject(e);
+      };
+      if (sig) {
+        if (sig.aborted) { onAbort(); return; }
+        sig.addEventListener('abort', onAbort);
+      }
+      if (dead) return;                                  /* معلق تا اَبورت */
+      timer = setTimeout(() => reject(new TypeError('Failed to fetch')), 5);
+    });
+  };
+}
+
 /* ساختِ ماژول از کدِ واقعی با کانفیگِ دلخواه.
    placeholder داخل JSON.parse("...") نشسته، پس باید «رشته‌ی JSON» را به‌عنوان
    یک رشته‌ی جاوااسکریپتی جایگزین کنیم (دو بار stringify) — دقیقاً همان کاری
@@ -59,9 +86,9 @@ function mkModule(cfgObj, depOverrides) {
   let src = code.split('__SCANNER_CFG_JSON__').join(inject);
   const deps = Object.assign({}, baseDeps, depOverrides || {});
   const names = Object.keys(deps);
-  const fn = new Function(...names, 'Image', src +
-    '\n;return { SCAN, CF_CIDRS, CF_BLOCKS, buildIpList, randCfIp, radarConfigPorts, RADAR_KEEP, radarProbeIp, pingIp, radarFoundHtml };');
-  return fn(...names.map((n) => deps[n]), makeFakeImage());
+  const fn = new Function(...names, 'Image', 'fetch', 'AbortController', src +
+    '\n;return { SCAN, CF_CIDRS, CF_BLOCKS, buildIpList, randCfIp, radarConfigPorts, RADAR_KEEP, radarProbeIp, pingIp, radarFoundHtml, radarSelfTest, RADAR_CONTROL_IPS, rawResponses: function () { return radarRawResponses; } };');
+  return fn(...names.map((n) => deps[n]), makeFakeImage(), makeFakeFetch(), AbortController);
 }
 
 const DEF_CFG = { ipCount: 2048, concurrency: 8, timeout: 300, probes: 3, minRtt: 0, maxRtt: 0, keep: 3, mode: 'even', ports: [443], ranges: [] };
@@ -151,6 +178,69 @@ console.log('== ۵) پروب و انتخابِ آی‌پی ==');
   ok(Mdef.SCAN.concurrency === 16, 'هم‌روندیِ پیش‌فرض ۱۶ است (نه ۶۴)', Mdef.SCAN.concurrency);
   ok(Mdef.SCAN.probes === 3, 'تعدادِ پروبِ پیش‌فرض ۳ است', Mdef.SCAN.probes);
   ok(Mdef.SCAN.ipCount === 2048, 'تعدادِ آی‌پیِ پیش‌فرض ۲۰۴۸ است', Mdef.SCAN.ipCount);
+  ok(Mdef.SCAN.mode === 'smart', 'حالتِ پیش‌فرض «smart» است (نه even)', Mdef.SCAN.mode);
+
+  console.log('== ۸) تخصیصِ «smart» — بودجه به رنج‌های پربازده می‌رود ==');
+  /* داده‌ی واقعی: ~۹۶٪ آی‌پی‌های تمیزِ شناخته‌شده در ۳ رنجِ بزرگ‌اند
+     (104.16.0.0/13 • 172.64.0.0/13 • 104.24.0.0/14) و ۹ رنجِ دیگر تقریباً
+     خالی‌اند. «smart» باید سهمِ متناسب بدهد ولی هیچ رنجی را صفر نگذارد. */
+  const Msmart = mkModule(Object.assign({}, DEF_CFG, { mode: 'smart' }));
+  const list = Msmart.buildIpList(2048);
+  const inRange = (ip, cidr) => {
+    const [b, p] = cidr.split('/');
+    const size = 2 ** (32 - Number(p));
+    const n = ip2n(ip);
+    return n >= ip2n(b) && n <= ip2n(b) + size - 1;
+  };
+  const BIG3 = ['104.16.0.0/13', '172.64.0.0/13', '104.24.0.0/14'];
+  const share = (cidr) => list.filter((ip) => inRange(ip, cidr)).length;
+  const big3 = BIG3.reduce((a, c) => a + share(c), 0);
+  const pctBig = Math.round(100 * big3 / list.length);
+  ok(list.length === 2048, '۲۰۴۸ آی‌پیِ یکتا ساخته شد', list.length);
+  ok(new Set(list).size === 2048, 'بدون تکرار');
+  ok(pctBig >= 70, '≥۷۰٪ بودجه به ۳ رنجِ پربازده می‌رود (even فقط ~۲۰٪ می‌داد)', pctBig + '%');
+  ok(Msmart.CF_CIDRS.every((c) => share(c) > 0), 'هیچ رنجی صفر نمانده (کفِ تضمینی)',
+     Msmart.CF_CIDRS.map((c) => share(c)).join(','));
+  /* مقایسه با even روی همان بودجه */
+  const Meven = mkModule(Object.assign({}, DEF_CFG, { mode: 'even' }));
+  const elist = Meven.buildIpList(2048);
+  const epct = Math.round(100 * BIG3.reduce((a, c) => a + elist.filter((ip) => inRange(ip, c)).length, 0) / elist.length);
+  ok(pctBig > epct * 2, 'smart دست‌کم ۲ برابرِ even از بودجه را به رنج‌های پربازده می‌دهد', 'smart ' + pctBig + '% vs even ' + epct + '%');
+
+  console.log('== ۹) پورت‌های غیر-TLS از تنظیماتِ ادمین فیلتر می‌شوند ==');
+  /* پورتِ غیر-TLS (۸۰) روی پروبِ https با خطای SSL بی‌درنگ «پاسخ» می‌دهد و
+     همه‌چیز را زنده نشان می‌دهد — پس باید فیلتر شود. */
+  const MbadPort = mkModule(Object.assign({}, DEF_CFG, { ports: [80] }));
+  ok(MbadPort.radarConfigPorts().join(',') === '443', 'تنظیماتِ پورتِ ۸۰ → 443 (فیلتر شد)', MbadPort.radarConfigPorts().join(','));
+  const MmixPort = mkModule(Object.assign({}, DEF_CFG, { ports: [80, 2053, 8080] }));
+  ok(MmixPort.radarConfigPorts().join(',') === '2053', 'فقط پورتِ TLS از میانِ مخلوط می‌ماند', MmixPort.radarConfigPorts().join(','));
+
+  console.log('== ۱۰) خودآزماییِ پروب (تشخیصِ نتیجه‌ی بی‌اعتبار) ==');
+  ok(M.RADAR_CONTROL_IPS.length === 3, 'سه آی‌پیِ آزمایشیِ RFC 5737 تعریف شده', M.RADAR_CONTROL_IPS.join(','));
+  ok(M.RADAR_CONTROL_IPS.every((ip) => /^(192\.0\.2|198\.51\.100|203\.0\.113)\./.test(ip)),
+     'آی‌پی‌های آزمایشی از بازه‌های TEST-NET هستند');
+  /* در محیطِ جعلی، 192.0.2.x «زنده» دیده می‌شود (FakeImage هر چیزی جز 9.9.9.9
+     را زنده می‌داند) — یعنی خودآزمایی باید «بد» را تشخیص بدهد. */
+  const stBad = await M.radarSelfTest([443]);
+  ok(stBad.bad === true, 'وقتی پروب به آی‌پیِ آزمایشی هم پاسخ می‌دهد، «بد» تشخیص داده می‌شود',
+     stBad.bad ? stBad.ip + ' @ ' + stBad.rtt + 'ms' : 'bad=false');
+  /* ماژولی که همه‌چیز را مرده می‌بیند ⇒ خودآزمایی سالم است */
+  const Mdead = mkModule(Object.assign({}, DEF_CFG, { ports: [443] }), { parseConfigLink: () => ({ port: '443' }) });
+  const stGood = await (async () => {
+    /* 9.9.9.9 مرده است؛ با پورت‌دهی به آن، خودآزمایی نباید هشدار بدهد */
+    const orig = Mdead.RADAR_CONTROL_IPS.slice();
+    for (let i = 0; i < orig.length; i++) Mdead.RADAR_CONTROL_IPS[i] = '9.9.9.9';
+    return Mdead.radarSelfTest([443]);
+  })();
+  ok(stGood.bad === false, 'وقتی هیچ آی‌پیِ آزمایشی پاسخ نمی‌دهد، هشداری داده نمی‌شود');
+
+  console.log('== ۱۱) شمارنده‌ی پاسخ‌های خام (تشخیصِ «هیچ پاسخی نیامد») ==');
+  const beforeResp = M.rawResponses();
+  await M.radarProbeIp('1.2.3.4', [443]);
+  ok(M.rawResponses() > beforeResp, 'پاسخِ آی‌پیِ زنده شمرده می‌شود', beforeResp + ' → ' + M.rawResponses());
+  const b2 = M.rawResponses();
+  await M.radarProbeIp('9.9.9.9', [443]);
+  ok(M.rawResponses() === b2, 'آی‌پیِ مرده شمارنده را بالا نمی‌برد', String(M.rawResponses()));
 
   console.log(fail ? '\n' + fail + ' تست ناموفق ✗' : '\nهمه‌ی تست‌ها موفق ✓');
   process.exit(fail ? 1 : 0);

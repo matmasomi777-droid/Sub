@@ -167,7 +167,8 @@ const DEF = () => ({
       minRtt: 0,         /* حداقل تأخیرِ قابل‌قبول (ms) — ۰ = بدون فیلتر */
       maxRtt: 0,         /* حداکثر تأخیرِ قابل‌قبول (ms) — ۰ = بدون سقف */
       keep: 0,           /* تعداد آی‌پیِ ذخیره‌شده — ۰ = سقف کانفیگِ کاربر */
-      mode: 'even',      /* even = پوششِ یکنواختِ همه‌ی رنج‌ها • random = تصادفیِ وزنی */
+      mode: 'smart',     /* smart = سهمِ متناسب با اندازه‌ی رنج (+کف برای رنج‌های کوچک)
+                            • even = سهمِ برابر برای هر رنج • random = تصادفیِ وزنی */
       ports: [],         /* پورت‌های اسکن — خالی = پورت‌های خودِ کانفیگ‌های کاربر */
       ranges: [],        /* رنج‌های CIDR دلخواه — خالی = رنج‌های رسمی کلودفلر */
     },
@@ -4349,7 +4350,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStatusDone: "پایان اسکن - {found} آی‌پی سالم یافت شد",
                 radarStatusSaveFail: "ذخیره‌ی آی‌پی‌ها در پنل ناموفق بود",
                 radarStatusStopping: "در حال توقف...", radarStatusStopped: "اسکن متوقف شد",
-                radarStatusNoResult: "آی‌پی سالمی یافت نشد",
+                radarStatusNoResult: "آی‌پی سالمی یافت نشد", radarStatusAnswered: "پاسخ: {n}", radarStatusNoRespond: "هیچ آی‌پی به پروب پاسخ نداد — شبکه‌ی شما اتصالِ مستقیم TLS به آی‌پی‌های خامِ کلودفلر را می‌بندد. از یک VPS اسکن کنید یا تایم‌اوت را بالا ببرید", radarStatusProbeBad: "هشدار: پروب به آی‌پیِ آزمایشی {ip} هم در {rtt}ms پاسخ داد — نتیجه‌ی اسکن بی‌اعتبار است؛ «حداقل تأخیر» را روی ۶۰ بگذارید",
                 radarStatusNoConfig: "کانفیگ vless در این ساب یافت نشد",
                 radarStatusNoTlsPort: "هیچ پورت TLS قابل‌اسکنی در کانفیگ‌ها یافت نشد",
                 radarThPing: "تأخیر", radarThJitter: "جیتر", radarThLoss: "لاس٪",
@@ -4378,7 +4379,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStatusDone: "Scan finished - {found} healthy IPs found",
                 radarStatusSaveFail: "Failed to save IPs to the panel",
                 radarStatusStopping: "Stopping...", radarStatusStopped: "Scan stopped",
-                radarStatusNoResult: "No healthy IP found",
+                radarStatusNoResult: "No healthy IP found", radarStatusAnswered: "answered: {n}", radarStatusNoRespond: "No IP answered the probe — your network blocks direct TLS to raw Cloudflare IPs. Scan from a VPS, or raise the timeout", radarStatusProbeBad: "Warning: the probe also answered for test IP {ip} in {rtt}ms — results are unreliable; set 'min RTT' to 60",
                 radarStatusNoConfig: "No vless config found in this subscription",
                 radarStatusNoTlsPort: "No probeable TLS port found in configs",
                 radarThPing: "Ping", radarThJitter: "Jitter", radarThLoss: "Loss%",
@@ -4407,7 +4408,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStatusDone: "Tarama bitti - {found} sağlıklı IP bulundu",
                 radarStatusSaveFail: "IP'ler panele kaydedilemedi",
                 radarStatusStopping: "Durduruluyor...", radarStatusStopped: "Tarama durduruldu",
-                radarStatusNoResult: "Sağlıklı IP bulunamadı",
+                radarStatusNoResult: "Sağlıklı IP bulunamadı", radarStatusAnswered: "yanıt: {n}", radarStatusNoRespond: "Hiçbir IP yoklamaya yanıt vermedi — ağınız ham Cloudflare IP'lerine doğrudan TLS bağlantısını engelliyor. Bir VPS'ten tarayın veya zaman aşımını artırın", radarStatusProbeBad: "Uyarı: yoklama test IP'si {ip} için de {rtt}ms'de yanıt verdi — sonuçlar güvenilmez; 'min RTT' değerini 60 yapın",
                 radarStatusNoConfig: "Bu abonelikte vless konfigi bulunamadı",
                 radarStatusNoTlsPort: "Yapılandırmalarda taranabilir TLS portu bulunamadı",
                 radarThPing: "Gecikme", radarThJitter: "Jitter", radarThLoss: "Kayıp%",
@@ -4436,7 +4437,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStatusDone: "انتهى الفحص - تم العثور على {found} آي‌بي سليم",
                 radarStatusSaveFail: "فشل حفظ الآي‌بي في اللوحة",
                 radarStatusStopping: "جارٍ الإيقاف...", radarStatusStopped: "تم إيقاف الفحص",
-                radarStatusNoResult: "لم يتم العثور على آي‌بي سليم",
+                radarStatusNoResult: "لم يتم العثور على آي‌بي سليم", radarStatusAnswered: "استجاب: {n}", radarStatusNoRespond: "لم يستجب أي آي‌بي للفحص — شبكتك تحجب اتصال TLS المباشر بعناوين كلودفلر الخام. افحص من VPS أو ارفع المهلة", radarStatusProbeBad: "تحذير: استجاب الفحص أيضًا لعنوان اختباري {ip} في {rtt}ms — النتائج غير موثوقة؛ اضبط «أدنى تأخير» على ٦٠",
                 radarStatusNoConfig: "لا يوجد تكوين vless في هذا الاشتراك",
                 radarStatusNoTlsPort: "لم يتم العثور على منفذ TLS قابل للفحص في الإعدادات",
                 radarThPing: "التأخير", radarThJitter: "التذبذب", radarThLoss: "الفقد٪",
@@ -4995,11 +4996,11 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
            ۵) فیلترِ تأخیر دیگر اجباری نیست: پیش‌فرض ۰ = بدون فیلتر (فیلترِ ۶۰ms
               قبلی آی‌پی‌های سالمِ نزدیک را حذف می‌کرد و اسکن بی‌نتیجه می‌ماند).
            ═══════════════════════════════════════════════════════════════════ */
-        const SCAN = (function () {
+                const SCAN = (function () {
             /* پیش‌فرض‌های موتورِ فالبک — هم‌راستا با DEF().scanner و scannerCfg().
                تایم‌اوت ۲ ثانیه: ۱ ثانیه روی شبکه‌ی موبایلِ ایران خیلی از
                لبه‌های سالم را «مرده» حساب می‌کرد. */
-            const D = { ipCount: 2048, concurrency: 16, timeout: 2000, probes: 3, minRtt: 0, maxRtt: 0, keep: 0, mode: 'even' };
+            const D = { ipCount: 2048, concurrency: 16, timeout: 2000, probes: 3, minRtt: 0, maxRtt: 0, keep: 0, mode: 'smart' };
             let c = {};
             try { c = JSON.parse("__SCANNER_CFG_JSON__") || {}; } catch (e) { c = {}; }
             const num = function (k, lo, hi) {
@@ -5015,7 +5016,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 minRtt: num('minRtt', 0, 5000),
                 maxRtt: num('maxRtt', 0, 20000),
                 keep: num('keep', 0, 100),
-                mode: c.mode === 'random' ? 'random' : 'even',
+                mode: (c.mode === 'random' || c.mode === 'even') ? c.mode : 'smart',
                 ports: Array.isArray(c.ports) ? c.ports.map(Number).filter(function (p) { return p > 0 && p < 65536; }).slice(0, 12) : [],
                 ranges: Array.isArray(c.ranges) ? c.ranges.map(String) : []
             };
@@ -5066,22 +5067,49 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             const out = [];
             const seen = Object.create(null);
             const push = function (ip) { if (!seen[ip]) { seen[ip] = 1; out.push(ip); } };
-            if (SCAN.mode === 'random') {
+            const nb = CF_BLOCKS.length;
+            if (!nb) return out;
+            const pickIn = function (b) {
+                for (let t = 0; t < 8; t++) {
+                    const ip = n2ip(b.start + Math.floor(Math.random() * b.size));
+                    if (!seen[ip]) { seen[ip] = 1; out.push(ip); return; }
+                }
+            };
+            const fillRandom = function () {
                 let guard = 0;
                 while (out.length < count && guard++ < count * 40) push(randCfIp());
-            } else {
-                /* «even»: هر بلوک به‌نوبت سهم می‌گیرد و درونِ هر بلوک آدرس
-                   تصادفی انتخاب می‌شود — نه پشت‌سرهم از یک نقطه (که در
-                   بلوک‌های بزرگ به بازه‌های تخصیص‌نیافته می‌خورد). */
-                const nb = CF_BLOCKS.length;
-                for (let i = 0; i < count; i++) {
-                    const b = CF_BLOCKS[i % nb];
-                    for (let t = 0; t < 8; t++) {
-                        const ip = n2ip(b.start + Math.floor(Math.random() * b.size));
-                        if (!seen[ip]) { seen[ip] = 1; out.push(ip); break; }
-                    }
-                }
+            };
+
+            if (SCAN.mode === 'random') { fillRandom(); return out; }
+
+            if (SCAN.mode === 'even') {
+                /* هر بلوک به‌نوبت سهم می‌گیرد و درونِ هر بلوک آدرس «تصادفی» انتخاب
+                   می‌شود — نه پشت‌سرهم از یک نقطه (که در بلوک‌های بزرگ به بازه‌های
+                   تخصیص‌نیافته می‌خورد و نتیجه را خالی می‌کرد). */
+                for (let i = 0; i < count; i++) pickIn(CF_BLOCKS[i % nb]);
+                return out;
             }
+
+            /* smart (پیش‌فرض) — سهمِ متناسب با اندازه‌ی رنج + کفِ تضمینی برای هر رنج.
+               چرا: ۹۶٪ از آی‌پی‌های تمیزِ شناخته‌شده در ۳ رنجِ بزرگ (104.16.0.0/13 •
+               172.64.0.0/13 • 104.24.0.0/14) هستند و ۹ رنجِ دیگر تقریباً هیچ آی‌پیِ
+               سالمی ندارند. حالتِ «even» ۸۰٪ بودجه را خرجِ همان ۹ رنج می‌کرد. */
+            const total = CF_BLOCKS.total || 1;
+            const floor = Math.max(4, Math.ceil(count * 0.005));
+            const quotas = CF_BLOCKS.map(function (b) {
+                return Math.max(floor, Math.floor(count * (b.size / total)));
+            });
+            let sum = quotas.reduce(function (a, b) { return a + b; }, 0);
+            while (sum > count) {
+                let big = 0;
+                for (let i = 1; i < quotas.length; i++) if (quotas[i] > quotas[big]) big = i;
+                if (quotas[big] <= floor) break;
+                quotas[big]--; sum--;
+            }
+            for (let i = 0; i < nb; i++) {
+                for (let k = 0; k < quotas[i] && out.length < count; k++) pickIn(CF_BLOCKS[i]);
+            }
+            fillRandom();
             return out;
         }
 
@@ -5094,37 +5122,88 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
 
         let radarRunning = false;
         let radarCancelRequested = false;
+        /* شمارنده‌ی «پاسخ‌های خام» — مستقل از فیلترهای minRtt/maxRtt. اگر بعد از یک
+           اسکنِ کامل صفر بماند، یعنی هیچ لبه‌ای به پروب جواب نداده است. */
+        let radarRawResponses = 0;
 
-        // پروبِ Image (روشِ اثبات‌شده‌ی پنل نوا): onload یا onerror = لبه پاسخ داد
-        // = سالم؛ تایم‌اوت = مرده. هیچ وابستگی به CORS/AbortController.
-        /* فاصله‌ی کوتاهِ تصادفی بین پروب‌های یک آی‌پی — الگوی درخواست‌ها کمتر
-           شبیه اسکنر می‌شود و DPI کمتر اتصال را قطع می‌کند (روشِ SenPai Scanner). */
+        /* ═══ پروب — دوکاناله (fetch + Image) ═══
+           به https://IP/cdn-cgi/trace وصل می‌شویم. گواهیِ آی‌پیِ خام هیچ‌وقت معتبر
+           نیست، پس مرورگر بعد از TLS اتصال را رد می‌کند؛ یعنی «سرعتِ رسیدنِ خطا»
+           خودش سیگنالِ زنده‌بودنِ لبه است:
+             • خطا پیش از تایم‌اوت = لبه پاسخ داد = «سالم»
+             • تایم‌اوت             = هیچ پاسخی نیامد = «مرده»
+
+           چرا «دو» کاناله: تجربه‌ی عملی نشان داده هیچ‌کدام از این دو روش به‌تنهایی در
+           همه‌ی مرورگرها/شبکه‌ها قابل‌اعتماد نیست —
+             – نسخه‌ی اصلیِ همین پنل اول Image داشت و بعد به fetch مهاجرت کرد، چون
+               «RST آنیِ فیلترشکن/مسیرِ مسدود هم زنده حساب می‌شد».
+             – پنل نوا برعکس، fetch را رها کرد و به Image رفت.
+           پس هر دو را «موازی» می‌فرستیم و اولین سیگنالِ پاسخ را می‌پذیریم. */
+        /* فاصله‌ی کوتاهِ تصادفی بین پروب‌های یک آی‌پی — الگوی درخواست‌ها کمتر شبیه
+           اسکنر می‌شود و DPI کمتر اتصال را قطع می‌کند (روشِ SenPai Scanner). */
         function radarSleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
 
         function pingIp(ip, port, timeout) {
             return new Promise(function(res) {
                 const t0 = performance.now();
-                let done = false;
+                let done = false, ctrl = null;
                 const img = new Image();
                 const fin = function(ok) {
                     if (done) return;
                     done = true;
                     img.onerror = img.onload = null;
+                    try { if (ctrl) ctrl.abort(); } catch (e) {}
+                    if (ok) radarRawResponses++;
                     res(ok ? Math.round(performance.now() - t0) : null);
                 };
                 const timer = setTimeout(function() { fin(false); }, timeout);
+                const url = 'https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random();
+
+                /* کانالِ ۱ — Image: به CORS/کش/AbortController وابسته نیست */
                 img.onerror = function() { clearTimeout(timer); fin(true); };
                 img.onload = function() { clearTimeout(timer); fin(true); };
-                const host = port == 443 ? ip : ip + ':' + port;
-                img.src = 'https://' + host + '/cdn-cgi/trace?_=' + Math.random();
+                img.src = url;
+
+                /* کانالِ ۲ — fetch(cors): روشِ نسخه‌ی اصلی و اسکنرِ IRCF. AbortError فقط
+                   از تایم‌اوتِ خودمان می‌آید ⇒ مرده؛ هر خطای دیگر ⇒ سالم. */
+                try {
+                    ctrl = new AbortController();
+                    fetch(url, { signal: ctrl.signal, mode: 'cors', cache: 'no-store' })
+                        .then(function() { clearTimeout(timer); fin(true); })
+                        .catch(function(err) {
+                            if (err && err.name === 'AbortError') return;
+                            clearTimeout(timer); fin(true);
+                        });
+                } catch (e) {}
             });
+        }
+
+        /* ═══ خودآزماییِ پروب ═══
+           RFC 5737 سه بازه‌ی آزمایشی دارد که هرگز مسیریابی نمی‌شوند (TEST-NET-1/2/3).
+           اگر پروب این‌ها را «سالم» ببیند، یعنی هر خطای سریعِ محلی (RST فیلترشکن/
+           پروکسی/فایروال) دارد «زنده» تفسیر می‌شود و کلِ نتیجه‌ی اسکن بی‌اعتبار است. */
+        const RADAR_CONTROL_IPS = ['192.0.2.1', '198.51.100.1', '203.0.113.1'];
+        async function radarSelfTest(ports) {
+            const port = ports[0] || 443;
+            const t = Math.min(SCAN.timeout, 1500);
+            for (let i = 0; i < RADAR_CONTROL_IPS.length; i++) {
+                const rtt = await pingIp(RADAR_CONTROL_IPS[i], port, t);
+                if (rtt !== null) return { bad: true, ip: RADAR_CONTROL_IPS[i], rtt: rtt };
+            }
+            return { bad: false };
         }
 
         /* فقط پورت‌های TLS قابل‌اسکن‌اند: پروب مرورگر https است و پورت‌های غیر-TLS
            با خطای SSL بلافاصله «پاسخ» می‌دهند و نتیجه را کاملاً خراب می‌کنند. */
         const RADAR_TLS_PORTS = [443, 2053, 2083, 2087, 2096, 8443];
         function radarConfigPorts() {
-            if (SCAN.ports.length) return SCAN.ports.slice();
+            /* اولویت: پورت‌های تنظیماتِ پنل — اما فقط پورت‌های TLS. پروبِ مرورگر
+               https است؛ روی پورتِ غیر-TLS (مثل ۸۰) اتصال با خطای SSL بی‌درنگ
+               «پاسخ» می‌دهد و همه‌چیز زنده دیده می‌شود. */
+            if (SCAN.ports.length) {
+                const tls = SCAN.ports.filter(function (p) { return RADAR_TLS_PORTS.indexOf(p) >= 0; });
+                return tls.length ? tls : [443];
+            }
             const ports = [];
             const links = sanaeiClientData.links || [];
             links.forEach(function(link) {
@@ -5243,8 +5322,15 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 return;
             }
 
+            statusEl.textContent = data.radarStatusReady;
+            const selfTest = await radarSelfTest(ports);
+            const warnText = selfTest.bad
+                ? ' ⚠ ' + data.radarStatusProbeBad.replace('{ip}', selfTest.ip).replace('{rtt}', selfTest.rtt)
+                : '';
+
             radarRunning = true;
             radarCancelRequested = false;
+            radarRawResponses = 0;
             startBtn.classList.add('running');
             document.getElementById('radar-start-label').textContent = data.radarStop;
             document.getElementById('radar-best').classList.remove('show');
@@ -5274,7 +5360,9 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                         statusEl.textContent = data.radarStatusScan
                             .replace('{done}', doneCount)
                             .replace('{total}', ips.length)
-                            .replace('{found}', results.length);
+                            .replace('{found}', results.length)
+                            + ' • ' + data.radarStatusAnswered.replace('{n}', radarRawResponses)
+                            + warnText;
                     }
                 }
 
@@ -5313,7 +5401,12 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                     } catch (e) { /* بی‌شبکه — نتایج همچنان روی صفحه مانده‌اند */ }
                 } else {
                     /* اسکنِ بی‌نتیجه — گزارش به پنل می‌رود تا لاگِ «ناموفق» ثبت شود */
-                    statusEl.textContent = data.radarStatusNoResult;
+                    /* دو حالتِ متفاوت که قبلاً یک پیامِ مشترک می‌گرفتند:
+                       • هیچ پاسخی نیامد ⇒ شبکه اتصالِ مستقیم TLS به آی‌پیِ خام را می‌بندد.
+                       • پاسخ آمد ولی همه مردود شدند ⇒ فیلترهای minRtt/maxRtt. */
+                    statusEl.textContent = (radarRawResponses === 0
+                        ? data.radarStatusNoRespond
+                        : data.radarStatusNoResult) + warnText;
                     try {
                         await fetch(sanaeiClientData.subUrl.replace(/\\/$/, '') + '/radar-ips', {
                             method: 'POST',
@@ -5337,7 +5430,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             if (radarCard) radarCard.style.display = 'none';
         }
 
-        document.getElementById("radar-start-btn").addEventListener("click", function(e) {
+document.getElementById("radar-start-btn").addEventListener("click", function(e) {
             e.stopPropagation();
             radarRun();
         });
@@ -6635,7 +6728,7 @@ function scannerCfg(s) {
     minRtt: int(sc.minRtt, 0, 5000, 0),
     maxRtt: int(sc.maxRtt, 0, 20000, 0),
     keep: int(sc.keep, 0, 100, 0),
-    mode: sc.mode === 'random' ? 'random' : 'even',
+    mode: (sc.mode === 'random' || sc.mode === 'even') ? sc.mode : 'smart',
     ports: arr(sc.ports).map((x) => parseInt(x, 10)).filter((x) => x > 0 && x < 65536).slice(0, 12),
     ranges: arr(sc.ranges).map((x) => String(x).trim())
       .filter((x) => /^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(x)).slice(0, 64),

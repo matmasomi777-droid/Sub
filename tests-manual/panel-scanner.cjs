@@ -29,6 +29,8 @@ const RET = 'return { start: start, apply: apply, reset: reset };';
 if (scanSrc.indexOf(RET) < 0) { console.error('FATAL: return بلوکِ PANEL_SCAN پیدا نشد'); process.exit(1); }
 scanSrc = scanSrc.replace(RET,
   'return { start: start, apply: apply, reset: reset, buildList: buildList, blocksOf: blocksOf, ping: ping, probe: probe, readCfg: readCfg,' +
+  ' selfTest: selfTest, SCAN_TLS_PORTS: SCAN_TLS_PORTS, SCAN_CONTROL_IPS: SCAN_CONTROL_IPS,' +
+  ' rawResponses: function () { return rawResponses; },' +
   ' _s: function () { return { results: results, done: done, total: total, running: running }; } };');
 
 /* ── محیطِ شبیه‌سازی‌شده ── */
@@ -48,6 +50,29 @@ function makeFakeImage() {
       setTimeout(() => { if (typeof this.onerror === 'function') this.onerror(); }, 3);
     }
     get src() { return this._src; }
+  };
+}
+
+/* fetch جعلی — کانالِ دومِ پروب (Image + fetch موازی). همان معناشناسی:
+   زنده ⇒ خطای سریع (TypeError)، مرده ⇒ معلق تا اَبورتِ اسکنر (AbortError). */
+function makeFakeFetch() {
+  return function fakeFetch(url, opts) {
+    return new Promise((resolve, reject) => {
+      const host = String(url).replace('https://', '').split('/')[0];
+      const sig = opts && opts.signal;
+      const dead = host.startsWith('9.9.9.9');
+      let timer = null;
+      const onAbort = () => {
+        if (timer) clearTimeout(timer);
+        const e = new Error('aborted'); e.name = 'AbortError'; reject(e);
+      };
+      if (sig) {
+        if (sig.aborted) { onAbort(); return; }
+        sig.addEventListener('abort', onAbort);
+      }
+      if (dead) return;
+      timer = setTimeout(() => reject(new TypeError('Failed to fetch')), 3);
+    });
   };
 }
 
@@ -83,8 +108,8 @@ const deps = {
 const cidrs = new Function(cidrsSrc + '\n;return CF_CIDRS_UI;')();
 
 const names = Object.keys(deps);
-const M = new Function(...names, 'Image',
-  cidrsSrc + '\n' + scanSrc + '\n;return PANEL_SCAN;')(...names.map((n) => deps[n]), makeFakeImage());
+const M = new Function(...names, 'Image', 'fetch', 'AbortController',
+  cidrsSrc + '\n' + scanSrc + '\n;return PANEL_SCAN;')(...names.map((n) => deps[n]), makeFakeImage(), makeFakeFetch(), AbortController);
 
 let fail = 0;
 const ok = (cond, label, extra) => { console.log((cond ? '  ✓ ' : '  ✗ ') + label + (extra ? '  → ' + extra : '')); if (!cond) fail++; };
@@ -151,6 +176,52 @@ const ok = (cond, label, extra) => { console.log((cond ? '  ✓ ' : '  ✗ ') + 
   ok(M._s().results.length === 0, 'نتیجه خالی شد');
   ok(nodes.pScanWrap.style.display === 'none', 'جدول پنهان شد');
   ok(nodes.pScanStatus.textContent === 'آماده', 'وضعیت به «آماده» برگشت', nodes.pScanStatus.textContent);
+
+  console.log('== ۸) تخصیصِ «smart» در پنل ==');
+  /* داده‌ی واقعی: ~۹۶٪ آی‌پی‌های تمیزِ شناخته‌شده در ۳ رنجِ بزرگ‌اند و ۹ رنجِ
+     دیگر تقریباً خالی‌اند. «smart» باید بودجه را به همان‌ها بدهد ولی هیچ رنجی
+     را صفر نگذارد (خواسته‌ی «تمامِ رنج‌ها اسکن شوند»). */
+  const sList = M.buildList(2048, [], 'smart');
+  ok(sList.length === 2048 && new Set(sList).size === 2048, '۲۰۴۸ آی‌پیِ یکتا', sList.length);
+  const blk = (ip) => { const n = ip2n(ip); return OFF.findIndex((b) => n >= b.s && n <= b.e); };
+  const BIG3 = [OFFICIAL.indexOf('104.16.0.0/13'), OFFICIAL.indexOf('172.64.0.0/13'), OFFICIAL.indexOf('104.24.0.0/14')];
+  const sBig = Math.round(100 * sList.filter((ip) => BIG3.indexOf(blk(ip)) >= 0).length / sList.length);
+  const eList = M.buildList(2048, [], 'even');
+  const eBig = Math.round(100 * eList.filter((ip) => BIG3.indexOf(blk(ip)) >= 0).length / eList.length);
+  ok(sBig >= 70, '≥۷۰٪ بودجه به ۳ رنجِ پربازده می‌رود', sBig + '%');
+  ok(sBig > eBig * 2, 'smart دست‌کم ۲ برابرِ even بازدهی دارد', 'smart ' + sBig + '% vs even ' + eBig + '%');
+  ok(new Set(sList.map(blk)).size === 15, 'هر ۱۵ رنج نمونه دارند (کفِ تضمینی)', new Set(sList.map(blk)).size + '/15');
+
+  console.log('== ۹) فیلترِ پورت‌های غیر-TLS در پنل ==');
+  /* پورتِ غیر-TLS روی پروبِ https با خطای SSL بی‌درنگ «پاسخ» می‌دهد و همه‌چیز
+     را زنده نشان می‌دهد — پس فهرستِ ادمین هم باید از این صافی رد شود. */
+  ok(M.SCAN_TLS_PORTS.join(',') === '443,2053,2083,2087,2096,8443', 'فهرستِ پورت‌های TLS درست است', M.SCAN_TLS_PORTS.join(','));
+  form.ports.value = '80';
+  ok(M.readCfg().ports.join(',') === '443', 'پورتِ ۸۰ → ۴۴۳ (فیلتر شد)', M.readCfg().ports.join(','));
+  form.ports.value = '80, 2053, 8080';
+  ok(M.readCfg().ports.join(',') === '2053', 'فقط پورتِ TLS از میانِ مخلوط می‌ماند', M.readCfg().ports.join(','));
+  form.ports.value = '';
+
+  console.log('== ۱۰) حالتِ پیش‌فرضِ فرم و خودآزمایی ==');
+  form.mode.value = 'smart';
+  ok(M.readCfg().mode === 'smart', 'حالتِ smart خوانده می‌شود', M.readCfg().mode);
+  form.mode.value = 'bogus';
+  ok(M.readCfg().mode === 'smart', 'مقدارِ ناشناخته → smart (نه even)', M.readCfg().mode);
+  form.mode.value = 'even';
+  ok(M.readCfg().mode === 'even', 'حالتِ even هنوز پشتیبانی می‌شود', M.readCfg().mode);
+  form.mode.value = 'even';
+
+  ok(M.SCAN_CONTROL_IPS.length === 3 && M.SCAN_CONTROL_IPS.every((ip) => /^(192\.0\.2|198\.51\.100|203\.0\.113)\./.test(ip)),
+     'آی‌پی‌های آزمایشیِ RFC 5737 تعریف شده‌اند', M.SCAN_CONTROL_IPS.join(','));
+  const stBad = await M.selfTest([443], 200);
+  ok(stBad.bad === true, 'پاسخ‌دادنِ آی‌پیِ آزمایشی به‌عنوان «نتیجه‌ی بی‌اعتبار» تشخیص داده می‌شود',
+     stBad.bad ? stBad.ip + ' @ ' + stBad.rtt + 'ms' : 'bad=false');
+  const rBefore = M.rawResponses();
+  await M.ping('1.2.3.4', 443, 200);
+  ok(M.rawResponses() > rBefore, 'پاسخِ آی‌پیِ زنده در شمارنده ثبت می‌شود', rBefore + ' → ' + M.rawResponses());
+  const rAfter = M.rawResponses();
+  await M.ping('9.9.9.9', 443, 200);
+  ok(M.rawResponses() === rAfter, 'آی‌پیِ مرده شمارنده را بالا نمی‌برد', String(M.rawResponses()));
 
   console.log(fail ? '\n' + fail + ' تست ناموفق ✗' : '\nهمه‌ی تست‌ها موفق ✓');
   process.exit(fail ? 1 : 0);

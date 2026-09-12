@@ -94,7 +94,7 @@ globalThis.caches = { default: { match: async () => undefined, put: async () => 
     if (mm) { try { cfg = JSON.parse(JSON.parse('"' + mm[1] + '"')); } catch (e) { ok(false, 'پارسِ تنظیماتِ اسکنر', e.message); } }
     if (cfg) {
       ok(cfg.ipCount === 2048, 'ipCount = ۲۰۴۸', cfg.ipCount);
-      ok(cfg.mode === 'even', 'حالت پیش‌فرض even', cfg.mode);
+      ok(cfg.mode === 'smart', 'حالت پیش‌فرض smart (سهمِ متناسب با اندازه‌ی رنج)', cfg.mode);
       ok(cfg.concurrency > 0 && cfg.timeout > 0 && cfg.probes >= 1, 'هم‌روندی/تایم‌اوت/پروب معتبر', cfg.concurrency + '/' + cfg.timeout + '/' + cfg.probes);
       ok(cfg.minRtt === 0, 'فیلترِ تأخیر خاموش است (minRtt=0)', cfg.minRtt);
     }
@@ -109,8 +109,15 @@ globalThis.caches = { default: { match: async () => undefined, put: async () => 
        پروبِ fetch به آی‌پیِ خام روی شبکه‌ی ایران نتیجه‌ی ناپایدار می‌دهد؛
        مرجعِ اثبات‌شده (پنل نوا) Image است. و اگر فهرستِ پورت خالی بماند،
        اسکن بی‌صدا رد می‌شود — پس باید همیشه ۴۴۳ فالبک شود. */
-    ok(html.includes('new Image()'), 'پروبِ اسکنر Image است (نه fetch)');
-    ok(!/fetch\('https:\/\/' \+ host/.test(html), 'پروبِ fetchِ آی‌پیِ خام حذف شده');
+    ok(html.includes('new Image()'), 'کانالِ Image در پروب هست');
+    ok(/fetch\(url, \{ signal: ctrl\.signal, mode: 'cors'/.test(html), 'کانالِ fetch(cors) هم موازی فرستاده می‌شود (پروبِ دوکاناله)');
+    ok(html.includes('RADAR_CONTROL_IPS'), 'خودآزماییِ پروب (آی‌پی‌های RFC 5737) در صفحه هست');
+    ok(html.includes('radarRawResponses'), 'شمارنده‌ی پاسخ‌های خام در صفحه هست');
+    ok(html.includes('radarStatusNoRespond'), 'پیامِ «هیچ پاسخی نیامد» در صفحه هست');
+    ok(/if \(!ports\.length\) ports\.push\(443\)|return tls\.length \? tls : \[443\]/.test(html),
+       'پورتِ اسکن هرگز خالی نمی‌ماند (فالبکِ ۴۴۳ یا فیلترِ TLS)');
+    ok(!/fetch\('https:\/\/' \+ host/.test(html),
+       'پروبِ تک‌کاناله‌ی قدیمی حذف شده (اکنون fetch داخلِ pingIp و با mode:cors است)');
     ok(/if \(!ports\.length\) ports\.push\(443\)/.test(html), 'فالبکِ پورت به ۴۴۳ در موتور هست');
     ok(html.includes('concurrency: 16'), 'هم‌روندیِ پیش‌فرض ۱۶ است (نه ۶۴)');
     ok(html.includes('timeout: 2000'), 'تایم‌اوتِ پیش‌فرض ۲۰۰۰ms است (نه ۱۰۰۰)');
@@ -160,7 +167,7 @@ globalThis.caches = { default: { match: async () => undefined, put: async () => 
     if (htmlF) {
       ok(htmlF.includes('id="radar-card"'), 'کارتِ رادار در فالبک هست');
       ok(htmlF.includes('CF_CIDRS') && htmlF.includes('buildIpList'), 'موتورِ اسکنر در فالبک هست');
-      ok(htmlF.includes('new Image()'), 'پروبِ Image در فالبکِ داخلی هست');
+      ok(htmlF.includes('new Image()') && htmlF.includes('RADAR_CONTROL_IPS'), 'پروبِ دوکاناله + خودآزمایی در فالبکِ داخلی هست');
       ok(/if \(!ports\.length\) ports\.push\(443\)/.test(htmlF), 'فالبکِ پورت به ۴۴۳ در فالبکِ داخلی هست');
       ok((htmlF.match(/'1[0-9.]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+'/g) || []).length >= 15, 'تمامِ ۱۵ رنج رسمی در فالبک هست');
       const sc = htmlF.match(/<script(?![^>]*src=)[^>]*>[\s\S]*?<\/script>/i);
@@ -196,7 +203,7 @@ globalThis.caches = { default: { match: async () => undefined, put: async () => 
     catch (e) { ok(false, 'ساختِ صفحه', e.message); }
     if (htmlU) {
       ok(htmlU.includes('id="radar-card"') && htmlU.includes('CF_CIDRS'), 'کارت و موتورِ اسکنر در ui/user.html هست');
-      ok(htmlU.includes('new Image()'), 'پروبِ Image در ui/user.html هست');
+      ok(htmlU.includes('new Image()') && htmlU.includes('RADAR_CONTROL_IPS'), 'پروبِ دوکاناله + خودآزمایی در ui/user.html هست');
       ok(/if \(!ports\.length\) ports\.push\(443\)/.test(htmlU), 'فالبکِ پورت به ۴۴۳ در ui/user.html هست');
       ok((htmlU.match(/'1[0-9.]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+'/g) || []).length >= 15, 'تمامِ ۱۵ رنج رسمی هست');
       const scU = htmlU.match(/<script(?![^>]*src=)[^>]*>[\s\S]*?<\/script>/i);
