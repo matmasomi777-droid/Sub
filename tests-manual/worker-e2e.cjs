@@ -105,15 +105,24 @@ globalThis.caches = { default: { match: async () => undefined, put: async () => 
     ok(cidrs.length >= 15, 'تمامِ ۱۵ رنج رسمی در صفحه هست', cidrs.length + ' رنج');
     ok(!/'104\.0\.0\.0\/8'/.test(html), 'رنجِ غلطِ قبلی (104.0.0.0/8) حذف شده');
 
-    /* ── ۴ب) پروبِ Image و فالبکِ پورت (دو باگِ «اسکنر کار نمی‌کند») ──
-       پروبِ fetch به آی‌پیِ خام روی شبکه‌ی ایران نتیجه‌ی ناپایدار می‌دهد؛
-       مرجعِ اثبات‌شده (پنل نوا) Image است. و اگر فهرستِ پورت خالی بماند،
-       اسکن بی‌صدا رد می‌شود — پس باید همیشه ۴۴۳ فالبک شود. */
+    /* ── ۴ب) پروبِ دوکاناله، کفِ تأخیر، و فالبکِ پورت ──
+       هیچ‌کدام از دو کانال تنها کافی نیست: Image فقط هر RSTِ آنی را «زنده»
+       می‌بیند و fetch فقط آی‌پیِ unroutable را «زنده» می‌بیند. و بدونِ کفِ
+       تأخیر، پاسخ‌های بی‌درنگِ میان‌راه «سریع‌ترین» رتبه را می‌گیرند و
+       آی‌پیِ خراب در کانفیگ می‌نشیند. اگر فهرستِ پورت هم خالی بماند، اسکن
+       بی‌صدا رد می‌شود — پس باید همیشه ۴۴۳ فالبک شود. */
     ok(html.includes('new Image()'), 'کانالِ Image در پروب هست');
     ok(/fetch\(url, \{ signal: ctrl\.signal, mode: 'cors'/.test(html), 'کانالِ fetch(cors) هم موازی فرستاده می‌شود (پروبِ دوکاناله)');
     ok(html.includes('RADAR_CONTROL_IPS'), 'خودآزماییِ پروب (آی‌پی‌های RFC 5737) در صفحه هست');
     ok(html.includes('radarRawResponses'), 'شمارنده‌ی پاسخ‌های خام در صفحه هست');
     ok(html.includes('radarStatusNoRespond'), 'پیامِ «هیچ پاسخی نیامد» در صفحه هست');
+    ok(html.includes('radarAutoFloor') && html.includes('radarBaseline'),
+       'کفِ خودکارِ تأخیر + اندازه‌گیریِ تأخیرِ پایه در صفحه هست');
+    ok(/radarFloor = Math\.max\(SCAN\.minRtt/.test(html), 'کف = max(کفِ دستی، کفِ خودکار)');
+    ok(html.includes('radarRejectedFast'), 'شمارنده‌ی «مردودِ سریع» در صفحه هست');
+    ok(html.includes('radarStatusGuard'), 'کلیدِ locale برای نمایشِ کف و مردودهای سریع هست');
+    ok(!/x\.rtt >= SCAN\.minRtt/.test(html), 'فیلترِ قدیمی جایگزین شده (حالا کفِ مؤثرِ محاسبه‌شده)');
+    ok(/samples\.length < Math\.min\(SCAN\.probes, 2\)/.test(html), 'دروازه‌ی ثبات (≥۲ پاسخ از N پروب) در صفحه هست');
     ok(/if \(!ports\.length\) ports\.push\(443\)|return tls\.length \? tls : \[443\]/.test(html),
        'پورتِ اسکن هرگز خالی نمی‌ماند (فالبکِ ۴۴۳ یا فیلترِ TLS)');
     ok(!/fetch\('https:\/\/' \+ host/.test(html),

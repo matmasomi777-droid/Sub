@@ -165,6 +165,7 @@ const DEF = () => ({
       timeout: 2000,     /* تایم‌اوت هر پروب (میلی‌ثانیه) */
       probes: 3,         /* تعداد پروب برای تأییدِ هر آی‌پی */
       minRtt: 0,         /* حداقل تأخیرِ قابل‌قبول (ms) — ۰ = بدون فیلتر */
+      autoFloor: true,   /* کفِ خودکارِ تأخیر — پاسخِ بی‌درنگِ میان‌راه (RST) «سالم» شمرده نمی‌شود */
       maxRtt: 0,         /* حداکثر تأخیرِ قابل‌قبول (ms) — ۰ = بدون سقف */
       keep: 0,           /* تعداد آی‌پیِ ذخیره‌شده — ۰ = سقف کانفیگِ کاربر */
       mode: 'smart',     /* smart = سهمِ متناسب با اندازه‌ی رنج (+کف برای رنج‌های کوچک)
@@ -4350,7 +4351,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStatusDone: "پایان اسکن - {found} آی‌پی سالم یافت شد",
                 radarStatusSaveFail: "ذخیره‌ی آی‌پی‌ها در پنل ناموفق بود",
                 radarStatusStopping: "در حال توقف...", radarStatusStopped: "اسکن متوقف شد",
-                radarStatusNoResult: "آی‌پی سالمی یافت نشد", radarStatusAnswered: "پاسخ: {n}", radarStatusNoRespond: "هیچ آی‌پی به پروب پاسخ نداد — شبکه‌ی شما اتصالِ مستقیم TLS به آی‌پی‌های خامِ کلودفلر را می‌بندد. از یک VPS اسکن کنید یا تایم‌اوت را بالا ببرید", radarStatusProbeBad: "هشدار: پروب به آی‌پیِ آزمایشی {ip} هم در {rtt}ms پاسخ داد — نتیجه‌ی اسکن بی‌اعتبار است؛ «حداقل تأخیر» را روی ۶۰ بگذارید",
+                radarStatusNoResult: "آی‌پی سالمی یافت نشد", radarStatusAnswered: "پاسخ: {n}", radarStatusGuard: "کف {ms}ms • مردودِ سریع: {n}", radarStatusNoRespond: "هیچ آی‌پی به پروب پاسخ نداد — شبکه‌ی شما اتصالِ مستقیم TLS به آی‌پی‌های خامِ کلودفلر را می‌بندد. از یک VPS اسکن کنید یا تایم‌اوت را بالا ببرید", radarStatusProbeBad: "هشدار: پروب به آی‌پیِ آزمایشی {ip} هم در {rtt}ms پاسخ داد — نتیجه‌ی اسکن بی‌اعتبار است؛ «حداقل تأخیر» را روی ۶۰ بگذارید",
                 radarStatusNoConfig: "کانفیگ vless در این ساب یافت نشد",
                 radarStatusNoTlsPort: "هیچ پورت TLS قابل‌اسکنی در کانفیگ‌ها یافت نشد",
                 radarThPing: "تأخیر", radarThJitter: "جیتر", radarThLoss: "لاس٪",
@@ -4379,7 +4380,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStatusDone: "Scan finished - {found} healthy IPs found",
                 radarStatusSaveFail: "Failed to save IPs to the panel",
                 radarStatusStopping: "Stopping...", radarStatusStopped: "Scan stopped",
-                radarStatusNoResult: "No healthy IP found", radarStatusAnswered: "answered: {n}", radarStatusNoRespond: "No IP answered the probe — your network blocks direct TLS to raw Cloudflare IPs. Scan from a VPS, or raise the timeout", radarStatusProbeBad: "Warning: the probe also answered for test IP {ip} in {rtt}ms — results are unreliable; set 'min RTT' to 60",
+                radarStatusNoResult: "No healthy IP found", radarStatusAnswered: "answered: {n}", radarStatusGuard: "floor {ms}ms • too-fast rejected: {n}", radarStatusNoRespond: "No IP answered the probe — your network blocks direct TLS to raw Cloudflare IPs. Scan from a VPS, or raise the timeout", radarStatusProbeBad: "Warning: the probe also answered for test IP {ip} in {rtt}ms — results are unreliable; set 'min RTT' to 60",
                 radarStatusNoConfig: "No vless config found in this subscription",
                 radarStatusNoTlsPort: "No probeable TLS port found in configs",
                 radarThPing: "Ping", radarThJitter: "Jitter", radarThLoss: "Loss%",
@@ -4408,7 +4409,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStatusDone: "Tarama bitti - {found} sağlıklı IP bulundu",
                 radarStatusSaveFail: "IP'ler panele kaydedilemedi",
                 radarStatusStopping: "Durduruluyor...", radarStatusStopped: "Tarama durduruldu",
-                radarStatusNoResult: "Sağlıklı IP bulunamadı", radarStatusAnswered: "yanıt: {n}", radarStatusNoRespond: "Hiçbir IP yoklamaya yanıt vermedi — ağınız ham Cloudflare IP'lerine doğrudan TLS bağlantısını engelliyor. Bir VPS'ten tarayın veya zaman aşımını artırın", radarStatusProbeBad: "Uyarı: yoklama test IP'si {ip} için de {rtt}ms'de yanıt verdi — sonuçlar güvenilmez; 'min RTT' değerini 60 yapın",
+                radarStatusNoResult: "Sağlıklı IP bulunamadı", radarStatusAnswered: "yanıt: {n}", radarStatusGuard: "taban {ms}ms • çok hızlı reddedildi: {n}", radarStatusNoRespond: "Hiçbir IP yoklamaya yanıt vermedi — ağınız ham Cloudflare IP'lerine doğrudan TLS bağlantısını engelliyor. Bir VPS'ten tarayın veya zaman aşımını artırın", radarStatusProbeBad: "Uyarı: yoklama test IP'si {ip} için de {rtt}ms'de yanıt verdi — sonuçlar güvenilmez; 'min RTT' değerini 60 yapın",
                 radarStatusNoConfig: "Bu abonelikte vless konfigi bulunamadı",
                 radarStatusNoTlsPort: "Yapılandırmalarda taranabilir TLS portu bulunamadı",
                 radarThPing: "Gecikme", radarThJitter: "Jitter", radarThLoss: "Kayıp%",
@@ -4437,7 +4438,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStatusDone: "انتهى الفحص - تم العثور على {found} آي‌بي سليم",
                 radarStatusSaveFail: "فشل حفظ الآي‌بي في اللوحة",
                 radarStatusStopping: "جارٍ الإيقاف...", radarStatusStopped: "تم إيقاف الفحص",
-                radarStatusNoResult: "لم يتم العثور على آي‌بي سليم", radarStatusAnswered: "استجاب: {n}", radarStatusNoRespond: "لم يستجب أي آي‌بي للفحص — شبكتك تحجب اتصال TLS المباشر بعناوين كلودفلر الخام. افحص من VPS أو ارفع المهلة", radarStatusProbeBad: "تحذير: استجاب الفحص أيضًا لعنوان اختباري {ip} في {rtt}ms — النتائج غير موثوقة؛ اضبط «أدنى تأخير» على ٦٠",
+                radarStatusNoResult: "لم يتم العثور على آي‌بي سليم", radarStatusAnswered: "استجاب: {n}", radarStatusGuard: "الحد الأدنى {ms}ms • مرفوض سريع: {n}", radarStatusNoRespond: "لم يستجب أي آي‌بي للفحص — شبكتك تحجب اتصال TLS المباشر بعناوين كلودفلر الخام. افحص من VPS أو ارفع المهلة", radarStatusProbeBad: "تحذير: استجاب الفحص أيضًا لعنوان اختباري {ip} في {rtt}ms — النتائج غير موثوقة؛ اضبط «أدنى تأخير» على ٦٠",
                 radarStatusNoConfig: "لا يوجد تكوين vless في هذا الاشتراك",
                 radarStatusNoTlsPort: "لم يتم العثور على منفذ TLS قابل للفحص في الإعدادات",
                 radarThPing: "التأخير", radarThJitter: "التذبذب", radarThLoss: "الفقد٪",
@@ -5000,7 +5001,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             /* پیش‌فرض‌های موتورِ فالبک — هم‌راستا با DEF().scanner و scannerCfg().
                تایم‌اوت ۲ ثانیه: ۱ ثانیه روی شبکه‌ی موبایلِ ایران خیلی از
                لبه‌های سالم را «مرده» حساب می‌کرد. */
-            const D = { ipCount: 2048, concurrency: 16, timeout: 2000, probes: 3, minRtt: 0, maxRtt: 0, keep: 0, mode: 'smart' };
+            const D = { ipCount: 2048, concurrency: 16, timeout: 2000, probes: 3, minRtt: 0, maxRtt: 0, keep: 0, mode: 'smart', autoFloor: 1 };
             let c = {};
             try { c = JSON.parse("__SCANNER_CFG_JSON__") || {}; } catch (e) { c = {}; }
             const num = function (k, lo, hi) {
@@ -5014,6 +5015,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 timeout: num('timeout', 200, 10000),
                 probes: num('probes', 1, 5),
                 minRtt: num('minRtt', 0, 5000),
+                autoFloor: c.autoFloor === false ? false : true,
                 maxRtt: num('maxRtt', 0, 20000),
                 keep: num('keep', 0, 100),
                 mode: (c.mode === 'random' || c.mode === 'even') ? c.mode : 'smart',
@@ -5182,6 +5184,109 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
            RFC 5737 سه بازه‌ی آزمایشی دارد که هرگز مسیریابی نمی‌شوند (TEST-NET-1/2/3).
            اگر پروب این‌ها را «سالم» ببیند، یعنی هر خطای سریعِ محلی (RST فیلترشکن/
            پروکسی/فایروال) دارد «زنده» تفسیر می‌شود و کلِ نتیجه‌ی اسکن بی‌اعتبار است. */
+
+        /* ═══ کفِ تأخیر — فیلترِ کیفیت ═══
+
+           مرورگر نمی‌تواند بفهمد پاسخ از «لبه‌ی واقعیِ کلادفلر» آمده یا از میان‌راهی
+
+           که فوراً RST می‌دهد. اما زمان‌بندی لو می‌دهد: RSTِ آنی ~۱ms است، در حالی که
+
+           یک لبه‌ی واقعی حداقل یک رفت‌وبرگشتِ کامل طول می‌کشد. بدون این کف، پاسخ‌های
+
+           آنی «سریع‌ترین» رتبه را می‌گیرند و آی‌پی‌های خراب جای آی‌پی‌های سالم را در
+
+           کانفیگ می‌گیرند — دقیقاً همان «آی‌پی پیدا می‌شود ولی کار نمی‌کند». */
+
+        let radarFloor = 0;
+
+        let radarRejectedFast = 0;
+
+        function radarBaseHost() {
+
+            try {
+
+                const cands = [
+
+                    (typeof sanaeiClientData !== 'undefined' ? sanaeiClientData : null),
+
+                    (typeof panelData !== 'undefined' ? panelData : null)
+
+                ];
+
+                for (let i = 0; i < cands.length; i++) {
+
+                    const u = cands[i] && cands[i].subUrl;
+
+                    if (u) return new URL(u, location.href).host;
+
+                }
+
+            } catch (e) {}
+
+            return location.host;
+
+        }
+
+        /* تأخیرِ پایه — یک درخواستِ کامل به دامنه‌ی خودِ ورکر. این دامنه روی کلادفلر
+
+           است، پس یک «لبه‌ی واقعی» را اندازه می‌گیرد. CORS/گواهی مهم نیست: تا لحظه‌ی
+
+           رد شدن، درخواست رفته و برگشته و همین برای اندازه‌گیری کافی است. فقط
+
+           تایم‌اوتِ خودمان یعنی چیزی یاد نگرفتیم. */
+
+        async function radarBaseline() {
+
+            const t0 = performance.now();
+
+            let ctrl = null, timer = null, colo = '';
+
+            try {
+
+                ctrl = new AbortController();
+
+                timer = setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, 6000);
+
+                const r = await fetch('https://' + radarBaseHost() + '/cdn-cgi/trace?_=' + Math.random(),
+
+                    { mode: 'cors', cache: 'no-store', signal: ctrl.signal });
+
+                clearTimeout(timer);
+
+                const body = await r.text().catch(function () { return ''; });
+
+                const m = body.match(/^colo=(.+)$/m);
+
+                if (m) colo = m[1].trim();
+
+            } catch (e) {
+
+                if (timer) clearTimeout(timer);
+
+                if (e && e.name === 'AbortError') return null;
+
+            }
+
+            const ms = Math.round(performance.now() - t0);
+
+            return ms >= 5 ? { ms: ms, colo: colo } : null;
+
+        }
+
+        /* کفِ خودکار = کسری از تأخیرِ پایه. لبه‌ای که چند برابر نزدیک‌تر از نزدیک‌ترین
+
+           لبه‌ی واقعی باشد وجود ندارد؛ پس پاسخِ بسیار سریع‌تر از پایه RSTِ میان‌راه
+
+           است، نه لبه. سقفِ ۲۰۰ms تا روی شبکه‌های کند بی‌دلیل سخت نشود. */
+
+        function radarAutoFloor(base) {
+
+            if (!base || !(base.ms > 0)) return 0;
+
+            return Math.min(200, Math.max(20, Math.round(base.ms * 0.4)));
+
+        }
+
         const RADAR_CONTROL_IPS = ['192.0.2.1', '198.51.100.1', '203.0.113.1'];
         async function radarSelfTest(ports) {
             const port = ports[0] || 443;
@@ -5225,8 +5330,10 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                     return rtt === null ? null : { port: p, rtt: rtt };
                 });
             }));
-            const alive = first.filter(function (x) { return x && x.rtt >= SCAN.minRtt; });
-            if (!alive.length) return null;
+            const answered = first.filter(function (x) { return !!x; });
+            if (!answered.length) return null;
+            const alive = answered.filter(function (x) { return x.rtt >= radarFloor; });
+            if (!alive.length) { radarRejectedFast++; return null; }
             alive.sort(function (a, b) { return a.rtt - b.rtt; });
             const best = alive[0];
             const samples = [best.rtt];
@@ -5234,11 +5341,12 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 if (radarCancelRequested) break;
                 await radarSleep(10 + Math.floor(Math.random() * 50));
                 const rtt = await pingIp(ip, best.port, SCAN.timeout);
-                if (rtt !== null && rtt >= SCAN.minRtt) samples.push(rtt);
+                if (rtt !== null && rtt >= radarFloor) samples.push(rtt);
             }
             const avg = Math.round(samples.reduce(function(a, b) { return a + b; }, 0) / samples.length);
             const jitter = Math.max.apply(null, samples) - Math.min.apply(null, samples);
             const loss = Math.round((1 - samples.length / SCAN.probes) * 100);
+            if (samples.length < Math.min(SCAN.probes, 2)) return null;
             if (SCAN.maxRtt > 0 && avg > SCAN.maxRtt) return null;
             return { ip: ip, port: best.port, avg: avg, jitter: jitter, loss: loss, score: avg + jitter * 0.5 + loss * 20 };
         }
@@ -5324,6 +5432,8 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
 
             statusEl.textContent = data.radarStatusReady;
             const selfTest = await radarSelfTest(ports);
+            const radarBase = await radarBaseline();
+            radarFloor = Math.max(SCAN.minRtt, SCAN.autoFloor ? radarAutoFloor(radarBase) : 0);
             const warnText = selfTest.bad
                 ? ' ⚠ ' + data.radarStatusProbeBad.replace('{ip}', selfTest.ip).replace('{rtt}', selfTest.rtt)
                 : '';
@@ -5331,6 +5441,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             radarRunning = true;
             radarCancelRequested = false;
             radarRawResponses = 0;
+            radarRejectedFast = 0;
             startBtn.classList.add('running');
             document.getElementById('radar-start-label').textContent = data.radarStop;
             document.getElementById('radar-best').classList.remove('show');
@@ -5362,6 +5473,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                             .replace('{total}', ips.length)
                             .replace('{found}', results.length)
                             + ' • ' + data.radarStatusAnswered.replace('{n}', radarRawResponses)
+                            + (data.radarStatusGuard ? ' • ' + data.radarStatusGuard.replace('{ms}', radarFloor).replace('{n}', radarRejectedFast) : '')
                             + warnText;
                     }
                 }
@@ -6726,6 +6838,7 @@ function scannerCfg(s) {
     timeout: int(sc.timeout, 200, 10000, 2000),
     probes: int(sc.probes, 1, 5, 3),
     minRtt: int(sc.minRtt, 0, 5000, 0),
+    autoFloor: sc.autoFloor !== false,
     maxRtt: int(sc.maxRtt, 0, 20000, 0),
     keep: int(sc.keep, 0, 100, 0),
     mode: (sc.mode === 'random' || sc.mode === 'even') ? sc.mode : 'smart',

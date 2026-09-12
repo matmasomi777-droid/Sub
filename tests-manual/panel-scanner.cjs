@@ -31,6 +31,9 @@ scanSrc = scanSrc.replace(RET,
   'return { start: start, apply: apply, reset: reset, buildList: buildList, blocksOf: blocksOf, ping: ping, probe: probe, readCfg: readCfg,' +
   ' selfTest: selfTest, SCAN_TLS_PORTS: SCAN_TLS_PORTS, SCAN_CONTROL_IPS: SCAN_CONTROL_IPS,' +
   ' rawResponses: function () { return rawResponses; },' +
+  ' autoFloor: autoFloor, baseline: baseline,' +
+  ' setFloor: function (v) { floor = v; }, getFloor: function () { return floor; },' +
+  ' rejectedFast: function () { return rejectedFast; }, resetFast: function () { rejectedFast = 0; },' +
   ' _s: function () { return { results: results, done: done, total: total, running: running }; } };');
 
 /* ── محیطِ شبیه‌سازی‌شده ── */
@@ -40,6 +43,13 @@ const OFF = OFFICIAL.map((c) => { const [ip, p] = c.split('/'); const size = 2 *
 const inCF = (ip) => { const n = ip2n(ip); return OFF.some((b) => n >= b.s && n <= b.e); };
 
 let calls = 0;
+/* تأخیرِ شبیه‌سازی‌شده — بدونِ آن پاسخِ ۳ms زیرِ کفِ خودکار می‌افتد و اسکنِ
+   سالم هم صفر نتیجه می‌دهد (دقیقاً همان رفتارِ واقعیِ شبکه‌ی فیلترشده). */
+function latencyOf(host) {
+  if (host.startsWith('p.example')) return 30;   /* میزبانِ مبنا (دامنه‌ی پنل) */
+  if (host.startsWith('4.4.4.4')) return 3;      /* پاسخِ آنیِ میان‌راه (RST) */
+  return 40;                                     /* لبه‌ی واقعی، بالای کفِ خودکار */
+}
 function makeFakeImage() {
   return class FakeImage {
     constructor() { this.onload = null; this.onerror = null; this._src = ''; }
@@ -47,7 +57,7 @@ function makeFakeImage() {
       this._src = v; calls++;
       const host = String(v).replace('https://', '').split('/')[0];
       if (host.startsWith('9.9.9.9')) return;             /* مرده → تایم‌اوت */
-      setTimeout(() => { if (typeof this.onerror === 'function') this.onerror(); }, 3);
+      setTimeout(() => { if (typeof this.onerror === 'function') this.onerror(); }, latencyOf(host));
     }
     get src() { return this._src; }
   };
@@ -61,6 +71,8 @@ function makeFakeFetch() {
       const host = String(url).replace('https://', '').split('/')[0];
       const sig = opts && opts.signal;
       const dead = host.startsWith('9.9.9.9');
+      /* میزبانِ مبنا تأخیرِ واقع‌گرایانه می‌دهد، نه پاسخِ آنی */
+      const ms = latencyOf(host);
       let timer = null;
       const onAbort = () => {
         if (timer) clearTimeout(timer);
@@ -71,7 +83,7 @@ function makeFakeFetch() {
         sig.addEventListener('abort', onAbort);
       }
       if (dead) return;
-      timer = setTimeout(() => reject(new TypeError('Failed to fetch')), 3);
+      timer = setTimeout(() => reject(new TypeError('Failed to fetch')), ms);
     });
   };
 }
@@ -81,6 +93,7 @@ function mkEl(v) { return { value: v === undefined ? '' : String(v), innerHTML: 
 const form = {
   ipCount: mkEl('60'), concurrency: mkEl('8'), timeout: mkEl('300'), probes: mkEl('2'),
   minRtt: mkEl('0'), maxRtt: mkEl('0'), keep: mkEl('5'), mode: mkEl('even'),
+  autoFloor: { value: '', checked: true, innerHTML: '', textContent: '', style: {}, dataset: {} },
   ports: mkEl(''), ranges: mkEl(''),
 };
 const nodes = {
@@ -94,6 +107,7 @@ const deps = {
   fa: (n) => String(n),
   esc: (s) => String(s),
   performance: { now: () => Date.now() },
+  location: { host: 'p.example', href: 'https://p.example/sub/abc' },
   toast: (m, k) => toasts.push({ m, k }),
   $: (sel) => {
     const m = /data-p="scanner\.([a-zA-Z]+)"/.exec(String(sel));
@@ -222,6 +236,31 @@ const ok = (cond, label, extra) => { console.log((cond ? '  ✓ ' : '  ✗ ') + 
   const rAfter = M.rawResponses();
   await M.ping('9.9.9.9', 443, 200);
   ok(M.rawResponses() === rAfter, 'آی‌پیِ مرده شمارنده را بالا نمی‌برد', String(M.rawResponses()));
+
+  console.log('== ۱۱) کفِ خودکارِ تأخیر در پنل ==');
+  ok(M.readCfg().autoFloor === true, 'کفِ خودکار به‌طور پیش‌فرض روشن است', String(M.readCfg().autoFloor));
+  form.autoFloor.checked = false;
+  ok(M.readCfg().autoFloor === false, 'خاموش‌کردنِ سوییچ کفِ خودکار را غیرفعال می‌کند', String(M.readCfg().autoFloor));
+  form.autoFloor.checked = true;
+  ok(M.autoFloor(null) === 0, 'بدونِ پایه، کفی اعمال نمی‌شود', '0');
+  ok(M.autoFloor(50) === 20, 'کفِ حداقلیِ ۲۰ms', String(M.autoFloor(50)));
+  ok(M.autoFloor(100) === 40, 'کف ≈ ۴۰٪ تأخیرِ پایه', String(M.autoFloor(100)));
+  ok(M.autoFloor(5000) === 200, 'سقفِ ۲۰۰ms', String(M.autoFloor(5000)));
+
+  console.log('== ۱۲) کفِ تأخیر پاسخِ بی‌درنگ را رد می‌کند ==');
+  const PCFG = { timeout: 300, probes: 2, minRtt: 0, maxRtt: 0 };
+  M.resetFast();
+  M.setFloor(20);
+  const pFast = await M.probe('4.4.4.4', [443], PCFG);          /* پاسخِ ۳ms */
+  ok(pFast === null, 'پاسخِ ۳ms زیرِ کفِ ۲۰ms رد می‌شود (RSTِ میان‌راه، نه لبه)', String(pFast));
+  ok(M.rejectedFast() > 0, 'شمارنده‌ی «مردودِ سریع» بالا می‌رود', String(M.rejectedFast()));
+  M.setFloor(0);
+  const pOk = await M.probe('1.2.3.4', [443], PCFG);
+  ok(pOk !== null, 'با کفِ صفر همان آی‌پی پذیرفته می‌شود (شاهدِ تست)', pOk ? pOk.avg + 'ms' : 'null');
+
+  console.log('== ۱۳) تأخیرِ پایه ==');
+  const b = await M.baseline();
+  ok(b !== null && b > 0, 'تأخیرِ پایه از دامنه‌ی پنل اندازه‌گیری می‌شود', b === null ? 'null' : b + 'ms');
 
   console.log(fail ? '\n' + fail + ' تست ناموفق ✗' : '\nهمه‌ی تست‌ها موفق ✓');
   process.exit(fail ? 1 : 0);

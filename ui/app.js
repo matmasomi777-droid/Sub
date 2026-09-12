@@ -1546,6 +1546,7 @@
     /* شمارنده‌ی «پاسخ‌های خام» — مستقل از فیلترهای minRtt/maxRtt؛ اگر بعد از یک
        اسکنِ کامل صفر بماند یعنی هیچ لبه‌ای به پروب جواب نداده است. */
     let rawResponses = 0;
+    let floor = 0, baseMs = 0, rejectedFast = 0;
 
     function blocksOf(ranges) {
       const list = CF_CIDRS_UI.slice();
@@ -1685,22 +1686,77 @@
       if (cancel) return null;
       const first = await Promise.all(ports.map((p) => ping(ip, p, cfg.timeout)
         .then((rtt) => (rtt === null ? null : { port: p, rtt: rtt }))));
-      const alive = first.filter(Boolean).sort((a, b) => a.rtt - b.rtt);
-      if (!alive.length) return null;
+      const answered = first.filter(Boolean);
+      if (!answered.length) return null;
+      const alive = answered.filter((x) => x.rtt >= floor).sort((a, b) => a.rtt - b.rtt);
+      if (!alive.length) { rejectedFast++; return null; }
       const best = alive[0];
       const samples = [best.rtt];
       for (let i = 1; i < cfg.probes; i++) {
         if (cancel) break;
         await sleep(10 + Math.floor(Math.random() * 50));
         const rtt = await ping(ip, best.port, cfg.timeout);
-        if (rtt !== null) samples.push(rtt);
+        if (rtt !== null && rtt >= floor) samples.push(rtt);
       }
       const avg = Math.round(samples.reduce((a, b) => a + b, 0) / samples.length);
       const jitter = Math.max.apply(null, samples) - Math.min.apply(null, samples);
       const loss = Math.round((1 - samples.length / cfg.probes) * 100);
+      if (samples.length < Math.min(cfg.probes, 2)) return null;
       if (cfg.minRtt > 0 && avg < cfg.minRtt) return null;
       if (cfg.maxRtt > 0 && avg > cfg.maxRtt) return null;
       return { ip: ip, port: best.port, avg: avg, jitter: jitter, loss: loss, score: avg + jitter * 0.5 + loss * 20 };
+    }
+
+/* ═══ تأخیرِ پایه — درخواستِ کامل به دامنه‌ی خودِ پنل (روی کلادفلر) ═══
+
+       CORS/گواهی مهم نیست؛ تا لحظه‌ی رد شدن، درخواست رفته و برگشته و همین
+
+       برای اندازه‌گیریِ رفت‌وبرگشت کافی است. فقط تایم‌اوتِ خودمان یعنی هیچ. */
+
+    async function baseline() {
+
+      const t0 = performance.now();
+
+      let ctrl = null, timer = null;
+
+      try {
+
+        ctrl = new AbortController();
+
+        timer = setTimeout(() => { try { ctrl.abort(); } catch (e) {} }, 6000);
+
+        await fetch('https://' + location.host + '/cdn-cgi/trace?_=' + Math.random(),
+
+          { mode: 'cors', cache: 'no-store', signal: ctrl.signal });
+
+        clearTimeout(timer);
+
+      } catch (e) {
+
+        if (timer) clearTimeout(timer);
+
+        if (e && e.name === 'AbortError') return null;
+
+      }
+
+      const ms = Math.round(performance.now() - t0);
+
+      return ms >= 5 ? ms : null;
+
+    }
+
+    /* کفِ خودکار = کسری از تأخیرِ پایه. RSTِ میان‌راه ~۱ms است؛ لبه‌ی واقعی
+
+       حداقل یک رفت‌وبرگشت کامل می‌برد. بدون این کف، پاسخ‌های آنی «سریع‌ترین»
+
+       رتبه را می‌گیرند و آی‌پی‌های خراب در کانفیگ می‌نشینند. */
+
+    function autoFloor(base) {
+
+      if (!base) return 0;
+
+      return Math.min(200, Math.max(20, Math.round(base * 0.4)));
+
     }
 
     /* مقادیر از «همین صفحه» خوانده می‌شوند تا ادمین لازم نباشد اول ذخیره کند */
@@ -1714,6 +1770,7 @@
         timeout: num(g('timeout', 2000), 200, 10000, 2000),
         probes: num(g('probes', 3), 1, 5, 3),
         minRtt: num(g('minRtt', 0), 0, 5000, 0),
+        autoFloor: (function () { const cb = $('#view [data-p="scanner.autoFloor"]'); return cb ? !!cb.checked : true; })(),
         maxRtt: num(g('maxRtt', 0), 0, 20000, 0),
         keep: num(g('keep', 0), 0, 100, 0),
         mode: (function () { const m = g('mode', 'smart'); return (m === 'random' || m === 'even') ? m : 'smart'; })(),
@@ -1735,9 +1792,9 @@
       if (bar) bar.style.width = (total ? Math.round(done / total * 100) : 0) + '%';
       if (st) {
         st.textContent = running
-          ? 'در حال اسکن… ' + fa(done) + ' از ' + fa(total) + ' • ' + fa(results.length) + ' آی‌پیِ سالم • پاسخ: ' + fa(rawResponses)
+          ? 'در حال اسکن… ' + fa(done) + ' از ' + fa(total) + ' • ' + fa(results.length) + ' آی‌پیِ سالم • پاسخ: ' + fa(rawResponses) + (floor ? ' • کف: ' + fa(floor) + 'ms' : '') + (rejectedFast ? ' • مردودِ سریع: ' + fa(rejectedFast) : '')
           : (results.length
-            ? 'پایان — ' + fa(results.length) + ' آی‌پیِ سالم از ' + fa(total) + ' آی‌پیِ اسکن‌شده • پاسخ: ' + fa(rawResponses)
+            ? 'پایان — ' + fa(results.length) + ' آی‌پیِ سالم از ' + fa(total) + ' آی‌پیِ اسکن‌شده • پاسخ: ' + fa(rawResponses) + (floor ? ' • کف: ' + fa(floor) + 'ms' : '') + (rejectedFast ? ' • مردودِ سریع: ' + fa(rejectedFast) : '')
             : 'آماده');
       }
       if (!wrap) return;
@@ -1780,8 +1837,10 @@
               ' میلی‌ثانیه پاسخ داد — نتیجه‌ی اسکن بی‌اعتبار است؛ «حداقل تأخیر» را روی ۶۰ بگذارید', 'err');
       }
 
+      baseMs = await baseline();
+      floor = Math.max(cfg.minRtt, cfg.autoFloor ? autoFloor(baseMs) : 0);
       running = true; cancel = false; results = []; done = 0; total = ips.length;
-      rawResponses = 0;
+      rawResponses = 0; rejectedFast = 0;
       keepN = cfg.keep > 0 ? cfg.keep : 20;
       const wrap = el('pScanWrap');
       if (wrap) { wrap.style.display = 'none'; wrap.innerHTML = ''; }
@@ -1879,7 +1938,8 @@
       field({ p: 'scanner.timeout', l: 'تایم‌اوت هر پروب (میلی‌ثانیه)', t: 'num', h: 'کوتاه‌تر = اسکن سریع‌تر، ولی زیرِ ۱۵۰۰ms روی شبکه‌ی موبایل خیلی از لبه‌های سالم «مرده» حساب می‌شوند • پیش‌فرض ۲۰۰۰' }, val('timeout', 2000)) +
       field({ p: 'scanner.probes', l: 'تعداد پروب برای هر آی‌پی', t: 'num', h: '۱ تا ۵ • بیشتر = اندازه‌گیریِ دقیق‌ترِ پینگ و لرزش • پیش‌فرض ۳' }, val('probes', 3)) +
       field({ p: 'scanner.keep', l: 'تعداد آی‌پیِ ذخیره‌شده', t: 'num', h: '۰ = همان سقفِ کانفیگِ کاربر • بیشینه ۱۰۰' }, val('keep', 0)) +
-      field({ p: 'scanner.minRtt', l: 'حداقل تأخیرِ قابل‌قبول (ms)', t: 'num', h: '۰ = بدون فیلتر (توصیه‌شده). مقدارِ بالا آی‌پی‌های سالمِ نزدیک را حذف می‌کند' }, val('minRtt', 0)) +
+      field({ p: 'scanner.autoFloor', l: 'کفِ خودکارِ تأخیر (توصیه می‌شود)', t: 'sw', h: 'روشن = تأخیرِ پایه تا کلادفلر اندازه‌گیری می‌شود و پاسخ‌های بی‌درنگ (RSTِ فیلترشکن/میان‌راه) که «سالم» دیده می‌شوند حذف می‌گردند — دلیلِ اصلیِ «آی‌پی پیدا می‌شود ولی در کانفیگ کار نمی‌کند»' }, val('autoFloor', true)) +
+      field({ p: 'scanner.minRtt', l: 'کفِ دستیِ تأخیر (ms)', t: 'num', h: '۰ = فقط کفِ خودکار. اگر پاسخ‌های بسیار سریع (زیر ۲۰ms) در نتیجه می‌بینید، اینجا مقدار بگذارید' }, val('minRtt', 0)) +
       field({ p: 'scanner.maxRtt', l: 'حداکثر تأخیرِ قابل‌قبول (ms)', t: 'num', h: '۰ = بدون سقف • آی‌پی‌های کندتر از این دور ریخته می‌شوند' }, val('maxRtt', 0)) +
       '</div>' +
       '<div style="margin-top:10px">' +

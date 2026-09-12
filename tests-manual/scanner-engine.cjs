@@ -27,6 +27,7 @@ const code = html.slice(START, END);
 const performanceStub = { now: () => Date.now() };
 const baseDeps = {
   performance: performanceStub,
+  location: { host: 'p.example', href: 'https://p.example/sub/abc' },
   sanaeiClientData: { links: ['vless://uuid@1.2.3.4:443?x=1#n'], subUrl: 'https://p.example/sub/abc' },
   parseConfigLink: () => ({ port: '443', remark: 'n' }),
 };
@@ -34,7 +35,21 @@ const baseDeps = {
 /* شمارنده‌ی پروب‌ها — بین همه‌ی ماژول‌ها مشترک است */
 let calls = 0;
 
-/* Image جعلی: 1.2.3.x و هر چیزِ دیگر «زنده»، 9.9.9.9 «مرده» */
+/* ── رفتارِ میزبان‌های شبیه‌سازی‌شده ──
+   ۹.۹.۹.۹ = مرده: هیچ رویدادی نمی‌آید → تایم‌اوتِ اسکنر تعیین‌کننده است
+   ۷.۷.۷.۷ = لبه‌ی واقعیِ دوردست: ۶۰ms → بالای کفِ خودکار (۲۰ms) می‌ماند
+   ۸.۸.۸.۸ = بی‌ثبات: فقط پروبِ اول پاسخ می‌دهد (۱ از ۳ → باید رد شود)
+   بقیه    = پاسخِ بی‌درنگِ ۵ms، مثل RSTِ میان‌راه → زیرِ کف رد می‌شود */
+let chanCalls = 0;
+function hostPlan(host) {
+  if (host.startsWith('p.example')) return { ms: 30 };   /* میزبانِ مبنا (دامنه‌ی ورکر) */
+  if (host.startsWith('9.9.9.9')) return { dead: true };
+  if (host.startsWith('8.8.8.8')) return (chanCalls++ < 2) ? { ms: 60 } : { dead: true };
+  if (host.startsWith('7.7.7.7')) return { ms: 60 };
+  return { ms: 5 };
+}
+
+/* Image جعلی */
 function makeFakeImage() {
   return class FakeImage {
     constructor() { this.onload = null; this.onerror = null; this._src = ''; }
@@ -42,10 +57,9 @@ function makeFakeImage() {
       this._src = v;
       calls++;
       const host = String(v).replace('https://', '').split('/')[0];
-      /* مرده: هیچ رویدادی نمی‌آید → تایم‌اوتِ اسکنر تعیین‌کننده است */
-      if (host.startsWith('9.9.9.9')) return;
-      /* زنده: گواهیِ نامطابق → onerrorِ سریع */
-      setTimeout(() => { if (typeof this.onerror === 'function') this.onerror(); }, 5);
+      const p = hostPlan(host);
+      if (p.dead) return;
+      setTimeout(() => { if (typeof this.onerror === 'function') this.onerror(); }, p.ms);
     }
     get src() { return this._src; }
   };
@@ -59,7 +73,8 @@ function makeFakeFetch() {
     return new Promise((resolve, reject) => {
       const host = String(url).replace('https://', '').split('/')[0];
       const sig = opts && opts.signal;
-      const dead = host.startsWith('9.9.9.9');
+      const plan = hostPlan(host);
+      const dead = !!plan.dead;
       let timer = null;
       const onAbort = () => {
         if (timer) clearTimeout(timer);
@@ -72,7 +87,7 @@ function makeFakeFetch() {
         sig.addEventListener('abort', onAbort);
       }
       if (dead) return;                                  /* معلق تا اَبورت */
-      timer = setTimeout(() => reject(new TypeError('Failed to fetch')), 5);
+      timer = setTimeout(() => reject(new TypeError('Failed to fetch')), plan.ms);
     });
   };
 }
@@ -87,7 +102,7 @@ function mkModule(cfgObj, depOverrides) {
   const deps = Object.assign({}, baseDeps, depOverrides || {});
   const names = Object.keys(deps);
   const fn = new Function(...names, 'Image', 'fetch', 'AbortController', src +
-    '\n;return { SCAN, CF_CIDRS, CF_BLOCKS, buildIpList, randCfIp, radarConfigPorts, RADAR_KEEP, radarProbeIp, pingIp, radarFoundHtml, radarSelfTest, RADAR_CONTROL_IPS, rawResponses: function () { return radarRawResponses; } };');
+    '\n;return { SCAN, CF_CIDRS, CF_BLOCKS, buildIpList, randCfIp, radarConfigPorts, RADAR_KEEP, radarProbeIp, pingIp, radarFoundHtml, radarSelfTest, RADAR_CONTROL_IPS, rawResponses: function () { return radarRawResponses; }, radarAutoFloor: radarAutoFloor, radarBaseline: radarBaseline, radarBaseHost: radarBaseHost, setFloor: function (v) { radarFloor = v; }, getFloor: function () { return radarFloor; }, rejectedFast: function () { return radarRejectedFast; }, resetFast: function () { radarRejectedFast = 0; } };');
   return fn(...names.map((n) => deps[n]), makeFakeImage(), makeFakeFetch(), AbortController);
 }
 
@@ -241,6 +256,41 @@ console.log('== ۵) پروب و انتخابِ آی‌پی ==');
   const b2 = M.rawResponses();
   await M.radarProbeIp('9.9.9.9', [443]);
   ok(M.rawResponses() === b2, 'آی‌پیِ مرده شمارنده را بالا نمی‌برد', String(M.rawResponses()));
+
+  console.log('== ۱۲) کفِ خودکارِ تأخیر (radarAutoFloor) ==');
+  ok(M.radarAutoFloor(null) === 0, 'بدون اندازه‌گیریِ پایه، کفی اعمال نمی‌شود', '0');
+  ok(M.radarAutoFloor({ ms: 0 }) === 0, 'پایه‌ی صفر → بدون کف', '0');
+  ok(M.radarAutoFloor({ ms: 50 }) === 20, 'کفِ حداقلیِ ۲۰ms رعایت می‌شود', String(M.radarAutoFloor({ ms: 50 })));
+  ok(M.radarAutoFloor({ ms: 100 }) === 40, 'کف ≈ ۴۰٪ تأخیرِ پایه', String(M.radarAutoFloor({ ms: 100 })));
+  ok(M.radarAutoFloor({ ms: 2000 }) === 200, 'سقفِ ۲۰۰ms تا شبکه‌ی کند بی‌دلیل سخت نشود', String(M.radarAutoFloor({ ms: 2000 })));
+
+  console.log('== ۱۳) کفِ تأخیر پاسخِ بی‌درنگِ میان‌راه را رد می‌کند ==');
+  M.resetFast();
+  M.setFloor(20);
+  const fast = await M.radarProbeIp('1.2.3.4', [443]);          /* پاسخِ ۵ms */
+  ok(fast === null, 'پاسخِ ۵ms زیرِ کفِ ۲۰ms رد می‌شود (RSTِ میان‌راه، نه لبه)', String(fast));
+  ok(M.rejectedFast() > 0, 'شمارنده‌ی «مردودِ سریع» بالا می‌رود', String(M.rejectedFast()));
+  const slow = await M.radarProbeIp('7.7.7.7', [443]);          /* پاسخِ ۶۰ms */
+  ok(slow !== null, 'لبه‌ی واقعیِ ۶۰ms بالای کف پذیرفته می‌شود', slow ? slow.avg + 'ms' : 'null');
+  ok(slow !== null && slow.avg >= 20, 'میانگینِ ثبت‌شده بالای کف است', slow ? String(slow.avg) : '-');
+  M.setFloor(0);
+
+  console.log('== ۱۴) دروازه‌ی ثبات — یک پاسخ از سه پروب کافی نیست ==');
+  const flaky = await M.radarProbeIp('8.8.8.8', [443]);         /* فقط پروبِ اول */
+  ok(flaky === null, 'آی‌پیِ بی‌ثبات (۱ پاسخ از ۳ پروب) رد می‌شود', String(flaky));
+  const stable = await M.radarProbeIp('7.7.7.7', [443]);
+  ok(stable !== null && stable.loss === 0, 'آی‌پیِ باثبات افتِ صفر دارد', stable ? String(stable.loss) : '-');
+
+  console.log('== ۱۵) تأخیرِ پایه تا دامنه‌ی ورکر ==');
+  ok(M.radarBaseHost() === 'p.example', 'میزبانِ مبنا از subUrl خوانده می‌شود', M.radarBaseHost());
+  const base = await M.radarBaseline();
+  ok(base !== null && base.ms > 0, 'تأخیرِ پایه اندازه‌گیری می‌شود', base ? base.ms + 'ms' : 'null');
+
+  console.log('== ۱۶) کلیدِ locale «radarStatusGuard» در هر ۴ زبان ==');
+  const guardHits = (html.match(/radarStatusGuard:/g) || []).length;
+  ok(guardHits === 4, 'در هر ۴ زبان تعریف شده', String(guardHits));
+  ok(/radarStatusGuard \? /.test(html), 'در خطِ وضعیت با نگهبانِ undefined استفاده می‌شود');
+  ok(/radarFloor = Math\.max\(SCAN\.minRtt/.test(html), 'کف از max(کفِ دستی، کفِ خودکار) حساب می‌شود');
 
   console.log(fail ? '\n' + fail + ' تست ناموفق ✗' : '\nهمه‌ی تست‌ها موفق ✓');
   process.exit(fail ? 1 : 0);
