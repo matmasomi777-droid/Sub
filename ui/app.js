@@ -803,7 +803,7 @@
   const NAV = [
     { g: 'اصلی', items: [['dash', 'نمای کلی', 'fa-gauge-high'], ['users', 'کاربران', 'fa-users']] },
     { g: 'شبکه', items: [['conns', 'اتصال‌های زنده', 'fa-activity'], ['monitor', 'آمار مصرف', 'fa-chart-line']] },
-    { g: 'پیکربندی', items: [['config', 'پیکربندی', 'fa-gear'], ['sub', 'لینک ساب', 'fa-link'], ['security', 'امنیت', 'fa-shield-halved']] },
+    { g: 'پیکربندی', items: [['config', 'پیکربندی', 'fa-gear'], ['sub', 'لینک ساب', 'fa-link'], ['security', 'امنیت', 'fa-shield-halved'], ['scanner', 'اسکنر آی‌پی', 'fa-magnifying-glass']] },
     { g: 'سیستم', items: [['logs', 'لاگ', 'fa-list-check'], ['settings', 'پشتیبان', 'fa-database']] },
   ];
 
@@ -1507,6 +1507,104 @@
       secExtra();
   }
 
+  /* ═══════════════════════════════════════════════════════════════════
+     نمای اسکنر آی‌پی تمیز
+     ───────────────────────────────────────────────────────────────────
+     همه‌ی این مقادیر در تنظیمات (settings.scanner) ذخیره و با placeholder
+     «__SCANNER_CFG_JSON__» به صفحه‌ی کاربر تزریق می‌شوند؛ همان‌جا موتور
+     اسکن (رادار) را می‌چرخانند. اگر خالی/نامعتبر باشند، صفحه‌ی کاربر
+     پیش‌فرض‌های امن خودش را به کار می‌برد.
+     ═══════════════════════════════════════════════════════════════════ */
+  /* رنج‌های رسمیِ IPv4 کلودفلر — cloudflare.com/ips-v4 (مرجعِ موتورِ اسکن) */
+  const CF_CIDRS_UI = [
+    '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22',
+    '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20',
+    '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+    '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+  ];
+  const SCAN_PORTS_UI = [443, 2053, 2083, 2087, 2096, 8443];
+
+  function scannerView() {
+    const s = S.d.settings;
+    const sc = (s.scanner && typeof s.scanner === 'object' && !Array.isArray(s.scanner)) ? s.scanner : {};
+    const val = (k, d) => (sc[k] === undefined || sc[k] === null || sc[k] === '') ? d : sc[k];
+    const ranges = Array.isArray(sc.ranges) ? sc.ranges.filter(Boolean) : [];
+    const ports = Array.isArray(sc.ports) ? sc.ports : [];
+    const totalBlocks = CF_CIDRS_UI.length + ranges.length;
+
+    /* آمارِ سریع — یک نگاه کافی است */
+    const stats = '<div class="grid g4" style="margin-bottom:12px">' +
+      '<div class="stat"><div class="lbl">تعداد آی‌پی هر اسکن</div><div class="val">' + fa(Number(val('ipCount', 2048))) + '</div><div class="sub">پیش‌فرض ۲۰۴۸</div></div>' +
+      '<div class="stat"><div class="lbl">هم‌روندی</div><div class="val">' + fa(Number(val('concurrency', 64))) + '</div><div class="sub">پروبِ موازی</div></div>' +
+      '<div class="stat"><div class="lbl">تایم‌اوت هر پروب</div><div class="val">' + fa(Number(val('timeout', 1000))) + '<span style="font-size:11px"> ms</span></div><div class="sub">' + fa(Number(val('probes', 2))) + ' پروب برای هر آی‌پی</div></div>' +
+      '<div class="stat"><div class="lbl">رنج‌های اسکن</div><div class="val">' + fa(totalBlocks) + '</div><div class="sub">' + fa(CF_CIDRS_UI.length) + ' رسمی کلودفلر' + (ranges.length ? ' + ' + fa(ranges.length) + ' دلخواه' : '') + '</div></div>' +
+      '</div>';
+
+    /* ═══ کارتِ اصلی: کلیدها و اعداد ═══ */
+    const mainCard = '<div class="card"><header><span class="ic">' + icon('fa-tower-broadcast') + '</span>' +
+      '<div><h3>موتورِ اسکن</h3><p>این مقادیر در صفحه‌ی کاربر (رادار آی‌پی تمیز) اعمال می‌شوند</p></div>' +
+      '<div class="acts">' + saveBtn('save-scanner') + '</div></header><div class="bd">' +
+      '<div class="um-grid two">' +
+      field({ p: 'scanner.enabled', l: 'نمایش کارت اسکنر در صفحه‌ی کاربر', t: 'sw', h: 'خاموش = رادار در صفحه‌ی کاربر پنهان می‌شود' }, val('enabled', true)) +
+      field({ p: 'scanner.ipCount', l: 'تعداد آی‌پی هر اسکن', t: 'num', h: 'پیش‌فرض ۲۰۴۸ (قبلاً ۱۰۲۴ بود) • بازه‌ی مجاز ۱۶ تا ۶۵۵۳۶' }, val('ipCount', 2048)) +
+      field({ p: 'scanner.concurrency', l: 'هم‌روندی (پروب موازی)', t: 'num', h: 'بالاتر = سریع‌تر، ولی فشارِ بیشتر روی مرورگر و شبکه • پیش‌فرض ۶۴' }, val('concurrency', 64)) +
+      field({ p: 'scanner.timeout', l: 'تایم‌اوت هر پروب (میلی‌ثانیه)', t: 'num', h: 'کوتاه‌تر = اسکن سریع‌تر • پیش‌فرض ۱۰۰۰' }, val('timeout', 1000)) +
+      field({ p: 'scanner.probes', l: 'تعداد پروب برای هر آی‌پی', t: 'num', h: '۱ تا ۵ • بیشتر = اندازه‌گیریِ دقیق‌ترِ پینگ و لرزش' }, val('probes', 2)) +
+      field({ p: 'scanner.keep', l: 'تعداد آی‌پیِ ذخیره‌شده', t: 'num', h: '۰ = همان سقفِ کانفیگِ کاربر • بیشینه ۱۰۰' }, val('keep', 0)) +
+      field({ p: 'scanner.minRtt', l: 'حداقل تأخیرِ قابل‌قبول (ms)', t: 'num', h: '۰ = بدون فیلتر (توصیه‌شده). مقدارِ بالا آی‌پی‌های سالمِ نزدیک را حذف می‌کند' }, val('minRtt', 0)) +
+      field({ p: 'scanner.maxRtt', l: 'حداکثر تأخیرِ قابل‌قبول (ms)', t: 'num', h: '۰ = بدون سقف • آی‌پی‌های کندتر از این دور ریخته می‌شوند' }, val('maxRtt', 0)) +
+      '</div>' +
+      '<div style="margin-top:10px">' +
+      field({
+        p: 'scanner.mode', l: 'حالتِ انتخاب آی‌پی', t: 'sel',
+        o: ['even', 'random'],
+        lbls: { even: 'پوششِ یکنواختِ همه‌ی رنج‌ها (پیشنهادی)', random: 'تصادفیِ وزنی بر اساس اندازه‌ی رنج' },
+      }, val('mode', 'even')) +
+      '</div>' +
+      '<div class="hint" style="margin-top:8px">در حالت «یکنواخت»، هر رنج به‌نوبت سهم می‌گیرد تا رنج‌های کوچک هم واقعاً اسکن شوند؛ ' +
+      'در حالت «تصادفی» احتمالِ انتخاب هر آدرس به اندازه‌ی رنجش است و رنج‌های کوچک تقریباً نادیده می‌مانند.</div>' +
+      '</div></div>';
+
+    /* ═══ پورت‌ها ═══ */
+    const portsCard = '<div class="card"><header><span class="ic">' + icon('fa-tower-broadcast') + '</span>' +
+      '<div><h3>پورت‌های اسکن</h3><p>خالی = پورت‌های TLS خودِ کانفیگ‌های همان کاربر</p></div>' +
+      '<div class="acts"><button class="btn sm ghost" data-act="scan-ports-config">' + icon('fa-rotate-left') + ' پورت‌های کانفیگ</button></div></header>' +
+      '<div class="bd">' +
+      '<div class="hint" style="margin-bottom:8px">فقط پورت‌های TLS معنی دارند: پروبِ مرورگر https است و پورتِ غیر-TLS با خطای SSL ' +
+      'بلافاصله «پاسخ» می‌دهد و نتیجه‌ی اسکن را خراب می‌کند. با کلیک روی هر پورت به‌فهرست اضافه/حذف می‌شود.</div>' +
+      '<div class="chips" id="scanPortChips">' + SCAN_PORTS_UI.map((p) => {
+        const on = ports.indexOf(p) >= 0;
+        return '<button type="button" class="chip" data-scan-port="' + p + '" style="' + (on ? 'border-color:var(--ac2);background:color-mix(in oklab,var(--ac2) 16%,transparent)' : 'opacity:.45') + '">' +
+          '<span class="mono">' + fa(p) + '</span></button>';
+      }).join('') + '</div>' +
+      '<div style="margin-top:10px">' +
+      field({ p: 'scanner.ports', l: 'پورت‌های اسکن (هر خط یکی — اختیاری)', t: 'area', dt: 'lines', h: 'خالی = پورت‌های کانفیگ • مثال: 443' }, ports.join('\n')) +
+      '</div>' +
+      '</div></div>';
+
+    /* ═══ رنج‌ها ═══ */
+    const rangesCard = '<div class="card"><header><span class="ic">' + icon('fa-globe') + '</span>' +
+      '<div><h3>رنج‌های آی‌پی</h3><p>پیش‌فرض: تمامِ رنج‌های رسمیِ IPv4 کلودفلر</p></div>' +
+      '<div class="acts"><button class="btn sm ghost" data-act="scan-ranges-clear">' + icon('fa-broom') + ' پاک‌کردن رنج‌های دلخواه</button></div></header>' +
+      '<div class="bd">' +
+      '<div class="hint" style="margin-bottom:8px">این فهرست <b>ثابت و کامل</b> است (مستقیماً از <span class="mono">cloudflare.com/ips-v4</span>) و همیشه اسکن می‌شود — ' +
+      'هیچ رنجی محدود یا حذف نمی‌شود. رنج‌های دلخواهِ شما <b>به</b> این فهرست اضافه می‌شوند، نه جای آن.</div>' +
+      '<div class="chips">' + CF_CIDRS_UI.map((c) => '<span class="chip"><span class="mono">' + esc(c) + '</span></span>').join('') + '</div>' +
+      '<div style="margin-top:12px">' +
+      field({ p: 'scanner.ranges', l: 'رنج‌های دلخواه (CIDR — هر خط یکی)', t: 'area', dt: 'lines', h: 'مثال: 104.16.0.0/13 • فقط CIDR معتبر پذیرفته می‌شود (حداکثر ۶۴ رنج)' }, ranges.join('\n')) +
+      '</div>' +
+      '<div class="hint" style="margin-top:8px">نکته: آی‌پی‌های تمیزِ پیدا‌شده در «شبکه ← IPهای پاک» پنل و روی کانفیگ‌های همان کاربر ذخیره می‌شوند؛ ' +
+      'لاگِ هر اسکن در «لاگ ← رادار» دیده می‌شود.</div>' +
+      '</div></div>';
+
+    return '<div class="page-head"><div><h1>اسکنر آی‌پی تمیز</h1><p>تنظیماتِ رادارِ صفحه‌ی کاربر — تعداد، سرعت، پورت‌ها و رنج‌ها</p></div>' +
+      '<button class="btn p" data-act="save-scanner">' + icon('fa-floppy-disk') + ' ذخیره</button></div>' +
+      stats + mainCard +
+      '<div class="grid g2">' + portsCard + rangesCard + '</div>' +
+      '<div class="btn-row" style="justify-content:center;margin-top:10px">' +
+      '<button class="btn p lg" data-act="save-scanner">' + icon('fa-floppy-disk') + ' ذخیره</button></div>';
+  }
+
   /* ═══════════════════════════════════════════════════════════════
      نمای پیکربندی — ایده از نهان ولی ساده‌تر
      فقط تنظیماتی که واقعاً لازم است. بقیه پیش‌فرض هوشمند دارند.
@@ -1758,7 +1856,7 @@
 
   const VIEWS = {
     dash: dashView, users: usersView, sub: subView, monitor: monitorView, conns: connsView, logs: logsView, settings: settingsView,
-    config: configView,
+    config: configView, scanner: scannerView,
     update: () => configView(),
     proto: () => configView(),
     network: () => configView(),
@@ -1886,6 +1984,29 @@
         cur.splice(at, 1);
       } else cur.push(p);
       portSet(cur);
+      return;
+    }
+
+    /* ═══════ اسکنر — چیپ‌های پورت ═══════
+       مثل انتخابگرِ پورتِ تونل، ولی مقدار را در textareaِ scanner.ports
+       می‌نویسد (همان فیلدی که با «ذخیره» به پنل می‌رود). */
+    const sp = e.target.closest('[data-scan-port]');
+    if (sp) {
+      e.preventDefault();
+      const ta = $('#view [data-p="scanner.ports"]');
+      if (!ta) return;
+      const p = parseInt(sp.dataset.scanPort, 10);
+      const cur = String(ta.value || '').split(/[,\s\n]+/).map((x) => parseInt(x, 10)).filter((x) => x > 0 && x < 65536);
+      const at = cur.indexOf(p);
+      if (at >= 0) cur.splice(at, 1); else cur.push(p);
+      ta.value = cur.join('\n');
+      /* رنگِ چیپ‌ها هم‌زمان به‌روز می‌شود تا وضعیت روشن بماند */
+      $$('#scanPortChips [data-scan-port]').forEach((b) => {
+        const on = cur.indexOf(parseInt(b.dataset.scanPort, 10)) >= 0;
+        b.style.borderColor = on ? 'var(--ac2)' : '';
+        b.style.background = on ? 'color-mix(in oklab,var(--ac2) 16%,transparent)' : '';
+        b.style.opacity = on ? '' : '.45';
+      });
       return;
     }
 
@@ -2369,6 +2490,18 @@
       else if (a === 'ports-essential') { portSet(PORT_ESSENTIAL); toast('فقط پورت‌های ضروری فعال شد — ذخیره را فراموش نکنید', 'info'); }
       else if (a === 'ports-recommended') { portSet(PORTS_DEFAULT); toast('پورت‌های ضروری + پیشنهادی فعال شد', 'info'); }
       else if (a === 'ports-all') { portSet(PORTS_ALL); toast('همه‌ی پورت‌های پشتیبانی‌شده فعال شد', 'info'); }
+      /* ═══════ اسکنر — بازگردانی به پیش‌فرض ═══════ */
+      else if (a === 'scan-ports-config') {
+        const ta = $('#view [data-p="scanner.ports"]');
+        if (ta) ta.value = '';
+        $$('#scanPortChips [data-scan-port]').forEach((b) => { b.style.borderColor = ''; b.style.background = ''; b.style.opacity = '.45'; });
+        toast('پورت‌ها پاک شد — اسکن روی پورت‌های خودِ کانفیگ‌های کاربر انجام می‌شود', 'info');
+      }
+      else if (a === 'scan-ranges-clear') {
+        const ta = $('#view [data-p="scanner.ranges"]');
+        if (ta) ta.value = '';
+        toast('رنج‌های دلخواه پاک شد — فقط رنج‌های رسمی کلودفلر اسکن می‌شوند', 'info');
+      }
 
       /* ═════════════════════════════════════════════════════════════
          مرحله‌ی ۴ — تغییر رمز عبور

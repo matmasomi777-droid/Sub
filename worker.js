@@ -153,6 +153,24 @@ const DEF = () => ({
       /* ── کانفیگ‌های فیک — بدون هیچ مورد پیش‌فرض؛ ادمین خودش اضافه می‌کند ── */
       fakes: [],
     },
+    /* ═══════════════ اسکنر آی‌پی تمیز (رادار صفحه‌ی کاربر) ═══════════════
+       این بلوک کاملاً از پنل تنظیم می‌شود (پیکربندی ← اسکنر) و به‌صورت یک
+       رشته‌ی JSON به صفحه‌ی کاربر تزریق می‌شود؛ همان‌جا اسکن را می‌چرخاند.
+       پیش‌فرض‌ها: ۲۰۴۸ آی‌پی، ۶۴ همروندی، بدون فیلترِ تأخیر، پوششِ یکنواختِ
+       «تمامِ» رنج‌های رسمی کلودفلر. */
+    scanner: {
+      enabled: true,     /* نمایش کارت اسکنر در صفحه‌ی کاربر */
+      ipCount: 2048,     /* تعداد آی‌پی‌های هر اسکن */
+      concurrency: 64,   /* همروندیِ پروب‌ها */
+      timeout: 1000,     /* تایم‌اوت هر پروب (میلی‌ثانیه) */
+      probes: 2,         /* تعداد پروب برای تأییدِ هر آی‌پی */
+      minRtt: 0,         /* حداقل تأخیرِ قابل‌قبول (ms) — ۰ = بدون فیلتر */
+      maxRtt: 0,         /* حداکثر تأخیرِ قابل‌قبول (ms) — ۰ = بدون سقف */
+      keep: 0,           /* تعداد آی‌پیِ ذخیره‌شده — ۰ = سقف کانفیگِ کاربر */
+      mode: 'even',      /* even = پوششِ یکنواختِ همه‌ی رنج‌ها • random = تصادفیِ وزنی */
+      ports: [],         /* پورت‌های اسکن — خالی = پورت‌های خودِ کانفیگ‌های کاربر */
+      ranges: [],        /* رنج‌های CIDR دلخواه — خالی = رنج‌های رسمی کلودفلر */
+    },
   },
   users: [],
   logs: [],
@@ -4965,55 +4983,127 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         });
 
         // ===== رادار آی‌پی تمیز (کاملاً سمت مرورگر) =====
-        /* رنج‌های رسمیِ کلودفلر (cloudflare.com/ips-v4) — همگام با صفحه‌ی جدید */
-        const CF_RANGES = [
-            ['104.16.', 0, 255], ['104.17.', 0, 255], ['104.18.', 0, 255], ['104.19.', 0, 255],
-            ['104.20.', 0, 255], ['104.21.', 0, 255], ['104.22.', 0, 255], ['104.23.', 0, 255],
-            ['104.24.', 0, 255], ['104.25.', 0, 255], ['104.26.', 0, 255], ['104.27.', 0, 255],
-            ['104.28.', 0, 255], ['104.29.', 0, 255], ['104.30.', 0, 255], ['104.31.', 0, 255],
-            ['172.64.', 0, 255], ['172.65.', 0, 255], ['172.66.', 0, 255], ['172.67.', 0, 255],
-            ['172.68.', 0, 255], ['172.69.', 0, 255], ['172.70.', 0, 255], ['172.71.', 0, 255],
-            ['162.158.', 0, 255],
-            ['188.114.96.', 0, 15], ['188.114.97.', 0, 15], ['188.114.98.', 0, 15], ['188.114.99.', 0, 15],
-            ['108.162.192.', 0, 255], ['108.162.193.', 0, 255], ['108.162.194.', 0, 255], ['108.162.195.', 0, 255],
-            ['141.101.64.', 0, 255], ['141.101.65.', 0, 255], ['141.101.66.', 0, 255], ['141.101.67.', 0, 255],
-            ['190.93.240.', 0, 255], ['197.234.240.', 0, 3], ['131.0.72.', 0, 7],
-            ['173.245.48.', 0, 255], ['103.21.244.', 0, 7], ['103.22.200.', 0, 7], ['103.31.4.', 0, 7],
+        /* ═══════════════════════════════════════════════════════════════════
+           ۱) رنج‌ها: «تمامِ» رنج‌های رسمیِ IPv4 کلودفلر (cloudflare.com/ips-v4)
+              به‌صورت CIDR — نه زیرمجموعه و نه بازه‌ی دستیِ اشتباه.
+           ۲) تعدادِ اسکن و همه‌ی پارامترها از «تنظیمات پنل ← اسکنر» می‌آید
+              (پیش‌فرض: ۲۰۴۸ آی‌پی).
+           ۳) حالت «even» (پیش‌فرض): هر رنج به‌نوبت سهم می‌گیرد تا پوششِ همه‌ی
+              رنج‌ها تضمین شود. حالت تصادفی هم هست.
+           ۴) پروب: خطای سریعِ TLS یعنی لبه زنده است، تایم‌اوت یعنی مرده. پورت‌های
+              کاندید موازی آزموده می‌شوند تا آی‌پیِ مرده فقط یک تایم‌اوت هزینه بدهد.
+           ۵) فیلترِ تأخیر دیگر اجباری نیست: پیش‌فرض ۰ = بدون فیلتر (فیلترِ ۶۰ms
+              قبلی آی‌پی‌های سالمِ نزدیک را حذف می‌کرد و اسکن بی‌نتیجه می‌ماند).
+           ═══════════════════════════════════════════════════════════════════ */
+        const SCAN = (function () {
+            const D = { ipCount: 2048, concurrency: 64, timeout: 1000, probes: 2, minRtt: 0, maxRtt: 0, keep: 0, mode: 'even' };
+            let c = {};
+            try { c = JSON.parse("__SCANNER_CFG_JSON__") || {}; } catch (e) { c = {}; }
+            const num = function (k, lo, hi) {
+                const v = parseInt(c[k], 10);
+                return (isFinite(v) && v >= lo && v <= hi) ? v : D[k];
+            };
+            return {
+                enabled: c.enabled === false ? false : true,
+                ipCount: num('ipCount', 16, 65536),
+                concurrency: num('concurrency', 1, 256),
+                timeout: num('timeout', 200, 10000),
+                probes: num('probes', 1, 5),
+                minRtt: num('minRtt', 0, 5000),
+                maxRtt: num('maxRtt', 0, 20000),
+                keep: num('keep', 0, 100),
+                mode: c.mode === 'random' ? 'random' : 'even',
+                ports: Array.isArray(c.ports) ? c.ports.map(Number).filter(function (p) { return p > 0 && p < 65536; }).slice(0, 12) : [],
+                ranges: Array.isArray(c.ranges) ? c.ranges.map(String) : []
+            };
+        })();
+
+        const CF_CIDRS = [
+            '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22',
+            '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20',
+            '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+            '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22'
         ];
-        const RADAR_PORTS = [443, 8443, 2053, 2083, 2087, 2096];
-        const RADAR_TIMEOUT = 1200;
-        const RADAR_MIN_RTT = 60;      /* میلی‌ثانیه — کمتر از این = جعلی */
-        const RADAR_PROBES = 2;
-        const RADAR_CONCURRENCY = 16;
-        const RADAR_IP_COUNT = 1024;
-        /* ═══ خواسته‌ی کاربر: به‌محضِ رسیدن به ۵ آی‌پیِ تمیز، اسکن «موفق» قطع شود ═══
-           تعدادِ لازم = سقفِ کانفیگِ این کاربر که از ورکر می‌آید (پیش‌فرضِ ۵). */
-        const RADAR_KEEP = sanaeiClientData.nodeLimit || 5;
+        const ip2n = function (s) {
+            const p = String(s).split('.').map(Number);
+            if (p.length !== 4 || p.some(function (x) { return !(x >= 0 && x <= 255); })) return NaN;
+            return ((p[0] * 256 + p[1]) * 256 + p[2]) * 256 + p[3];
+        };
+        const n2ip = function (v) {
+            v = v >>> 0;
+            return [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255].join('.');
+        };
+        const CF_BLOCKS = (function () {
+            const list = CF_CIDRS.slice();
+            (SCAN.ranges || []).forEach(function (c) {
+                const t = String(c).trim();
+                if (/^\\d{1,3}(\\.\\d{1,3}){3}\\/\\d{1,2}$/.test(t) && list.indexOf(t) < 0) list.push(t);
+            });
+            const out = [];
+            list.forEach(function (c) {
+                const parts = c.split('/');
+                const plen = parseInt(parts[1], 10);
+                const start = ip2n(parts[0]);
+                if (!(plen >= 0 && plen <= 32) || isNaN(start)) return;
+                const size = Math.pow(2, 32 - plen);
+                out.push({ start: start, size: size, end: start + size - 1 });
+            });
+            out.total = out.reduce(function (a, b) { return a + b.size; }, 0);
+            return out;
+        })();
+        const randCfIp = function () {
+            let n = Math.floor(Math.random() * CF_BLOCKS.total);
+            for (let i = 0; i < CF_BLOCKS.length; i++) {
+                if (n < CF_BLOCKS[i].size) return n2ip(CF_BLOCKS[i].start + n);
+                n -= CF_BLOCKS[i].size;
+            }
+            return n2ip(CF_BLOCKS[0].start);
+        };
+        function buildIpList(count) {
+            const out = [];
+            const seen = Object.create(null);
+            const push = function (ip) { if (!seen[ip]) { seen[ip] = 1; out.push(ip); } };
+            if (SCAN.mode === 'random') {
+                let guard = 0;
+                while (out.length < count && guard++ < count * 40) push(randCfIp());
+            } else {
+                const nb = CF_BLOCKS.length;
+                const off = CF_BLOCKS.map(function (b) { return Math.floor(Math.random() * b.size); });
+                for (let i = 0; i < count; i++) {
+                    const bi = i % nb, b = CF_BLOCKS[bi];
+                    push(n2ip(b.start + ((Math.floor(i / nb) + off[bi]) % b.size)));
+                }
+            }
+            return out;
+        }
+
+        /* تعدادِ آی‌پیِ ذخیره‌شده: تنظیماتِ اسکنر ← سقفِ کانفیگِ این کاربر ← ۵ */
+        const RADAR_KEEP = (function () {
+            if (SCAN.keep > 0) return SCAN.keep;
+            const n = parseInt(sanaeiClientData.nodeLimit, 10);
+            return (n > 0 && n <= 100) ? n : 5;
+        })();
 
         let radarRunning = false;
         let radarCancelRequested = false;
 
-        function randCfIp() {
-            var r = CF_RANGES[Math.floor(Math.random() * CF_RANGES.length)];
-            var c = r[1] + Math.floor(Math.random() * (r[2] - r[1] + 1));
-            return r[0] + c + '.' + Math.floor(Math.random() * 256);
-        }
-
-        // پروب با fetch — همگام با صفحه‌ی جدید: خطای سریع یعنی زنده، تایم‌اوت یعنی مرده
+        // پروب: هر خطای غیرِ تایم‌اوت یعنی دست‌کم یک سرورِ TLS جواب داد
         function pingIp(ip, port, timeout) {
             return new Promise(function(res) {
                 const t0 = performance.now();
-                let done = false;
+                let done = false, timer = null;
+                const ctrl = new AbortController();
                 const fin = function(ok) {
                     if (done) return;
                     done = true;
+                    if (timer) clearTimeout(timer);
                     try { ctrl.abort(); } catch (e) {}
                     res(ok ? Math.round(performance.now() - t0) : null);
                 };
-                const ctrl = new AbortController();
-                const timer = setTimeout(function() { fin(false); }, timeout);
-                fetch('https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random(), {
-                    signal: ctrl.signal, mode: 'cors', cache: 'no-store',
+                timer = setTimeout(function() { fin(false); }, timeout);
+                const host = port == 443 ? ip : ip + ':' + port;
+                fetch('https://' + host + '/cdn-cgi/trace?_=' + Math.random(), {
+                    signal: ctrl.signal, mode: 'no-cors', cache: 'no-store',
                 }).then(function(r) { fin(true); }).catch(function(err) {
                     if (err && err.name === 'AbortError') { fin(false); return; }
                     fin(true);
@@ -5021,11 +5111,11 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             });
         }
 
-        /* انتخاب پورت حذف شد — اسکن همیشه روی پورت‌های خودِ کانفیگ‌های ساب انجام می‌شود.
-           فقط پورت‌های TLS قابل‌اسکن‌اند: پروب مرورگر https است و پورت‌های غیر-TLS
+        /* فقط پورت‌های TLS قابل‌اسکن‌اند: پروب مرورگر https است و پورت‌های غیر-TLS
            با خطای SSL بلافاصله «پاسخ» می‌دهند و نتیجه را کاملاً خراب می‌کنند. */
         const RADAR_TLS_PORTS = [443, 2053, 2083, 2087, 2096, 8443];
         function radarConfigPorts() {
+            if (SCAN.ports.length) return SCAN.ports.slice();
             const ports = [];
             const links = sanaeiClientData.links || [];
             links.forEach(function(link) {
@@ -5037,21 +5127,28 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         }
 
         async function radarProbeIp(ip, ports) {
-            for (let i = 0; i < ports.length; i++) {
-                const port = ports[i];
-                const samples = [];
-                for (let p = 0; p < RADAR_PROBES; p++) {
-                    if (radarCancelRequested) return null;
-                    const rtt = await pingIp(ip, port, RADAR_TIMEOUT);
-                    if (rtt !== null && rtt >= RADAR_MIN_RTT) samples.push(rtt);
-                }
-                if (samples.length === 0) continue;
-                const avg = Math.round(samples.reduce(function(a, b) { return a + b; }, 0) / samples.length);
-                const jitter = Math.max.apply(null, samples) - Math.min.apply(null, samples);
-                const loss = Math.round((1 - samples.length / RADAR_PROBES) * 100);
-                return { ip: ip, port: port, avg: avg, jitter: jitter, loss: loss, score: avg + jitter * 0.5 + loss * 20 };
+            if (radarCancelRequested) return null;
+            /* همه‌ی پورت‌های کاندید موازی — آی‌پیِ مرده فقط یک تایم‌اوت هزینه می‌دهد */
+            const first = await Promise.all(ports.map(function (p) {
+                return pingIp(ip, p, SCAN.timeout).then(function (rtt) {
+                    return rtt === null ? null : { port: p, rtt: rtt };
+                });
+            }));
+            const alive = first.filter(function (x) { return x && x.rtt >= SCAN.minRtt; });
+            if (!alive.length) return null;
+            alive.sort(function (a, b) { return a.rtt - b.rtt; });
+            const best = alive[0];
+            const samples = [best.rtt];
+            for (let i = 1; i < SCAN.probes; i++) {
+                if (radarCancelRequested) break;
+                const rtt = await pingIp(ip, best.port, SCAN.timeout);
+                if (rtt !== null && rtt >= SCAN.minRtt) samples.push(rtt);
             }
-            return null;
+            const avg = Math.round(samples.reduce(function(a, b) { return a + b; }, 0) / samples.length);
+            const jitter = Math.max.apply(null, samples) - Math.min.apply(null, samples);
+            const loss = Math.round((1 - samples.length / SCAN.probes) * 100);
+            if (SCAN.maxRtt > 0 && avg > SCAN.maxRtt) return null;
+            return { ip: ip, port: best.port, avg: avg, jitter: jitter, loss: loss, score: avg + jitter * 0.5 + loss * 20 };
         }
 
         function radarRenderResults(list) {
@@ -5114,7 +5211,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             const startBtn = document.getElementById('radar-start-btn');
 
             if (radarRunning) {
-                /* توقف: بازخورد فوری — unwind حداکثر تا پایان پروب جاری (کمتر از ۱.۲ ثانیه) */
+                /* توقف: بازخورد فوری — unwind حداکثر تا پایان پروب جاری */
                 radarCancelRequested = true;
                 statusEl.textContent = data.radarStatusStopping;
                 return;
@@ -5123,6 +5220,13 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             const ports = radarConfigPorts();
             if (ports.length === 0) {
                 statusEl.textContent = data.radarStatusNoTlsPort || data.radarStatusNoConfig;
+                return;
+            }
+
+            /* فهرستِ آی‌پی‌ها یک‌بار و کامل ساخته می‌شود (پوششِ همه‌ی رنج‌ها) */
+            const ips = buildIpList(SCAN.ipCount);
+            if (ips.length === 0) {
+                statusEl.textContent = data.radarStatusNoResult;
                 return;
             }
 
@@ -5135,14 +5239,11 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             document.getElementById('radar-results-body').innerHTML = '';
             document.getElementById('radar-table-wrap').classList.remove('show');
             document.getElementById('radar-progress-bar').style.width = '0%';
-            statusEl.textContent = data.radarStatusScan.replace('{done}', '0').replace('{total}', RADAR_IP_COUNT).replace('{found}', '0');
+            statusEl.textContent = data.radarStatusScan.replace('{done}', '0').replace('{total}', ips.length).replace('{found}', '0');
 
             /* try/finally: حتی اگر وسط اسکن خطایی رخ دهد radarRunning ریست می‌شود
                و دکمه هرگز روی «توقف» قفل نمی‌ماند */
             try {
-                const ips = [];
-                for (let i = 0; i < RADAR_IP_COUNT; i++) ips.push(randCfIp());
-
                 const results = [];
                 let cursor = 0;
                 let doneCount = 0;
@@ -5165,7 +5266,8 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 }
 
                 const workers = [];
-                for (let w = 0; w < RADAR_CONCURRENCY; w++) workers.push(worker());
+                const n = Math.min(SCAN.concurrency, ips.length);
+                for (let w = 0; w < n; w++) workers.push(worker());
                 await Promise.all(workers);
 
                 /* اگر توقفِ دستی نبود ولی به هدفِ تعدادِ لازم رسیده‌ایم، اسکن «موفق» است */
@@ -5188,7 +5290,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                        همان POST /radar-ips صفحه‌ی جدید — آی‌پی‌ها روی کانفیگ‌های
                        همین کاربر اعمال و در بخش آی‌پی‌های تمیز پنل merge می‌شوند. */
                     try {
-                        const saveRes = await fetch(sanaeiClientData.subUrl.replace(/\/$/, '') + '/radar-ips', {
+                        const saveRes = await fetch(sanaeiClientData.subUrl.replace(/\\/$/, '') + '/radar-ips', {
                             method: 'POST',
                             headers: { 'content-type': 'application/json' },
                             body: JSON.stringify({ ips: top.map(function(r) { return r.ip; }) })
@@ -5200,7 +5302,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                     /* اسکنِ بی‌نتیجه — گزارش به پنل می‌رود تا لاگِ «ناموفق» ثبت شود */
                     statusEl.textContent = data.radarStatusNoResult;
                     try {
-                        await fetch(sanaeiClientData.subUrl.replace(/\/$/, '') + '/radar-ips', {
+                        await fetch(sanaeiClientData.subUrl.replace(/\\/$/, '') + '/radar-ips', {
                             method: 'POST',
                             headers: { 'content-type': 'application/json' },
                             body: JSON.stringify({ ips: [] })
@@ -5215,7 +5317,12 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             }
         }
 
-        /* دکمه‌ی باز کردنِ رادار حذف شده — کارت همیشه نمایان است */
+        /* دکمه‌ی باز کردنِ رادار حذف شده — کارت همیشه نمایان است.
+           فقط اگر ادمین در «تنظیمات پنل ← اسکنر» آن را خاموش کرده باشد پنهان می‌شود. */
+        if (!SCAN.enabled) {
+            const radarCard = document.getElementById('radar-card');
+            if (radarCard) radarCard.style.display = 'none';
+        }
 
         document.getElementById("radar-start-btn").addEventListener("click", function(e) {
             e.stopPropagation();
@@ -6496,6 +6603,32 @@ async function tgSend(s, text) {
 }
 
 /* ════════════════════════════ اشتراک ════════════════════════════ */
+/* ═══ تنظیمات اسکنر برای صفحه‌ی کاربر ═══
+   هر مقدار با کف/سقفِ امن بریده می‌شود تا مقدارِ خرابِ state (یا بک‌آپِ
+   قدیمی) هرگز اسکنِ کاربر را خراب نکند. رنج‌ها هم اعتبارسنجیِ CIDR می‌شوند. */
+function scannerCfg(s) {
+  const sc = (s && s.scanner && typeof s.scanner === 'object' && !Array.isArray(s.scanner)) ? s.scanner : {};
+  const int = (v, lo, hi, d) => {
+    const n = parseInt(v, 10);
+    return (isFinite(n) && n >= lo && n <= hi) ? n : d;
+  };
+  const arr = (v) => (Array.isArray(v) ? v : []);
+  return {
+    enabled: sc.enabled !== false,
+    ipCount: int(sc.ipCount, 16, 65536, 2048),
+    concurrency: int(sc.concurrency, 1, 256, 64),
+    timeout: int(sc.timeout, 200, 10000, 1000),
+    probes: int(sc.probes, 1, 5, 2),
+    minRtt: int(sc.minRtt, 0, 5000, 0),
+    maxRtt: int(sc.maxRtt, 0, 20000, 0),
+    keep: int(sc.keep, 0, 100, 0),
+    mode: sc.mode === 'random' ? 'random' : 'even',
+    ports: arr(sc.ports).map((x) => parseInt(x, 10)).filter((x) => x > 0 && x < 65536).slice(0, 12),
+    ranges: arr(sc.ranges).map((x) => String(x).trim())
+      .filter((x) => /^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(x)).slice(0, 64),
+  };
+}
+
 /* ── صفحه‌ی کاربر (داشبورد + اشتراک در یک صفحه) ── */
 async function renderUserPage(u, st, url, dailyUsed) {
   const s = st.settings;
@@ -6524,6 +6657,16 @@ async function renderUserPage(u, st, url, dailyUsed) {
     __LAST_ONLINE_MS__: String(u.lastSeen || 0),
     /* تعدادِ کانفیگِ مؤثرِ این کاربر — رادارِ صفحه‌ی کاربر همین‌قدر آی‌پی ذخیره می‌کند */
     __NODE_LIMIT__: String(Number(u.maxConfigs) || Number(s.sub.nodeLimit) || 0),
+    /* ═══ تنظیمات اسکنر (پنل ← پیکربندی ← اسکنر) ═══
+       مقدار داخلِ کوتیشنِ همین تمپلیت می‌نشیند:  JSON.parse("__SCANNER_CFG_JSON__")
+       پس باید «محتوای» یک رشته‌ی جاوااسکریپت باشد — یعنی بک‌اسلش و کوتیشنِ
+       JSON دوباره escape شوند، وگرنه کوتیشنِ اضافه کلِ اسکریپتِ صفحه را
+       می‌شکند (باگِ واقعی: JSON.parse(""{"enabled":true}"") → SyntaxError).
+       `<` هم به \u003c تبدیل می‌شود تا هرگز تگِ script بسته نشود. */
+    __SCANNER_CFG_JSON__: JSON.stringify(scannerCfg(s))
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/</g, '\\u003c'),
     __SYNC_NORMAL__: base,
     __SYNC_NORMAL_BASE64__: base + '?format=base64',
     __SYNC_RAW__: base + '?format=raw',
@@ -6583,10 +6726,12 @@ async function subHandler(req, env, url, cf, wantPage) {
        مرورگر اکنون به‌محضِ پیدا شدنِ ۵ آی‌پی، اسکن را قطع و همین‌ها را می‌فرستد
        و همین‌جا هم اعتبارسنجی و ذخیره می‌شود. */
     if (!Array.isArray(s.cleanIPs)) s.cleanIPs = [];
-    /* تعدادِ آی‌پی دقیقاً بر اساس تنظیمات: سقفِ کانفیگِ کاربر (maxConfigs)
-       یا nodeLimit سراسری پنل — مرورگر قبل از ارسال در همان تعداد راستی‌آزمایی
-       کرده است؛ اینجا هم سقف اعمال می‌شود تا تعدادِ ذخیره‌شده همیشه درست باشد. */
-    const wantN = Math.max(1, Number(ru.maxConfigs) || Number(s.sub.nodeLimit) || 8);
+    /* تعدادِ آی‌پی دقیقاً بر اساس تنظیمات: اول «تعدادِ نگه‌داری» اسکنر
+       (پنل ← اسکنر ← keep)، وگرنه سقفِ کانفیگِ کاربر (maxConfigs) یا nodeLimit
+       سراسری پنل — مرورگر قبل از ارسال در همان تعداد راستی‌آزمایی کرده است؛
+       اینجا هم سقف اعمال می‌شود تا تعدادِ ذخیره‌شده همیشه درست باشد. */
+    const scKeep = Math.min(100, Math.max(0, parseInt((s.scanner && s.scanner.keep) || 0, 10) || 0));
+    const wantN = scKeep > 0 ? scKeep : Math.max(1, Number(ru.maxConfigs) || Number(s.sub.nodeLimit) || 8);
     const ips = (Array.isArray(rb.ips) ? rb.ips : [])
       .map((x) => String(x).trim())
       .filter((x) => /^\d{1,3}(\.\d{1,3}){3}$/.test(x))
