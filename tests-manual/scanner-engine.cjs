@@ -292,6 +292,23 @@ console.log('== ۵) پروب و انتخابِ آی‌پی ==');
   ok(/radarStatusGuard \? /.test(html), 'در خطِ وضعیت با نگهبانِ undefined استفاده می‌شود');
   ok(/radarFloor = Math\.max\(SCAN\.minRtt/.test(html), 'کف از max(کفِ دستی، کفِ خودکار) حساب می‌شود');
 
+  console.log('== ۱۷) لبه‌های تنظیمات — دروازه‌ی ثبات نباید اسکن را خالی کند ==');
+  /* خطرِ واقعی: دروازه‌ی ثبات «حداقل ۲ پاسخ» می‌خواهد؛ با probes=1 این شرط
+     هرگز برقرار نمی‌شود و اگر با min() محافظت نشده باشد، اسکن همیشه صفر
+     نتیجه می‌دهد. پنل بازه‌ی ۱ تا ۵ را مجاز می‌گذارد، پس این حالت واقعی است. */
+  const M1 = mkModule(Object.assign({}, DEF_CFG, { probes: 1 }));
+  ok(M1.SCAN.probes === 1, 'probes=1 درست خوانده می‌شود', String(M1.SCAN.probes));
+  const one = await M1.radarProbeIp('7.7.7.7', [443]);
+  ok(one !== null, 'با probes=1 اسکن خالی نمی‌شود', one ? one.avg + 'ms' : 'null');
+  ok(one !== null && one.loss === 0, 'افتِ تک‌پروبی صفر است', one ? String(one.loss) : '-');
+
+  /* کفِ دستی هنوز به‌عنوان بازنویسی کار می‌کند */
+  const M2 = mkModule(Object.assign({}, DEF_CFG, { minRtt: 0 }));
+  M2.setFloor(20);
+  ok(await M2.radarProbeIp('1.2.3.4', [443]) === null, 'کفِ دستی پاسخِ ۵ms را رد می‌کند');
+  M2.setFloor(0);
+  ok(await M2.radarProbeIp('1.2.3.4', [443]) !== null, 'برداشتنِ کف همان آی‌پی را برمی‌گرداند');
+
   console.log(fail ? '\n' + fail + ' تست ناموفق ✗' : '\nهمه‌ی تست‌ها موفق ✓');
   process.exit(fail ? 1 : 0);
 })();
