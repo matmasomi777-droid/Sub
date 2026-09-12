@@ -5097,6 +5097,10 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
 
         // پروبِ Image (روشِ اثبات‌شده‌ی پنل نوا): onload یا onerror = لبه پاسخ داد
         // = سالم؛ تایم‌اوت = مرده. هیچ وابستگی به CORS/AbortController.
+        /* فاصله‌ی کوتاهِ تصادفی بین پروب‌های یک آی‌پی — الگوی درخواست‌ها کمتر
+           شبیه اسکنر می‌شود و DPI کمتر اتصال را قطع می‌کند (روشِ SenPai Scanner). */
+        function radarSleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+
         function pingIp(ip, port, timeout) {
             return new Promise(function(res) {
                 const t0 = performance.now();
@@ -5149,6 +5153,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             const samples = [best.rtt];
             for (let i = 1; i < SCAN.probes; i++) {
                 if (radarCancelRequested) break;
+                await radarSleep(10 + Math.floor(Math.random() * 50));
                 const rtt = await pingIp(ip, best.port, SCAN.timeout);
                 if (rtt !== null && rtt >= SCAN.minRtt) samples.push(rtt);
             }

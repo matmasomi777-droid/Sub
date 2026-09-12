@@ -115,6 +115,7 @@ globalThis.caches = { default: { match: async () => undefined, put: async () => 
     ok(html.includes('concurrency: 16'), 'هم‌روندیِ پیش‌فرض ۱۶ است (نه ۶۴)');
     ok(html.includes('timeout: 2000'), 'تایم‌اوتِ پیش‌فرض ۲۰۰۰ms است (نه ۱۰۰۰)');
     ok(/results\.length < RADAR_KEEP\) results\.push/.test(html), 'نتایج از سقفِ نگه‌داری بیشتر نمی‌شوند');
+    ok(html.includes('radarSleep'), 'فاصله‌ی تصادفی بین پروب‌ها هست (روشِ SenPai Scanner)');
 
     /* ── ۵) اسکریپتِ درون‌خطی معتبر است ── */
     const scripts = html.match(/<script(?![^>]*src=)[^>]*>[\s\S]*?<\/script>/gi) || [];

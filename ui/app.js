@@ -1587,6 +1587,10 @@
       return out;
     }
 
+    /* فاصله‌ی کوتاهِ تصادفی بین پروب‌های یک آی‌پی — الگوی درخواست‌ها کمتر
+       شبیه اسکنر می‌شود و DPI کمتر اتصال را قطع می‌کند (روشِ SenPai Scanner). */
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
     function ping(ip, port, timeout) {
       return new Promise((res) => {
         const t0 = performance.now();
@@ -1617,6 +1621,7 @@
       const samples = [best.rtt];
       for (let i = 1; i < cfg.probes; i++) {
         if (cancel) break;
+        await sleep(10 + Math.floor(Math.random() * 50));
         const rtt = await ping(ip, best.port, cfg.timeout);
         if (rtt !== null) samples.push(rtt);
       }
