@@ -1,3 +1,7 @@
 node_modules/
 .wrangler/
 package-lock.json
+# پوشه‌های موقتِ تست‌ها (worker-e2e و ip-limit هنگام اجرا می‌سازند و پاک می‌کنند؛
+# اگر اجرای تست نیمه‌کاره بماند، این‌ها باقی می‌مانند و نباید کامیت شوند)
+.e2e-tmp/
+.iplimit-tmp/

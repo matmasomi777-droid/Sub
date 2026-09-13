@@ -4,7 +4,9 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const html = fs.readFileSync(path.join(ROOT, 'new-subscription'), 'utf8');
+/* ⚠️ قبلاً پسوندِ .html جا افتاده بود و این تست همیشه با ENOENT می‌مرد
+   (یعنی صفحه‌ی ساب هیچ‌وقت واقعاً آزموده نمی‌شد). */
+const html = fs.readFileSync(path.join(ROOT, 'new-subscription.html'), 'utf8');
 
 const errors = [];
 const dom = new JSDOM(html, {

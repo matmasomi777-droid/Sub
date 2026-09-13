@@ -1,13 +1,15 @@
 /* ═══════════════════════════════════════════════════════════════════════════
  *  تستِ رگرسیونِ «سقفِ آی‌پی» (محدودیتِ تعداد نفرات/دستگاه برای هر کانفیگ)
  *  ───────────────────────────────────────────────────────────────────────────
- *  باگی که این تست از آن محافظت می‌کند:
- *    سقفِ «تعداد آی‌پیِ همزمان» درست اعمال نمی‌شد. ریشه‌اش یک پنجره‌ی زمانیِ
- *    ۳ ثانیه‌ای بود که «بی‌ترافیک» را با «مرده» یکی می‌گرفت: ردیفِ یک تونلِ
- *    باز ولی ساکت (گوشی با صفحه‌ی خاموش، لپ‌تاپ در فاصله‌ی دو صفحه) در
- *    پاک‌سازی حذف می‌شد، جایش به آی‌پیِ تازه داده می‌شد و سقف عملاً بی‌اثر
- *    می‌شد — و از آن طرف وقتی همان اتصالِ ساکت دوباره بایت رد می‌کرد، کاربر
- *    با «connection limit reached» بیرون می‌افتاد.
+ *  باگ‌هایی که این تست از آن‌ها محافظت می‌کند:
+ *  ۱) پنجره‌ی زمانیِ ۳ ثانیه‌ای که «بی‌ترافیک» را با «مرده» یکی می‌گرفت:
+ *     ردیفِ یک تونلِ باز ولی ساکت در پاک‌سازی حذف می‌شد، جایش به آی‌پیِ تازه
+ *     داده می‌شد و سقف عملاً بی‌اثر می‌شد.
+ *  ۲) رگرسیونِ «حذفِ wrangler»: کامیتِ 360e05c فایلِ wrangler.toml را پاک کرد
+ *     و با آن بایندینگ‌های LIMITER (شیءِ ماندگار) و DB (D1) ناپدید شدند. از آن
+ *     لحظه هر isolate حافظه‌ی خودش را می‌شمارد و سقف بی‌صدا اعمال نمی‌شود.
+ *     بخشِ «ب» همین وضعیت را می‌سنجد: کارتِ سلامت باید صریحاً شکست بخورد و
+ *     /health باید limitEnforced=false بدهد — نه سبزِ کاذب.
  *
  *  چطور کار می‌کند: ورکرِ واقعی (worker.js خام — همان موتورِ پنل) با یک D1
  *  واقعی (SQLite درون‌حافظه از node:sqlite) بالا می‌آورد و سناریوها را از
@@ -18,7 +20,7 @@
  *  و برای اینکه تست خودش هم بی‌ارزش نباشد، در پایان همین سناریو روی نسخه‌ای
  *  با پنجره‌ی قدیمی (۳ ثانیه) اجرا می‌شود و انتظار داریم شکست بخورد.
  *
- *  اجرا:  node tests-manual/ip-limit.js
+ *  اجرا:  node tests-manual/ip-limit.cjs
  * ═══════════════════════════════════════════════════════════════════════════ */
 const fs = require('fs');
 const path = require('path');
@@ -139,26 +141,53 @@ const pick = (out, needle) => (out.checks || []).find((c) => strip(c.name).inclu
   const c1 = pick(outA, 'سقف ۱ IP');
   const c2 = pick(outA, 'سقف ۲ IP');
   const cIdle = pick(outA, 'اتصالِ بازِ بی‌ترافیک');
-  const cSrc = pick(outA, 'مرجعِ شمارشِ محدودیت اتصال');
+  const cSrc = pick(outA, 'مرجعِ مشترکِ محدودیت');
 
   ok(!!c1 && c1.ok, 'سقف ۱ آی‌پی: اتصالِ دوم از همان آی‌پی مجاز، از آی‌پیِ دیگر رد', c1 && c1.note);
   ok(!!c2 && c2.ok, 'سقف ۲ آی‌پی: آی‌پیِ سوم رد، بعد از آزادسازی مجاز', c2 && c2.note);
   ok(!!cIdle, 'چکِ «اتصالِ بازِ بی‌ترافیک» در کارتِ سلامت وجود دارد');
   ok(!!cIdle && cIdle.ok, '\u2605 آی‌پیِ بی‌ترافیک اما باز، سهمیه‌اش را نگه می‌دارد', cIdle && cIdle.note);
   ok(!!cSrc && cSrc.ok, 'مرجعِ شمارش سراسری است (D1)', cSrc && cSrc.note);
+  ok(outA.limiter === 'd1', 'کارتِ سلامت مرجع را d1 گزارش می‌کند', outA.limiter);
 
   /* ردیف‌های probe نباید در جدول جا بمانند */
   const left = envA.DB.__rows('SELECT uuid, ip FROM conns');
   ok(left.filter((r) => r.uuid === '__limit_probe__').length === 0,
     'هیچ ردیفِ probe‌ای در جدولِ اتصال‌ها جا نماند', left.length + ' ردیفِ باقی‌مانده');
 
-  /* ═══ ب) استقرارِ بدونِ بایندینگ: فقط حافظهٔ همین isolate ═══ */
+  /* ═══ ب) استقرارِ بدونِ بایندینگ: فقط حافظهٔ همین isolate ═══
+     ⚠️ این همان رگرسیونی است که کامیتِ 360e05c ساخت: با حذفِ wrangler.toml
+     بایندینگ‌های LIMITER و DB ناپدید شدند و محدودیت بی‌صدا از کار افتاد.
+     تست باید تضمین کند که این وضعیت «دیده می‌شود»، نه اینکه سبزِ کاذب بدهد. */
   console.log('\n== B) بدونِ D1/KV (فقط حافظهٔ isolate) ==');
   const modB = await import(prepareDir('mem', srcText));
   const outB = await runHealth(modB, {});
   const bIdle = pick(outB, 'اتصالِ بازِ بی‌ترافیک');
+  const bShared = pick(outB, 'مرجعِ مشترکِ محدودیت');
   ok(!!bIdle && bIdle.ok, '\u2605 همان محافظت روی مسیرِ حافظه هم برقرار است', bIdle && bIdle.note);
+  ok(outB.limiter === 'mem', 'کارتِ سلامت مرجع را mem گزارش می‌کند', outB.limiter);
   ok(strip(outB.limiterLabel || '').includes('حافظه'), 'مسیرِ حافظه درست تشخیص داده شد', outB.limiterLabel);
+  /* ★ هسته‌ی این مرحله: کارت باید صریحاً «اعمال نمی‌شود» بگوید و شکست بخورد */
+  ok(!!bShared && bShared.ok === false,
+    '\u2605 چکِ «مرجعِ مشترکِ محدودیت» در استقرارِ بدونِ بایندینگ شکست می‌خورد (هشدارِ صریح، نه سبزِ کاذب)',
+    bShared && bShared.note);
+  ok(outB.ok === false, 'کلِ کارتِ سلامت ناموفق است تا کاربر متوجه شود', 'ok=' + outB.ok);
+  ok(!!outB.diag && outB.diag.bound && !outB.diag.bound.DB && !outB.diag.bound.LIMITER && !outB.diag.bound.KV,
+    'تشخیصِ بایندینگ‌ها هر سه را «بسته‌نشده» می‌گوید', JSON.stringify(outB.diag && outB.diag.bound));
+
+  /* ═══ ب-۲) همان تشخیص از مسیرِ /health (بدونِ ورود) ═══
+     کاربر باید بتواند فقط با یک curl بفهمد بایندینگ‌ها درست‌اند یا نه.
+     ⚠️ هر دو شکلِ مسیر آزموده می‌شود: /api/health و /health — دومی همان
+     چیزی است که README برای مانیتورینگ معرفی می‌کند و قبلاً ۴۰۴ می‌داد. */
+  const handlerB = modB.default || modB;
+  for (const hp of ['/api/health', '/health']) {
+    const hres = await handlerB.fetch(new Request('https://panel.test' + hp), {}, ctx);
+    ok(hres.status === 200, 'مسیرِ سلامت ' + hp + ' جواب می‌دهد (نه ۴۰۴)', 'HTTP ' + hres.status);
+    const hj = await hres.json().catch(() => ({}));
+    ok(hj.limiter === 'mem', hp + ' مرجع را mem گزارش می‌کند', hj.limiter);
+    ok(hj.limitEnforced === false, '\u2605 ' + hp + ' صریحاً می‌گوید سقف اعمال نمی‌شود (limitEnforced=false)');
+    ok(hj.db && hj.db.do === false && hj.db.bound === false, hp + ' بایندینگ‌ها را نشان می‌دهد', JSON.stringify(hj.db));
+  }
 
   /* ═══ ج) اثباتِ ارزشِ تست: با پنجره‌ی باگ‌دارِ ۳ ثانیه باید شکست بخورد ═══ */
   console.log('\n== C) کنترل: نسخه‌ی باگ‌دار (CONN_TTL = ۳ ثانیه) ==');
@@ -198,6 +227,34 @@ const pick = (out, needle) => (out.checks || []).find((c) => strip(c.name).inclu
       'دو آدرسِ موقتِ IPv6 در یک /64 = یک نقطه‌ی اتصال (معادلِ NAT)');
     ok(normIp('2001:db8:1::1') !== normIp('2001:db8:2::1'),
       'دو /64 متفاوت همچنان دو آی‌پیِ متفاوت‌اند');
+  }
+
+  /* ═══ ه) همان تشخیص روی باندلِ واقعیِ مستقرشده (_worker.obf.js) ═══
+     ⚠️ این مهم‌ترین بخشِ این تست است: چیزی که کاربر واقعاً در داشبورد پیست
+     می‌کند همین باندلِ obfuscate‌شده است، نه worker.js. اگر obfuscator دسترسیِ
+     `env.LIMITER` / `env.DB` را خراب کند، محدودیت در استقرارِ واقعی از کار
+     می‌افتد در حالی که تستِ سورس سبز است. پس باندل هم مستقیماً آزموده می‌شود.
+     اگر باندل ساخته نشده باشد، این بخش با هشدار رد می‌شود (نه شکست). */
+  console.log('\n== E) باندلِ واقعیِ مستقرشده (_worker.obf.js) ==');
+  const obfPath = path.join(ROOT, '_worker.obf.js');
+  if (!fs.existsSync(obfPath)) {
+    console.log('  (باندل ساخته نشده — `npm run build` را بزنید؛ این بخش رد شد)');
+  } else {
+    const obfText = fs.readFileSync(obfPath, 'utf8');
+    const modO = await import(prepareDir('obf', obfText));
+    ok(typeof (modO.ConnLimiter) === 'function' || typeof (modO.ConnLimiter) === 'object',
+      'export کلاسِ ConnLimiter در باندل دست‌نخورده مانده');
+    /* با D1 بایند: باید دقیقاً مثل سورس رفتار کند */
+    const outO = await runHealth(modO, { DB: makeD1(), KV: makeKV() });
+    const oShared = pick(outO, 'مرجعِ مشترکِ محدودیت');
+    const oIdle = pick(outO, 'اتصالِ بازِ بی‌ترافیک');
+    ok(outO.limiter === 'd1', '\u2605 باندلِ obfuscate‌شده بایندینگِ DB را می‌بیند (محدودیت در استقرارِ واقعی فعال است)', outO.limiter);
+    ok(!!oShared && oShared.ok, 'چکِ مرجعِ مشترک در باندل هم سبز است', oShared && oShared.note);
+    ok(!!oIdle && oIdle.ok, 'محافظتِ اتصالِ بی‌ترافیک در باندل هم برقرار است', oIdle && oIdle.note);
+    /* و بدون بایند: باید صریحاً هشدار بدهد */
+    const outO2 = await runHealth(modO, {});
+    ok(outO2.limiter === 'mem' && outO2.ok === false,
+      '\u2605 باندل بدونِ بایندینگ هم هشدار می‌دهد (سکوتِ کاذب ندارد)', 'limiter=' + outO2.limiter + ' ok=' + outO2.ok);
   }
 
   fs.rmSync(TMP, { recursive: true, force: true });
