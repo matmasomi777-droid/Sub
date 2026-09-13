@@ -68,6 +68,19 @@ function makeD1() {
   };
 }
 
+/* ── ۱ب) D1 جعلیِ *خراب* — بایند است ولی هر عملیاتش شکست می‌خورد ──
+   دقیقاً همان چیزی که وقتی پایگاه اشتباه بایند شده، DDL رد می‌شود، یا سهمیه‌ی
+   نوشتنِ D1 تمام شده رخ می‌دهد. تفاوتش با «بدونِ بایندینگ» این است که
+   `env.DB` *وجود دارد* — و همین است که باگِ «هیچ بلاکی نمی‌شود» را می‌سازد:
+   بایندینگ هست، پس همه‌چیز سبز به نظر می‌رسد، ولی هیچ‌چیز کار نمی‌کند.
+   ⚠️ خطا باید از داخلِ یک تابعِ async پرتاب شود تا مثل D1 واقعی به
+   Promiseِ رد‌شده تبدیل شود (نه استثنای همگام). */
+function makeBrokenD1() {
+  const boom = () => { throw new Error('D1_ERROR: not authorized to perform this operation'); };
+  const mk = () => ({ bind: () => mk(), run: async () => boom(), all: async () => boom(), first: async () => boom() });
+  return { prepare: () => mk(), batch: async () => boom(), exec: async () => boom() };
+}
+
 /* ── ۲) KV جعلی ── */
 function makeKV() {
   const m = new Map();
@@ -255,6 +268,45 @@ const pick = (out, needle) => (out.checks || []).find((c) => strip(c.name).inclu
     const outO2 = await runHealth(modO, {});
     ok(outO2.limiter === 'mem' && outO2.ok === false,
       '\u2605 باندل بدونِ بایندینگ هم هشدار می‌دهد (سکوتِ کاذب ندارد)', 'limiter=' + outO2.limiter + ' ok=' + outO2.ok);
+  }
+
+  /* ═══ و) ★★★ D1 بایند است ولی *کار نمی‌کند* — باگِ «هیچ بلاکی نمی‌شود» ═══
+     این همان حالتی است که تا حالا دیده نمی‌شد. `env.DB` وجود دارد، پس
+     `limiterBackend` می‌گفت 'd1' و پنل و /health سبز نشان می‌دادند — ولی هر
+     عملیاتِ جدولِ `conns` شکست می‌خورد (پایگاه اشتباه بایند شده، DDL رد
+     می‌شود، سهمیه‌ی نوشتن تمام است، …). مسیرِ D1 بی‌صدا کنار گذاشته می‌شد و
+     شمارش به حافظه‌ی *همان isolate* می‌افتاد. یک ورکر روی صدها isolate اجرا
+     می‌شود و دو دستگاه تقریباً همیشه به دو isolate مختلف می‌افتند؛ هر isolate
+     فقط ۱ آی‌پی می‌بیند، پس `ips.size >= limit` هرگز درست نمی‌شود →
+     «هیچ بلاکی نمی‌شود» در حالی که همه‌ی چراغ‌ها سبزند.
+
+     انتظارِ درست: `limiter` باید بک‌اندِ *کارکننده* ('mem') باشد نه بایندشده،
+     `limiterIntended` باید 'd1' بماند، `limiterDegraded` باید true باشد،
+     `limitEnforced` باید false شود و کارتِ سلامت باید *شکست بخورد* با متنِ
+     خطای واقعی. */
+  console.log('\n== F) \u2605\u2605\u2605 D1 بایند است ولی کار نمی‌کند (باگِ «هیچ بلاکی نمی‌شود») ==');
+  const modF = await import(prepareDir('brokend1', srcText));
+  const outF = await runHealth(modF, { DB: makeBrokenD1() });
+  const cSharedF = pick(outF, 'مرجعِ مشترکِ محدودیت');
+  ok(outF.limiter === 'mem',
+    '\u2605 بک‌اندِ *کارکننده* گزارش می‌شود نه بایندشده (قبلاً d1 بود و دروغ می‌گفت)', 'limiter=' + outF.limiter);
+  ok(outF.limiterIntended === 'd1', 'بک‌اندِ بایندشده جداگانه گزارش می‌شود', 'intended=' + outF.limiterIntended);
+  ok(outF.limiterDegraded === true, '\u2605 پرچمِ «افتِ بی‌صدا» روشن است', 'degraded=' + outF.limiterDegraded);
+  ok(outF.limiterVerified === false, 'آزمونِ واقعیِ D1 شکست‌خورده ثبت شده', 'verified=' + outF.limiterVerified);
+  ok(!!outF.limiterError, 'متنِ خطای واقعی برگردانده می‌شود', outF.limiterError);
+  ok(outF.limitEnforced === false,
+    '\u2605 limitEnforced دیگر دروغ نمی‌گوید (قبلاً true بود)', 'limitEnforced=' + outF.limitEnforced);
+  ok(!!cSharedF && cSharedF.ok === false,
+    '\u2605 کارتِ سلامت صریحاً شکست می‌خورد — نه سبزِ کاذب', cSharedF && String(cSharedF.note).slice(0, 110));
+
+  /* و همان وضعیت روی باندلِ مستقرشده — چون کاربر دقیقاً همین را پیست می‌کند */
+  const obfPathF = path.join(ROOT, '_worker.obf.js');
+  if (fs.existsSync(obfPathF)) {
+    const modOF = await import(prepareDir('obfbrokend1', fs.readFileSync(obfPathF, 'utf8')));
+    const outOF = await runHealth(modOF, { DB: makeBrokenD1() });
+    ok(outOF.limiter === 'mem' && outOF.limiterDegraded === true && outOF.limitEnforced === false,
+      '\u2605 باندلِ مستقرشده هم افتِ بی‌صدا را لو می‌دهد (نه سکوتِ کاذب)',
+      'limiter=' + outOF.limiter + ' degraded=' + outOF.limiterDegraded + ' enforced=' + outOF.limitEnforced);
   }
 
   fs.rmSync(TMP, { recursive: true, force: true });

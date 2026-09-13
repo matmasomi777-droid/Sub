@@ -509,6 +509,10 @@ let CONN_LAST_ERR = null;             // آخرین خطا — در کارت س�
 let CONN_DENIES = 0;                  // تعداد رد شدن‌ها (اثباتِ فعال بودن محدودیت)
 let CONN_ACQUIRES = 0;
 let CONN_EVICTS = 0;                  // تعداد بیرون‌راندنِ آی‌پی‌های کهنه
+/* ⚠️ نامِ بک‌اندی که بایند بود ولی در عمل شکست خورد و شمارش به حافظه افتاد.
+   null = سالم. این پرچم مستقیماً به کارتِ سلامت و /health می‌رود؛ بدون آن،
+   «بی‌صدا افتادن به حافظه» همان باگی است که کاربر «هیچ بلاکی نمی‌شود» می‌دید. */
+let LIMITER_DEGRADED = null;
 
 const KV_C = (uuid, ip, id) => 'c:' + uuid + ':' + ip + ':' + id;
 const connErr = (tag, e) => { CONN_LAST_ERR = tag + ': ' + String((e && e.message) || e); };
@@ -523,11 +527,37 @@ const connErr = (tag, e) => { CONN_LAST_ERR = tag + ': ' + String((e && e.messag
      mem → فقط حافظه‌ی همین isolate: هیچ تضمینی بین isolateها نمی‌دهد
    پنل همیشه می‌گوید کدام بک‌اند فعال است تا عددِ نمایش‌داده‌شده گمراه‌کننده
    نباشد. */
-function limiterBackend(env) {
+/* ── حالتِ آزمونِ مرجعِ محدودیت (تعریفش کنارِ منطقِ انتخابِ بک‌اند است تا
+   خواننده یک‌جا ببیند؛ `liveEnsure` پایین‌تر همین‌ها را پر می‌کند) ── */
+let LIVE_OK = false;                  /* نتیجه‌ی آخرین آزمونِ D1 */
+let LIVE_TS = 0;                      /* زمانِ آخرین آزمون (۰ = هرگز) */
+let LIVE_ERR = null;                  /* آخرین خطای آزمون */
+let LIVE_FAILS = 0;                   /* شکست‌های پشت‌سرهم */
+const LIVE_PROBE_TTL = 30000;         /* مهلتِ تازه‌بودنِ نتیجه‌ی آزمون */
+
+/** بک‌اندی که *بایند* شده — یعنی آرزو، نه واقعیت.
+    برای نمایشِ «چه چیزی تنظیم شده» و برای مقایسه با بک‌اندِ واقعی. */
+function limiterIntended(env) {
   if (env && env.LIMITER) return 'do';
   if (env && env.DB) return 'd1';      /* ⚠️ استقرارِ واقعیِ بیشتر کاربران: فقط D1 بایند است */
   if (env && env.KV) return 'kv';
   return 'mem';
+}
+
+/** بک‌اندی که *واقعاً کار می‌کند*.
+    ⚠️ تفاوتش با `limiterIntended` حیاتی است: اگر D1 بایند باشد ولی آزمونِ
+    واقعی شکست خورده باشد (`LIVE_TS>0 && !LIVE_OK`)، اینجا `mem` برمی‌گردد تا
+    پنل و `/health` ادعای نادرستِ «شمارشِ سراسری» نکنند. پیش از نخستین آزمون
+    (`LIVE_TS===0`) به بایندینگ اعتماد می‌کنیم تا نمایش از ابتدا قرمز نشود. */
+function limiterBackend(env) {
+  const want = limiterIntended(env);
+  if (want === 'd1' && LIVE_TS > 0 && !LIVE_OK) return 'mem';
+  return want;
+}
+
+/** آیا بک‌اندِ بایندشده آزموده شده و *شکست* خورده؟ (حالتِ خطرناکِ بی‌صدا) */
+function limiterDegraded(env) {
+  return limiterIntended(env) !== 'mem' && LIVE_TS > 0 && !LIVE_OK;
 }
 const LIM_LABEL = {
   do: 'Durable Object — سراسری و دقیق',
@@ -619,11 +649,39 @@ function mirrorSet(uuid, ip, connId, now, ok) {
    را پیاده می‌کند.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-let LIVE_READY = false;
+/* ═══ سلامتِ واقعیِ مرجعِ محدودیت ═══
+   ⚠️ چرا این بلوک لازم شد — و چرا «محدودیت اعمال نمی‌شود» تا حالا حل نمی‌شد:
 
-/** ساخت/تعمیر جدول — idempotent؛ بارها قابل فراخوانی است */
+   `limiterBackend` فقط *وجودِ* بایندینگ را می‌دید، نه *کارکردنِ* آن. اگر
+   `env.DB` بایند بود ولی جدولِ `conns` ساخته نمی‌شد (DDL رد می‌شد، پایگاهِ
+   اشتباه بایند شده بود، سهمیه‌ی نوشتنِ D1 تمام بود، …)، مسیرِ D1 بی‌صدا کنار
+   گذاشته می‌شد و شمارش به حافظه‌ی همان isolate می‌افتاد — در حالی که `/health`
+   و پنل همچنان `d1` و «محدودیت اعمال می‌شود» نشان می‌دادند. یک ورکر روی
+   کلاودفلر روی صدها isolate اجرا می‌شود و دو دستگاه تقریباً همیشه به دو
+   isolate مختلف می‌افتند؛ پس هر isolate فقط ۱ آی‌پی می‌دید و
+   `ips.size >= limit` هرگز درست نمی‌شد → «هیچ بلاکی نمی‌شود».
+
+   الگوی درست (همان کاری که پنل نوا با نگه‌داشتنِ شمارنده داخلِ همان رکوردِ
+   کاربر در KV می‌کند): مرجعِ مشترک یا کار می‌کند، یا باید *صریح* گفته شود.
+   هرگز نباید بی‌صدا به حافظه بیفتد و ادعای جهانی بودن کند.
+
+   • `LIVE_OK`   → آخرین نتیجه‌ی آزمونِ واقعیِ D1
+   • `LIVE_TS`   → زمانِ آزمون؛ صفر یعنی «هنوز آزموده نشده» (پس به بایندینگ اعتماد می‌کنیم)
+   • `LIVE_ERR`  → متنِ خطا برای نمایش در پنل
+   • مهلتِ آزمون ۳۰ ثانیه است: DDL در *هر اتصال* اجرا نمی‌شود (قبلاً می‌شد و
+     خودش دو نوشتنِ اضافی در D1 به ازای هر اتصال بود).
+   (اعلانِ LIVE_OK/LIVE_TS/LIVE_ERR/LIVE_FAILS بالاتر، کنارِ limiterIntended،
+   آمده است.) */
+
+/** ساخت/آزمونِ جدول — نتیجه‌اش تا LIVE_PROBE_TTL کش می‌شود
+    ⚠️ آزمون شاملِ یک SELECTِ واقعی است: اجرای موفقِ DDL به‌تنهایی ثابت نمی‌کند
+    جدول قابلِ خواندن است. اگر فقط DDL را می‌سنجیدیم، «ساخته شد ولی خوانده
+    نمی‌شود» هم سالم گزارش می‌شد. */
 async function liveEnsure(env) {
-  if (!env || !env.DB) return false;
+  if (!env || !env.DB) { LIVE_OK = false; LIVE_ERR = 'بایندینگِ DB وجود ندارد'; return false; }
+  const now = Date.now();
+  const fresh = LIVE_TS > 0 && (now - LIVE_TS) < LIVE_PROBE_TTL;
+  if (fresh) return LIVE_OK;              /* نتیجه‌ی تازه — نه DDL، نه SELECT */
   try {
     await env.DB.prepare(`CREATE TABLE IF NOT EXISTS conns (
       conn_id TEXT PRIMARY KEY,
@@ -632,9 +690,15 @@ async function liveEnsure(env) {
       last_ts INTEGER NOT NULL
     )`).run();
     await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_conns_user ON conns(uuid, ip)').run();
-    LIVE_READY = true;
-    return true;
-  } catch (e) { connErr('D1-schema', e); return false; }
+    await env.DB.prepare('SELECT conn_id FROM conns LIMIT 1').all();
+    LIVE_OK = true; LIVE_ERR = null; LIVE_FAILS = 0;
+  } catch (e) {
+    LIVE_OK = false; LIVE_FAILS++;
+    LIVE_ERR = String((e && e.message) || e);
+    connErr('D1-schema', e);
+  }
+  LIVE_TS = now;
+  return LIVE_OK;
 }
 
 /** حذفِ اتصال‌های کهنه (بدون هیچ نشانه‌ی زندگی برای CONN_TTL)
@@ -1176,9 +1240,11 @@ async function connAcquireInner(env, uuid, ip, limit, connId) {
       const r = await limiterRpc(env, '/acquire', { uuid, ip, connId: id, limit, now });
       mirrorSet(uuid, ip, id, now, !!(r && r.ok));
       if (r && !r.ok) CONN_DENIES++;
+      LIMITER_DEGRADED = null;
       return Object.assign({}, r, { storage: 'do' });
     } catch (e) {
       /* خطای DO هرگز محدودیت را خاموش نمی‌کند — گزارش می‌شود و با حافظه ادامه می‌یابد */
+      LIMITER_DEGRADED = 'do';
       connErr('DO', e);
     }
   }
@@ -1189,11 +1255,17 @@ async function connAcquireInner(env, uuid, ip, limit, connId) {
       const r = await d1Acquire(env, uuid, ip, limit, id, now);
       if (r) {
         if (r.ok) mirrorAdd(uuid, ip, id, now); else { CONN_DENIES++; mirrorSet(uuid, ip, id, now, false); }
+        LIMITER_DEGRADED = null;
         return r;
       }
+      /* ⚠️ D1 بایند است ولی کار نمی‌کند. اینجا *صریح* علامت می‌زنیم؛ شمارش به
+         حافظه می‌افتد (که بین isolateها بی‌اعتبار است) و باید در پنل دیده شود.
+         قبلاً فقط یک رشته لاگ می‌شد و پنل همچنان «d1» نشان می‌داد. */
+      LIMITER_DEGRADED = 'd1';
       connErr('D1', 'جدول conns در دسترس نیست');
     } catch (e) {
       /* خطای D1 هرگز محدودیت را خاموش نمی‌کند — گزارش می‌شود و با حافظه ادامه می‌یابد */
+      LIMITER_DEGRADED = 'd1';
       connErr('D1', e);
     }
   }
@@ -5813,16 +5885,33 @@ async function apiHandler(req, env, url, ctx) {
     return json({ ok: true, token: await mkToken(st, env), expiresAt: Date.now() + 86400000, idleMin: s.auth.sessionMin });
   }
 
-  if (route === 'health') return json({
+  if (route === 'health') {
+    /* ⚠️ /health همان چیزی است که کاربر برای تشخیص باز می‌کند؛ پس باید
+       *واقعیت* را بگوید، نه بایندینگ را. این آزمون نتیجه‌اش ۳۰ ثانیه کش
+       می‌شود (liveEnsure)، پس هزینه‌اش برای مانیتورینگ ناچیز است. */
+    if (limiterIntended(env) === 'd1') await liveEnsure(env);
+    return json({
     ok: true, version: VERSION, build: BUILD,
     uptimeSec: Math.floor((Date.now() - BOOT) / 1000),
     storage: backendOf(env),
     /* ⚠️ مرجعِ شمارشِ محدودیت — 'mem' یعنی سقفِ آی‌پی بین isolateها اعمال
        نمی‌شود. این فیلد عمداً در /health هست تا بتوان بدون ورود هم فهمید
-       بایندینگ‌ها (LIMITER / DB / KV) درست تنظیم شده‌اند یا نه. */
+       بایندینگ‌ها (LIMITER / DB / KV) درست تنظیم شده‌اند یا نه.
+       ⚠️ `limiter` بک‌اندِ *کارکننده* است، نه بایندشده. اگر D1 بایند باشد ولی
+       آزمونِ واقعی شکست بخورد، `limiter` می‌شود 'mem' و
+       `limiterIntended` همچنان 'd1' می‌ماند — همین تفاوت، «بی‌صدا افتادن به
+       حافظه» را قابلِ دیدن می‌کند. */
     limiter: limiterBackend(env),
     limiterLabel: LIM_LABEL[limiterBackend(env)] || limiterBackend(env),
     limitEnforced: limiterBackend(env) !== 'mem',
+    /* ── تشخیصِ «چرا محدودیت اعمال نمی‌شود» ── */
+    limiterIntended: limiterIntended(env),
+    limiterVerified: LIVE_TS > 0 ? LIVE_OK : null,
+    limiterError: LIVE_ERR,
+    limiterFailures: LIVE_FAILS,
+    limiterDegraded: limiterDegraded(env) || !!LIMITER_DEGRADED,
+    lastLimitError: CONN_LAST_ERR,
+    counters: { acquires: CONN_ACQUIRES, denies: CONN_DENIES, evicts: CONN_EVICTS },
     users: st.users.length, panic: s.auth.panic,
     db: {
       writesToday: WRITE_COUNT.n,
@@ -5832,7 +5921,8 @@ async function apiHandler(req, env, url, ctx) {
       pending: !!DIRTY,
       lastWrite: LAST_WRITE ? Math.floor((Date.now() - LAST_WRITE) / 1000) + 's ago' : 'never',
     },
-  });
+    });
+  }
 
   if (route === 'state' && m === 'GET') {
     if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
@@ -5865,7 +5955,7 @@ async function apiHandler(req, env, url, ctx) {
       if (row.day === todayKey) { tUp += row.dayUp || 0; tDown += row.dayDown || 0; tReqs += row.dayReqs || 0; }
     });
     const series = buildChartSeries(await usageHistory(env), { day: todayKey, up: tUp, down: tDown, reqs: tReqs });
-    return json({ ...st, stats: { ...st.stats, ...series }, storage: backendOf(env), limiter: limiterBackend(env), limiterLabel: LIM_LABEL[limiterBackend(env)] || limiterBackend(env), limitEnforced: limiterBackend(env) !== 'mem', version: VERSION, build: BUILD, boot: BOOT, settings: { ...st.settings, auth: { ...st.settings.auth, password: undefined, totpSecret: st.settings.auth.totpSecret ? '•••••' : '' } } });
+    return json({ ...st, stats: { ...st.stats, ...series }, storage: backendOf(env), limiter: limiterBackend(env), limiterLabel: LIM_LABEL[limiterBackend(env)] || limiterBackend(env), limitEnforced: limiterBackend(env) !== 'mem', limiterIntended: limiterIntended(env), limiterVerified: LIVE_TS > 0 ? LIVE_OK : null, limiterError: LIVE_ERR, limiterDegraded: limiterDegraded(env) || !!LIMITER_DEGRADED, lastLimitError: CONN_LAST_ERR, connCounters: { acquires: CONN_ACQUIRES, denies: CONN_DENIES, evicts: CONN_EVICTS }, version: VERSION, build: BUILD, boot: BOOT, settings: { ...st.settings, auth: { ...st.settings.auth, password: undefined, totpSecret: st.settings.auth.totpSecret ? '•••••' : '' } } });
   }
 
   if (route === 'settings' && (m === 'PUT' || m === 'POST')) {
@@ -6617,8 +6707,14 @@ async function apiHandler(req, env, url, ctx) {
          خوانا؟، ستون conns وجود دارد؟، افزایش واقعاً ثبت می‌شود؟،
          محدودیت IP واقعاً اتصال سوم را رد می‌کند؟، مصرف هر کاربر چقدر است؟ */
       const kind = backendOf(env);
+      /* ⚠️ پیش از هر گزارشی، مرجعِ محدودیت را *واقعاً* بیازما. بدون این،
+         نخستین اجرا نتیجهٔ کهنه می‌دهد: `limiterBackend` پیش از نخستین آزمون
+         به بایندینگ اعتماد می‌کند و 'd1' برمی‌گرداند — یعنی همان سبزِ کاذبی که
+         کاربر را گمراه می‌کرد. `liveEnsure` نتیجه را ۳۰ ثانیه کش می‌کند، پس
+         این آزمون در هر کلیک هزینه‌ی D1 ندارد. */
+      if (limiterIntended(env) === 'd1') await liveEnsure(env);
       const lim = limiterBackend(env);
-      const out = { ok: true, storage: kind, limiter: lim, limiterLabel: LIM_LABEL[lim] || lim, db: { bound: !!env.DB, kv: !!env.KV, do: !!env.LIMITER, storage: kind }, checks: [], users: [] };
+      const out = { ok: true, storage: kind, limiter: lim, limiterLabel: LIM_LABEL[lim] || lim, limitEnforced: lim !== 'mem', limiterIntended: limiterIntended(env), limiterVerified: LIVE_TS > 0 ? LIVE_OK : null, limiterError: LIVE_ERR, limiterFailures: LIVE_FAILS, limiterDegraded: limiterDegraded(env) || !!LIMITER_DEGRADED, lastLimitError: CONN_LAST_ERR, db: { bound: !!env.DB, kv: !!env.KV, do: !!env.LIMITER, storage: kind }, checks: [], users: [] };
       const chk = (name, ok, note) => { out.checks.push({ name, ok: !!ok, note: String(note || '') }); if (!ok) out.ok = false; };
 
       /* ۰) مرجعِ مشترکِ محدودیت — علتِ شماره‌ی یکِ «محدودیت کار نمی‌کند».
@@ -6627,8 +6723,22 @@ async function apiHandler(req, env, url, ctx) {
          محدودیت دقیق کار می‌کرد. کامیتِ 360e05c فایل را حذف کرد و پروژه به
          استقرارِ «پیست در داشبورد» رفت؛ بایندینگ‌ها ناپدید شدند و محدودیت
          بی‌صدا — بدون هیچ خطایی — به حافظه‌ی هر isolate افتاد. پس این بررسی
-         اول از همه می‌آید: اگر mem باشد، هیچ‌چیزِ دیگری مهم نیست. */
-      if (lim === 'mem') chk('مرجعِ مشترکِ محدودیت (LIMITER / DB / KV)', false,
+         اول از همه می‌آید: اگر mem باشد، هیچ‌چیزِ دیگری مهم نیست.
+
+         ⚠️⚠️ و یک درسِ دوم که دیرتر گرفته شد: *بایند بودن* با *کار کردن*
+         یکی نیست. اگر DB بایند باشد ولی جدولِ conns ساخته/خوانده نشود،
+         مسیرِ D1 شکست می‌خورد و شمارش بی‌صدا به حافظه می‌افتد — در حالی که
+         `limiter` همچنان 'd1' گزارش می‌شد و کاربر فکر می‌کرد همه‌چیز درست
+         است. حالا `limiter` بک‌اندِ کارکننده است و این حالت جداگانه و
+         *شکست‌خور* گزارش می‌شود. */
+      const intended = limiterIntended(env);
+      if (limiterDegraded(env)) chk('مرجعِ مشترکِ محدودیت (LIMITER / DB / KV)', false,
+        '⚠️ بایندینگ «' + intended + '» وجود دارد ولی در عمل کار نمی‌کند — پس شمارش بی‌صدا به حافظه‌ی همین isolate افتاده و ' +
+        'سقفِ آی‌پی بین isolateها اعمال نمی‌شود (دو دستگاه به دو isolate می‌افتند و هر کدام فقط ۱ آی‌پی می‌بیند). ' +
+        'خطا: ' + (LIVE_ERR || 'نامشخص') + ' • ' + LIVE_FAILS + ' بار پشت‌سرهم. ' +
+        'راه‌حل: بایندینگِ DB را بازبینی کنید (Settings → Bindings → D1 با Variable name برابر DB) و مطمئن شوید پایگاه‌داده ' +
+        'درست انتخاب شده است؛ جدولِ conns باید خودکار ساخته شود. /health هم فیلدهای limiterVerified و limiterError را نشان می‌دهد.');
+      else if (lim === 'mem') chk('مرجعِ مشترکِ محدودیت (LIMITER / DB / KV)', false,
         'هیچ‌کدام از LIMITER (شیءِ ماندگار)، DB (D1) و KV بایند نیستند — پس هر isolate حافظهٔ خودش را می‌شمارد و ' +
         'سقفِ آی‌پی عملاً اعمال نمی‌شود (اتصالِ سوم به isolate تازه می‌افتد و از صفر شمرده می‌شود). ' +
         'راه‌حل: Settings → Bindings → Add → D1 database با Variable name برابر DB ' +
@@ -6637,7 +6747,7 @@ async function apiHandler(req, env, url, ctx) {
         'KV بایند شده — شمارش بین isolateها مشترک است اما با تأخیر (تقریبی). برای دقتِ کامل یک D1 با نام DB ببندید.');
       else chk('مرجعِ مشترکِ محدودیت (LIMITER / DB / KV)', true,
         lim === 'do' ? 'Durable Object — یک نمونهٔ سراسری؛ شمارش بین همهٔ isolateها دقیق ✓'
-          : 'D1 — همهٔ isolateها یک پایگاه‌داده را می‌بینند، پس شمارش سراسری و دقیق ✓ (جدول conns)');
+          : 'D1 — همهٔ isolateها یک پایگاه‌داده را می‌بینند، پس شمارش سراسری و دقیق ✓ (جدول conns؛ آزمونِ واقعی خواندن هم موفق بود)');
 
       /* ۱) بایندینگ ذخیره‌سازی — علتِ شماره‌ی یکِ «شمارش کار نمی‌کند» */
       if (kind === 'd1') chk('اتصال D1 (env.DB)', true, 'بایند شده — افزایش اتمیک واقعی ✓');

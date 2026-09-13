@@ -2329,6 +2329,34 @@
   }
   function limiterBanner() {
     if (limiterOf() !== 'mem') return '';
+    /* ⚠️ دو حالتِ کاملاً متفاوت که قبلاً یکی دیده می‌شدند:
+       (الف) هیچ بایندینگی نیست → باید بایند کنید.
+       (ب) بایندینگ هست ولی در عمل کار نمی‌کند (`limiterDegraded`) → شمارش
+           بی‌صدا به حافظه‌ی همین isolate افتاده. این حالتِ خطرناک‌تر است چون
+           پنل قبلاً سبز نشان می‌داد و کاربر فکر می‌کرد همه‌چیز درست است. */
+    const d = (S.d && S.d.settings) ? S.d : {};
+    const degraded = !!d.limiterDegraded;
+    const intended = d.limiterIntended || '';
+    const err = d.limiterError ? String(d.limiterError) : '';
+    if (degraded) {
+      return '<div class="card" style="border-color:var(--bad);margin-bottom:12px">' +
+        '<div class="bd" style="display:flex;gap:10px;align-items:flex-start">' +
+        '<span class="ic bad" style="flex:none">' + icon('fa-triangle-exclamation') + '</span>' +
+        '<div><b style="color:var(--bad)">بایندینگِ «' + esc(intended || 'مرجع') + '» هست ولی کار نمی‌کند — محدودیت آی‌پی اعمال نمی‌شود</b>' +
+        '<div class="hint" style="margin-top:6px">' +
+        'وجودِ بایندینگ کافی نیست: آزمونِ واقعیِ خواندن/نوشتنِ جدولِ ' +
+        '<span class="mono">conns</span> شکست خورد، پس شمارش بی‌صدا به حافظه‌ی ' +
+        '<b>همین isolate</b> افتاده است. روی کلاودفلر دو دستگاه تقریباً همیشه به دو ' +
+        'isolate مختلف می‌افتند، هر کدام فقط ۱ آی‌پی می‌بیند و سقف هرگز پر نمی‌شود — ' +
+        'یعنی «هیچ بلاکی نمی‌شود» بدونِ هیچ خطای دیده‌شدنی.' +
+        (err ? '<br><b>خطای واقعی:</b> <span class="mono">' + esc(err.slice(0, 220)) + '</span>' : '') +
+        '<br><b>رفع:</b> Settings → Bindings → <b>D1 database</b> با Variable name برابر ' +
+        '<span class="mono">DB</span> را بازبینی کنید و مطمئن شوید <b>پایگاه‌داده‌ی درست</b> ' +
+        'انتخاب شده است (جدولِ <span class="mono">conns</span> باید خودکار ساخته شود). ' +
+        'وضعیتِ کامل: <span class="mono">/health</span> (فیلدهای <span class="mono">limiterVerified</span> و ' +
+        '<span class="mono">limiterError</span>).</div>' +
+        '</div></div></div>';
+    }
     return '<div class="card" style="border-color:var(--bad);margin-bottom:12px">' +
       '<div class="bd" style="display:flex;gap:10px;align-items:flex-start">' +
       '<span class="ic bad" style="flex:none">' + icon('fa-triangle-exclamation') + '</span>' +
