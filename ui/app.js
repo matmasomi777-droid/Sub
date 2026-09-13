@@ -833,7 +833,7 @@
         { p: 'auth.pathRotate', l: 'چرخش خودکار مسیر', t: 'sw' },
         { p: 'auth.panic', l: 'Panic mode', t: 'sw', bad: 1, h: 'پنل و لینک ساب (صفحه‌ی کاربر) هم پشتِ سایت پوششی پنهان می‌شوند. /health و /api باز می‌مانند تا بتوانید آن را دوباره خاموش کنید' },
         { p: 'sec.killSwitch', l: 'Kill Switch', t: 'sw', bad: 1 },
-        { p: 'sec.ipConnLimit', l: 'سقف IP همزمان هر کاربر (پیش‌فرض سراسری)', t: 'num', h: '۰ = نامحدود • بیشینه‌ی تعداد IPهایی که همزمان می‌توانند با یک حساب وصل شوند (مدل Nova-Proxy). مقدار هر کاربر بر این اولویت دارد' },
+        { p: 'sec.ipConnLimit', l: 'سقف IP همزمان هر کاربر (پیش‌فرض سراسری)', t: 'num', h: '۰ = نامحدود • بیشینه‌ی تعداد IPهایی که همزمان می‌توانند با یک حساب وصل شوند (مدل Nova-Proxy). مقدار هر کاربر بر این اولویت دارد. اتصالِ باز ولی بی‌ترافیک هم سهمیه‌اش را نگه می‌دارد (سهمیه فقط با بسته شدنِ اتصال آزاد می‌شود).' },
         { p: 'sec.speedTestUrl', l: 'نشانی فایل تست ترافیک', t: 'text', h: 'پیش‌فرض: speed.cloudflare.com/__down • باید یک نشانی «خارجی» باشد (ورکر نمی‌تواند خودش را صدا بزند)' },
         { p: 'sec.cors', l: 'هدرهای CORS', t: 'sw' },
         { p: 'sec.csp', l: 'Security headers (CSP/XFO/nosniff)', t: 'sw' },
@@ -870,7 +870,7 @@
     { p: 'dailyQuotaMB', l: 'سهمیه روزانه (MB)', t: 'num' },
     { p: 'expiryDays', l: 'انقضا (روز از امروز) — ۰ = نامحدود', t: 'num' },
     /* ⚠️ محدودیت دستگاهی (deviceLimit) کاملاً حذف شد — فقط IP واقعی کلاینت */
-    { p: 'ipLimit', l: 'سقف IP همزمان', t: 'num', h: '۰ = پیش‌فرض سراسری • بیشینه‌ی تعداد IPهای همزمان این کاربر (اتصال‌های بیشتر از همان IP مجاز است)' },
+    { p: 'ipLimit', l: 'سقف IP همزمان', t: 'num', h: '۰ = پیش‌فرض سراسری • بیشینه‌ی تعداد IPهای همزمان این کاربر (اتصال‌های بیشتر از همان IP مجاز است). اتصالِ باز ولی بی‌ترافیک هم شمرده می‌شود؛ IPv6 روی پیشوندِ /64 یک نقطه‌ی اتصال حساب می‌شود (معادلِ NAT برای IPv4)' },
     { p: 'maxConfigs', l: 'سقف کانفیگ', t: 'num' },
     { p: 'speedLimit', l: 'Speed limit (Mbps)', t: 'num' },
     { p: 'mode', l: 'حالت اختصاصی', t: 'sel', o: ['inherit', 'alpha', 'beta', 'both'], lbls: { inherit: 'از تنظیمات عمومی', alpha: 'Alpha — VLESS', beta: 'Beta — Trojan', both: 'Both' } },
@@ -3551,7 +3551,7 @@
           '<select data-ua="dailyQuotaUnit"><option value="MB" selected>مگابایت (MB)</option><option value="GB">گیگابایت (GB)</option></select>' +
           '</div>' +
           '<div class="hint" style="margin-top:5px">۰ = بدون سقف</div></div>',
-        { p: 'ipLimit', l: 'سقف IP همزمان', t: 'num', h: '۰ = پیش‌فرض سراسری • بیشینه‌ی IPهای همزمان' },
+        { p: 'ipLimit', l: 'سقف IP همزمان', t: 'num', h: '۰ = پیش‌فرض سراسری • بیشینه‌ی IPهای همزمان (اتصالِ بازِ بی‌ترافیک هم شمرده می‌شود)' },
         { p: 'maxConfigs', l: 'سقف کانفیگ', t: 'num', h: '۰ = پیش‌فرض' },
         { p: 'speedLimit', l: 'سقف سرعت (Mbps)', t: 'num', h: '۰ = نامحدود' },
       ], 'three') +
