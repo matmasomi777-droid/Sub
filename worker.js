@@ -5789,7 +5789,13 @@ async function statusPage(env, name, url) {
 /* ════════════════════════════ API ════════════════════════════ */
 async function apiHandler(req, env, url, ctx) {
   const st = seed(await load(env));
-  const s = st.settings, route = url.pathname.replace(/^\/api\/?/, ''), m = req.method.toUpperCase();
+  /* ⚠️ مسیرِ سلامت دو شکلِ مستندشده دارد: /api/health (استاندارد) و /health
+     (که روترِ اصلی در `isHealth` صریحاً آزاد می‌گذارد و README هم همان را
+     برای مانیتورینگ معرفی می‌کند). پارسرِ قبلی فقط پیشوندِ /api را می‌بُرید،
+     پس /health به '/health' تبدیل می‌شد، با هیچ شرطی جور در نمی‌آمد و 404
+     می‌داد — یعنی همان مانیتورینگِ مستندشده از ابتدا خراب بود. حالا هر
+     اسلشِ ابتداییِ باقی‌مانده هم حذف می‌شود. */
+  const s = st.settings, route = url.pathname.replace(/^\/api\/?/, '').replace(/^\/+/, ''), m = req.method.toUpperCase();
 
   if (route === 'login' && m === 'POST') {
     const ip = ipOf(req);
@@ -5811,10 +5817,18 @@ async function apiHandler(req, env, url, ctx) {
     ok: true, version: VERSION, build: BUILD,
     uptimeSec: Math.floor((Date.now() - BOOT) / 1000),
     storage: backendOf(env),
+    /* ⚠️ مرجعِ شمارشِ محدودیت — 'mem' یعنی سقفِ آی‌پی بین isolateها اعمال
+       نمی‌شود. این فیلد عمداً در /health هست تا بتوان بدون ورود هم فهمید
+       بایندینگ‌ها (LIMITER / DB / KV) درست تنظیم شده‌اند یا نه. */
+    limiter: limiterBackend(env),
+    limiterLabel: LIM_LABEL[limiterBackend(env)] || limiterBackend(env),
+    limitEnforced: limiterBackend(env) !== 'mem',
     users: st.users.length, panic: s.auth.panic,
     db: {
       writesToday: WRITE_COUNT.n,
       bound: !!env.DB,
+      kv: !!env.KV,
+      do: !!env.LIMITER,
       pending: !!DIRTY,
       lastWrite: LAST_WRITE ? Math.floor((Date.now() - LAST_WRITE) / 1000) + 's ago' : 'never',
     },
@@ -5851,7 +5865,7 @@ async function apiHandler(req, env, url, ctx) {
       if (row.day === todayKey) { tUp += row.dayUp || 0; tDown += row.dayDown || 0; tReqs += row.dayReqs || 0; }
     });
     const series = buildChartSeries(await usageHistory(env), { day: todayKey, up: tUp, down: tDown, reqs: tReqs });
-    return json({ ...st, stats: { ...st.stats, ...series }, storage: backendOf(env), version: VERSION, build: BUILD, boot: BOOT, settings: { ...st.settings, auth: { ...st.settings.auth, password: undefined, totpSecret: st.settings.auth.totpSecret ? '•••••' : '' } } });
+    return json({ ...st, stats: { ...st.stats, ...series }, storage: backendOf(env), limiter: limiterBackend(env), limiterLabel: LIM_LABEL[limiterBackend(env)] || limiterBackend(env), limitEnforced: limiterBackend(env) !== 'mem', version: VERSION, build: BUILD, boot: BOOT, settings: { ...st.settings, auth: { ...st.settings.auth, password: undefined, totpSecret: st.settings.auth.totpSecret ? '•••••' : '' } } });
   }
 
   if (route === 'settings' && (m === 'PUT' || m === 'POST')) {
@@ -6607,6 +6621,24 @@ async function apiHandler(req, env, url, ctx) {
       const out = { ok: true, storage: kind, limiter: lim, limiterLabel: LIM_LABEL[lim] || lim, db: { bound: !!env.DB, kv: !!env.KV, do: !!env.LIMITER, storage: kind }, checks: [], users: [] };
       const chk = (name, ok, note) => { out.checks.push({ name, ok: !!ok, note: String(note || '') }); if (!ok) out.ok = false; };
 
+      /* ۰) مرجعِ مشترکِ محدودیت — علتِ شماره‌ی یکِ «محدودیت کار نمی‌کند».
+         ⚠️ درسِ گرفته‌شده از تاریخِ پروژه: تا وقتی wrangler.toml وجود داشت،
+         بایندینگ‌های LIMITER (شیءِ ماندگار) و DB (D1) خودکار ساخته می‌شدند و
+         محدودیت دقیق کار می‌کرد. کامیتِ 360e05c فایل را حذف کرد و پروژه به
+         استقرارِ «پیست در داشبورد» رفت؛ بایندینگ‌ها ناپدید شدند و محدودیت
+         بی‌صدا — بدون هیچ خطایی — به حافظه‌ی هر isolate افتاد. پس این بررسی
+         اول از همه می‌آید: اگر mem باشد، هیچ‌چیزِ دیگری مهم نیست. */
+      if (lim === 'mem') chk('مرجعِ مشترکِ محدودیت (LIMITER / DB / KV)', false,
+        'هیچ‌کدام از LIMITER (شیءِ ماندگار)، DB (D1) و KV بایند نیستند — پس هر isolate حافظهٔ خودش را می‌شمارد و ' +
+        'سقفِ آی‌پی عملاً اعمال نمی‌شود (اتصالِ سوم به isolate تازه می‌افتد و از صفر شمرده می‌شود). ' +
+        'راه‌حل: Settings → Bindings → Add → D1 database با Variable name برابر DB ' +
+        '(یا Durable Object namespace با نام LIMITER و کلاس ConnLimiter). جزئیات در wrangler.toml و README.');
+      else if (lim === 'kv') chk('مرجعِ مشترکِ محدودیت (LIMITER / DB / KV)', true,
+        'KV بایند شده — شمارش بین isolateها مشترک است اما با تأخیر (تقریبی). برای دقتِ کامل یک D1 با نام DB ببندید.');
+      else chk('مرجعِ مشترکِ محدودیت (LIMITER / DB / KV)', true,
+        lim === 'do' ? 'Durable Object — یک نمونهٔ سراسری؛ شمارش بین همهٔ isolateها دقیق ✓'
+          : 'D1 — همهٔ isolateها یک پایگاه‌داده را می‌بینند، پس شمارش سراسری و دقیق ✓ (جدول conns)');
+
       /* ۱) بایندینگ ذخیره‌سازی — علتِ شماره‌ی یکِ «شمارش کار نمی‌کند» */
       if (kind === 'd1') chk('اتصال D1 (env.DB)', true, 'بایند شده — افزایش اتمیک واقعی ✓');
       else if (kind === 'kv') chk('بایندینگ ذخیره‌سازی', true, 'D1 ندارید و مصرف در KV ذخیره می‌شود (ماندگار، تقریبی در اوج ترافیک). برای دقت کامل یک پایگاه D1 بسازید و binding آن را DB بگذارید.');
@@ -6764,13 +6796,8 @@ async function apiHandler(req, env, url, ctx) {
         chk('تست زنده‌ی محدودیت (سقف ۲ IP)', okTwo,
           'IP اول: ' + yn(s2a, true) + ' • IP دوم: ' + yn(s2b, true) +
           ' • IP سوم: ' + yn(s2c, false) + ' • بعد از آزادسازی: ' + yn(s2d, true));
-        /* بک‌اندِ محدودیت — باید صریح باشد: حافظه بین isolateها مشترک نیست */
-        chk('مرجعِ شمارشِ محدودیت اتصال', lim === 'do' || lim === 'd1',
-          lim === 'do' ? 'Durable Object — یک نمونه‌ی سراسری؛ شمارش بین همه‌ی isolateها دقیق ✓'
-            : lim === 'd1' ? 'D1 — همه‌ی isolateها یک پایگاه‌داده را می‌بینند، پس شمارش سراسری و دقیق ✓ (جدول conns)'
-            : lim === 'kv' ? 'KV بایند شده — شمارش بین isolateها مشترک است اما با تأخیر (تقریبی). برای دقت کامل یک پایگاه D1 با نام DB ببندید.'
-            : 'هیچ مرجعِ مشترکی نیست (نه D1، نه KV، نه LIMITER): هر isolate حافظه‌ی خودش را می‌شمارد، پس اتصالِ اضافه در isolate دیگر از صفر شمرده می‌شود و محدودیت عملاً اعمال نمی‌شود. در Settings → Variables یک پایگاه D1 با نام DB ببندید.'
-        );
+        /* ⚠️ چکِ «مرجعِ مشترکِ محدودیت» بالاتر (چکِ ۰) همین موضوع را می‌سنجد؛
+           اینجا تکرار نمی‌شود تا کارت دو خطِ قرمزِ مشابه نداشته باشد. */
         chk('آمارِ محدودیت اتصال', true,
           fa(CONN_ACQUIRES) + ' درخواست پذیرش • ' + fa(CONN_DENIES) + ' رد شده • ' +
           fa(CONN_EVICTS) + ' آی‌پیِ کهنه بیرون رانده شد' +

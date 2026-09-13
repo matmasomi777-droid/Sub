@@ -115,9 +115,20 @@
     return head +
       '<div style="margin-bottom:10px">' + limBadge + '</div>' +
       diagHtml +
-      (lim !== 'do' && lim !== 'd1'
-        ? '<div class="hint" style="margin-bottom:10px">هیچ مرجعِ مشترکی بین isolateها ندارید: هر isolate شمارنده‌ی خودش را دارد و محدودیت عملاً اعمال نمی‌شود. در Settings → Variables یک پایگاه D1 با نام <span class="mono">DB</span> ببندید (در داشبورد کلاودفلر هم می‌توان ساخت).</div>'
-        : '') +
+      /* ⚠️ شرط قبلاً «lim !== 'do' && lim !== 'd1'» بود که KV را هم شامل
+         می‌شد؛ ولی KV یک مرجعِ مشترک است (فقط تقریبی)، پس هشدارِ «اعمال
+         نمی‌شود» برایش نادرست بود. فقط 'mem' یعنی واقعاً بی‌اثر. */
+      (lim === 'mem'
+        ? '<div class="card" style="border-color:var(--bad);margin-bottom:10px"><div class="bd" style="display:flex;gap:10px;align-items:flex-start">' +
+          '<span class="ic bad" style="flex:none">' + icon('fa-triangle-exclamation') + '</span>' +
+          '<div><b style="color:var(--bad)">محدودیت آی‌پی اعمال نمی‌شود</b>' +
+          '<div class="hint" style="margin-top:6px">هیچ مرجعِ مشترکی بین isolateها بایند نیست: هر isolate شمارنده‌ی خودش را دارد، ' +
+          'پس اتصالِ سوم به isolate تازه می‌افتد و از صفر شمرده می‌شود. ' +
+          'رفع: Settings → Bindings → Add → <b>D1 database</b> با Variable name برابر <span class="mono">DB</span> ' +
+          '(یا <b>Durable Object namespace</b> با نام <span class="mono">LIMITER</span>).</div></div></div></div>'
+        : lim === 'kv'
+          ? '<div class="hint" style="margin-bottom:10px">مرجعِ شما <b>KV</b> است: بین isolateها مشترک ولی eventually-consistent — زیرِ بارِ سنگین ممکن است سقف با تأخیر اعمال شود. برای دقتِ کامل یک D1 با نام <span class="mono">DB</span> ببندید.</div>'
+          : '') +
       (r.checks || []).map((c) => '<div class="kv"><span>' + icon(c.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' ' + esc(c.name) + '</span><b class="mono" style="color:' + (c.ok ? 'var(--ok)' : 'var(--bad)') + '">' + esc(c.note || '') + '</b></div>').join('') +
       /* ═══ اتصال‌های زنده — اگر چیزی گیر کرده باشد اینجا دیده می‌شود ═══ */
       '<div class="hint" style="margin-top:12px"><b>اتصال‌های زنده (مبنای محدودیت آی‌پی):</b> ' +
@@ -1486,23 +1497,33 @@
      قطعیِ ناگهانی سقفِ سختِ ۳ ثانیه در خودِ ورکر ثابت است (قابل تنظیم نیست). */
   function securityView() {
     const s = S.d.settings;
-    const store = S.d.storage || 'mem';
+    /* ⚠️ قبلاً از S.d.storage استفاده می‌شد که هرگز 'do' برنمی‌گرداند
+       (backendOf فقط d1/kv/mem می‌دهد). پس اگر فقط شیءِ ماندگار بایند بود،
+       برچسبِ قرمزِ «حافظه» نشان داده می‌شد در حالی که محدودیت دقیق کار می‌کرد —
+       یک هشدارِ کاذب. حالا از همان مرجعِ واقعیِ محدودیت می‌آید. */
+    const lim = limiterOf() || 'mem';
     const storeBadge =
-      store === 'd1' ? '<span class="badge ok">' + icon('fa-database') + ' مرجع محدودیت: D1 — سراسری و دقیق ✓</span>'
-        : store === 'kv' ? '<span class="badge warn">' + icon('fa-database') + ' مرجع محدودیت: KV — مشترک اما تقریبی</span>'
-          : store === 'do' ? '<span class="badge ok">' + icon('fa-server') + ' مرجع محدودیت: Durable Object — سراسری و دقیق ✓</span>'
+      lim === 'do' ? '<span class="badge ok">' + icon('fa-server') + ' مرجع محدودیت: Durable Object — سراسری و دقیق ✓</span>'
+        : lim === 'd1' ? '<span class="badge ok">' + icon('fa-database') + ' مرجع محدودیت: D1 — سراسری و دقیق ✓</span>'
+          : lim === 'kv' ? '<span class="badge warn">' + icon('fa-database') + ' مرجع محدودیت: KV — مشترک اما تقریبی</span>'
             : '<span class="badge bad">' + icon('fa-triangle-exclamation') + ' مرجع محدودیت: حافظه — فقط همین isolate؛ بین isolateها تضمین نمی‌شود</span>';
     return '<div class="page-head"><div><h1>امنیت و محدودیت اتصال</h1><p>سقف آی‌پی همزمان، آزادسازیِ آنی و تنظیمات امنیتی</p></div></div>' +
       '<div class="card" style="margin-bottom:12px"><header><span class="ic">' + icon('fa-shield-halved') + '</span>' +
       '<div><h3>محدودیت اتصال (فقط بر اساس آی‌پی)</h3><p>مدل Nova-Proxy — سقف برابر تعداد آی‌پی‌های همزمانِ هر کاربر</p></div>' +
       '<div class="acts">' + saveBtn('save-security') + '</div></header><div class="bd">' +
       '<div style="margin-bottom:10px">' + storeBadge + '</div>' +
-      '<div class="hint" style="margin-bottom:12px">آزادسازی آی‌پی: <b>آنی</b> هنگام قطع شدن؛ حداکثر <b>۳</b> ثانیه برای قطعیِ ناگهانی • ' +
+      '<div class="hint" style="margin-bottom:12px">آزادسازی آی‌پی: <b>آنی</b> هنگام قطع شدن؛ ' +
+      'برای قطعیِ بی‌خبر نهایتاً <b>' + fa(Number((UH.last && UH.last.diag && UH.last.diag.releaseSec)) || 90) + '</b> ثانیه • ' +
       'سقف سراسری: <b>' + fa(Number(s.sec.ipConnLimit) || 0) + '</b> (۰ = نامحدود)</div>' +
       SCHEMA.security.map((g) => acc(g.t, g.icon || 'fa-gear', g.f, s, g.two ? 'two' : 'two')).join('') +
       '<div class="hint" style="margin-top:12px">زمانِ آزادسازی دیگر قابل تنظیم نیست: ردیفِ اتصال همان لحظه‌ی قطع شدن (بستن، خطا، ' +
-      'انصراف، لغو) پاک می‌شود و اگر قطعی ناگهانی باشد نهایتاً ۳ ثانیه بعد در اولین درخواستِ جدید جایگزین می‌شود. ' +
-      'اتصالی که واقعاً ترافیک دارد با هر بایت تمدید می‌شود (حداکثر یک بار در ثانیه)، پس هیچ‌وقت اشتباهاً آزاد نمی‌شود.</div>' +
+      'انصراف، لغو) پاک می‌شود و اگر قطعیِ بی‌خبر باشد (kill شدنِ isolate، قطعِ ناگهانیِ موبایل) نهایتاً ' +
+      '<b>' + fa(Number((UH.last && UH.last.diag && UH.last.diag.releaseSec)) || 90) + '</b> ثانیه بعد در اولین درخواستِ جدید جایگزین می‌شود. ' +
+      '⚠️ اتصالِ باز ولی <b>بی‌ترافیک</b> (گوشی با صفحه‌ی خاموش) با ضربانِ هر ' +
+      '<b>' + fa(Number((UH.last && UH.last.diag && UH.last.diag.keepAliveSec)) || 45) + '</b> ثانیه سهمیه‌اش را نگه می‌دارد، ' +
+      'و اتصالِ فعال با هر بایت تمدید می‌شود (حداکثر یک بار در ' +
+      '<b>' + fa(Number((UH.last && UH.last.diag && UH.last.diag.activitySec)) || 30) + '</b> ثانیه) — پس هیچ‌وقت اشتباهاً آزاد نمی‌شود. ' +
+      'عددها را در «سلامت ورکر» بزنید تا مقادیرِ واقعیِ همین استقرار نمایش داده شود.</div>' +
       '</div></div>' +
       secExtra();
   }
@@ -2292,6 +2313,35 @@
   }
 
   /* ─────────── پوسته ─────────── */
+  /* ═══════ هشدارِ سراسریِ «محدودیت اعمال نمی‌شود» ═══════
+     چرا این بنر لازم است؟ چون وقتی هیچ مرجعِ مشترکی بایند نباشد، هیچ خطایی
+     رخ نمی‌دهد، پنل سالم به نظر می‌رسد و همه‌ی کارت‌ها سبزند — ولی سقفِ آی‌پی
+     عملاً بی‌اثر است. همین «سکوت» باعث شد باگ مدت‌ها پنهان بماند (حذف
+     wrangler.toml در کامیتِ 360e05c بایندینگ‌های LIMITER و DB را ناپدید کرد).
+     پس این بنر بالای همه‌ی نماها می‌آید و تا رفع نشود نمی‌رود.
+     مرجعِ تشخیص: فیلدِ `limiter` در پاسخِ /api/state؛ برای سازگاری با
+     UI‌های قدیمی، از `storage === 'mem'` هم به‌عنوان نشانه استفاده می‌شود. */
+  function limiterOf() {
+    const d = S.d || {};
+    if (d.limiter) return d.limiter;
+    if (d.limitEnforced === false) return 'mem';
+    return d.storage === 'mem' ? 'mem' : '';
+  }
+  function limiterBanner() {
+    if (limiterOf() !== 'mem') return '';
+    return '<div class="card" style="border-color:var(--bad);margin-bottom:12px">' +
+      '<div class="bd" style="display:flex;gap:10px;align-items:flex-start">' +
+      '<span class="ic bad" style="flex:none">' + icon('fa-triangle-exclamation') + '</span>' +
+      '<div><b style="color:var(--bad)">محدودیت آی‌پی اعمال نمی‌شود</b>' +
+      '<div class="hint" style="margin-top:6px">' +
+      'هیچ مرجعِ مشترکی بین isolateها بایند نیست (نه <span class="mono">LIMITER</span>، ' +
+      'نه <span class="mono">DB</span>، نه <span class="mono">KV</span>)، پس هر isolate اتصال‌ها را ' +
+      'جداگانه می‌شمارد و سقف عملاً بی‌اثر است — بدون هیچ خطایی.<br>' +
+      '<b>رفع:</b> Settings → Bindings → Add → <b>D1 database</b> با Variable name برابر ' +
+      '<span class="mono">DB</span> (یا <b>Durable Object namespace</b> با نام <span class="mono">LIMITER</span> و کلاس ' +
+      '<span class="mono">ConnLimiter</span>). راهنمای کامل در <span class="mono">wrangler.toml</span> و README.</div>' +
+      '</div></div></div>';
+  }
   function render() {
     const nav = $('#nav');
     if (!S.token || !S.d) {
@@ -2321,7 +2371,7 @@
       '<button class="nav-item ' + (S.view === id ? 'on' : '') + '" data-act="nav" data-view="' + id + '">' + icon(ic) + '<span>' + l + '</span>' +
       (id === 'users' ? '<span class="cnt">' + fa(d.users.length) + '</span>' : '') +
       (id === 'logs' ? '<span class="cnt">' + fa((d.logs || []).length) + '</span>' : '') + '</button>').join('') + '</div>').join('');
-    $('#view').innerHTML = '<div class="fade">' + (VIEWS[S.view] || dashView)() + '</div>';
+    $('#view').innerHTML = '<div class="fade">' + limiterBanner() + (VIEWS[S.view] || dashView)() + '</div>';
     if (S.view === 'sub') setTimeout(refreshPreview, 30);
     /* اتصال‌های زنده: داده‌ی قبلی همان لحظه رندر می‌شود و بارخوانی فقط همان
        دو بلوک را به‌روز می‌کند — جدول هیچ وقت خالی نمی‌شود. */
