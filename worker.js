@@ -7792,7 +7792,10 @@ function exitIssues(x) {
     if (!x.sni) e.push('برای reality باید SNI (دامنه‌ی استتار) مشخص باشد — همان sni لینک');
     if (!realityPbkOk(x.pbk)) e.push('کلید عمومیِ reality (pbk) معتبر نیست — باید ۴۳ نویسه‌ی base64url (کلیدِ ۳۲ بایتی X25519) باشد');
     if (!realitySidOk(x.sid)) e.push('shortId باید هگز و حداکثر ۱۶ نویسه باشد (خالی = سرورِ بدونِ shortId)');
-    if (x.flow && x.flow.trim()) e.push('flow روی خروجیِ reality پشتیبانی نمی‌شود — لینکی بدونِ flow (بدونِ xtls-rprx-vision) بدهید');
+    /* نکته: flow (مثل xtls-rprx-vision) پذیرفته می‌شود — در addons هدرِ VLESS
+       می‌نشیند (vlessAddons) و relay خام انجام می‌شود. UDP هیچ‌وقت به exit
+       نمی‌رسد (فقط TCP)، پس حالت‌های vision-udp هم مثل vision رفتار می‌کنند.
+       اگر سرور flow را نخواهد، هندشیک/relay می‌شکند و سالم به مستقیم برمی‌گردیم. */
   }
   return e;
 }
@@ -8718,7 +8721,6 @@ async function probeProxyOnce(raw, defPort, timeoutMs) {
 async function openRealitySocket(srv, info, opt) {
   const timeout = Math.max(1000, Number((opt && opt.timeoutMs) || 8000));
   if (srv.transport !== 'raw') throw new Error('reality فقط روی TCP خام (type=tcp) کار می‌کند');
-  if (srv.flow && String(srv.flow).trim()) throw new Error('flow روی خروجیِ reality پشتیبانی نمی‌شود — لینکی بدونِ flow بدهید');
   const dialHost = exitDialHost(srv);
   if (!dialHost) throw new Error('آدرسِ سرور خروجی خالی است');
   const sock = connect({ hostname: dialHost, port: srv.port }, { secureTransport: 'off', allowH2: false });

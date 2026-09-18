@@ -652,7 +652,8 @@
       'نام از بخشِ بعد از <span class="mono">#</span> خوانده می‌شود و بقیه (آدرس، پورت، یو‌یو‌آی‌دی، امنیت، ' +
       'انتقال، مسیر، SNI، و پارامترهای reality مثل <span class="mono">pbk/sid</span>) از خودِ لینک. ' +
       '<b>reality</b> هم پذیرفته می‌شود (آزمایشی): فقط روی TCP خام (<span class="mono">type=tcp</span>)، با ' +
-      '<span class="mono">sni</span> و <span class="mono">pbk</span>ی معتبر، و بدونِ <span class="mono">flow</span>. ' +
+      '<span class="mono">sni</span> و <span class="mono">pbk</span>ی معتبر — <span class="mono">flow</span> (مثل ' +
+      '<span class="mono">xtls-rprx-vision</span>) هم پشتیبانی می‌شود و در هدر می‌نشیند. ' +
       'اگر هندشیکِ reality برقرار نشود، ترافیک خودکار از مسیرِ مستقیم می‌رود و علت در تستِ اتصال دیده می‌شود.</div></label>' +
       '</div>' +
       '<input type="hidden" id="ex_id" value="' + esc(v.id) + '">' +

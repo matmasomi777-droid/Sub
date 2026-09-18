@@ -28,10 +28,13 @@ let src = readFileSync(SRC, 'utf8');
 {
   const d = new Date();
   const stamp = d.getUTCFullYear() + '.' + String(d.getUTCMonth() + 1).padStart(2, '0') + '.' + String(d.getUTCDate()).padStart(2, '0');
-  const before = src;
-  src = src.replace(/const BUILD = '[^']*';/, `const BUILD = '${stamp}';`);
-  if (src === before) console.error('WARN: مُهرِ BUILD پیدا نشد — بررسیِ نسخه دقیق نخواهد بود');
-  else {
+  const m = src.match(/const BUILD = '([^']*)';/);
+  if (!m) {
+    console.error('WARN: مُهرِ BUILD پیدا نشد — بررسیِ نسخه دقیق نخواهد بود');
+  } else if (m[1] === stamp) {
+    console.log(`    مُهرِ بیلد: ${stamp} (قبلاً به‌روز بود)`);
+  } else {
+    src = src.replace(/const BUILD = '[^']*';/, `const BUILD = '${stamp}';`);
     writeFileSync(SRC, src, 'utf8');
     console.log(`    مُهرِ بیلد: ${stamp}`);
   }

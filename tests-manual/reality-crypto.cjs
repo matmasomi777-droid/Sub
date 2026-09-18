@@ -57,7 +57,24 @@ const X = new Function('toU8', 'randTok', 'atob', 'URL', 'EXIT_SECURITIES', 'EXI
   '\n;return { EXIT_FIELDS, normalizeExit, parseVlessLink, exitIssues, realityPbkOk, realitySidOk };'
 )(toU8, randTok, (s) => Buffer.from(s, 'base64').toString('binary'), URL, ['none', 'tls', 'reality'], ['raw', 'ws', 'grpc']);
 
-/* ── ۳) exitToLink از پنل (round-trip) ── */
+/* ── ۳ب) استخراجِ سازنده‌ی هدرِ VLESS (addons/flow) ── */
+const VB0 = SRC.indexOf('/** تبدیلِ متنِ IPv6 به ۱۶ بایت');
+let VB1 = SRC.indexOf('کدکِ WebSocketِ کلاینت (RFC 6455)');
+/* مارکرِ پایان وسطِ هدرِ کامنتیِ بخشِ بعدی است — تا بسته‌شدنِ همان کامنت جلو می‌رویم تا /* بی‌بسته نماند */
+if (VB1 > VB0) { const c = SRC.indexOf('*/', VB1); if (c > VB1) VB1 = c + 2; }
+if (VB0 < 0 || VB1 < VB0) { console.error('FATAL: بلوکِ هدرِ VLESS در worker.js پیدا نشد'); process.exit(1); }
+const vbsrc = SRC.slice(VB0, VB1);
+/* dialableAddr ورکر (کپیِ دقیق — فقط برای پوششِ دامنه، خارج از موضوعِ تست) */
+const dialableAddrStub = (addr) => {
+  const h = String(addr || '').trim().replace(/^\[/, '').replace(/\]$/, '');
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(h)) return 'www.' + h + '.sslip.io';
+  return h;
+};
+const V = new Function('toU8', 'dialableAddr', 'TextEncoder', vbsrc +
+  '\n;return { vlessAddons, vlessRequestHeader };'
+)(toU8, dialableAddrStub, TextEncoder);
+
+/* ── ۳ج) exitToLink از پنل (round-trip) ── */
 const APP = fs.readFileSync(path.join(ROOT, 'ui', 'app.js'), 'utf8');
 const LE0 = APP.indexOf('const exitToLink = (s) => {');
 const LE1 = APP.indexOf('const exitBlank');
@@ -155,12 +172,26 @@ const refSha = (d) => createHash('sha256').update(Buffer.from(d)).digest();
   ok(X.exitIssues({ ...good, sni: '' }).length > 0, 'بدونِ sni رد می‌شود');
   ok(X.exitIssues({ ...good, pbk: 'bad' }).length > 0, 'pbk خراب رد می‌شود');
   ok(X.exitIssues({ ...good, sid: 'zz' }).length > 0, 'sid بدریخت رد می‌شود');
-  ok(X.exitIssues({ ...good, flow: 'xtls-rprx-vision' }).length > 0, 'flow روی reality رد می‌شود');
+  ok(X.exitIssues({ ...good, flow: 'xtls-rprx-vision' }).length === 0, 'flow vision پذیرفته می‌شود (در addons می‌نشیند)');
   const tlsOk = X.normalizeExit({ address: 't.example.com', port: 443, uuid: '11111111-1111-4111-8111-111111111111', security: 'tls', transport: 'ws', path: '/', sni: '' }, '');
   ok(X.exitIssues(tlsOk).length === 0, 'مسیرِ tls مثل قبل سالم است');
   const back = L({ ...srv });
   const re = X.parseVlessLink(back);
   ok(!!re && re.pbk === pbk && re.sid === 'a1b2' && re.security === 'reality', 'رفت‌وبرگشتِ لینک reality سالم است', back.slice(0, 80) + '…');
+
+  console.log('== ۴ب) addons هدرِ VLESS (نشستنِ flow) ==');
+  {
+    const FLOW = 'xtls-rprx-vision';
+    const h = V.vlessRequestHeader({ uuid: '11111111-1111-4111-8111-111111111111', flow: FLOW }, '1.2.3.4', 443, new Uint8Array([9]));
+    const b = Buffer.from(h);
+    ok(b[0] === 0, 'نسخه‌ی هدر ۰ است');
+    ok(b.toString('hex', 1, 17) === '11111111111141118111111111111111', 'بایت‌های UUID درست‌اند');
+    ok(b[17] === 18, 'طولِ addons برای flow درست است', 'len=' + b[17]);
+    ok(b[18] === 1 && b[19] === 16 && b.slice(20, 36).toString() === FLOW, 'flow با [type,len] در addons نشست');
+    ok(b[36] === 1 && ((b[37] << 8) | b[38]) === 443, 'فرمان/پورت بعد از addons درست‌اند');
+    const h0 = Buffer.from(V.vlessRequestHeader({ uuid: '11111111-1111-4111-8111-111111111111', flow: '' }, '1.2.3.4', 443, new Uint8Array(0)));
+    ok(h0[17] === 0 && h0[18] === 1, 'بدونِ flow، addons خالی است');
+  }
 
   console.log('== ۵) هندشیکِ کامل با سرورِ جعلی (پیاده‌سازیِ مستقل) ==');
   /* ── ابزارِ بایتِ تست ── */
