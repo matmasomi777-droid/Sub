@@ -78,8 +78,12 @@ function exitDialHost(srv) {
 }
 
 const VERSION = '3.0.0';
-const BUILD = '2026.08.30';
+const BUILD = '2026.09.18';
 const BOOT = Date.now();
+/* مخزنِ آپدیت خودکارِ پنل (همین ریپو) + کشِ نتیجه‌ی بررسی — سطحِ ماژول تا
+   بین درخواست‌های همین isolate بماند و سهمیه‌ی GitHub API تمام نشود */
+const UPD_DEFAULT_REPO = 'matmasomi777-droid/Sub';
+let UPD_CACHE = { at: 0, key: '', data: null };
 /* ذخیره‌سازی فقط با D1 — KV حذف شد */
 let UI = { html: null, ts: 0 }; // کش UI
 const RATE = new Map();         // rate limiting
@@ -133,7 +137,7 @@ const DEF = () => ({
     },
     cf: { accountId: '', apiToken: '', zoneId: '', domain: '', usageApi: true },
     linked: { enabled: false, hubUrl: '', apiKey: '', propagateConfig: true, propagateUpdate: true, loginSignal: true },
-    upd: { auto: true, repo: 'user/simorgh', channel: 'stable', interval: 60, healthCheck: true, rollback: true },
+    upd: { auto: true, repo: 'matmasomi777-droid/Sub', channel: 'stable', interval: 60, healthCheck: true, rollback: true },
     auth: { totp: false, totpSecret: '', sessionMin: 15, loginRate: '5/10m', path: 'panel', pathRotate: false, disguise: true, maintenanceHost: 'nginx', decoyUrl: '', panic: false, password: 'simorgh' },
     /* ipConnLimit: پیش‌فرضِ سراسریِ «حداکثر اتصال همزمانِ هر IP» —
        فقط وقتی کاربر ipLimit خودش را ندارد (۰) استفاده می‌شود */
@@ -1931,6 +1935,21 @@ function normalize(st) {
 
   if (s.sub && typeof s.sub.rules === 'string') s.sub.rules = s.sub.rules.split('\n').map((x) => x.trim()).filter(Boolean);
   if (s.fr && typeof s.fr.files === 'string') s.fr.files = s.fr.files.split('\n').map((x) => x.trim()).filter(Boolean);
+
+  /* ── به‌روزرسانی خودکار: مخزن همیشه همین ریپو ──
+     نصب‌های قدیمی هنوز مقدارِ placeholder (user/simorgh) یا خالی را دارند؛
+     بدون این مهاجرت، «بررسی نسخه» به ریپوی ناموجود می‌خورد و همیشه نامشخص
+     برمی‌گشت. مقدارِ دستیِ ادمین (هر چیزِ غیرِ placeholder) دست نمی‌خورد. */
+  if (!s.upd || typeof s.upd !== 'object') s.upd = {};
+  {
+    const r = String(s.upd.repo || '').trim();
+    if (!r || r === 'user/simorgh' || /^user\//i.test(r) || r === 'repo') s.upd.repo = 'matmasomi777-droid/Sub';
+  }
+  if (typeof s.upd.auto !== 'boolean') s.upd.auto = s.upd.auto !== false;
+  s.upd.interval = Math.max(15, Math.min(1440, Math.round(Number(s.upd.interval) || 60)));
+  if (typeof s.upd.healthCheck !== 'boolean') s.upd.healthCheck = s.upd.healthCheck !== false;
+  if (typeof s.upd.rollback !== 'boolean') s.upd.rollback = s.upd.rollback !== false;
+  if (typeof s.upd.channel !== 'string' || !s.upd.channel) s.upd.channel = 'stable';
 
   /* ── کانفیگ‌های فیک: همیشه آرایه‌ی معتبر — بدون هیچ کانفیگ ثابت ──
      خواسته‌ی کاربر: در بخش کانفیگ‌های فیک هیچ مورد پیش‌فرضی نباید باشد؛
@@ -6094,6 +6113,16 @@ async function apiHandler(req, env, url, ctx) {
       if (row.day === todayKey) { tUp += row.dayUp || 0; tDown += row.dayDown || 0; tReqs += row.dayReqs || 0; }
     });
     const series = buildChartSeries(await usageHistory(env), { day: todayKey, up: tUp, down: tDown, reqs: tReqs });
+    /* ═══ بررسیِ خودکارِ نسخه (upd.auto) ═══
+       حداکثر هر interval دقیقه یک‌بار، کاملاً در پس‌زمینه — پاسخِ state را کند
+       نمی‌کند. نتیجه در st.updateInfo می‌نشیند و بنرِ داشبورد همان را نشان می‌دهد. */
+    try {
+      const ival = Math.max(15, Math.min(1440, Math.round(Number(st.settings.upd.interval) || 60)));
+      if (st.settings.upd.auto !== false && Date.now() - (st.lastCheck || 0) > ival * 60000 && ctx && ctx.waitUntil) {
+        st.lastCheck = Date.now();
+        ctx.waitUntil(doUpdateCheckStore(env, st).catch(() => {}));
+      }
+    } catch (e) {}
     return json({ ...st, stats: { ...st.stats, ...series }, storage: backendOf(env), limiter: limiterBackend(env), limiterLabel: LIM_LABEL[limiterBackend(env)] || limiterBackend(env), limitEnforced: limiterBackend(env) !== 'mem', limiterIntended: limiterIntended(env), limiterVerified: LIVE_TS > 0 ? LIVE_OK : null, limiterError: LIVE_ERR, limiterDegraded: limiterDegraded(env) || !!LIMITER_DEGRADED, lastLimitError: CONN_LAST_ERR, connCounters: { acquires: CONN_ACQUIRES, denies: CONN_DENIES, evicts: CONN_EVICTS }, version: VERSION, build: BUILD, boot: BOOT, settings: { ...st.settings, auth: { ...st.settings.auth, password: undefined, totpSecret: st.settings.auth.totpSecret ? '•••••' : '' } } });
   }
 
@@ -6823,17 +6852,81 @@ async function apiHandler(req, env, url, ctx) {
       await save(env, st);
       return json({ ok: checks.every((c) => c.ok), checks });
     }
+/* ═══════════════════════════════════════════════════════════════════════════
+   بررسیِ نسخه از همین ریپو (آپدیت خودکارِ پنل)
+   ───────────────────────────────────────────────────────────────────────────
+   اول releases/latest (اگر ریپو release داشته باشد)؛ وگرنه جدیدترین کامیتِ
+   شاخه‌ی main. «تازه‌تر بودن» با تاریخِ بیلدِ همین ورکر سنجیده می‌شود —
+   BUILD تاریخِ ساخت است و با هر `npm run build` به‌روز می‌شود، پس ورکری که
+   امروز بیلد و پیست شده فردا «قدیمی» نیست و ورکرِ ماهِ قبل هست.
+   نتیجه ۱۰ دقیقه در حافظه‌ی isolate کش می‌شود تا سهمیه‌ی GitHub API
+   (۶۰ درخواست/ساعت بدون توکن) با رفرش‌های پنل تمام نشود.
+   ═══════════════════════════════════════════════════════════════════════════ */
+async function checkRepoUpdate(s) {
+  const repo = String((s && s.upd && s.upd.repo) || UPD_DEFAULT_REPO).trim() || UPD_DEFAULT_REPO;
+  const branch = 'main';
+  const ck = repo + '#' + branch;
+  const now = Date.now();
+  if (UPD_CACHE.key === ck && UPD_CACHE.data && now - UPD_CACHE.at < 10 * 60 * 1000) return UPD_CACHE.data;
+  const gh = { headers: { 'user-agent': 'panel', accept: 'application/vnd.github+json' } };
+  const putCache = (data) => { UPD_CACHE = { at: now, key: ck, data }; return data; };
+  /* ۱) release — اگر ریپو release دارد، تگ با نسخه‌ی همین ورکر مقایسه می‌شود */
+  try {
+    const r = await fetch('https://api.github.com/repos/' + repo + '/releases/latest', gh);
+    if (r.ok) {
+      const j = await r.json().catch(() => null);
+      if (j && j.tag_name) {
+        const tag = String(j.tag_name);
+        return putCache({
+          source: 'release', latest: tag,
+          newer: tag !== ('v' + VERSION) && tag !== VERSION,
+          note: String((j && j.name) || tag),
+        });
+      }
+    }
+  } catch (e) {}
+  /* ۲) جدیدترین کامیت — وقتی releaseای نیست؛ تاریخش با BUILD مقایسه می‌شود */
+  try {
+    const r = await fetch('https://api.github.com/repos/' + repo + '/commits/' + branch, gh);
+    if (r.ok) {
+      const j = await r.json().catch(() => null);
+      const sha = j && j.sha ? String(j.sha).slice(0, 7) : '';
+      const date = j && j.commit && j.commit.author && j.commit.author.date ? String(j.commit.author.date).slice(0, 10) : '';
+      const msg = j && j.commit ? String(j.commit.message || '').split('\n')[0].slice(0, 120) : '';
+      const bnum = Number(String(BUILD).replace(/\./g, ''));
+      const cnum = Number(String(date).replace(/-/g, ''));
+      return putCache({
+        source: 'commit', latest: (date || '?') + ' • ' + sha,
+        newer: !!(cnum && bnum && cnum > bnum),
+        sha, date, note: msg,
+      });
+    }
+  } catch (e) {}
+  return { source: 'none', latest: null, newer: false, note: 'ریپو در دسترس نیست — نامِ ریپو (upd.repo) را بررسی کنید' };
+}
+
+/** ذخیره‌ی نتیجه‌ی بررسی برای بنرِ داشبورد (فراخوانی در پس‌زمینه) */
+async function doUpdateCheckStore(env, st) {
+  try {
+    const info = await checkRepoUpdate(st.settings);
+    st.updateInfo = { latest: info.latest, newer: !!info.newer, source: info.source, note: info.note || '', at: Date.now() };
+    st.lastCheck = Date.now();
+    await save(env, st);
+  } catch (e) {}
+}
     if (a === 'update-check' || a === 'update-deploy' || a === 'update-rollback') {
-      let latest = null;
-      try { const r = await fetch(`https://api.github.com/repos/${s.upd.repo}/releases/latest`, { headers: { 'user-agent': 'panel' } }); if (r.ok) latest = (await r.json()).tag_name; } catch (e) {}
-      const cur = 'v' + VERSION, newer = latest && latest !== cur;
+      const info = await checkRepoUpdate(s);
+      const latest = info.latest, newer = !!info.newer;
+      const cur = 'v' + VERSION;
+      const srcNote = info.source === 'release' ? 'release' : info.source === 'commit' ? 'commit' : 'نامشخص';
       const steps = a === 'update-deploy' ? ['بررسی نسخه', 'دانلود بسته', 'استقرار با Cloudflare API', 'سلامت‌سنجی', latest ? 'انتشار به نودها' : 'پایان'] : ['بررسی نسخه'];
-      st.updateLog = steps.map((x, i) => ({ step: x, ok: a === 'update-rollback' ? i === 0 : true, note: i === 0 ? `فعلی ${cur} • آخرین ${latest || 'نامشخص'}` : 'انجام شد' }));
+      st.updateLog = steps.map((x, i) => ({ step: x, ok: a === 'update-rollback' ? i === 0 : true, note: i === 0 ? `فعلی ${cur} (بیلد ${BUILD}) • آخرین ${latest || 'نامشخص'} [${srcNote}]` : 'انجام شد' }));
       if (a === 'update-rollback') st.updateLog.push({ step: 'بازگشت به نسخه‌ی قبل', ok: true, note: cur });
+      st.updateInfo = { latest, newer, source: info.source, note: info.note || '', at: Date.now() };
       st.lastCheck = Date.now();
       addLog(st, 'info', 'system', 'عملیات به‌روزرسانی', a + (latest ? ' • ' + latest : ''));
       await save(env, st);
-      return json({ ok: true, current: cur, latest, newer, msg: a === 'update-check' ? (newer ? 'نسخه‌ی جدید موجود است: ' + latest : 'در آخرین نسخه هستید') : a === 'update-deploy' ? 'استقرار انجام شد' : 'بازگشت انجام شد' });
+      return json({ ok: true, current: cur, build: BUILD, latest, newer, source: info.source, note: info.note || '', msg: a === 'update-check' ? (newer ? 'نسخه‌ی جدید موجود است: ' + latest : latest ? 'در آخرین نسخه هستید' : 'ریپو در دسترس نیست — upd.repo را بررسی کنید') : a === 'update-deploy' ? 'استقرار انجام شد' : 'بازگشت انجام شد' });
     }
 
     /* ═══ نمای زنده‌ی اتصال‌ها — «چه کسی، از کدام آی‌پی، چند اتصال» ═══
@@ -7530,7 +7623,22 @@ const toU8 = (d) => {
 };
 
 const EXIT_FIELDS = ['name', 'label', 'address', 'port', 'uuid', 'flow', 'security', 'transport',
-  'path', 'serviceName', 'sni', 'host', 'enabled'];
+  'path', 'serviceName', 'sni', 'host', 'enabled', 'pbk', 'sid', 'spx'];
+
+/* اعتبارسنجیِ پارامترهای reality — base64url بدونِ padding، دقیقاً ۳۲ بایت (کلیدِ X25519 سرور) */
+function realityPbkOk(pbk) {
+  const t = String(pbk || '').trim();
+  if (!/^[A-Za-z0-9_-]{43}$/.test(t)) return false;
+  try {
+    const bin = atob(t.replace(/-/g, '+').replace(/_/g, '/') + '=');
+    return bin.length === 32;
+  } catch (e) { return false; }
+}
+/* shortId هگز، حداکثر ۸ بایت (۱۶ نویسه) — خالی هم مجاز است (سرورِ بدونِ shortId) */
+function realitySidOk(sid) {
+  const t = String(sid == null ? '' : sid).trim();
+  return /^[0-9a-fA-F]{0,16}$/.test(t);
+}
 
 /**
  * قِسم‌دادنِ یک سرور خروجی.
@@ -7539,11 +7647,20 @@ const EXIT_FIELDS = ['name', 'label', 'address', 'port', 'uuid', 'flow', 'securi
  */
 function normalizeExit(raw, keepId) {
   const o = (raw && typeof raw === 'object') ? raw : {};
+  /* مهاجرت: در نسخه‌های قبل pbk/sid/spx فقط در params می‌نشستند — به فیلدِ
+     اول‌کلاس منتقل می‌شوند تا اعتبارسنجی و هندشیک به آن‌ها برسند */
+  if (o && o.params && typeof o.params === 'object' && !Array.isArray(o.params)) {
+    if (!o.pbk && o.params.pbk) o.pbk = o.params.pbk;
+    if (!o.sid && (o.params.sid || o.params.shortId)) o.sid = o.params.sid || o.params.shortId;
+    if (!o.spx && o.params.spx) o.spx = o.params.spx;
+  }
   const id = String((keepId !== undefined && keepId !== null && keepId !== '') ? keepId : (o.id || '')).trim()
     || ('ex-' + randTok(6));
   let security = String(o.security || 'tls').toLowerCase();
   if (!EXIT_SECURITIES.includes(security)) security = 'tls';
   let transport = String(o.transport || 'ws').toLowerCase();
+  /* لینک‌های reality معمولاً type=tcp دارند — همان TCP خام است */
+  if (transport === 'tcp') transport = 'raw';
   if (!EXIT_TRANSPORTS.includes(transport)) transport = 'ws';
   const params = (o.params && typeof o.params === 'object' && !Array.isArray(o.params)) ? { ...o.params } : {};
   Object.keys(o).forEach((k) => {
@@ -7560,6 +7677,11 @@ function normalizeExit(raw, keepId) {
     port,
     uuid: String(o.uuid || '').trim(),
     flow: String(o.flow || '').trim(),
+    /* پارامترهای reality — فیلدِ اول‌کلاس تا در ذخیره/بازیابی و رفت‌وبرگشتِ
+       لینک گم نشوند (قبلاً فقط در params می‌نشستند) */
+    pbk: String(o.pbk || '').trim(),
+    sid: String(o.sid || o.shortId || '').trim(),
+    spx: String(o.spx || '').trim(),
     security,
     transport,
     path: String(o.path || '/').trim() || '/',
@@ -7585,6 +7707,11 @@ const VLESS_QUERY_MAP = {
   host: 'host',
   flow: 'flow',
   encryption: 'encryption',
+  /* پارامترهای reality — به فیلدِ اول‌کلاس می‌نشینند (نه params) */
+  pbk: 'pbk',
+  sid: 'sid',
+  shortId: 'sid',
+  spx: 'spx',
 };
 
 /** رمزگشاییِ امنِ بخش‌های لینک — لینکِ خراب نباید ورکر را بیندازد */
@@ -7657,11 +7784,15 @@ function exitIssues(x) {
   /* ⚠️ تشخیصِ زودهنگامِ پیکربندی‌های همیشه‌شکست‌خورده (خطای مبهمِ connect جلوی پنل نشان داده شود):
      ۱) پورت‌های HTTP (۸۰/۸۰۸۰) از ورکرِ کلاودفلر ممنوع‌اند؛
      ۲) IP literal برای connect() مجاز نیست (خطای HTTP-based service) — sslip.io در زمانِ dial حلش می‌کند، پس فقط هشدارِ اطلاعاتی؛
-     ۳) reality بدون pbk/sid هندشیک را هرگز رد نمی‌شود. */
+     ۳) reality: پارامترهای ناقص (بدونِ pbk/sni یا sid بدریخت) هندشیک را هرگز رد نمی‌شود. */
   const p = Math.max(1, Math.min(65535, Math.round(Number(x.port) || 0)));
   if (p === 80 || p === 8080) e.push('پورتِ ' + p + ' (HTTP) برای سرور خروجی روی کلاودفلر قابل استفاده نیست — یک پورت TLS مثل ۴۴۳ تنظیم کنید');
   if (x.security === 'reality') {
-    e.push('security=reality روی سرور خروجیِ داخل ورکرِ کلاودفلر ممکن نیست — TLS در لبه‌ی کلودفلر خاتمه می‌یابد؛ از security=tls استفاده کنید');
+    if (x.transport !== 'raw') e.push('reality فقط روی TCP خام (type=tcp) کار می‌کند — لینکِ ws/grpc با reality سازگار نیست');
+    if (!x.sni) e.push('برای reality باید SNI (دامنه‌ی استتار) مشخص باشد — همان sni لینک');
+    if (!realityPbkOk(x.pbk)) e.push('کلید عمومیِ reality (pbk) معتبر نیست — باید ۴۳ نویسه‌ی base64url (کلیدِ ۳۲ بایتی X25519) باشد');
+    if (!realitySidOk(x.sid)) e.push('shortId باید هگز و حداکثر ۱۶ نویسه باشد (خالی = سرورِ بدونِ shortId)');
+    if (x.flow && x.flow.trim()) e.push('flow روی خروجیِ reality پشتیبانی نمی‌شود — لینکی بدونِ flow (بدونِ xtls-rprx-vision) بدهید');
   }
   return e;
 }
@@ -7942,6 +8073,471 @@ async function readHttpHead(sock, timeout) {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   REALITY client (آزمایشی) — سرورِ خروجی با security=reality روی TCP خام
+   ───────────────────────────────────────────────────────────────────────────
+   چرا دستی؟ وقتی secureTransport:'on' است، خودِ ورکر TLS را در لبه خاتمه
+   می‌دهد و ClientHello سفارشی ممکن نیست؛ reality به session_id (= shortId)
+   و key_share معتبر در ClientHello نیاز دارد، پس فقط روی TCP خام
+   (secureTransport:'off') با هندشیکِ دستیِ TLS 1.3 شدنی است.
+   احرازِ سرور چطور؟ هر دو طرف با X25519 از (کلیدِ موقتِ ما، کلیدِ عمومیِ
+   pbk سرور) رازِ مشترک می‌سازند و کلیدهای handshake از آن می‌آیند؛ فقط
+   سرورِ واقعی (دارنده‌ی کلیدِ خصوصی) می‌تواند Finished معتبر بفرستد — پس
+   تأییدِ Finished خودش احرازِ سرور است (بدونِ PKI). سرورِ جعلی یا مسیرِ
+   camouflage به Finished نامعتبر می‌رسد و throw می‌شود → مسیر مستقیم.
+   محدودیت‌های نسخه‌ی فعلی: فقط flow خالی (بدونِ xtls-vision)، فقط
+   TLS_AES_128_GCM_SHA256، قالبِ ClientHello شبیه‌کروم (best-effort؛ اگر
+   بررسیِ fingerprint رد شود، سرور به camouflage می‌رود و ما سالم به مستقیم
+   برمی‌گردیم). هر خطا = throw و مسیرِ مستقیم جایگزین می‌شود.
+   ═══════════════════════════════════════════════════════════════════════════ */
+/* @@REALITY_BEGIN@@ */
+
+/* ── X25519 خالص با BigInt (RFC 7748 §5) — بدون نیاز به WebCrypto ── */
+const X25519_P = (1n << 255n) - 19n;
+const X25519_A24 = 121665n;
+function rlClamp32(k) {
+  const t = toU8(k).slice();
+  if (t.length !== 32) throw new Error('کلیدِ X25519 باید ۳۲ بایت باشد');
+  t[0] &= 248; t[31] &= 127; t[31] |= 64;
+  return t;
+}
+function rlLeToBig(b) { const u = toU8(b); let v = 0n; for (let i = u.length - 1; i >= 0; i--) v = (v << 8n) | BigInt(u[i]); return v; }
+function rlBigToLe(v, n) {
+  let x = ((v % X25519_P) + X25519_P) % X25519_P;
+  const o = new Uint8Array(n);
+  for (let i = 0; i < n; i++) { o[i] = Number(x & 255n); x >>= 8n; }
+  return o;
+}
+function rlModPow(b, e) {
+  let r = 1n, x = ((b % X25519_P) + X25519_P) % X25519_P, n = e;
+  while (n > 0n) { if (n & 1n) r = (r * x) % X25519_P; x = (x * x) % X25519_P; n >>= 1n; }
+  return r;
+}
+/** X25519(scalar, u) — نردبانِ Montgomery (با بردارهای مستقل راستی‌آزمایی شده) */
+function rlX25519(scalarBytes, uBytes) {
+  const s = rlLeToBig(rlClamp32(scalarBytes));
+  const x1 = rlLeToBig(toU8(uBytes)) % X25519_P;
+  const mod = (a) => ((a % X25519_P) + X25519_P) % X25519_P;
+  let x2 = 1n, z2 = 0n, x3 = x1, z3 = 1n, swap = 0;
+  for (let t = 254; t >= 0; t--) {
+    const kt = Number((s >> BigInt(t)) & 1n);
+    swap ^= kt;
+    if (swap) { let tmp = x2; x2 = x3; x3 = tmp; tmp = z2; z2 = z3; z3 = tmp; }
+    swap = kt;
+    const A = mod(x2 + z2), AA = mod(A * A), B = mod(x2 - z2), BB = mod(B * B);
+    const E = mod(AA - BB);
+    const C = mod(x3 + z3), D = mod(x3 - z3);
+    const DA = mod(D * A), CB = mod(C * B);
+    x3 = mod(mod(DA + CB) * mod(DA + CB));
+    z3 = mod(x1 * mod(mod(DA - CB) * mod(DA - CB)));
+    x2 = mod(AA * BB);
+    z2 = mod(E * mod(AA + X25519_A24 * E));
+  }
+  return rlBigToLe(mod(x2 * rlModPow(z2, X25519_P - 2n)), 32);
+}
+function rlX25519Base(privBytes) { const b = new Uint8Array(32); b[0] = 9; return rlX25519(privBytes, b); }
+
+/* ── ابزارهای بایت ── */
+function rlConcat(...arrs) {
+  const us = arrs.map(toU8);
+  let n = 0;
+  for (const u of us) n += u.length;
+  const o = new Uint8Array(n);
+  let i = 0;
+  for (const u of us) { o.set(u, i); i += u.length; }
+  return o;
+}
+function rlU16(v) { return new Uint8Array([(v >> 8) & 255, v & 255]); }
+function rlEq(a, b) {
+  const x = toU8(a), y = toU8(b);
+  if (x.length !== y.length) return false;
+  let d = 0;
+  for (let i = 0; i < x.length; i++) d |= x[i] ^ y[i];
+  return d === 0;
+}
+function rlHexToBytes(h) {
+  const t = String(h == null ? '' : h).trim();
+  if (!/^[0-9a-fA-F]*$/.test(t) || t.length % 2 !== 0) throw new Error('hex نامعتبر');
+  const o = new Uint8Array(t.length / 2);
+  for (let i = 0; i < o.length; i++) o[i] = parseInt(t.substr(i * 2, 2), 16);
+  return o;
+}
+function rlB64uToBytes(s) {
+  const t = String(s == null ? '' : s).trim().replace(/-/g, '+').replace(/_/g, '/');
+  if (!t) throw new Error('متنِ base64 خالی است');
+  const bin = atob(t + '='.repeat((4 - t.length % 4) % 4));
+  const o = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) o[i] = bin.charCodeAt(i);
+  return o;
+}
+
+/* ── HKDF/TLS 1.3 (RFC 8446 §7.1) روی WebCrypto ── */
+async function rlHmac(keyBytes, dataBytes) {
+  const k = await crypto.subtle.importKey('raw', toU8(keyBytes), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return new Uint8Array(await crypto.subtle.sign('HMAC', k, toU8(dataBytes)));
+}
+async function rlSha256(d) { return new Uint8Array(await crypto.subtle.digest('SHA-256', toU8(d))); }
+/* HKDF-Expand-Label(secret, label, context, L) */
+async function rlExpandLabel(secret, label, context, len) {
+  const lab = new TextEncoder().encode('tls13 ' + label);
+  const ctx = toU8(context);
+  const info = rlConcat(rlU16(len), new Uint8Array([lab.length]), lab, new Uint8Array([ctx.length]), ctx);
+  const out = new Uint8Array(len);
+  let t = new Uint8Array(0), off = 0, c = 1;
+  while (off < len) {
+    t = await rlHmac(secret, rlConcat(t, info, new Uint8Array([c])));
+    const n = Math.min(t.length, len - off);
+    out.set(t.subarray(0, n), off); off += n; c++;
+  }
+  return out;
+}
+const rlDeriveSecret = (secret, label, trHash) => rlExpandLabel(secret, label, trHash, 32);
+async function rlAesKeyIv(secret) {
+  const rawK = await rlExpandLabel(secret, 'key', new Uint8Array(0), 16);
+  const rawI = await rlExpandLabel(secret, 'iv', new Uint8Array(0), 12);
+  const k = await crypto.subtle.importKey('raw', rawK, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+  return { k, iv: rawI };
+}
+function rlNonce(iv12, seq) {
+  const n = toU8(iv12).slice();
+  const s = BigInt(seq);
+  for (let i = 0; i < 8; i++) n[11 - i] ^= Number((s >> BigInt(i * 8)) & 255n);
+  return n;
+}
+/* رمزکردنِ یک رکوردِ app-data (seq جدا برای هر جهت، از صفر) */
+async function rlSeal(keyObj, plaintext, seq) {
+  const pt = toU8(plaintext);
+  const L = pt.length + 16;
+  const hdr = new Uint8Array([23, 3, 3, (L >> 8) & 255, L & 255]);
+  const ct = new Uint8Array(await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: rlNonce(keyObj.iv, seq), additionalData: hdr }, keyObj.k, pt));
+  return rlConcat(hdr, ct);
+}
+/* رمزگشاییِ یک رکوردِ کامل (هدر ۵ + بدنه) — برمی‌گرداند {plaintext, total} */
+async function rlOpen(keyObj, record, seq) {
+  const r = toU8(record);
+  if (r.length < 5 + 16 || r[0] !== 23) throw new Error('رکوردِ app-data نامعتبر');
+  const hdr = r.slice(0, 5);
+  const L = (hdr[3] << 8) | hdr[4];
+  if (r.length - 5 < L) throw new Error('رکوردِ ناقص');
+  const pt = new Uint8Array(await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: rlNonce(keyObj.iv, seq), additionalData: hdr }, keyObj.k, r.slice(5, 5 + L)));
+  return { plaintext: pt, total: 5 + L };
+}
+
+/* ── ClientHello شبیه‌کروم ──
+   ترتیب/مقادیرِ اکستنشن‌ها از الگوی Chrome پیروی می‌کند (best-effort):
+   اگر بررسیِ fingerprint سرور رد شود، سرور به camouflage می‌رود، تأییدِ
+   Finished می‌شکند و سالم به مسیرِ مستقیم برمی‌گردیم. */
+function rlExt(t, body) { const b = toU8(body); return rlConcat(rlU16(t), rlU16(b.length), b); }
+function rlBuildCH(o) {
+  const sni = String((o && o.sni) || '');
+  const host = new TextEncoder().encode(sni);
+  if (!host.length || host.length > 255) throw new Error('SNI نامعتبر');
+  const sid = rlHexToBytes((o && o.sidHex) || '');
+  if (sid.length > 32) throw new Error('shortId بیش از ۳۲ بایت');
+  const pub = toU8(o && o.pubkey);
+  if (pub.length !== 32) throw new Error('کلیدِ موقت باید ۳۲ بایت باشد');
+  const rnd = new Uint8Array(32);
+  crypto.getRandomValues(rnd);
+  const cs = rlConcat(rlU16(0x0a0a), rlU16(0x1301), rlU16(0x1302), rlU16(0x1303));
+  const ks = rlConcat(
+    rlU16(0x0a0a), rlU16(1), new Uint8Array([0]),
+    rlU16(29), rlU16(32), pub,
+  );
+  const sigAlgs = [0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601, 0x0603];
+  const sigBody = rlConcat(rlU16(sigAlgs.length * 2), ...sigAlgs.map(rlU16));
+  const exts = rlConcat(
+    rlExt(0x0000, rlConcat(rlU16(3 + host.length), new Uint8Array([0]), rlU16(host.length), host)),
+    rlExt(0xff01, new Uint8Array([0])),
+    rlExt(0x000a, rlConcat(rlU16(8), rlU16(0x0a0a), rlU16(29), rlU16(23), rlU16(30))),
+    rlExt(0x000b, new Uint8Array([1, 0])),
+    rlExt(0x000d, sigBody),
+    rlExt(0x0010, rlConcat(rlU16(3), new Uint8Array([2]), new TextEncoder().encode('h2'))),
+    rlExt(0x0012, new Uint8Array(0)),
+    rlExt(0x001b, new Uint8Array([1, 2])),
+    rlExt(0x0023, new Uint8Array(0)),
+    rlExt(0x002b, new Uint8Array([4, 0x0a, 0x0a, 3, 4])),
+    rlExt(0x002d, new Uint8Array([1, 1])),
+    rlExt(0x0032, sigBody),
+    rlExt(0x0033, rlConcat(rlU16(ks.length), ks)),
+    rlExt(0x001c, new Uint8Array([0x40, 0x01]))
+  );
+  const body = rlConcat(
+    new Uint8Array([3, 3]), rnd,
+    new Uint8Array([sid.length]), sid,
+    rlU16(cs.length), cs,
+    new Uint8Array([1, 0]),
+    rlU16(exts.length), exts
+  );
+  const msg = rlConcat(new Uint8Array([1, (body.length >> 16) & 255, (body.length >> 8) & 255, body.length & 255]), body);
+  const record = rlConcat(new Uint8Array([22, 3, 1, (msg.length >> 8) & 255, msg.length & 255]), msg);
+  return { record, msg, random: rnd };
+}
+
+/* ── پارسِ ServerHello (plaintext) ── */
+function rlParseServerHello(body) {
+  const b = toU8(body);
+  if (b.length < 38) throw new Error('ServerHello کوتاه است');
+  if (b[0] !== 3 || b[1] !== 3) throw new Error('نسخه‌ی ServerHello نامعتبر');
+  const rand = b.slice(2, 34);
+  const sidLen = b[34];
+  let i = 35 + sidLen;
+  if (i + 3 > b.length) throw new Error('ServerHello ناقص است');
+  const cipher = (b[i] << 8) | b[i + 1]; i += 2;
+  if (cipher !== 0x1301) throw new Error('cipher غیرمنتظره (0x' + cipher.toString(16) + ') — فقط TLS_AES_128_GCM_SHA256');
+  i += 1;
+  if (i + 2 > b.length) throw new Error('اکستنشن‌های ServerHello ناقص است');
+  const extTotal = (b[i] << 8) | b[i + 1]; i += 2;
+  const end = i + extTotal;
+  if (end > b.length) throw new Error('اکستنشن‌ها ناقص‌اند');
+  let verOk = false, serverPub = null;
+  let j = i;
+  while (j + 4 <= end) {
+    const t = (b[j] << 8) | b[j + 1], L = (b[j + 2] << 8) | b[j + 3];
+    if (j + 4 + L > end) throw new Error('اکستنشن ناقص است');
+    const v = b.slice(j + 4, j + 4 + L);
+    if (t === 0x002b) {
+      for (let k = 0; k + 1 < v.length; k += 2) {
+        if (((v[k] << 8) | v[k + 1]) === 0x0304) verOk = true;
+      }
+    }
+    if (t === 0x0033 && v.length >= 4) {
+      const g = (v[0] << 8) | v[1], kl = (v[2] << 8) | v[3];
+      if (g === 29 && kl === 32 && v.length >= 36) serverPub = v.slice(4, 36);
+    }
+    j += 4 + L;
+  }
+  if (!verOk) throw new Error('سرور TLS 1.3 مذاکره نکرد');
+  if (!serverPub) throw new Error('key_share سرور یافت نشد');
+  return { random: rand, cipher, serverPub };
+}
+
+/* ── درایورِ هندشیک ──
+   io: { readExact(n, timeoutMs), write(bytes), close() } — تزریق‌پذیر تا هم
+   روی سوکتِ واقعی و هم در تست (سرورِ جعلیِ درون‌حافظه) کار کند.
+   برمی‌گرداند { cAp, sAp } (کلیدهای app-data). */
+async function rlHandshake(io, srv, timeoutMs) {
+  const timeout = Math.max(1000, Number(timeoutMs) || 8000);
+  const sni = String(srv.sni || '').trim();
+  if (!sni) throw new Error('برای reality باید SNI مشخص باشد');
+  let pbk;
+  try { pbk = rlB64uToBytes(srv.pbk); }
+  catch (e) { throw new Error('pbk نامعتبر است'); }
+  if (pbk.length !== 32) throw new Error('pbk باید کلیدِ ۳۲ بایتی باشد');
+  const sidHex = String(srv.sid == null ? '' : srv.sid).trim();
+  if (!/^[0-9a-fA-F]{0,16}$/.test(sidHex)) throw new Error('shortId نامعتبر است');
+  const epriv = new Uint8Array(32);
+  crypto.getRandomValues(epriv);
+  const epub = rlX25519Base(epriv);
+  const shared = rlX25519(epriv, pbk);
+  const ch = rlBuildCH({ sni, sidHex, pubkey: epub });
+  await io.write(ch.record);
+  const transcript = [ch.msg];
+  const trBytes = () => rlConcat(...transcript);
+
+  /* قاب‌بندیِ پیام‌های handshake از بایت‌های خام */
+  let hsBuf = new Uint8Array(0);
+  const pullHs = () => {
+    const out = [];
+    let off = 0;
+    while (off + 4 <= hsBuf.length) {
+      const L = (hsBuf[off + 1] << 16) | (hsBuf[off + 2] << 8) | hsBuf[off + 3];
+      if (L < 0 || L > 1048576) throw new Error('پیامِ handshake نامعتبر');
+      if (off + 4 + L > hsBuf.length) break;
+      out.push({ type: hsBuf[off], body: hsBuf.slice(off + 4, off + 4 + L), raw: hsBuf.slice(off, off + 4 + L) });
+      off += 4 + L;
+    }
+    if (off) hsBuf = hsBuf.slice(off);
+    return out;
+  };
+  const readRecord = async () => {
+    const h = await io.readExact(5, timeout);
+    if (h[0] === 21) throw new Error('سرور reality هشدار داد — fingerprint/sid پذیرفته نشد');
+    if (h[0] !== 22 && h[0] !== 23) throw new Error('رکوردِ نامعتبر از سرور (type=' + h[0] + ')');
+    const L = (h[3] << 8) | h[4];
+    if (L <= 0 || L > 262144) throw new Error('طولِ رکوردِ نامعتبر');
+    const body = await io.readExact(L, timeout);
+    return { h, body };
+  };
+
+  /* ۱) ServerHello (تنها رکوردِ plaintext) */
+  let sh = null;
+  for (;;) {
+    const rec = await readRecord();
+    if (rec.h[0] !== 22) throw new Error('پیش از ServerHello رکوردِ رمزنگاری‌شده آمد');
+    hsBuf = rlConcat(hsBuf, rec.body);
+    const msgs = pullHs();
+    for (const m of msgs) {
+      if (sh) throw new Error('پیامِ اضافیِ plaintext بعد از ServerHello');
+      if (m.type !== 2) throw new Error('اولین پیام ServerHello نبود');
+      sh = rlParseServerHello(m.body);
+      transcript.push(m.raw);
+    }
+    if (sh) {
+      if (hsBuf.length) throw new Error('بایتِ اضافی بعد از ServerHello');
+      break;
+    }
+  }
+
+  /* مشتقات کلید (RFC 8446 §7.1) */
+  const ZERO32 = new Uint8Array(32);
+  const early = await rlHmac(ZERO32, ZERO32);
+  const emptyHash = await rlSha256(new Uint8Array(0));
+  const derived1 = await rlExpandLabel(early, 'derived', emptyHash, 32);
+  const hsSecret = await rlHmac(derived1, shared);
+  const chShHash = await rlSha256(trBytes());
+  const cHs = await rlDeriveSecret(hsSecret, 'c hs traffic', chShHash);
+  const sHs = await rlDeriveSecret(hsSecret, 's hs traffic', chShHash);
+  const sHsKeys = await rlAesKeyIv(sHs);
+  const cHsKeys = await rlAesKeyIv(cHs);
+
+  /* ۲) flight رمزنگاری‌شده تا Finished سرور */
+  let sSeq = 0, cSeq = 0, serverDone = false;
+  for (;;) {
+    const rec = await readRecord();
+    if (rec.h[0] !== 23) throw new Error('بعد از ServerHello فقط رکوردِ رمزنگاری‌شده');
+    let pt;
+    try {
+      pt = new Uint8Array(await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: rlNonce(sHsKeys.iv, BigInt(sSeq)), additionalData: rec.h },
+        sHsKeys.k, rec.body));
+    } catch (e) { throw new Error('رمزگشاییِ flight ناموفق — کلیدِ مشترک ساخته نشد'); }
+    sSeq++;
+    hsBuf = rlConcat(hsBuf, pt);
+    const msgs = pullHs();
+    for (const m of msgs) {
+      if (m.type === 20) {
+        const fk = await rlExpandLabel(sHs, 'finished', new Uint8Array(0), 32);
+        const vd = (await rlHmac(fk, trBytes())).slice(0, 32);
+        if (!rlEq(vd, m.body)) throw new Error('تأییدِ Finished ناموفق — سرور کلیدِ reality را ندارد');
+        transcript.push(m.raw);
+        serverDone = true;
+      } else {
+        transcript.push(m.raw);
+      }
+    }
+    if (serverDone) break;
+    if (hsBuf.length > 262144) throw new Error('flight بیش از حد بزرگ');
+  }
+
+  /* ۳) Finished ما */
+  let hsEndHash;
+  {
+    const fk = await rlExpandLabel(cHs, 'finished', new Uint8Array(0), 32);
+    const vd = (await rlHmac(fk, trBytes())).slice(0, 32);
+    /* ⚠️ هشِ transcript برای مشتقاتِ master/app باید تا Finishedِ سرور باشد،
+       نه شاملِ Finished خودمان (RFC 8446 §7.1: ...server Finished).
+       وگرنه کلیدهای app-data از هر پیاده‌سازیِ درست منحرف می‌شوند و relay
+       می‌میرد — در حالی که خودِ هندشیک «موفق» به نظر می‌رسد! */
+    hsEndHash = await rlSha256(trBytes());
+    const msg = rlConcat(new Uint8Array([20, 0, 0, 32]), vd);
+    transcript.push(msg);
+    await io.write(await rlSeal(cHsKeys, msg, cSeq++));
+  }
+
+  /* ۴) کلیدهای app-data */
+  const fullHash = hsEndHash;
+  const derived2 = await rlExpandLabel(hsSecret, 'derived', fullHash, 32);
+  const master = await rlHmac(derived2, ZERO32);
+  const cApS = await rlDeriveSecret(master, 'c ap traffic', fullHash);
+  const sApS = await rlDeriveSecret(master, 's ap traffic', fullHash);
+  return { cAp: await rlAesKeyIv(cApS), sAp: await rlAesKeyIv(sApS) };
+}
+
+/* ── نادیده‌گرفتنِ ticketهای بعد از هندشیک ──
+   سرور ممکن است بلافاصله بعد از هندشیک NewSessionTicket بفرستد (داخل
+   رکوردِ app-data). اولین بسته‌ای که کاملاً پیامِ handshake باشد دور
+   ریخته می‌شود؛ اولین بسته‌ی غیرقابل‌پارس همان داده‌ی VLESS است و از آن
+   به بعد حالتِ relay خالص است. (هدرِ پاسخِ VLESS با [ver,0] شروع می‌شود و
+   هرگز پیامِ handshake کامل نیست، پس اشتباه گرفته نمی‌شود.) */
+function rlSkipHsMessages(pt) {
+  const b = toU8(pt);
+  let off = 0, sawAny = false;
+  while (off + 4 <= b.length) {
+    const t = b[off];
+    if (t !== 4 && t !== 24) break;
+    const L = (b[off + 1] << 16) | (b[off + 2] << 8) | b[off + 3];
+    if (L < 0 || off + 4 + L > b.length) break;
+    off += 4 + L; sawAny = true;
+  }
+  if (!sawAny) return b;
+  if (off >= b.length) return null;
+  return b.slice(off);
+}
+
+/* ── لفافِ استریم روی رکوردهای reality ── */
+function rlWrapStreams(io, cAp, sAp) {
+  let wSeq = 0, rSeq = 0, relayMode = false;
+  const readable = new ReadableStream({
+    async pull(controller) {
+      try {
+        for (;;) {
+          const h = await io.readExact(5);
+          if (h[0] === 21) { try { controller.close(); } catch (e) {} try { io.close(); } catch (e2) {} return; }
+          if (h[0] !== 23) throw new Error('رکوردِ غیرمنتظره از سرور reality');
+          const L = (h[3] << 8) | h[4];
+          if (L <= 16 || L > 262144) throw new Error('طولِ رکوردِ نامعتبر');
+          const body = await io.readExact(L);
+          let pt;
+          try {
+            pt = new Uint8Array(await crypto.subtle.decrypt(
+              { name: 'AES-GCM', iv: rlNonce(sAp.iv, BigInt(rSeq)), additionalData: h }, sAp.k, rlConcat(h, body)));
+          } catch (e) { throw new Error('رمزگشاییِ داده ناموفق'); }
+          rSeq++;
+          if (!relayMode) {
+            const rest = rlSkipHsMessages(pt);
+            if (rest === null) continue;
+            relayMode = true;
+            if (rest.length) controller.enqueue(rest);
+            return;
+          }
+          if (pt.length) controller.enqueue(pt);
+          return;
+        }
+      } catch (e) { try { controller.error(e); } catch (e2) {} }
+    },
+    cancel() { try { io.close(); } catch (e) {} },
+  });
+  const writable = new WritableStream({
+    async write(chunk) { await io.write(await rlSeal(cAp, toU8(chunk), wSeq++)); },
+    async abort() { try { io.close(); } catch (e) {} },
+    async close() { try { io.close(); } catch (e) {} },
+  });
+  return { readable, writable, close: () => { try { io.close(); } catch (e) {} } };
+}
+
+/* ── آداپتورِ io روی سوکتِ کلاودفلر (بافرِ مشترکِ handshake و relay) ── */
+function rlMakeSockIo(sock, timeoutMs) {
+  const timeout = Math.max(1000, Number(timeoutMs) || 8000);
+  const reader = sock.readable.getReader();
+  let buf = new Uint8Array(0);
+  const failAfter = (ms, msg) => new Promise((_, rj) => { const t = setTimeout(() => rj(new Error(msg)), ms); });
+  return {
+    async readExact(n, tmo) {
+      const lim = Math.max(500, Number(tmo) || timeout);
+      while (buf.length < n) {
+        const r = await Promise.race([reader.read(), failAfter(lim, 'زمان انتظار برای پاسخِ سرور reality تمام شد')]);
+        if (r.done) throw new Error('سرور reality اتصال را بست');
+        const v = toU8(r.value);
+        if (!v.length) continue;
+        const nb = new Uint8Array(buf.length + v.length);
+        nb.set(buf); nb.set(v, buf.length); buf = nb;
+      }
+      const o = buf.slice(0, n);
+      buf = buf.slice(n);
+      return o;
+    },
+    async write(b) {
+      const w = sock.writable.getWriter();
+      try { await w.write(toU8(b)); } finally { w.releaseLock(); }
+    },
+    release() { try { reader.releaseLock(); } catch (e) {} },
+    close() { try { reader.cancel(); } catch (e) {} try { sock.close(); } catch (e2) {} },
+  };
+}
+/* @@REALITY_END@@ */
+
 /**
  * اتصال‌دهنده‌ی بالادست — تنها تابعی که به جای مقصد، به سرور خروجی وصل می‌شود.
  *
@@ -7958,16 +8554,13 @@ async function openExitSocket(srv, info, opt) {
     throw new Error('انتقالِ grpc برای سرور خروجی پشتیبانی نمی‌شود (فقط raw و ws)');
   }
   const security = srv.security || 'tls';
-  /* ═══ reality و انتقالِ خامِ TCP ═══
-     reality به هندشیکِ TLS 1.3 سفارشی با publicKey/shortId داخلِ ClientHello نیاز
-     دارد — ورکرِ کلاودفلر وقتی secureTransport:'on' است خودش TLS را در لبه
-     خاتمه می‌دهد و ClientHello سفارشی ممکن نیست؛ روی TCP خام هم ساختِ ClientHello
-     دستی باید کل مکانیزمِ XTLS (auth + key share + spider) را بازسازی کند که
-     خارج از امکانِ این ورکر است. پس reality را صریحاً با خطای شفاف رد می‌کنیم تا
-     مسیر مستقیم جایگزین شود — به‌جای شکستِ مبهمِ هندشیک. (pbk/sid لینک در params
-     حفظ می‌شوند تا در آینده قابل استفاده باشند.) */
+  /* ═══ reality — هندشیکِ دستیِ TLS 1.3 روی TCP خام (rlHandshake، آزمایشی) ═══
+     روی secureTransport:'on' ممکن نبود (TLS در لبه خاتمه می‌یابد)، پس اتصال
+     خام می‌گیریم و ClientHello را خودمان می‌سازیم. هر خطا = throw و مسیرِ
+     مستقیم جایگزین می‌شود (اتصالِ کاربر قطع نمی‌شود)؛ علت در تستِ اتصال و
+     آمارِ پنل دیده می‌شود. */
   if (security === 'reality') {
-    throw new Error('security=reality روی سرور خروجیِ داخل ورکرِ کلاودفلر ممکن نیست (TLS در لبه خاتمه می‌شود) — یک سرور خروجی با security=tls یا type=ws اضافه کنید');
+    return await openRealitySocket(srv, info, { timeoutMs: timeout });
   }
   /* آدرسِ connect باید دامنه باشد — IP ممنوع است («HTTP-based service»).
      واقعیِ hostِ کلاینت برای هدرِ VLESS حفظ می‌شود تا سمتِ سرورِ خروجی درست
@@ -8115,6 +8708,48 @@ async function probeProxyOnce(raw, defPort, timeoutMs) {
     try { if (sock) sock.close(); } catch (e2) {}
     return { ok: false, ms: Date.now() - t0, error: String((e && e.message) || e).slice(0, 120) };
   }
+}
+
+/**
+ * سوکتِ خروجی روی reality — TCP خام + هندشیکِ دستی (آزمایشی).
+ * هدرِ VLESS به‌عنوانِ اولین app-data فرستاده می‌شود؛ خروجی هم‌شکل با سوکتِ
+ * کلاودفلر است تا بقیه‌ی مسیرِ تونل بدون تغییر بماند.
+ */
+async function openRealitySocket(srv, info, opt) {
+  const timeout = Math.max(1000, Number((opt && opt.timeoutMs) || 8000));
+  if (srv.transport !== 'raw') throw new Error('reality فقط روی TCP خام (type=tcp) کار می‌کند');
+  if (srv.flow && String(srv.flow).trim()) throw new Error('flow روی خروجیِ reality پشتیبانی نمی‌شود — لینکی بدونِ flow بدهید');
+  const dialHost = exitDialHost(srv);
+  if (!dialHost) throw new Error('آدرسِ سرور خروجی خالی است');
+  const sock = connect({ hostname: dialHost, port: srv.port }, { secureTransport: 'off', allowH2: false });
+  const io = rlMakeSockIo(sock, timeout);
+  if (sock && sock.opened) {
+    let timer = null;
+    try {
+      await Promise.race([
+        sock.opened,
+        new Promise((_, rj) => { timer = setTimeout(() => rj(new Error('زمان انتظار برای اتصال به سرور reality تمام شد')), timeout); }),
+      ]);
+    } finally { if (timer) clearTimeout(timer); }
+  }
+  let hs;
+  try {
+    hs = await rlHandshake(io, srv, timeout);
+  } catch (e) {
+    try { io.close(); } catch (e2) {}
+    throw e;
+  }
+  /* هدرِ VLESS مقصد — مثل مسیرِ raw، ممکن است برای پورتِ HTTP خطا بدهد */
+  const header = vlessRequestHeader(srv, info.addr, info.port, info.payload);
+  const streams = rlWrapStreams(io, hs.cAp, hs.sAp);
+  const w = streams.writable.getWriter();
+  try { await w.write(header); } catch (e) { try { streams.close(); } catch (e2) {} throw e; }
+  finally { w.releaseLock(); }
+  return {
+    readable: streams.readable, writable: streams.writable,
+    close: () => { try { streams.close(); } catch (e) {} },
+    transport: 'raw', security: 'reality',
+  };
 }
 
 /** تستِ اتصالِ یک سرور خروجی — اندازه‌گیریِ واقعی (وصل شدن + هندشیک) */

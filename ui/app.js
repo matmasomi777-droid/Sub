@@ -616,13 +616,17 @@
     put('encryption', params.encryption);
     put('security', v.security || 'tls');
     put('sni', v.sni);
-    put('type', v.transport || 'ws');
+    put('type', v.transport === 'raw' && v.security === 'reality' ? 'tcp' : (v.transport || 'ws'));
     put('host', v.host);
     put('path', v.path);
     put('serviceName', v.serviceName);
     put('flow', v.flow);
+    /* پارامترهای reality — فیلدِ اول‌کلاس‌اند و سر جایشان برمی‌گردند */
+    put('pbk', v.pbk);
+    put('sid', v.sid);
+    put('spx', v.spx);
     /* هر پارامترِ ناشناخته‌ای که ورکر نگه داشته (alpn، fp، …) دست‌نخورده برمی‌گردد */
-    Object.keys(params).forEach((k) => { if (k !== 'encryption') put(k, params[k]); });
+    Object.keys(params).forEach((k) => { if (k !== 'encryption' && k !== 'pbk' && k !== 'sid' && k !== 'shortId' && k !== 'spx') put(k, params[k]); });
     const name = String(v.name || '').trim();
     return 'vless://' + encodeURIComponent(String(v.uuid || '')) + '@' + String(v.address || '') +
       ':' + (Number(v.port) || 443) + '?' + q.toString() + (name ? '#' + encodeURIComponent(name) : '');
@@ -646,9 +650,10 @@
       esc(v.link) + '</textarea>' +
       '<div class="hint" style="margin-top:5px">فقط لینک را اینجا بچسبانید — چیزِ دیگری لازم نیست. ' +
       'نام از بخشِ بعد از <span class="mono">#</span> خوانده می‌شود و بقیه (آدرس، پورت، یو‌یو‌آی‌دی، امنیت، ' +
-      'انتقال، مسیر، SNI و…) از خودِ لینک. ' +
-      '<b>توجه:</b> روی سرور خروجیِ داخل ورکرِ کلاودفلر فقط <span class="mono">security=tls</span> (یا none) کار می‌کند — ' +
-      'لینکِ reality پذیرفته نمی‌شود چون TLS در لبه‌ی کلودفلر خاتمه می‌یابد.</div></label>' +
+      'انتقال، مسیر، SNI، و پارامترهای reality مثل <span class="mono">pbk/sid</span>) از خودِ لینک. ' +
+      '<b>reality</b> هم پذیرفته می‌شود (آزمایشی): فقط روی TCP خام (<span class="mono">type=tcp</span>)، با ' +
+      '<span class="mono">sni</span> و <span class="mono">pbk</span>ی معتبر، و بدونِ <span class="mono">flow</span>. ' +
+      'اگر هندشیکِ reality برقرار نشود، ترافیک خودکار از مسیرِ مستقیم می‌رود و علت در تستِ اتصال دیده می‌شود.</div></label>' +
       '</div>' +
       '<input type="hidden" id="ex_id" value="' + esc(v.id) + '">' +
       '<div class="btn-row" style="margin-top:10px;gap:6px">' +
@@ -699,7 +704,7 @@
           '<span class="dot ' + (s.enabled ? 'on' : 'bad') + '"></span>' +
           '<div class="grow"><b>' + esc(s.name) + '</b> ' +
           '<span class="badge ' + (s.enabled ? 'ok' : 'bad') + '">' + (s.enabled ? 'فعال' : 'غیرفعال') + '</span>' +
-          '<div class="mono cell-sub">' + esc(s.address) + ':' + fa(s.port) + ' • ' + esc(s.security) + '/' + esc(s.transport) + '</div></div>' +
+          '<div class="mono cell-sub">' + esc(s.address) + ':' + fa(s.port) + ' • ' + esc(s.security) + '/' + esc(s.transport) + (s.security === 'reality' ? ' • آزمایشی' : '') + '</div></div>' +
           '<button class="btn sm ' + (s.enabled !== false ? 'd' : 'p') + '" data-act="exit-onoff" data-id="' + esc(s.id) + '" title="' + (s.enabled !== false ? 'غیرفعال‌کردن — هیچ کانفیگی دیگر از آن عبور نمی‌کند' : 'فعال‌کردن این سرور') + '">' + icon('fa-power-off') + '</button>' +
           '<button class="btn sm s" data-act="exit-test" data-id="' + esc(s.id) + '" title="تست اتصال">' + icon('fa-stethoscope') + '</button>' +
           '<button class="btn sm" data-act="exit-edit" data-id="' + esc(s.id) + '" title="ویرایش">' + icon('fa-pen') + '</button>' +
@@ -976,6 +981,13 @@
       '<span class="badge b2">' + icon('fa-link') + ' /' + esc(s.sub.path) + '</span>' +
       '<span class="badge">' + icon('fa-mask') + ' /' + esc(p) + '</span>' +
       '</div></div>' +
+      /* ═══ بنرِ به‌روزرسانی خودکار — وقتی نسخه‌ی تازه‌تری در همین ریپو هست ═══ */
+      ((d.updateInfo && d.updateInfo.newer)
+        ? '<div class="card" style="border-color:var(--warn);margin-bottom:12px"><div class="bd"><div class="row-item">' + icon('fa-arrow-up-right-dots') +
+          '<div class="grow"><b>نسخه‌ی تازه در مخزن هست' + (d.updateInfo.latest ? ' — <span class="mono">' + esc(String(d.updateInfo.latest)).slice(0, 60) + '</span>' : '') + '</b>' +
+          '<div class="cell-sub">مخزن: <span class="mono">' + esc(s.upd.repo || '') + '</span>' + (d.updateInfo.note ? ' • ' + esc(String(d.updateInfo.note)).slice(0, 120) : '') + '</div></div>' +
+          '<button class="btn sm p" data-act="upd-check">' + icon('fa-rotate') + ' بررسی و نصب</button></div></div></div>'
+        : '') +
       '<div class="grid g4">' +
       '<div class="stat"><div class="lbl">' + icon('fa-users') + ' کل کاربران</div><div class="val">' + fa(us.length) + '</div><div class="sub">' + fa(on) + ' فعال • ' + fa(exp) + ' منقضی</div></div>' +
       '<div class="stat"><div class="lbl">' + icon('fa-hard-drive') + ' مصرف کل</div><div class="val">' + bytes(used) + '</div><div class="sub">' + (quota ? fa((used / quota * 100).toFixed(0)) + '٪ از سهمیه' : 'بدون سقف') + '</div><div class="bar" style="margin-top:8px"><i style="width:' + (quota ? used / quota * 100 : 0) + '%"></i></div></div>' +

@@ -22,6 +22,21 @@ const OUT = fileURLToPath(new URL('../_worker.obf.js', import.meta.url));
 
 let src = readFileSync(SRC, 'utf8');
 
+/* ── ۰) مُهرِ تاریخِ بیلد — بررسیِ نسخه (آپدیت خودکار) تاریخِ جدیدترین کامیتِ
+   ریپو را با همین تاریخ مقایسه می‌کند؛ بدونِ این مُهر، ورکرِ تازه‌مستقرشده هم
+   برای همیشه «قدیمی» دیده می‌شد. قالب: YYYY.MM.DD */
+{
+  const d = new Date();
+  const stamp = d.getUTCFullYear() + '.' + String(d.getUTCMonth() + 1).padStart(2, '0') + '.' + String(d.getUTCDate()).padStart(2, '0');
+  const before = src;
+  src = src.replace(/const BUILD = '[^']*';/, `const BUILD = '${stamp}';`);
+  if (src === before) console.error('WARN: مُهرِ BUILD پیدا نشد — بررسیِ نسخه دقیق نخواهد بود');
+  else {
+    writeFileSync(SRC, src, 'utf8');
+    console.log(`    مُهرِ بیلد: ${stamp}`);
+  }
+}
+
 /* ── ۱) وصلهٔ سطحِ ماژول: exportها را قبل از obfuscate به شناسه‌های ساده تبدیل می‌کنیم
    javascript-obfuscator ES export را دوباره تولید نمی‌کند؛ پس:
      export default { ... }  →  const __MOD_DEFAULT__ = { ... }
