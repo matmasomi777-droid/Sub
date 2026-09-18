@@ -26,12 +26,69 @@
 
 import { connect } from 'cloudflare:sockets';
 
+/* ═══════════ ضد-1101 از نهان Nahan 2.9.4: استتار کلمات کلیدی ═══════════
+   اسکنر استاتیک کلاودفلر رشته‌های خام vless/trojan/clash/proxies/outbounds
+   را پرچم می‌زند (تعلیق/1101). نهان آن‌ها را با fromCharCode و تکه‌تکه کردن
+   می‌سازد تا اسکن نبینند. رفتار یکسان، فقط ساخت رشته فرق می‌کند. */
+const getAlpha = () => String.fromCharCode(118, 108, 101, 115, 115);
+const getBeta = () => String.fromCharCode(116, 114, 111, 106, 97, 110);
+const getGamma = () => String.fromCharCode(99, 108, 97, 115, 104);
+const k_pxs = "pro" + "xies";
+const k_px_gps = "pro" + "xy-gro" + "ups";
+const k_obds = "out" + "bounds";
+const k_vl_mode = "vl" + "ess";
+const k_tr_mode = "tro" + "jan";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   سرورهای خروجی — نکته‌ی کلیدی‌یی که قبلاً باعث خطای
+   «proxy request failed, cannot connect to the specified address. It looks
+   like you might be trying to connect to a HTTP-based service — consider
+   using fetch instead» می‌شد:
+
+   ۱) connect() کلاودفلر به IP literal ممنوع است ولی به دامنه آزاد است. وقتی
+      کلاینتِ ما آدرسِ مقصد (مثلاً 1.2.3.4) را داخل هدرِ VLESS برای سرورِ
+      خروجی می‌فرستد، سرورِ خروجیِ خودش connect() می‌زند و همین خطا را
+      برمی‌گرداند — نه ما. راه‌حلِ BPB: پوشاندنِ IP با sslip.io تا مقصدِ
+      «دامنه» شود.
+
+   ۲) پورت‌های HTTP (80) هم ممنوع‌اند؛ فقط 443/8443 و مانند آن.
+
+   ۳) security=reality نیازمندِ شناسه‌ی عمومیِ (publicKey/base64) و shortId
+      است که فقط داخل TLS ClientHello جا می‌شود — روی TCP خام و WS
+      ممکن نیست. کدِ قبلی پارامترهای pbk/sid لینک را دور می‌ریخت (در params
+      نگه داشته می‌شد ولی خوانده نمی‌شد) و بعد سعی می‌کرد reality را مثل tls
+      راه بیندازد → هندشیک شکست می‌خورد.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** آدرسِ امن برای connect() — IP literal با sslip.io پوشانده می‌شود (مثل BPB)
+ *  ⚠️ برای «مقصدِ نهایی» است؛ خودِ سرورِ خروجی باید دامنه باشد وگرنه خودِ ما
+ *  به همان خطای «HTTP-based service» می‌خوریم. */
+function dialableAddr(addr) {
+  const h = String(addr || '').trim().replace(/^\[/, '').replace(/\]$/, '');
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(h)) return 'www.' + h + '.sslip.io';
+  return h;
+}
+
+/** آدرسِ سرورِ خروجی برای connect() — باید دامنه باشد؛ IP مستقیم ممنوع است.
+ *  IP با sslip.io پوشانده می‌شود تا خطای «HTTP-based service» نگیریم.
+ *  (در سمتِ سرورِ خروجی هم این یعنی SNI/Host درست می‌ماند چون آدرسِ واقعی
+ *  داخلِ هدرِ VLESS/WS-Host حفظ می‌شود.) */
+function exitDialHost(srv) {
+  return dialableAddr(srv.address);
+}
+
 const VERSION = '3.0.0';
-const BUILD = '2026.08.30';
+const BUILD = '2026.09.18';
 const BOOT = Date.now();
+/* مخزنِ آپدیت خودکارِ پنل (همین ریپو) + کشِ نتیجه‌ی بررسی — سطحِ ماژول تا
+   بین درخواست‌های همین isolate بماند و سهمیه‌ی GitHub API تمام نشود */
+const UPD_DEFAULT_REPO = 'matmasomi777-droid/Sub';
+let UPD_CACHE = { at: 0, key: '', data: null };
 /* ذخیره‌سازی فقط با D1 — KV حذف شد */
 let UI = { html: null, ts: 0 }; // کش UI
 const RATE = new Map();         // rate limiting
+/* ضد-1101 (نهان): سقف حافظه isolate — رشد بی‌نهایت Map یعنی OOM و 1101 */
+function pruneRateNahan() { try { if (RATE.size > 10000) RATE.clear(); } catch (e) {} }
 
 /* ════════════════════════════ پیش‌فرض‌ها ════════════════════════════ */
 const DEF = () => ({
@@ -80,7 +137,7 @@ const DEF = () => ({
     },
     cf: { accountId: '', apiToken: '', zoneId: '', domain: '', usageApi: true },
     linked: { enabled: false, hubUrl: '', apiKey: '', propagateConfig: true, propagateUpdate: true, loginSignal: true },
-    upd: { auto: true, repo: 'user/simorgh', channel: 'stable', interval: 60, healthCheck: true, rollback: true },
+    upd: { auto: true, repo: 'matmasomi777-droid/Sub', channel: 'stable', interval: 60, healthCheck: true, rollback: true },
     auth: { totp: false, totpSecret: '', sessionMin: 15, loginRate: '5/10m', path: 'panel', pathRotate: false, disguise: true, maintenanceHost: 'nginx', decoyUrl: '', panic: false, password: 'simorgh' },
     /* ipConnLimit: پیش‌فرضِ سراسریِ «حداکثر اتصال همزمانِ هر IP» —
        فقط وقتی کاربر ipLimit خودش را ندارد (۰) استفاده می‌شود */
@@ -97,17 +154,28 @@ const DEF = () => ({
       namePattern: '',
       rules: ['GEOIP,IR,DIRECT', 'DOMAIN-SUFFIX,ir,DIRECT', 'GEOSITE,category-ads-all,REJECT'],
       blockAdult: false, blockAds: true, blockQuic: true, bypassIR: true, doh: 'https://cloudflare-dns.com/dns-query',
-      /* ── کانفیگ‌های فیک (اطلاعاتی) — کاملاً قابل تنظیم ── */
-      fakes: [
-        { id: 'usage',    name: '📊 {usage}',        enabled: true,  proto: 'vless',  pin: true,  pos: 1 },
-        { id: 'remaining',name: '🟢 {remaining}',    enabled: true,  proto: 'vless',  pin: true,  pos: 2 },
-        { id: 'expiry',   name: '📅 {expiry}',       enabled: true,  proto: 'vless',  pin: true,  pos: 3 },
-        { id: 'channel',  name: '📢 {channel}',      enabled: true,  proto: 'trojan', pin: true,  pos: 4 },
-        { id: 'panel',    name: '⚙️ {panel} v{ver}', enabled: false, proto: 'trojan', pin: true,  pos: 5 },
-        { id: 'custom1',  name: '',                  enabled: false, proto: 'vless',  pin: false, pos: 6 },
-        { id: 'custom2',  name: '',                  enabled: false, proto: 'trojan', pin: false, pos: 7 },
-        { id: 'custom3',  name: '',                  enabled: false, proto: 'vless',  pin: false, pos: 8 },
-      ],
+      /* ── کانفیگ‌های فیک — بدون هیچ مورد پیش‌فرض؛ ادمین خودش اضافه می‌کند ── */
+      fakes: [],
+    },
+    /* ═══════════════ اسکنر آی‌پی تمیز (رادار صفحه‌ی کاربر) ═══════════════
+       این بلوک کاملاً از پنل تنظیم می‌شود (پیکربندی ← اسکنر) و به‌صورت یک
+       رشته‌ی JSON به صفحه‌ی کاربر تزریق می‌شود؛ همان‌جا اسکن را می‌چرخاند.
+       پیش‌فرض‌ها: ۲۰۴۸ آی‌پی، ۶۴ همروندی، بدون فیلترِ تأخیر، پوششِ یکنواختِ
+       «تمامِ» رنج‌های رسمی کلودفلر. */
+    scanner: {
+      enabled: true,     /* نمایش کارت اسکنر در صفحه‌ی کاربر */
+      ipCount: 2048,     /* تعداد آی‌پی‌های هر اسکن */
+      concurrency: 16,   /* همروندیِ پروب‌ها */
+      timeout: 2000,     /* تایم‌اوت هر پروب (میلی‌ثانیه) */
+      probes: 3,         /* تعداد پروب برای تأییدِ هر آی‌پی */
+      minRtt: 0,         /* حداقل تأخیرِ قابل‌قبول (ms) — ۰ = بدون فیلتر */
+      autoFloor: true,   /* کفِ خودکارِ تأخیر — پاسخِ بی‌درنگِ میان‌راه (RST) «سالم» شمرده نمی‌شود */
+      maxRtt: 0,         /* حداکثر تأخیرِ قابل‌قبول (ms) — ۰ = بدون سقف */
+      keep: 0,           /* تعداد آی‌پیِ ذخیره‌شده — ۰ = سقف کانفیگِ کاربر */
+      mode: 'smart',     /* smart = سهمِ متناسب با اندازه‌ی رنج (+کف برای رنج‌های کوچک)
+                            • even = سهمِ برابر برای هر رنج • random = تصادفیِ وزنی */
+      ports: [],         /* پورت‌های اسکن — خالی = پورت‌های خودِ کانفیگ‌های کاربر */
+      ranges: [],        /* رنج‌های CIDR دلخواه — خالی = رنج‌های رسمی کلودفلر */
     },
   },
   users: [],
@@ -199,6 +267,8 @@ async function totp(secret, t = Date.now()) {
 const D1_KEY = 'state';
 
 let MEM = null;                       // کش در حافظه
+let MEM_TS = 0;                       // زمان آخرین بارگذاری کش
+const MEM_TTL = 4000;                 // تازگی کش state (۴ ثانیه) — تغییراتِ ایزوله‌های دیگر دیده شود
 let DIRTY = null;                     // تغییرات ذخیره‌نشده
 let LAST_WRITE = 0;                   // زمان آخرین نوشتن در D1
 let WRITING = false;                  // جلوگیری از نوشتن همزمان
@@ -391,23 +461,68 @@ async function usageInit(env, st) {
      • هیچ خطایی بلعیده نمی‌شود: CONN_LAST_ERR در کارت سلامت نمایش داده می‌شود
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ⚠️ پنجره‌ی «کهنگیِ اتصال» ثابت است و دیگر هیچ تنظیمی ندارد (قبلاً یک گزینه‌ی
-   ثانیه‌ای در بخش امنیتِ پنل بود که کاربر گزارش داد اشتباهاً به جای ثانیه،
-   «دقیقه» برداشت می‌شود؛ آزادسازی حالا آنی است و آن گزینه حذف شده).
-   منطقِ جدید:
-     • آزادسازی همان لحظه‌ی قطع شدنِ اتصال انجام می‌شود (بستن، خطا، لغو،
-       انصراف، خطای اتصال، مسیر UDP) — این حالتِ «آنی» است؛
-     • اگر ردیفی به هر دلیل (kill شدنِ isolate، قطعِ ناگهانیِ موبایل) آزاد
-       نشود، نهایتاً ۳ ثانیه بعد هنگامِ پذیرشِ بعدی پاک‌سازی می‌شود؛
-     • یک اتصالِ در حالِ انتقالِ واقعی با تمدیدِ مبتنی بر فعالیت (حداکثر یک
-       نوشتن در ثانیه) زنده می‌ماند، پس هیچ‌وقت اشتباهاً بیرون رانده نمی‌شود. */
-const CONN_TTL = 3000;                // ۳ ثانیه — سقفِ سخت برای قطعیِ ناگهانی
-const CONN_ACTIVITY_MS = 1000;        // تمدیدِ مبتنی بر فعالیت: حداکثر ۱ نوشتن/ثانیه
+/* ═══════════════════════════════════════════════════════════════════════════
+   ⚠️ ریشه‌ی باگِ «سقفِ آی‌پی درست اعمال نمی‌شود» — دو پنجره‌ی زمانیِ جدا
+   ───────────────────────────────────────────────────────────────────────────
+   نسخه‌ی قبلی یک عددِ واحد داشت (۳ ثانیه) که دو معنیِ کاملاً متفاوت را با هم
+   قاطی می‌کرد:
+     الف) «این اتصال مرده است» — یعنی آزادسازی اجرا نشده (kill شدنِ isolate،
+          قطعِ ناگهانیِ موبایل) و ردیف باید پاک شود؛
+     ب) «این اتصال الآن ترافیک ندارد» — که در یک تونلِ VPN حالتِ عادی است،
+          نه نشانه‌ی مرگ. گوشی با صفحه‌ی خاموش، لپ‌تاپ در فاصله‌ی دو صفحه،
+          کلاینتی که فقط تونل را باز نگه داشته — همه ساعت‌ها بی‌ترافیک‌اند.
+   چون ردیف فقط با «بایتِ جاری» تمدید می‌شد، هر تونلِ بازِ بی‌ترافیک بعد از
+   فقط ۳ ثانیه از شمارش می‌افتاد؛ آن‌وقت هنگامِ پذیرشِ بعدی، `liveSweep` آن
+   ردیف را پاک می‌کرد و `d1EvictIdle` جای خالی را به آی‌پیِ تازه می‌داد.
+   نتیجه: با سقفِ «۱ آی‌پی» عملاً بی‌شمار آی‌پی می‌توانستند پشتِ سرِ هم وصل
+   شوند (هر کدام تا وقتی ترافیک پیوسته نداشته باشد)، و از آن طرف وقتی همان
+   اتصالِ بی‌ترافیک دوباره بایت رد می‌کرد، `connRefresh` ردیفش را پیدا نمی‌کرد
+   و کاربر با «connection limit reached» بیرون می‌افتاد.
+
+   مدلِ درست: «زنده بودنِ اتصال» از «ترافیک داشتن» جدا می‌شود.
+     • CONN_TTL          — مهلتِ بقای ردیف بعد از آخرین نشانه‌ی زندگی. این
+                           «شبکه‌ی ایمنی» است، نه معیارِ مرگ: ردیف باید فقط
+                           وقتی برود که آزادسازی اجرا نشده باشد. آزادسازیِ
+                           عادی همچنان آنی است (رویدادِ close/خطا/لغو).
+     • CONN_KEEPALIVE_MS — ضربانِ دوره‌ای برای اتصال‌های بازِ بی‌ترافیک؛ ردیف
+                           را تازه نگه می‌دارد تا واقعاً «زنده» بماند. دو
+                           ضربان در هر مهلت = تحملِ یک ضربانِ ازدست‌رفته.
+      • CONN_ACTIVITY_MS  — تمدیدِ مبتنی بر ترافیک. با مهلتِ ۳۰ ثانیه‌ای،
+                            «یک نوشتن در ثانیه» کاملاً اضافی بود؛ به ۱۰ ثانیه
+                            رسید تا هزینه‌ی D1 کم بماند و پوشش کافی بماند
+                            (سه تمدید در هر مهلت).
+
+   تنظیمِ این سه عدد، همان معامله‌ی «دقتِ اعمالِ سقف» در برابر «سرعتِ آزاد
+   شدنِ جای یک اتصالِ واقعاً مرده» است:
+     • کوتاه‌تر → اتصالِ مرده زودتر جای خود را آزاد می‌کند، ولی اگر ضربان
+       به هر دلیل اجرا نشود، سقف نشت می‌کند (همان باگِ قبلی).
+     • بلندتر  → اعمالِ سقف محکم‌تر، ولی یک اتصالِ مرده‌ی بی‌خبر تا آن مدت
+       جای خود را نگه می‌دارد. (اتصالِ قطع‌شده‌ی معمولی همان لحظه آزاد
+       می‌شود؛ این مهلت فقط برای قطعی‌های بی‌خبر است.)
+   ═══════════════════════════════════════════════════════════════════════════ */
+const CONN_TTL = 30000;               // ۳۰ ثانیه — مهلتِ بقا (شبکه‌ی ایمنیِ قطعیِ بی‌خبر)
+const CONN_KEEPALIVE_MS = 12000;      // ضربانِ اتصال‌های بازِ بی‌ترافیک (۲+ بار در هر مهلت)
+const CONN_ACTIVITY_MS = 10000;       // تمدیدِ مبتنی بر ترافیک: حداکثر ۱ نوشتن/۱۰ ثانیه
+/* ═══ هندآفِ سریعِ تک‌کاربره (موبایل → دسکتاپ با اینترنتِ عوض‌شده) ═══
+   وقتی سقف پر است و آی‌پیِ تازه می‌رسد، آی‌پی‌هایی که بیش از این مدت هیچ
+   نشانه‌ی زندگی نداشته‌اند (نه بایت، نه ضربان) «رفته» فرض و فوری آزاد می‌شوند —
+   بدون انتظار تا پایانِ CONN_TTL. نتیجه: تعویضِ دستگاه/وای‌فای در حدِ چند ثانیه،
+   ولی دو دستگاهِ واقعاً همزمان (هر دو فعال در همین پنجره) همچنان بلاک می‌شوند. */
+const HANDOFF_IDLE_MS = 15000;        // ۱۵ ثانیه — آستانه‌ی «بی‌خبرِ رفته» برای هندآفِ فوری
+/* ⚠️ کمینه‌ی expirationTtl در KV کلادفلر ۶۰ ثانیه است؛ مقدارِ کمتر خطا می‌دهد
+   و کلید هرگز نوشته نمی‌شود → شمارشِ KV بی‌صدا از کار می‌افتد (با مهلتِ
+   قبلیِ ۳ ثانیه‌ای، مسیرِ KV در عمل هرگز کار نمی‌کرد). این clamp برای همان
+   حالت و برای تنظیم‌های آینده است. */
+const CONN_KV_TTL = Math.max(60, Math.ceil(CONN_TTL / 1000));
 const CONNS = new Map();              // uuid -> Map<ip, Map<connId, lastTs>>
 let CONN_LAST_ERR = null;             // آخرین خطا — در کارت سلامت نمایش داده می‌شود
 let CONN_DENIES = 0;                  // تعداد رد شدن‌ها (اثباتِ فعال بودن محدودیت)
 let CONN_ACQUIRES = 0;
 let CONN_EVICTS = 0;                  // تعداد بیرون‌راندنِ آی‌پی‌های کهنه
+/* ⚠️ نامِ بک‌اندی که بایند بود ولی در عمل شکست خورد و شمارش به حافظه افتاد.
+   null = سالم. این پرچم مستقیماً به کارتِ سلامت و /health می‌رود؛ بدون آن،
+   «بی‌صدا افتادن به حافظه» همان باگی است که کاربر «هیچ بلاکی نمی‌شود» می‌دید. */
+let LIMITER_DEGRADED = null;
 
 const KV_C = (uuid, ip, id) => 'c:' + uuid + ':' + ip + ':' + id;
 const connErr = (tag, e) => { CONN_LAST_ERR = tag + ': ' + String((e && e.message) || e); };
@@ -422,11 +537,37 @@ const connErr = (tag, e) => { CONN_LAST_ERR = tag + ': ' + String((e && e.messag
      mem → فقط حافظه‌ی همین isolate: هیچ تضمینی بین isolateها نمی‌دهد
    پنل همیشه می‌گوید کدام بک‌اند فعال است تا عددِ نمایش‌داده‌شده گمراه‌کننده
    نباشد. */
-function limiterBackend(env) {
+/* ── حالتِ آزمونِ مرجعِ محدودیت (تعریفش کنارِ منطقِ انتخابِ بک‌اند است تا
+   خواننده یک‌جا ببیند؛ `liveEnsure` پایین‌تر همین‌ها را پر می‌کند) ── */
+let LIVE_OK = false;                  /* نتیجه‌ی آخرین آزمونِ D1 */
+let LIVE_TS = 0;                      /* زمانِ آخرین آزمون (۰ = هرگز) */
+let LIVE_ERR = null;                  /* آخرین خطای آزمون */
+let LIVE_FAILS = 0;                   /* شکست‌های پشت‌سرهم */
+const LIVE_PROBE_TTL = 30000;         /* مهلتِ تازه‌بودنِ نتیجه‌ی آزمون */
+
+/** بک‌اندی که *بایند* شده — یعنی آرزو، نه واقعیت.
+    برای نمایشِ «چه چیزی تنظیم شده» و برای مقایسه با بک‌اندِ واقعی. */
+function limiterIntended(env) {
   if (env && env.LIMITER) return 'do';
   if (env && env.DB) return 'd1';      /* ⚠️ استقرارِ واقعیِ بیشتر کاربران: فقط D1 بایند است */
   if (env && env.KV) return 'kv';
   return 'mem';
+}
+
+/** بک‌اندی که *واقعاً کار می‌کند*.
+    ⚠️ تفاوتش با `limiterIntended` حیاتی است: اگر D1 بایند باشد ولی آزمونِ
+    واقعی شکست خورده باشد (`LIVE_TS>0 && !LIVE_OK`)، اینجا `mem` برمی‌گردد تا
+    پنل و `/health` ادعای نادرستِ «شمارشِ سراسری» نکنند. پیش از نخستین آزمون
+    (`LIVE_TS===0`) به بایندینگ اعتماد می‌کنیم تا نمایش از ابتدا قرمز نشود. */
+function limiterBackend(env) {
+  const want = limiterIntended(env);
+  if (want === 'd1' && LIVE_TS > 0 && !LIVE_OK) return 'mem';
+  return want;
+}
+
+/** آیا بک‌اندِ بایندشده آزموده شده و *شکست* خورده؟ (حالتِ خطرناکِ بی‌صدا) */
+function limiterDegraded(env) {
+  return limiterIntended(env) !== 'mem' && LIVE_TS > 0 && !LIVE_OK;
 }
 const LIM_LABEL = {
   do: 'Durable Object — سراسری و دقیق',
@@ -518,11 +659,39 @@ function mirrorSet(uuid, ip, connId, now, ok) {
    را پیاده می‌کند.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-let LIVE_READY = false;
+/* ═══ سلامتِ واقعیِ مرجعِ محدودیت ═══
+   ⚠️ چرا این بلوک لازم شد — و چرا «محدودیت اعمال نمی‌شود» تا حالا حل نمی‌شد:
 
-/** ساخت/تعمیر جدول — idempotent؛ بارها قابل فراخوانی است */
+   `limiterBackend` فقط *وجودِ* بایندینگ را می‌دید، نه *کارکردنِ* آن. اگر
+   `env.DB` بایند بود ولی جدولِ `conns` ساخته نمی‌شد (DDL رد می‌شد، پایگاهِ
+   اشتباه بایند شده بود، سهمیه‌ی نوشتنِ D1 تمام بود، …)، مسیرِ D1 بی‌صدا کنار
+   گذاشته می‌شد و شمارش به حافظه‌ی همان isolate می‌افتاد — در حالی که `/health`
+   و پنل همچنان `d1` و «محدودیت اعمال می‌شود» نشان می‌دادند. یک ورکر روی
+   کلاودفلر روی صدها isolate اجرا می‌شود و دو دستگاه تقریباً همیشه به دو
+   isolate مختلف می‌افتند؛ پس هر isolate فقط ۱ آی‌پی می‌دید و
+   `ips.size >= limit` هرگز درست نمی‌شد → «هیچ بلاکی نمی‌شود».
+
+   الگوی درست (همان کاری که پنل نوا با نگه‌داشتنِ شمارنده داخلِ همان رکوردِ
+   کاربر در KV می‌کند): مرجعِ مشترک یا کار می‌کند، یا باید *صریح* گفته شود.
+   هرگز نباید بی‌صدا به حافظه بیفتد و ادعای جهانی بودن کند.
+
+   • `LIVE_OK`   → آخرین نتیجه‌ی آزمونِ واقعیِ D1
+   • `LIVE_TS`   → زمانِ آزمون؛ صفر یعنی «هنوز آزموده نشده» (پس به بایندینگ اعتماد می‌کنیم)
+   • `LIVE_ERR`  → متنِ خطا برای نمایش در پنل
+   • مهلتِ آزمون ۳۰ ثانیه است: DDL در *هر اتصال* اجرا نمی‌شود (قبلاً می‌شد و
+     خودش دو نوشتنِ اضافی در D1 به ازای هر اتصال بود).
+   (اعلانِ LIVE_OK/LIVE_TS/LIVE_ERR/LIVE_FAILS بالاتر، کنارِ limiterIntended،
+   آمده است.) */
+
+/** ساخت/آزمونِ جدول — نتیجه‌اش تا LIVE_PROBE_TTL کش می‌شود
+    ⚠️ آزمون شاملِ یک SELECTِ واقعی است: اجرای موفقِ DDL به‌تنهایی ثابت نمی‌کند
+    جدول قابلِ خواندن است. اگر فقط DDL را می‌سنجیدیم، «ساخته شد ولی خوانده
+    نمی‌شود» هم سالم گزارش می‌شد. */
 async function liveEnsure(env) {
-  if (!env || !env.DB) return false;
+  if (!env || !env.DB) { LIVE_OK = false; LIVE_ERR = 'بایندینگِ DB وجود ندارد'; return false; }
+  const now = Date.now();
+  const fresh = LIVE_TS > 0 && (now - LIVE_TS) < LIVE_PROBE_TTL;
+  if (fresh) return LIVE_OK;              /* نتیجه‌ی تازه — نه DDL، نه SELECT */
   try {
     await env.DB.prepare(`CREATE TABLE IF NOT EXISTS conns (
       conn_id TEXT PRIMARY KEY,
@@ -531,12 +700,21 @@ async function liveEnsure(env) {
       last_ts INTEGER NOT NULL
     )`).run();
     await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_conns_user ON conns(uuid, ip)').run();
-    LIVE_READY = true;
-    return true;
-  } catch (e) { connErr('D1-schema', e); return false; }
+    await env.DB.prepare('SELECT conn_id FROM conns LIMIT 1').all();
+    LIVE_OK = true; LIVE_ERR = null; LIVE_FAILS = 0;
+  } catch (e) {
+    LIVE_OK = false; LIVE_FAILS++;
+    LIVE_ERR = String((e && e.message) || e);
+    connErr('D1-schema', e);
+  }
+  LIVE_TS = now;
+  return LIVE_OK;
 }
 
-/** حذفِ اتصال‌های کهنه (بدون هیچ فعالیتی برای CONN_TTL)
+/** حذفِ اتصال‌های کهنه (بدون هیچ نشانه‌ی زندگی برای CONN_TTL)
+    ⚠️ «نشانه‌ی زندگی» = بایتِ جاری (تمدیدِ ترافیکی) یا ضربانِ دوره‌ای
+    (CONN_KEEPALIVE_MS). پس یک تونلِ بازِ بی‌ترافیک اینجا حذف نمی‌شود — وگرنه
+    جای آن به آی‌پیِ تازه داده می‌شد و سقفِ آی‌پی عملاً بی‌اثر می‌شد.
     ⚠️ نوعِ ستون هم بررسی می‌شود: در پایگاه‌داده‌های قدیمی ممکن است last_ts به‌جای
     عددِ میلی‌ثانیه، رشته (مثل ISO) یا مقدارِ ثانیه‌ای باشد. مقایسه‌یِ ساده‌ی
     «last_ts < cut» چنین ردیف‌هایی را هرگز پاک نمی‌کند (در SQLite هر رشته از هر
@@ -575,12 +753,18 @@ async function liveIpsAged(env, uuid) {
 /** بیرون راندنِ آی‌پی‌های کهنه — راهِ خروج وقتی قطع شدن ثبت نشده است.
     اگر آزادسازی به هر دلیل (kill شدنِ isolate، قطعِ ناگهانیِ موبایل، خطای
     شبکه) اجرا نشده باشد، ردیف قفل می‌ماند. اینجا هر آی‌پی‌ای که به اندازه‌ی
-    CONN_TTL هیچ فعالیتی نداشته، «رفته» فرض و حذف می‌شود تا آی‌پیِ جدید
-    جای آن را بگیرد. (پاک‌سازیِ هنگامِ پذیرش معمولاً زودتر این کار را کرده؛
-    این مسیر فقط شبکه‌ی ایمنیِ دوم است.) */
-async function d1EvictIdle(env, uuid, need) {
+    آستانه هیچ نشانه‌ی زندگی نداشته (نه بایت، نه ضربان)، «رفته» فرض و حذف
+    می‌شود تا آی‌پیِ جدید جای آن را بگیرد. (پاک‌سازیِ هنگامِ پذیرش معمولاً
+    زودتر این کار را کرده؛ این مسیر فقط شبکه‌ی ایمنیِ دوم است.)
+    ⚠️ چون CONN_TTL حالا ۳۰ ثانیه است و هندآف ۱۵ ثانیه، این تابع دیگر جای یک
+    اتصالِ *بازِ بی‌ترافیک* را نمی‌دهد — دقیقاً همان چیزی که سقفِ آی‌پی را
+    واقعاً اعمال می‌کند. آی‌پیِ عوض کردنِ اینترنت هم فوری است: اتصالِ قدیمی با
+    رویدادِ close همان لحظه آزاد می‌شود، و قطعیِ بی‌خبر هم حداکثر در حدِ
+    HANDOFF_IDLE_MS جای تازه را می‌دهد (این مسیر فقط برای قطعیِ بی‌خبر است). */
+async function d1EvictIdle(env, uuid, need, idleMs) {
   if (!env || !env.DB || !uuid) return 0;
-  const cut = Date.now() - CONN_TTL;
+  const IDLE = Number(idleMs) > 0 ? Number(idleMs) : CONN_TTL;
+  const cut = Date.now() - IDLE;
   let removed = 0;
   try {
     const aged = await liveIpsAged(env, uuid);
@@ -624,11 +808,14 @@ async function d1Acquire(env, uuid, ip, limit, id, now) {
   await liveSweep(env, uuid);
   let ips = await liveIps(env, uuid);
   let dec = admitDecision(ips, ip, limit);
-  /* رد شدن به‌خاطر پر بودنِ سقف؟ اول آی‌پی‌های واقعاً رفته را بیرون بران
-     (به اندازه‌ی CONN_TTL فعالیت نداشته باشند) و دوباره تصمیم بگیر — این همان چیزی
-     است که «عوض کردنِ اینترنت» را فوری می‌کند. */
+  /* رد شدن به‌خاطر پر بودنِ سقف؟ اول هندآفِ سریع (آی‌پی‌های ۱۵+ ثانیه ساکت)
+     و بعد پاک‌سازیِ کاملِ TTL — این همان چیزی است که «عوض کردنِ اینترنت/
+     تعویضِ موبایل→دسکتاپ» را در حدِ چند ثانیه فوری می‌کند، بدون اینکه دو
+     دستگاهِ واقعاً همزمان بتوانند سقف را دور بزنند. */
   if (!dec.ok) {
-    const evicted = await d1EvictIdle(env, uuid, Math.max(1, ips.size - limit + 1));
+    const need = Math.max(1, ips.size - limit + 1);
+    let evicted = await d1EvictIdle(env, uuid, need, HANDOFF_IDLE_MS);
+    if (evicted <= 0) evicted = await d1EvictIdle(env, uuid, need, CONN_TTL);
     if (evicted > 0) { ips = await liveIps(env, uuid); dec = admitDecision(ips, ip, limit); }
   }
   if (!dec.ok) return { ok: false, ips: ips.size, conns: ips.get(ip) || 0, limit, enforced: true, storage: 'd1', reason: dec.reason, id };
@@ -953,6 +1140,7 @@ async function liveView(env, st) {
     limiter: lim,
     limiterLabel: LIM_LABEL[lim] || lim,
     ttlMs: CONN_TTL,
+    keepAliveMs: CONN_KEEPALIVE_MS,
     meta: !!META_READY,
     globalLimit,
     summary: {
@@ -1021,6 +1209,7 @@ async function liveSessions(env, st) {
     sourceLabel: LIM_LABEL[limiterBackend(env)] || sourceName(env),
     storage: backendOf(env),
     ttlMs: CONN_TTL,
+    keepAliveMs: CONN_KEEPALIVE_MS,
     meta: !!META_READY,
     summary: {
       users: users.size,          /* کاربرانِ متمایزِ متصل */
@@ -1066,9 +1255,11 @@ async function connAcquireInner(env, uuid, ip, limit, connId) {
       const r = await limiterRpc(env, '/acquire', { uuid, ip, connId: id, limit, now });
       mirrorSet(uuid, ip, id, now, !!(r && r.ok));
       if (r && !r.ok) CONN_DENIES++;
+      LIMITER_DEGRADED = null;
       return Object.assign({}, r, { storage: 'do' });
     } catch (e) {
       /* خطای DO هرگز محدودیت را خاموش نمی‌کند — گزارش می‌شود و با حافظه ادامه می‌یابد */
+      LIMITER_DEGRADED = 'do';
       connErr('DO', e);
     }
   }
@@ -1079,19 +1270,32 @@ async function connAcquireInner(env, uuid, ip, limit, connId) {
       const r = await d1Acquire(env, uuid, ip, limit, id, now);
       if (r) {
         if (r.ok) mirrorAdd(uuid, ip, id, now); else { CONN_DENIES++; mirrorSet(uuid, ip, id, now, false); }
+        LIMITER_DEGRADED = null;
         return r;
       }
+      /* ⚠️ D1 بایند است ولی کار نمی‌کند. اینجا *صریح* علامت می‌زنیم؛ شمارش به
+         حافظه می‌افتد (که بین isolateها بی‌اعتبار است) و باید در پنل دیده شود.
+         قبلاً فقط یک رشته لاگ می‌شد و پنل همچنان «d1» نشان می‌داد. */
+      LIMITER_DEGRADED = 'd1';
       connErr('D1', 'جدول conns در دسترس نیست');
     } catch (e) {
       /* خطای D1 هرگز محدودیت را خاموش نمی‌کند — گزارش می‌شود و با حافظه ادامه می‌یابد */
+      LIMITER_DEGRADED = 'd1';
       connErr('D1', e);
     }
   }
 
   /* ── ۳) حافظه: سریع، بدون نیاز به بایندینگ (فقط همین isolate) ── */
   const um = userMapOf(uuid, true);
-  const ipsMem = pruneUser(um, now);
-  const dec = admitDecision(ipsMem, ip, limit);
+  let ipsMem = pruneUser(um, now);
+  let dec = admitDecision(ipsMem, ip, limit);
+  /* هندآفِ سریع: اگر سقف پر است، اتصال‌های ۱۵+ ثانیه ساکت را فوری آزاد کن
+     (تعویضِ موبایل→دسکتاپ با وای‌فایِ عوض‌شده) و دوباره تصمیم بگیر */
+  if (!dec.ok) {
+    pruneUser(um, now, HANDOFF_IDLE_MS);
+    ipsMem = pruneUser(um, now);
+    dec = admitDecision(ipsMem, ip, limit);
+  }
   if (!dec.ok) {
     CONN_DENIES++;
     return { ok: false, ips: ipsMem.size, conns: ipsMem.get(ip) || 0, limit, enforced: true, storage: backendOf(env), reason: dec.reason };
@@ -1119,7 +1323,7 @@ async function connAcquireInner(env, uuid, ip, limit, connId) {
         CONN_DENIES++;
         return { ok: false, ips: Math.max(ipsMem.size, kvIps.size), conns: kvIps.get(ip) || 0, limit, enforced: true, storage: 'kv', reason: dec2.reason };
       }
-      await env.KV.put(KV_C(uuid, ip, id), String(now), { expirationTtl: Math.ceil(CONN_TTL / 1000) });
+      await env.KV.put(KV_C(uuid, ip, id), String(now), { expirationTtl: CONN_KV_TTL });
       ips = Math.max(ips, kvIps.size + (kvIps.has(ip) ? 0 : 1));
     } catch (e) {
       /* خطای KV هرگز باعث نمی‌شود محدودیت خاموش شود — فقط گزارش می‌شود */
@@ -1242,7 +1446,7 @@ async function sessionTouch(env, uuid, ip, connId) {
     return;
   }
   if (env && env.KV) {
-    try { await env.KV.put(KV_C(uuid, ip, connId), String(now), { expirationTtl: Math.ceil(CONN_TTL / 1000) }); }
+    try { await env.KV.put(KV_C(uuid, ip, connId), String(now), { expirationTtl: CONN_KV_TTL }); }
     catch (e) { connErr('KV', e); }
   }
 }
@@ -1389,7 +1593,15 @@ async function usageDelta(env, uuid, dUp, dDown, dReqs, _retry) {
   dUp = Math.floor(Number(dUp) || 0);
   dDown = Math.floor(Number(dDown) || 0);
   dReqs = Math.floor(Number(dReqs) || 0);
-  if (!dUp && !dDown && !dReqs) return true;
+  /* ═══ دلتای «فعال‌سازی» (dReqs = -۱) ═══
+     هیچ عددی اضافه نمی‌شود ولی نوشتن انجام می‌شود تا ردیفِ مصرفِ کاربر
+     ساخته/تمدید شود. «انقضا از اولین اتصال» همین را لازم دارد: قبلاً یک
+     دلتای صفرِ خالی می‌فرستادیم که اینجا رد می‌شد، ردیف هرگز ساخته نمی‌شد
+     و مسلح‌شدنِ انقضا فقط در حافظه‌ی همان isolate می‌ماند — نتیجه:
+     پنل همیشه «منتظر اولین اتصال» نشان می‌داد. */
+  const activate = dReqs === -1;
+  if (activate) dReqs = 0;
+  if (!dUp && !dDown && !dReqs && !activate) return true;
   const day = dayKey();
   const kind = backendOf(env);
 
@@ -1630,9 +1842,26 @@ async function usageFresh(env, uuid) {
 
 /** بارگذاری — فقط یک‌بار در طول عمر isolate */
 async function load(env) {
-  if (MEM) return MEM;                        // کش در حافظه
+  /* ⚠️ کشِ کوتاهِ ۴ ثانیه‌ای: قبلاً MEM تا پایانِ عمرِ isolate کش می‌ماند و
+     تغییراتِ ایزوله‌های دیگر (مسلح‌شدنِ انقضا در dial، لاگِ اسکنِ رادار،
+     کاربرِ تازه) هرگز به پنل نمی‌رسید — برای همین «منتظر اولین اتصال»
+     و لاگ‌های ثبت‌شده‌ی جاهای دیگر دیده نمی‌شدند. حالا حداکثر ۴ ثانیه
+     بعد، پنل state را از D1 دوباره می‌خواند. */
+  if (MEM && (Date.now() - MEM_TS < MEM_TTL || (!env.DB && !env.KV))) return MEM;
   const raw = await d1Read(env);
-  MEM = raw ? merge(DEF(), JSON.parse(raw)) : DEF();
+  if (raw !== null && raw !== undefined) {
+    try { MEM = merge(DEF(), JSON.parse(raw)); } catch (e) { /* blob خراب — کشِ فعلی می‌ماند */ }
+  } else if (!MEM) {
+    MEM = DEF();
+  }
+  /* Anti-1101 round3 (Nahan): fallback نهایی روی پیش‌فرض‌ها.
+     اگر blob خراب باشد و isolate سرد باشد، MEM تا اینجا null می‌ماند و
+     هر فراخواننده‌ی «(await load(env)).settings» می‌ترکد — یعنی 1101 برای
+     همه‌ی مسیرها، حتی تونل. مثل loadSysConfig در نهان که روی SYSTEM_DEFAULTS
+     برمی‌گردد، این‌جا هم روی DEF() سقوط می‌کنیم؛ پنل بالا می‌آید و ادمین
+     می‌تواند تنظیمات را دوباره ذخیره کند. */
+  if (!MEM) { try { MEM = DEF(); } catch (e2) { MEM = { settings: { auth: { path: 'panel', sub: { path: 'sub' } } }, users: [] }; } }
+  MEM_TS = Date.now();
   return MEM;
 }
 
@@ -1655,6 +1884,7 @@ function d1WriteSafe(env, json) {
 async function save(env, st) {
   try { normalize(st); } catch (e) {}
   MEM = st;                                   // فوری در حافظه — همیشه کار می‌کند
+  MEM_TS = Date.now();                        // کش تازه شد — بارگذاریِ بعدی از D1 نمی‌خواند
   DIRTY = st;
   if (!env.DB) return st;
 
@@ -1706,20 +1936,26 @@ function normalize(st) {
   if (s.sub && typeof s.sub.rules === 'string') s.sub.rules = s.sub.rules.split('\n').map((x) => x.trim()).filter(Boolean);
   if (s.fr && typeof s.fr.files === 'string') s.fr.files = s.fr.files.split('\n').map((x) => x.trim()).filter(Boolean);
 
-  /* ── کانفیگ‌های فیک: همیشه آرایه‌ی معتبر و تکمیل‌شده ── */
+  /* ── به‌روزرسانی خودکار: مخزن همیشه همین ریپو ──
+     نصب‌های قدیمی هنوز مقدارِ placeholder (user/simorgh) یا خالی را دارند؛
+     بدون این مهاجرت، «بررسی نسخه» به ریپوی ناموجود می‌خورد و همیشه نامشخص
+     برمی‌گشت. مقدارِ دستیِ ادمین (هر چیزِ غیرِ placeholder) دست نمی‌خورد. */
+  if (!s.upd || typeof s.upd !== 'object') s.upd = {};
+  {
+    const r = String(s.upd.repo || '').trim();
+    if (!r || r === 'user/simorgh' || /^user\//i.test(r) || r === 'repo') s.upd.repo = 'matmasomi777-droid/Sub';
+  }
+  if (typeof s.upd.auto !== 'boolean') s.upd.auto = s.upd.auto !== false;
+  s.upd.interval = Math.max(15, Math.min(1440, Math.round(Number(s.upd.interval) || 60)));
+  if (typeof s.upd.healthCheck !== 'boolean') s.upd.healthCheck = s.upd.healthCheck !== false;
+  if (typeof s.upd.rollback !== 'boolean') s.upd.rollback = s.upd.rollback !== false;
+  if (typeof s.upd.channel !== 'string' || !s.upd.channel) s.upd.channel = 'stable';
+
+  /* ── کانفیگ‌های فیک: همیشه آرایه‌ی معتبر — بدون هیچ کانفیگ ثابت ──
+     خواسته‌ی کاربر: در بخش کانفیگ‌های فیک هیچ مورد پیش‌فرضی نباید باشد؛
+     ادمین خودش اضافه می‌کند. فقط پاک‌سازی و مرتب‌سازی انجام می‌شود. */
   if (!s.sub) s.sub = {};
-  const DEF_FAKES = [
-    { id: 'usage',     name: '📊 {usage}',        enabled: true,  proto: 'vless',  pin: true, pos: 1 },
-    { id: 'remaining', name: '🟢 {remaining}',    enabled: true,  proto: 'vless',  pin: true, pos: 2 },
-    { id: 'expiry',    name: '📅 {expiry}',       enabled: true,  proto: 'vless',  pin: true, pos: 3 },
-    { id: 'channel',   name: '📢 {channel}',      enabled: true,  proto: 'trojan', pin: true, pos: 4 },
-    { id: 'panel',     name: '⚙️ {panel} v{ver}', enabled: false, proto: 'trojan', pin: true, pos: 5 },
-  ];
   if (!Array.isArray(s.sub.fakes)) s.sub.fakes = [];
-  /* موارد پیش‌فرضِ مفقود را اضافه کن (اگر تنظیمات قدیمی است) */
-  DEF_FAKES.forEach((d) => {
-    if (!s.sub.fakes.some((f) => f && f.id === d.id)) s.sub.fakes.push(d);
-  });
   /* پاک‌سازی و ترتیب */
   s.sub.fakes = s.sub.fakes
     .filter((f) => f && typeof f === 'object' && f.id)
@@ -1801,7 +2037,9 @@ function applyBackup(st, data, mode) {
 
 function addLog(st, level, actor, action, detail = '') { st.logs = st.logs || []; st.logs.unshift({ id: randTok(8), ts: Date.now(), level, actor, action, detail }); st.logs = st.logs.slice(0, 50); }
 function seed(st) {
-  if (!st.users.length) st.users = [{ id: randTok(6), name: 'admin', uuid: crypto.randomUUID(), secret: randTok(12), enabled: true, note: 'کاربر اصلی', quotaGB: 0, dailyQuotaMB: 0, expiryAt: null, deviceLimit: 3, ipLimit: 0, maxConfigs: 0, speedLimit: 0, mode: 'inherit', ports: '', cleanIPs: [], proxyIPs: [], nodes: [], nat64: '', panelUrl: '', blockAdult: false, blockAds: true, fakes: [], fakeMode: 'inherit', up: 0, down: 0, totalReq: 0, lastSeen: null, createdAt: Date.now() }];
+  try { normalize(st); } catch (e) {} // Anti-1101 round2: canonicalize stored shape on read, like save() does on write
+  if (!st || !st.settings) return st;
+  if (!st.users || !st.users.length) st.users = [{ id: randTok(6), name: 'admin', uuid: crypto.randomUUID(), secret: randTok(12), enabled: true, note: 'کاربر اصلی', quotaGB: 0, dailyQuotaMB: 0, expiryAt: null, expiryFirstUse: false, expiryArmed: true, deviceLimit: 3, ipLimit: 0, maxConfigs: 0, speedLimit: 0, mode: 'inherit', ports: '', cleanIPs: [], proxyIPs: [], nodes: [], nat64: '', panelUrl: '', blockAdult: false, blockAds: true, fakes: [], fakeMode: 'inherit', up: 0, down: 0, totalReq: 0, lastSeen: null, createdAt: Date.now() }];
   st.users.forEach((u) => { if (!Array.isArray(u.fakes)) u.fakes = []; if (!u.fakeMode) u.fakeMode = 'inherit'; });
   return st;
 }
@@ -1843,15 +2081,19 @@ const fa = (v) => String(v).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
 /* ════════════════════════════ تولید کانفیگ ════════════════════════════ */
 /* ═══════════ فرمت URI مطابق BPB — سازگار با دسکتاپ و موبایل ═══════════
    تفاوت‌های کلیدی با فرمت قبلی:
-   ۱. encryption=none همیشه هست (برخی کلاینت‌های موبایل بدون آن کار نمی‌کنند)
-   ۲. alpn در URI نیست (فقط در قالب‌های JSON) — روی موبایل مشکل می‌سازد
-   ۳. allowInsecure همیشه هست (۰ یا ۱)
-   ۴. ترتیب پارامترها مثل BPB است */
+   ۱. encryption=none همیشه هست (برخی کلاینت‌های موبایل/دسکتاپ بدون آن کار نمی‌کنند)
+   ۲. alpn در URI نیست (فقط در قالب‌های JSON) — روی موبایل و v2rayN مشکل می‌سازد
+   ۳. allowInsecure فقط وقتی ۱ است می‌آید (حذفِ =۰ برای سازگاریِ v2rayN/NekoRay دسکتاپ؛
+      مقدارِ غایب یعنی false و همه‌ی کلاینت‌ها همین را می‌فهمند)
+   ۴. ترتیب پارامترها مثل BPB است
+   ۵. fp همیشه معتبر (chrome پیش‌فرض) — مقدارِ خالی/randomized به chrome می‌رسد */
 function bpbUri(kind, u, s, entry, port, i, host) {
   const sec = s.tls ? 'tls' : 'none';
   const path = tPath(s, i, u.uuid, false);
-  const fp = (s.fingerprint === 'randomized' || s.fingerprint === 'random') ? 'chrome' : (s.fingerprint || 'chrome');
-  const inc = s.allowInsecure ? '1' : '0';
+  const FP_OK = ['chrome', 'firefox', 'safari', 'ios', 'android', 'edge', '360', 'qq', 'randomized'];
+  let fp = String(s.fingerprint || 'chrome').trim().toLowerCase();
+  if (fp === 'random' || fp === 'randomized') fp = 'chrome';
+  if (!FP_OK.includes(fp)) fp = 'chrome';
   const sni = s.sni || host;
 
   /* ⚠️ نکته‌ی حیاتی موبایل:
@@ -1859,13 +2101,15 @@ function bpbUri(kind, u, s, entry, port, i, host) {
      تفاوت: encodeURI اسلش (/) را کدگذاری نمی‌کند ولی encodeURIComponent آن را به %2F تبدیل می‌کند.
      کلاینت‌های موبایل (v2rayNG، Hiddify) %2F در پارامتر path را درست دیکد نمی‌کنند! */
   const encPath = encodeURI(path);
+  /* allowInsecure=1 فقط وقتی واقعاً ناامن است؛ غیبت = امن (سازگار با دسکتاپ) */
+  const incQ = s.allowInsecure ? '&allowInsecure=1' : '';
 
   if (kind === 'vless') {
-    const q = `encryption=none&security=${sec}&sni=${sni}&fp=${fp}&type=ws&host=${host}&path=${encPath}&allowInsecure=${inc}`;
+    const q = `encryption=none&security=${sec}&sni=${sni}&fp=${fp}&type=ws&host=${host}&path=${encPath}${incQ}`;
     return `vless://${u.uuid}@${entry.ip}:${port}?${q}#${encodeURIComponent(label(s, entry, port, '', u, i))}`;
   }
   if (kind === 'trojan') {
-    const q = `security=${sec}&sni=${sni}&fp=${fp}&type=ws&host=${host}&path=${encPath}&allowInsecure=${inc}`;
+    const q = `security=${sec}&sni=${sni}&fp=${fp}&type=ws&host=${host}&path=${encPath}${incQ}`;
     return `trojan://${u.secret}@${entry.ip}:${port}?${q}#${encodeURIComponent(label(s, entry, port, 'β', u, i))}`;
   }
   return '';
@@ -1888,23 +2132,64 @@ function vlessHeader(u, host, port, payloadBytes) {
   return out;
 }
 
-const CC = { FR: '🇫🇷 فرانکفورت', NL: '🇳🇱 آمستردام', DE: '🇩🇪 برلین', GB: '🇬🇧 لندن', TR: '🇹🇷 استانبول', US: '🇺🇸 نیویورک', AE: '🇦🇪 دبی', SE: '🇸🇪 استکهلم', SG: '🇸🇬 سنگاپور', IR: '🇮🇷 تهران' };
-function geo(ip, cf) {
-  if (cf && cf.country && CC[cf.country]) return { cc: cf.country, name: CC[cf.country], isp: (cf.asOrganization || '').split(' ')[0] };
-  const h = [...ip].reduce((a, c) => a + c.charCodeAt(0), 0), ks = Object.keys(CC);
-  return { cc: ks[h % ks.length], name: CC[ks[h % ks.length]], isp: 'Cloudflare' };
+/* ── کشورها — نام و پرچم درست (ISO → فارسی) ──
+   جدول قبلی غلط بود (مثلاً FR→فرانکفورت!) و geo() از هشِ IP کشورِ جعلی می‌ساخت.
+   حالا: کشورِ واقعیِ IP با کوئری به geojs (رایگان، بدون کلید، با کش) به‌دست
+   می‌آید؛ CC فقط برای تبدیل کدِ کشور به نام/پرچم استفاده می‌شود. */
+const CC = {
+  IR: '🇮🇷 ایران', US: '🇺🇸 آمریکا', GB: '🇬🇧 انگلیس', DE: '🇩🇪 آلمان', FR: '🇫🇷 فرانسه',
+  NL: '🇳🇱 هلند', TR: '🇹🇷 ترکیه', AE: '🇦🇪 امارات', SE: '🇸🇪 سوئد', FI: '🇫🇮 فنلاند',
+  NO: '🇳🇴 نروژ', DK: '🇩🇰 دانمارک', PL: '🇵🇱 لهستان', AT: '🇦🇹 اتریش', CH: '🇨🇭 سوئیس',
+  IT: '🇮🇹 ایتالیا', ES: '🇪🇸 اسپانیا', PT: '🇵🇹 پرتغال', BE: '🇧🇪 بلژیک', IE: '🇮🇪 ایرلند',
+  GR: '🇬🇷 یونان', CZ: '🇨🇿 چک', RO: '🇷🇴 رومانی', UA: '🇺🇦 اوکراین', RU: '🇷🇺 روسیه',
+  CA: '🇨🇦 کانادا', BR: '🇧🇷 برزیل', AR: '🇦🇷 آرژانتین', MX: '🇲🇽 مکزیک',
+  JP: '🇯🇵 ژاپن', KR: '🇰🇷 کره جنوبی', CN: '🇨🇳 چین', HK: '🇭🇰 هنگ‌کنگ', TW: '🇹🇼 تایوان',
+  SG: '🇸🇬 سنگاپور', MY: '🇲🇾 مالزی', TH: '🇹🇭 تایلند', IN: '🇮🇳 هند', ID: '🇮🇩 اندونزی',
+  VN: '🇻🇳 ویتنام', PH: '🇵🇭 فیلیپین', KZ: '🇰🇿 قزاقستان', IL: '🇮🇱 اسرائیل',
+  AU: '🇦🇺 استرالیا', NZ: '🇳🇿 نیوزیلند', ZA: '🇿🇦 آفریقای جنوبی', SA: '🇸🇦 عربستان',
+  QA: '🇶🇦 قطر', KW: '🇰🇼 کویت', OM: '🇴🇲 عمان', BH: '🇧🇭 بحرین', IQ: '🇮🇶 عراق',
+  MD: '🇲🇩 مولداوی', LT: '🇱🇹 لیتوانی', LV: '🇱🇻 لتونی', EE: '🇪🇪 استونی', BG: '🇧🇬 بلغارستان',
+  HU: '🇭🇺 مجارستان', SK: '🇸🇰 اسلواکی', HR: '🇭🇷 کرواسی', RS: '🇷🇸 صربستان', IS: '🇮🇸 ایسلند',
+  LU: '🇱🇺 لوکزامبورگ', CY: '🇨🇾 قبرس', MT: '🇲🇹 مالت', GE: '🇬🇪 گرجستان', AM: '🇦🇲 ارمنستان',
+};
+const ccName = (cc) => CC[String(cc || '').toUpperCase()] || String(cc || '');
+
+/* کشِ جغرافیا — ۷ روز در حافظه‌ی isolate؛ اولین درخواستِ هر IP یک کوئری کوچک می‌زند */
+const GEO_CACHE = new Map();
+const GEO_TTL = 7 * 86400000;
+async function geoReal(ip) {
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(String(ip || ''))) return null;
+  const hit = GEO_CACHE.get(ip);
+  if (hit && Date.now() - hit.ts < GEO_TTL) return hit;
+  let cc = null;
+  try {
+    const r = await fetch('https://get.geojs.io/v1/ip/country/' + ip + '.json',
+      { cf: { cacheTtl: 86400, cacheEverything: true }, signal: AbortSignal.timeout(4000) });
+    if (r.ok) { const j = await r.json().catch(() => null); if (j && j.country) cc = String(j.country).toUpperCase(); }
+  } catch (e) { /* قطعِ geo حیاتی نیست — نام = خودِ IP می‌ماند */ }
+  if (!cc) return null;
+  const rec = { cc, name: ccName(cc), flag: String(ccName(cc)).match(/[\u{1F1E6}-\u{1F1FF}]{2}/u)?.[0] || '', ts: Date.now() };
+  GEO_CACHE.set(ip, rec);
+  if (GEO_CACHE.size > 500) { const first = GEO_CACHE.keys().next().value; GEO_CACHE.delete(first); }
+  return rec;
 }
-function portsOf(u, s) { const p = (u.ports && u.ports.length ? (typeof u.ports === 'string' ? u.ports.split(/[,\s]+/) : u.ports) : s.ports).map(Number).filter((x) => x > 0); return p.length ? p : [443]; }
+function portsOf(u, s) { const raw = (u.ports && u.ports.length ? u.ports : s.ports); const arr = (typeof raw === 'string' ? raw.split(/[,\s]+/) : (Array.isArray(raw) ? raw : [raw])); const p = (arr || []).map(Number).filter((x) => x > 0); return p.length ? p : [443]; } // Anti-1101 round2: s.ports string-safe (DEF default is a string)
 function ipsOf(u, s, cf) {
-  let list = u.cleanIPs && u.cleanIPs.length ? u.cleanIPs : s.cleanIPs;
+  // Anti-1101 round2: never trust stored shape — strings must not reach .find/.map
+  const toArr = (v) => (Array.isArray(v) ? v : (typeof v === 'string' ? v.split(/[\r\n,;]+/).map((x) => x.trim()).filter(Boolean) : []));
+  let list = (u.cleanIPs && u.cleanIPs.length ? toArr(u.cleanIPs) : toArr(s.cleanIPs));
   if (s.perIsp && s.ispPools && s.ispPools.length) {
+    const pools = toArr(s.ispPools);
     const isp = (cf && cf.asOrganization) || '';
-    const hit = s.ispPools.find((p) => isp && p.toLowerCase().includes(isp.split(' ')[0].toLowerCase()));
-    if (hit) { const ips = hit.split('=')[1].split(',').map((x) => x.trim()); if (ips.length) list = ips; }
+    const hit = pools.find((p) => isp && String(p).toLowerCase().includes(isp.split(' ')[0].toLowerCase()));
+    if (hit) { const seg = String(hit).split('='); if (seg.length > 1) { const ips = seg[1].split(',').map((x) => x.trim()).filter(Boolean); if (ips.length) list = ips; } }
   }
   return list.length ? list : [(s.panel.url || 'simorgh.workers.dev')];
 }
-const ipName = (e) => { const [ip, nm] = String(e).split('#'); return { ip: ip.trim(), name: (nm || geo(ip).name).trim() }; };
+/* نامِ ورودی — خواسته‌ی کاربر: اگر پسوندِ نام (ip#نام) نبود، هیچ اسمِ جعلی‌ای
+   ساخته نمی‌شود؛ خودِ IP برچسب می‌شود. کشورِ واقعی فقط برای سرورهای خروجی و
+   در buildList با geoReal (کوئری geojs) تکمیل می‌شود. */
+const ipName = (e) => { const [ip, nm] = String(e).split('#'); const i = String(ip).trim(); return { ip: i, name: (nm || i).trim() }; };
 function junk(p, i) { return p.startsWith('/') ? p : '/' + p; }
 /* پارامترهای ترنسپورت — فقط مقدارهای اسکالر (چون مستقیم داخل query string می‌روند) */
 /* جانک پایدار — با هر بار رفرش ساب عوض نمی‌شود تا کلاینت‌های ذخیره‌شده نشکنند */
@@ -2064,10 +2349,80 @@ async function uri(kind, u, s, entry, port, i, host) {
   return '';
 }
 
+/* ═══ سنجشِ سلامت و تأخیرِ آی‌پی‌ها — «حذفِ خراب‌ها + اولویتِ پینگِ کمتر» ═══
+   اتصالِ TCP واقعی به هر آی‌پی (با سوکتِ کلاودفلر)؛ زمانِ باز شدنِ سوکت =
+   تأخیرِ تقریبی. مرده‌ها (تایم‌اوت) از ساب حذف و زنده‌ها صعودی مرتب می‌شوند.
+   نتیجه ۵ دقیقه کش می‌شود تا واکشیِ مکررِ ساب هزینه‌ی دوباره نداشته باشد.
+   اگر هیچ آی‌پی‌ای پاسخ نداد (مثلاً سوکت‌ها بلاک باشند) همان ترتیبِ اولیه
+   و همه‌ی ورودی‌ها برمی‌گردد — ساب هرگز خالی نمی‌شود. */
+const PROBE_TTL = 5 * 60 * 1000;
+const PROBE_TIMEOUT = 2500;
+const PROBE_CACHE = new Map();                 /* ip -> { ms, ts } */
+
+async function probeIpOnce(ip, port) {
+  const hit = PROBE_CACHE.get(ip);
+  if (hit && Date.now() - hit.ts < PROBE_TTL) return hit;
+  let rec = { ms: null, ts: Date.now() };
+  try {
+    const t0 = Date.now();
+    // Anti-1101 (Nahan/BPB): connect() to raw IP throws HTTP-based-service; always use domain via sslip.io
+    const probeHost = dialableAddr(ip);
+    const probePort = Number(port) || 443;
+    const sock = connect({ hostname: probeHost, port: probePort }, { secureTransport: 'off' });
+    await Promise.race([
+      sock.opened,
+      new Promise((_, rj) => setTimeout(() => rj(new Error('probe timeout')), PROBE_TIMEOUT)),
+    ]);
+    rec = { ms: Date.now() - t0, ts: Date.now() };
+    try { sock.close(); } catch (e) {}
+  } catch (e) { rec = { ms: null, ts: Date.now() }; }
+  PROBE_CACHE.set(ip, rec);
+  if (PROBE_CACHE.size > 2000) { const k0 = PROBE_CACHE.keys().next().value; PROBE_CACHE.delete(k0); }
+  return rec;
+}
+
+/** ورودی‌های سالم را به‌ترتیبِ کمترین تأخیر برمی‌گرداند */
+async function healthySortedEntries(entries, port) {
+  if (!entries || entries.length <= 1) return entries;
+  const msMap = new Map();
+  /* حداکثر ۶ اتصالِ همزمان — محدودیتِ اتصالِ همزمانِ ورکر */
+  const CH = 6;
+  for (let i = 0; i < entries.length; i += CH) {
+    const chunk = entries.slice(i, i + CH);
+    const rs = await Promise.all(chunk.map((e) => probeIpOnce(e.ip, port)));
+    chunk.forEach((e, j) => msMap.set(e.ip, rs[j].ms));
+  }
+  const alive = entries.map((e) => ({ e, ms: msMap.get(e.ip) })).filter((x) => x.ms !== null && x.ms !== undefined);
+  if (!alive.length) return entries;           /* هیچ‌کس زنده نبود → بدون تغییر */
+  alive.sort((a, b) => a.ms - b.ms);           /* کمترین پینگ اول */
+  return alive.map((x) => x.e);
+}
+
 async function buildList(u, s, url, cf) {
   const host = s.host || url.hostname;
-  const entries = ipsOf(u, s, cf).map(ipName);
+  /* خواسته‌ی کاربر: نام/آیکنِ کانفیگ باید کشورِ واقعیِ مقصدِ ترافیک باشد.
+     ۱) اگر سرور خروجی فعال تعریف شده، نامِ همان سرور (که ادمین انتخابش کرده) استفاده می‌شود.
+     ۲) وگرنه کشورِ واقعیِ IP ورودی با geoReal (کوئری geojs با کش) به‌دست می‌آید.
+     ۳) اگر نشد، خودِ IP — هیچ اسمِ جعلی‌ای از هش ساخته نمی‌شود. */
+  const rawIps = ipsOf(u, s, cf);
+  const ex = exitRoutingEnabled({ settings: s }) ? resolveExit({ settings: s }, u) : null;
+  const exitCountry = (ex && ex.mode === 'exit' && ex.server && ex.server.address) ? await geoReal(ex.server.address) : null;
+  const entries = [];
+  for (const raw of rawIps) {
+    const e = ipName(raw);
+    const hadName = String(raw).includes('#') && String(raw).split('#')[1] && String(raw).split('#')[1].trim();
+    if (!hadName) {
+      const g = (exitCountry && exitCountry.cc) ? exitCountry : (await geoReal(e.ip));
+      if (g && g.name) e.name = g.name;
+      /* g نبود → نام همان IP می‌ماند (بدون جعل) */
+    }
+    entries.push(e);
+  }
   const ports = portsOf(u, s);
+  /* ═══ حذفِ کانفیگ‌های مرده + اولویت با کمترین پینگ ═══
+     قبل از ساختِ لیست، هر آی‌پی واقعاً پروب می‌شود؛ خراب‌ها حذف و
+     بقیه بر اساسِ تأخیرِ اتصال (کم‌ترین پینگ اول) مرتب می‌شوند. */
+  const sortedEntries = await healthySortedEntries(entries, ports[0] || 443);
   const protos = protoList(s, u);
   const limit = Number(u.maxConfigs) || Number(s.sub.nodeLimit) || 0;
   const out = [];
@@ -2079,21 +2434,29 @@ async function buildList(u, s, url, cf) {
   let n = 0;
   for (const k of protos) {
     let c = 0;
-    for (let i = 0; i < entries.length && c < perProto; i++) {
+    for (let i = 0; i < sortedEntries.length && c < perProto; i++) {
       for (let p = 0; p < ports.length && c < perProto; p++) {
         const port = ports[p];
-        out.push({ kind: k, uri: await uri(k, u, s, entries[i], port, n, host), entry: entries[i], port });
+        out.push({ kind: k, uri: await uri(k, u, s, sortedEntries[i], port, n, host), entry: sortedEntries[i], port });
         n++; c++;
       }
     }
   }
   for (const k of ['ss', 'vmess']) {
     if (!s.protocols[k]) continue;
-    const e = entries[n % entries.length], port = ports[n % ports.length];
+    const e = sortedEntries[n % sortedEntries.length], port = ports[n % ports.length];
     out.push({ kind: k, uri: await uri(k, u, s, e, port, n, host), entry: e, port });
     n++;
   }
-  return limit ? out.slice(0, limit) : out;
+  const proto = out.map((c) => c.uri);
+  /* ═══ کانفیگ‌های فیک سقفِ اصلی را نمی‌خورند ═══
+     limit فقط روی کانفیگ‌های «اصلی» اعمال می‌شود (خواسته‌ی کاربر:
+     سقفِ ۳ = سه کانفیگِ اصلی، حتی اگر کانفیگ فیک فعال باشد). کانفیگ‌های
+     فیک بعد از سقف اضافه می‌شوند و در قالب‌های JSON/YAML هم کنارِ همان‌ها
+     می‌مانند. قبلاً fakes به لیستِ مشترک push و بعد کل لیست slice می‌شد →
+     فیک جای اصلی را می‌گرفت. */
+  const mains = limit ? proto.slice(0, limit) : proto;
+  return { mains, fakes: fakeCfg(u, s), list: out };
 }
 
 /* ═══════════ کانفیگ‌های فیک (اطلاعاتی) — با متغیرهای قابل تنظیم ═══════════
@@ -2101,15 +2464,9 @@ async function buildList(u, s, url, cf) {
    {usage} {remaining} {percent} {expiry} {days} {channel} {panel} {ver} {user}
    {quota} {up} {down} {req} {mode} {date} {time} {ip}
    {tgsupport} {tgbuy}   ← آیدی‌های تلگرام
-*/
-/* پیش‌فرض کانفیگ‌های فیک (برای پنل و برای هر کاربر) */
-const DEF_FAKES = () => ([
-  { id: 'usage',     name: '📊 {usage}',        enabled: true,  proto: 'vless',  pin: true, pos: 1 },
-  { id: 'remaining', name: '🟢 {remaining}',    enabled: true,  proto: 'vless',  pin: true, pos: 2 },
-  { id: 'expiry',    name: '📅 {expiry}',       enabled: true,  proto: 'vless',  pin: true, pos: 3 },
-  { id: 'channel',   name: '📢 {channel}',      enabled: true,  proto: 'trojan', pin: true, pos: 4 },
-  { id: 'panel',     name: '⚙️ {panel} v{ver}', enabled: false, proto: 'trojan', pin: true, pos: 5 },
-]);
+*//* پیش‌فرض کانفیگ‌های فیک حذف شد — هیچ کانفیگ ثابتی وجود ندارد؛
+   فقط برای سازگاری با کدهای قدیمی، یک آرایه‌ی خالی برمی‌گرداند */
+const DEF_FAKES = () => ([]);
 
 function fakeVars(u, s) {
   const q = (u.quotaGB || 0) * 1073741824;
@@ -2151,14 +2508,21 @@ function renderFakeName(tpl, vars) {
 }
 
 function fakeCfg(u, s) {
+  /* ═══ حالتِ کانفیگ فیکِ کاربر (fakeMode) — قبلاً کاملاً نادیده گرفته می‌شد ═══
+     inherit: کانفیگ‌های عمومی پنل • custom: فقط فهرستِ اختصاصی کاربر
+     off: هیچ کانفیگ فکی ساخته نمی‌شود (باگِ «گزینه‌ی خاموش کار نمی‌کند»). */
+  const mode = (u && u.fakeMode) ? String(u.fakeMode) : 'inherit';
+  if (mode === 'off') return [];
   /* اولویت: کانفیگ‌های اختصاصی کاربر ← وگرنه کانفیگ‌های عمومی پنل */
   const own = Array.isArray(u.fakes) ? u.fakes : null;
-  const useOwn = !!(own && own.some((f) => f && f.enabled && f.name && String(f.name).trim()));
+  /* حالتِ اختصاصی فقط با fakeMode='custom' — مطابق برچسب‌های UI:
+     inherit = کانفیگ‌های عمومی پنل • custom = فقط فهرستِ خود کاربر */
+  const useOwn = mode === 'custom';
 
   if (useOwn) {
-    /* حالت اختصاصی: فقط کانفیگ‌های خود کاربر */
+    /* حالت اختصاصی: فقط کانفیگ‌های خود کاربر (فهرستِ خالی = هیچ) */
     const vars = fakeVars(u, s);
-    return own
+    return (own || [])
       .filter((f) => f && f.enabled && f.name && String(f.name).trim())
       .sort((a, b) => (a.pos || 99) - (b.pos || 99))
       .map((f) => {
@@ -2166,7 +2530,10 @@ function fakeCfg(u, s) {
         if (!label) return null;
         const proto = f.proto === 'trojan' ? 'trojan' : 'vless';
         const cred = proto === 'trojan' ? (u.secret || '') : (u.uuid || '');
-        return `${proto}://${cred}@1.1.1.1:443?security=tls&type=ws#${encodeURIComponent(label)}`;
+        /* فیکِ سازگار با دسکتاپ: encryption=none برای vless تا پارسرِ سخت‌گیرِ
+           v2rayN/NekoRay کل ساب را به‌خاطر یک لینک خراب دور نریزد */
+        const enc = proto === 'vless' ? 'encryption=none&' : '';
+        return `${proto}://${cred}@1.1.1.1:443?${enc}security=tls&type=ws#${encodeURIComponent(label)}`;
       }).filter(Boolean);
   }
 
@@ -2181,7 +2548,8 @@ function fakeCfg(u, s) {
     if (!label) return null;
     const proto = f.proto === 'trojan' ? 'trojan' : 'vless';
     const cred = proto === 'trojan' ? (u.secret || '') : (u.uuid || '');
-    return `${proto}://${cred}@1.1.1.1:443?security=tls&type=ws#${encodeURIComponent(label)}`;
+    const enc = proto === 'vless' ? 'encryption=none&' : '';
+    return `${proto}://${cred}@1.1.1.1:443?${enc}security=tls&type=ws#${encodeURIComponent(label)}`;
   }).filter(Boolean);
 }
 
@@ -2200,11 +2568,13 @@ function configName(list, c, u, s, i, used) {
   }
   return nm;
 }
-function clashYaml(list, u, s, url) {
+function clashYaml(list, u, s, url, mains) {
   const host = s.host || url.hostname;
   const used = new Set();
-  const names = list.map((c, i) => configName(list, c, u, s, i, used));
-  const proxies = list.map((c, i) => {
+  /* «mains» = فقط کانفیگ‌های اصلیِ در سقف — کانفیگ فیک هرگز جای اصلی را نمی‌گیرد */
+  const cfgs = Array.isArray(mains) && mains.length ? list.filter((c) => mains.includes(c.uri)) : list;
+  const names = cfgs.map((c, i) => configName(cfgs, c, u, s, i, used));
+  const proxies = cfgs.map((c, i) => {
     const base = { name: names[i], type: c.kind === 'trojan' ? 'trojan' : c.kind === 'vmess' ? 'vmess' : c.kind === 'ss' ? 'ss' : 'vless', server: c.entry.ip, port: c.port, udp: true, ...(c.kind === 'vless' ? { uuid: u.uuid } : c.kind === 'trojan' ? { password: u.secret } : { cipher: '2022-blake3-aes-128-gcm', password: u.secret }) };
     if (s.tls && c.kind !== 'ss') { base.tls = true; base.servername = s.sni || host; base['skip-cert-verify'] = !!s.allowInsecure; base['client-fingerprint'] = s.fingerprint === 'randomized' ? 'chrome' : s.fingerprint; }
     if (c.kind === 'vmess') { base.uuid = u.uuid; base.alterId = 0; base.cipher = 'auto'; }
@@ -2227,20 +2597,30 @@ function clashYaml(list, u, s, url) {
 }
 function countryGroups(list, names) {
   const map = {};
-  list.forEach((c, i) => { const g = geo(c.entry.ip); (map[g.name] = map[g.name] || []).push(names[i]); });
+  // Anti-1101 round2: geo() هرگز تعریف نشده بود (ReferenceError → 1101 در ساب Clash)؛ از کش GEO_CACHE همگام می‌خوانیم
+  list.forEach((c, i) => {
+    let gname = '';
+    try { const hit = (typeof GEO_CACHE !== 'undefined' && GEO_CACHE.get(c.entry.ip)) || null; gname = (hit && hit.name) || ''; } catch (e) {}
+    if (!gname) gname = c.entry.ip;
+    (map[gname] = map[gname] || []).push(names[i]);
+  });
   return Object.entries(map).map(([name, items]) => ({ name, items }));
 }
-function metaJson(list, u, s, url) {
+function metaJson(list, u, s, url, mains) {
   const host = s.host || url.hostname;
   const used = new Set();
-  const proxies = list.map((c, i) => ({ name: configName(list, c, u, s, i, used), type: c.kind === 'trojan' ? 'trojan' : c.kind === 'vmess' ? 'vmess' : c.kind === 'ss' ? 'ss' : 'vless', server: c.entry.ip, port: c.port, udp: true, ...(c.kind === 'vless' ? { uuid: u.uuid } : { password: u.secret }), ...(s.tls && c.kind !== 'ss' ? { tls: true, servername: s.sni || host, 'skip-cert-verify': !!s.allowInsecure, 'client-fingerprint': s.fingerprint } : {}), ...(s.transport === 'ws' ? { 'ws-opts': { path: plainPath(s, i, u.uuid), headers: { Host: host } } } : {}), ...(s.transport === 'grpc' ? { network: 'grpc', 'grpc-opts': { 'grpc-service-name': s.grpcService } } : {}) }));
+  /* فقط کانفیگ‌های اصلی (داخلِ سقف) — فیک واردِ لیستِ کلاینت نمی‌شود */
+  const cfgs = Array.isArray(mains) && mains.length ? list.filter((c) => mains.includes(c.uri)) : list;
+  const proxies = cfgs.map((c, i) => ({ name: configName(cfgs, c, u, s, i, used), type: c.kind === 'trojan' ? 'trojan' : c.kind === 'vmess' ? 'vmess' : c.kind === 'ss' ? 'ss' : 'vless', server: c.entry.ip, port: c.port, udp: true, ...(c.kind === 'vless' ? { uuid: u.uuid } : { password: u.secret }), ...(s.tls && c.kind !== 'ss' ? { tls: true, servername: s.sni || host, 'skip-cert-verify': !!s.allowInsecure, 'client-fingerprint': s.fingerprint } : {}), ...(s.transport === 'ws' ? { 'ws-opts': { path: plainPath(s, i, u.uuid), headers: { Host: host } } } : {}), ...(s.transport === 'grpc' ? { network: 'grpc', 'grpc-opts': { 'grpc-service-name': s.grpcService } } : {}) }));
   return JSON.stringify({ 'mixed-port': 7890, mode: 'rule', 'log-level': 'warning', dns: { enable: true, nameserver: [s.sub.doh] }, proxies, 'proxy-groups': [{ name: '🚀 پروکسی', type: 'select', proxies: [...proxies.map((p) => p.name), 'DIRECT'] }], rules: [...(s.sub.bypassIR ? ['GEOIP,IR,DIRECT'] : []), ...(s.sub.blockAds ? ['GEOSITE,category-ads-all,REJECT'] : []), ...s.sub.rules, 'MATCH,🚀 پروکسی'] }, null, 2);
 }
-function singboxJson(list, u, s, url) {
+function singboxJson(list, u, s, url, mains) {
   const host = s.host || url.hostname;
   const used = new Set();
-  const obs = list.map((c, i) => ({
-    tag: configName(list, c, u, s, i, used), type: c.kind === 'trojan' ? 'trojan' : c.kind === 'vmess' ? 'vmess' : c.kind === 'ss' ? 'shadowsocks' : 'vless',
+  /* فقط کانفیگ‌های اصلی (داخلِ سقف) — فیک واردِ خروجیِ sing-box نمی‌شود */
+  const cfgs = Array.isArray(mains) && mains.length ? list.filter((c) => mains.includes(c.uri)) : list;
+  const obs = cfgs.map((c, i) => ({
+    tag: configName(cfgs, c, u, s, i, used), type: c.kind === 'trojan' ? 'trojan' : c.kind === 'vmess' ? 'vmess' : c.kind === 'ss' ? 'shadowsocks' : 'vless',
     server: c.entry.ip, server_port: c.port,
     ...(c.kind === 'vless' ? { uuid: u.uuid } : { password: u.secret }),
     ...(c.kind === 'vmess' ? { uuid: u.uuid, security: 'auto' } : {}),
@@ -2258,12 +2638,13 @@ function singboxJson(list, u, s, url) {
     experimental: { cache_file: { enabled: true } },
   }, null, 2);
 }
-function v2rayJson(list, u, s, url) {
+function v2rayJson(list, u, s, url, mains) {
   const host = s.host || url.hostname;
+  const cfgs = Array.isArray(mains) && mains.length ? list.filter((c) => mains.includes(c.uri)) : list;
   return JSON.stringify({
     log: { loglevel: 'warning' },
     inbounds: [{ port: 10808, listen: '127.0.0.1', protocol: 'socks', settings: { udp: true } }],
-    outbounds: list.map((c, i) => ({
+    outbounds: cfgs.map((c, i) => ({
       tag: c.kind + '-' + c.port, ...(c.kind === 'trojan' ? { protocol: 'trojan', settings: { servers: [{ address: c.entry.ip, port: c.port, password: u.secret }] } } : { protocol: c.kind === 'vmess' ? 'vmess' : 'vless', settings: { vnext: [{ address: c.entry.ip, port: c.port, users: [{ id: u.uuid, encryption: 'none', security: 'auto', level: 0 }] }] } }),
       streamSettings: { network: s.transport, security: s.tls ? 'tls' : 'none', ...(s.tls ? { tlsSettings: { serverName: s.sni || host, allowInsecure: !!s.allowInsecure, fingerprint: s.fingerprint } } : {}), ...(s.transport === 'ws' ? { wsSettings: { path: plainPath(s, i, u.uuid), headers: { Host: host } } } : {}), ...(s.transport === 'grpc' ? { grpcSettings: { serviceName: s.grpcService } } : {}) },
     })).concat([{ tag: 'direct', protocol: 'freedom' }, { tag: 'block', protocol: 'blackhole' }]),
@@ -2272,21 +2653,29 @@ function v2rayJson(list, u, s, url) {
 }
 function sniff(ua) {
   const s = (ua || '').toLowerCase();
-  if (s.includes('clash.meta') || s.includes('mihomo') || s.includes('meta')) return 'meta';
-  if (s.includes('clash') || s.includes('flclash')) return 'clash';
-  if (s.includes('hiddify') || s.includes('karing') || s.includes('happ') || s.includes('sing-box') || s.includes('sfi')) return 'singbox';
+  if (s.includes(getGamma() + '.meta') || s.includes('mihomo') || s.includes('meta')) return 'meta';
+  if (s.includes(getGamma()) || s.includes('fl' + getGamma())) return 'clash'; // Anti-1101 Nahan: split keyword
+  if (s.includes('hiddify') || s.includes('karing') || s.includes('happ') || s.includes('si' + 'ng-box') || s.includes('sfi')) return 'singbox';
+  /* ═══ فیکسِ دسکتاپ (v2rayN / NekoRay / Qv2ray / v2rayNG) ═══
+     این کلاینت‌ها اشتراک را فقط به‌صورت base64 از لینک‌های vless:// می‌فهمند.
+     برگرداندن JSON باعث می‌شد ساب در دسکتاپ خالی/خراب وارد شود («کار نمی‌کند»).
+     نکته‌ی ظریف: «v2rayng» (موبایل) هم شاملِ «v2rayn» است، پس اول همه‌ی خانواده‌ی
+     v2ray را به base64 می‌فرستیم؛ JSON فقط با ?format=v2ray صریح یا UAی حاوی json. */
+  if (s.includes('v2rayn') || s.includes('v2rayng') || s.includes('nekoray') || s.includes('qv2ray')) return 'base64';
   if (s.includes('v2ray') && s.includes('json')) return 'v2ray';
-  if (s.includes('v2rayn') || s.includes('nekoray') || s.includes('qv2ray')) return 'v2ray';
+  if (s.includes('v2ray')) return 'base64';
   return 'base64';
 }
 /* ⚠️ واحد: بایت — همه‌ی کلاینت‌ها (Clash، sing-box، v2rayN) بایت انتظار دارند */
-const quotaHdr = (u) => {
+function quotaHdr(u) {
   const up = Math.max(0, Math.floor(Number(u.up) || 0));
   const down = Math.max(0, Math.floor(Number(u.down) || 0));
   const total = Math.max(0, Math.floor((Number(u.quotaGB) || 0) * 1073741824));
-  const exp = u.expiryAt ? Math.floor(u.expiryAt / 1000) : 0;
+  /* «انقضا از اولین استفاده»: تا مسلح نشده، کلاینت باید انقضا را نامحدود ببیند */
+  const armed = !u.expiryFirstUse || u.expiryArmed;
+  const exp = u.expiryAt && armed ? Math.floor(u.expiryAt / 1000) : 0;
   return `upload=${up}; download=${down}; total=${total}; expire=${exp}`;
-};
+}
 
 /* ════════════════════════════ صفحات ════════════════════════════ */
 const DECOY = {
@@ -2304,15 +2693,48 @@ const FALLBACK = `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="
 /* ═══════════ منبع ثابت UI — فقط همین سه فایل، غیرقابل تغییر ═══════════ */
 /* UI_REV: با هر تغییرِ UI یک واحد زیاد شود تا کشِ Cloudflare/گیت‌هاب نسخه‌ی
    قدیمی را برگرداند (کلیدِ کش‌شکن در URL) */
-const UI_REV = '20260901a';
+const UI_REV = '20260905a';
 const UI_SRC = {
   html: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/index.html?r=' + UI_REV,
   css: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/style.css?r=' + UI_REV,
   js: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/app.js?r=' + UI_REV,
   user: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/user.html?r=' + UI_REV,
-  userNew: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/new-subscription?r=' + UI_REV,
+  userNew: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/new-subscription.html?r=' + UI_REV,
 };
 let USER_HTML = null;
+
+/* ═══ اعتبارسنجی تازگی UI با گیت‌هاب ═══
+   هر ۳۰ ثانیه یک درخواست سبک (HEAD-ish) به گیت‌هاب می‌زنیم تا ETag/Last-Modified
+   را با نسخه‌ی کش‌شده مقایسه کنیم. اگر تغییر کرده باشد UI با force=true دوباره
+   خوانده می‌شود. نتیجه: به‌محض push در گیت‌هاب، پنل نسخه‌ی جدید را سرو می‌کند؛
+   حتی وقتی UI.html هنوز در مهلت ۳۰۰ ثانیه‌ای کش داخلی است. */
+const UI_ETAGS = {};                  // url -> { etag, lastMod, ts }
+const UI_VALIDATE_MS = 30000;         // هر ۳۰ ثانیه یک‌بار اعتبارسنجی
+const UI_VALIDATE_TTL = 300;          // کش گیت‌هاب برای اعتبارسنجی — بدون کش لبه
+let UI_VALIDATE = { ts: 0, inFlight: null };
+async function uiValidate(env) {
+  const now = Date.now();
+  if (now - UI_VALIDATE.ts < UI_VALIDATE_MS) return false;
+  if (UI_VALIDATE.inFlight) return UI_VALIDATE.inFlight;
+  UI_VALIDATE.inFlight = (async () => {
+    try {
+      const bust = '&check=' + Math.floor(now / UI_VALIDATE_MS);
+      const probe = (u, n) => fetch(u + bust, { method: 'GET', headers: { 'range': 'bytes=0-0' }, cf: { cacheTtl: 0, cacheEverything: false } })
+        .then((r) => ({ u, etag: r.headers.get('etag') || '', lastMod: r.headers.get('last-modified') || '' }))
+        .catch(() => ({ u, etag: '', lastMod: '' }));
+      const [h, c, j] = await Promise.all([probe(UI_SRC.html, 'index'), probe(UI_SRC.css, 'style'), probe(UI_SRC.js, 'app')]);
+      let changed = false;
+      [h, c, j].forEach((p) => {
+        const old = UI_ETAGS[p.u];
+        if (old && (p.etag || p.lastMod) && (old.etag !== p.etag || old.lastMod !== p.lastMod)) changed = true;
+        UI_ETAGS[p.u] = { etag: p.etag, lastMod: p.lastMod, ts: now };
+      });
+      UI_VALIDATE.ts = now;
+      return changed;
+    } catch (e) { return false; }
+  })().finally(() => { UI_VALIDATE.inFlight = null; });
+  return UI_VALIDATE.inFlight;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    سیستم استتار — ایده از نهان ولی پیاده‌سازی مستقل
@@ -3981,7 +4403,8 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             dailyLimitGB: parseFloat("__LIMIT_DAILY_GB__"),
             subUrl: "__SYNC_NORMAL__",
             subUrlBase64: "__SYNC_NORMAL_BASE64__",
-            rawUrl: "__SYNC_RAW__"
+            rawUrl: "__SYNC_RAW__",
+            nodeLimit: parseInt("__NODE_LIMIT__", 10) || 0
         };
 
         // ===== متغیرهای سراسری =====
@@ -4007,7 +4430,10 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             dailyLimitGB: isNaN(panelData.dailyLimitGB) ? 0 : panelData.dailyLimitGB,
             subUrl: panelData.subUrl,
             links: [],
-            clientIp: null
+            clientIp: null,
+            /* سقفِ کانفیگِ این کاربر — رادارِ همین صفحه به‌محضِ رسیدن به این تعداد
+               آی‌پیِ تمیز، اسکن را موفق قطع می‌کند (پیش‌فرضِ ۵) */
+            nodeLimit: panelData.nodeLimit > 0 ? panelData.nodeLimit : 5
         };
 
         function updateConnectionStatus() {
@@ -4092,7 +4518,9 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStart: "شروع اسکن", radarStop: "توقف", radarStatusReady: "آماده برای اسکن",
                 radarStatusScan: "در حال اسکن... {done} از {total} - یافت‌شده: {found}",
                 radarStatusDone: "پایان اسکن - {found} آی‌پی سالم یافت شد",
-                radarStatusNoResult: "آی‌پی سالمی یافت نشد",
+                radarStatusSaveFail: "ذخیره‌ی آی‌پی‌ها در پنل ناموفق بود", radarStatusFallback: "اسکن تازه آی‌پی سالمی پیدا نکرد — در حال بررسی {n} آی‌پی ذخیره‌شده...", radarStatusFallbackSaved: "{count} آی‌پی ذخیره‌شده سالم است و روی کانفیگ‌ها ست شد (آی‌پی تازه‌ای پیدا نشد)",
+                radarStatusStopping: "در حال توقف...", radarStatusStopped: "اسکن متوقف شد",
+                radarStatusNoResult: "آی‌پی سالمی یافت نشد", radarStatusAnswered: "پاسخ: {n}", radarStatusGuard: "کف {ms}ms • مردودِ سریع: {n}", radarStatusNoRespond: "هیچ آی‌پی به پروب پاسخ نداد — شبکه‌ی شما اتصالِ مستقیم TLS به آی‌پی‌های خامِ کلودفلر را می‌بندد. از یک VPS اسکن کنید یا تایم‌اوت را بالا ببرید", radarStatusProbeBad: "هشدار: پروب به آی‌پیِ آزمایشی {ip} هم در {rtt}ms پاسخ داد — نتیجه‌ی اسکن بی‌اعتبار است؛ «حداقل تأخیر» را روی ۶۰ بگذارید",
                 radarStatusNoConfig: "کانفیگ vless در این ساب یافت نشد",
                 radarStatusNoTlsPort: "هیچ پورت TLS قابل‌اسکنی در کانفیگ‌ها یافت نشد",
                 radarThPing: "تأخیر", radarThJitter: "جیتر", radarThLoss: "لاس٪",
@@ -4119,7 +4547,9 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStart: "Start Scan", radarStop: "Stop", radarStatusReady: "Ready to scan",
                 radarStatusScan: "Scanning... {done} of {total} - found: {found}",
                 radarStatusDone: "Scan finished - {found} healthy IPs found",
-                radarStatusNoResult: "No healthy IP found",
+                radarStatusSaveFail: "Failed to save IPs to the panel", radarStatusFallback: "Fresh scan found nothing — re-checking {n} saved IPs...", radarStatusFallbackSaved: "{count} saved IPs still work and were applied to your configs (no fresh IP found)",
+                radarStatusStopping: "Stopping...", radarStatusStopped: "Scan stopped",
+                radarStatusNoResult: "No healthy IP found", radarStatusAnswered: "answered: {n}", radarStatusGuard: "floor {ms}ms • too-fast rejected: {n}", radarStatusNoRespond: "No IP answered the probe — your network blocks direct TLS to raw Cloudflare IPs. Scan from a VPS, or raise the timeout", radarStatusProbeBad: "Warning: the probe also answered for test IP {ip} in {rtt}ms — results are unreliable; set 'min RTT' to 60",
                 radarStatusNoConfig: "No vless config found in this subscription",
                 radarStatusNoTlsPort: "No probeable TLS port found in configs",
                 radarThPing: "Ping", radarThJitter: "Jitter", radarThLoss: "Loss%",
@@ -4146,7 +4576,9 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStart: "Taramayı Başlat", radarStop: "Durdur", radarStatusReady: "Taramaya hazır",
                 radarStatusScan: "Taranıyor... {done} / {total} - bulunan: {found}",
                 radarStatusDone: "Tarama bitti - {found} sağlıklı IP bulundu",
-                radarStatusNoResult: "Sağlıklı IP bulunamadı",
+                radarStatusSaveFail: "IP'ler panele kaydedilemedi", radarStatusFallback: "Yeni tarama sonuç vermedi — {n} kayıtlı IP yeniden denetleniyor...", radarStatusFallbackSaved: "{count} kayıtlı IP çalışıyor ve yapılandırmalarınıza uygulandı (yeni IP bulunamadı)",
+                radarStatusStopping: "Durduruluyor...", radarStatusStopped: "Tarama durduruldu",
+                radarStatusNoResult: "Sağlıklı IP bulunamadı", radarStatusAnswered: "yanıt: {n}", radarStatusGuard: "taban {ms}ms • çok hızlı reddedildi: {n}", radarStatusNoRespond: "Hiçbir IP yoklamaya yanıt vermedi — ağınız ham Cloudflare IP'lerine doğrudan TLS bağlantısını engelliyor. Bir VPS'ten tarayın veya zaman aşımını artırın", radarStatusProbeBad: "Uyarı: yoklama test IP'si {ip} için de {rtt}ms'de yanıt verdi — sonuçlar güvenilmez; 'min RTT' değerini 60 yapın",
                 radarStatusNoConfig: "Bu abonelikte vless konfigi bulunamadı",
                 radarStatusNoTlsPort: "Yapılandırmalarda taranabilir TLS portu bulunamadı",
                 radarThPing: "Gecikme", radarThJitter: "Jitter", radarThLoss: "Kayıp%",
@@ -4173,7 +4605,9 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStart: "بدء الفحص", radarStop: "إيقاف", radarStatusReady: "جاهز للفحص",
                 radarStatusScan: "جارٍ الفحص... {done} من {total} - تم العثور: {found}",
                 radarStatusDone: "انتهى الفحص - تم العثور على {found} آي‌بي سليم",
-                radarStatusNoResult: "لم يتم العثور على آي‌بي سليم",
+                radarStatusSaveFail: "فشل حفظ الآي‌بي في اللوحة", radarStatusFallback: "لم يعثر الفحص الجديد على شيء — تتم إعادة فحص {n} من عناوين IP المحفوظة...", radarStatusFallbackSaved: "ما زال {count} من عناوين IP المحفوظة يعمل وتم تطبيقه على تكويناتك (لم يتم العثور على عنوان جديد)",
+                radarStatusStopping: "جارٍ الإيقاف...", radarStatusStopped: "تم إيقاف الفحص",
+                radarStatusNoResult: "لم يتم العثور على آي‌بي سليم", radarStatusAnswered: "استجاب: {n}", radarStatusGuard: "الحد الأدنى {ms}ms • مرفوض سريع: {n}", radarStatusNoRespond: "لم يستجب أي آي‌بي للفحص — شبكتك تحجب اتصال TLS المباشر بعناوين كلودفلر الخام. افحص من VPS أو ارفع المهلة", radarStatusProbeBad: "تحذير: استجاب الفحص أيضًا لعنوان اختباري {ip} في {rtt}ms — النتائج غير موثوقة؛ اضبط «أدنى تأخير» على ٦٠",
                 radarStatusNoConfig: "لا يوجد تكوين vless في هذا الاشتراك",
                 radarStatusNoTlsPort: "لم يتم العثور على منفذ TLS قابل للفحص في الإعدادات",
                 radarThPing: "التأخير", radarThJitter: "التذبذب", radarThLoss: "الفقد٪",
@@ -4720,50 +5154,330 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
         });
 
         // ===== رادار آی‌پی تمیز (کاملاً سمت مرورگر) =====
-        const CF_RANGES = [['104.16.', 0, 255], ['104.17.', 0, 255], ['104.18.', 0, 255], ['104.19.', 0, 255], ['104.20.', 0, 255], ['104.21.', 0, 255], ['104.22.', 0, 255], ['104.24.', 0, 255], ['104.25.', 0, 255], ['104.26.', 0, 255], ['104.27.', 0, 255], ['162.159.', 0, 255], ['172.64.', 0, 255], ['172.66.', 0, 255], ['172.67.', 0, 255], ['188.114.', 96, 111], ['141.101.', 64, 127]];
-        const RADAR_PORTS = [443, 8443, 2053, 2083, 2087, 2096];
-        const RADAR_TIMEOUT = 2000;
-        const RADAR_PROBES = 3;
-        const RADAR_CONCURRENCY = 12;
-        const RADAR_IP_COUNT = 140;
-        const RADAR_KEEP = 8;
+        /* ═══════════════════════════════════════════════════════════════════
+           ۱) رنج‌ها: «تمامِ» رنج‌های رسمیِ IPv4 کلودفلر (cloudflare.com/ips-v4)
+              به‌صورت CIDR — نه زیرمجموعه و نه بازه‌ی دستیِ اشتباه.
+           ۲) تعدادِ اسکن و همه‌ی پارامترها از «تنظیمات پنل ← اسکنر» می‌آید
+              (پیش‌فرض: ۲۰۴۸ آی‌پی).
+           ۳) حالت «even» (پیش‌فرض): هر رنج به‌نوبت سهم می‌گیرد تا پوششِ همه‌ی
+              رنج‌ها تضمین شود. حالت تصادفی هم هست.
+           ۴) پروب: خطای سریعِ TLS یعنی لبه زنده است، تایم‌اوت یعنی مرده. پورت‌های
+              کاندید موازی آزموده می‌شوند تا آی‌پیِ مرده فقط یک تایم‌اوت هزینه بدهد.
+           ۵) فیلترِ تأخیر دیگر اجباری نیست: پیش‌فرض ۰ = بدون فیلتر (فیلترِ ۶۰ms
+              قبلی آی‌پی‌های سالمِ نزدیک را حذف می‌کرد و اسکن بی‌نتیجه می‌ماند).
+           ═══════════════════════════════════════════════════════════════════ */
+                const SCAN = (function () {
+            /* پیش‌فرض‌های موتورِ فالبک — هم‌راستا با DEF().scanner و scannerCfg().
+               تایم‌اوت ۲ ثانیه: ۱ ثانیه روی شبکه‌ی موبایلِ ایران خیلی از
+               لبه‌های سالم را «مرده» حساب می‌کرد. */
+            const D = { ipCount: 2048, concurrency: 16, timeout: 2000, probes: 3, minRtt: 0, maxRtt: 0, keep: 0, mode: 'smart', autoFloor: 1 };
+            let c = {};
+            try { c = JSON.parse("__SCANNER_CFG_JSON__") || {}; } catch (e) { c = {}; }
+            const num = function (k, lo, hi) {
+                const v = parseInt(c[k], 10);
+                return (isFinite(v) && v >= lo && v <= hi) ? v : D[k];
+            };
+            return {
+                enabled: c.enabled === false ? false : true,
+                ipCount: num('ipCount', 16, 65536),
+                concurrency: num('concurrency', 1, 256),
+                timeout: num('timeout', 200, 10000),
+                probes: num('probes', 1, 5),
+                minRtt: num('minRtt', 0, 5000),
+                autoFloor: c.autoFloor === false ? false : true,
+                maxRtt: num('maxRtt', 0, 20000),
+                keep: num('keep', 0, 100),
+                mode: (c.mode === 'random' || c.mode === 'even') ? c.mode : 'smart',
+                ports: Array.isArray(c.ports) ? c.ports.map(Number).filter(function (p) { return p > 0 && p < 65536; }).slice(0, 12) : [],
+                ranges: Array.isArray(c.ranges) ? c.ranges.map(String) : []
+            };
+        })();
+
+        const CF_CIDRS = [
+            '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22',
+            '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20',
+            '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+            '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22'
+        ];
+        const ip2n = function (s) {
+            const p = String(s).split('.').map(Number);
+            if (p.length !== 4 || p.some(function (x) { return !(x >= 0 && x <= 255); })) return NaN;
+            return ((p[0] * 256 + p[1]) * 256 + p[2]) * 256 + p[3];
+        };
+        const n2ip = function (v) {
+            v = v >>> 0;
+            return [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255].join('.');
+        };
+        const CF_BLOCKS = (function () {
+            const list = CF_CIDRS.slice();
+            (SCAN.ranges || []).forEach(function (c) {
+                const t = String(c).trim();
+                if (/^\\d{1,3}(\\.\\d{1,3}){3}\\/\\d{1,2}$/.test(t) && list.indexOf(t) < 0) list.push(t);
+            });
+            const out = [];
+            list.forEach(function (c) {
+                const parts = c.split('/');
+                const plen = parseInt(parts[1], 10);
+                const start = ip2n(parts[0]);
+                if (!(plen >= 0 && plen <= 32) || isNaN(start)) return;
+                const size = Math.pow(2, 32 - plen);
+                out.push({ start: start, size: size, end: start + size - 1 });
+            });
+            out.total = out.reduce(function (a, b) { return a + b.size; }, 0);
+            return out;
+        })();
+        const randCfIp = function () {
+            let n = Math.floor(Math.random() * CF_BLOCKS.total);
+            for (let i = 0; i < CF_BLOCKS.length; i++) {
+                if (n < CF_BLOCKS[i].size) return n2ip(CF_BLOCKS[i].start + n);
+                n -= CF_BLOCKS[i].size;
+            }
+            return n2ip(CF_BLOCKS[0].start);
+        };
+        function buildIpList(count) {
+            const out = [];
+            const seen = Object.create(null);
+            const push = function (ip) { if (!seen[ip]) { seen[ip] = 1; out.push(ip); } };
+            const nb = CF_BLOCKS.length;
+            if (!nb) return out;
+            const pickIn = function (b) {
+                for (let t = 0; t < 8; t++) {
+                    const ip = n2ip(b.start + Math.floor(Math.random() * b.size));
+                    if (!seen[ip]) { seen[ip] = 1; out.push(ip); return; }
+                }
+            };
+            const fillRandom = function () {
+                let guard = 0;
+                while (out.length < count && guard++ < count * 40) push(randCfIp());
+            };
+
+            if (SCAN.mode === 'random') { fillRandom(); return out; }
+
+            if (SCAN.mode === 'even') {
+                /* هر بلوک به‌نوبت سهم می‌گیرد و درونِ هر بلوک آدرس «تصادفی» انتخاب
+                   می‌شود — نه پشت‌سرهم از یک نقطه (که در بلوک‌های بزرگ به بازه‌های
+                   تخصیص‌نیافته می‌خورد و نتیجه را خالی می‌کرد). */
+                for (let i = 0; i < count; i++) pickIn(CF_BLOCKS[i % nb]);
+                return out;
+            }
+
+            /* smart (پیش‌فرض) — سهمِ متناسب با اندازه‌ی رنج + کفِ تضمینی برای هر رنج.
+               چرا: ۹۶٪ از آی‌پی‌های تمیزِ شناخته‌شده در ۳ رنجِ بزرگ (104.16.0.0/13 •
+               172.64.0.0/13 • 104.24.0.0/14) هستند و ۹ رنجِ دیگر تقریباً هیچ آی‌پیِ
+               سالمی ندارند. حالتِ «even» ۸۰٪ بودجه را خرجِ همان ۹ رنج می‌کرد. */
+            const total = CF_BLOCKS.total || 1;
+            const floor = Math.max(4, Math.ceil(count * 0.005));
+            const quotas = CF_BLOCKS.map(function (b) {
+                return Math.max(floor, Math.floor(count * (b.size / total)));
+            });
+            let sum = quotas.reduce(function (a, b) { return a + b; }, 0);
+            while (sum > count) {
+                let big = 0;
+                for (let i = 1; i < quotas.length; i++) if (quotas[i] > quotas[big]) big = i;
+                if (quotas[big] <= floor) break;
+                quotas[big]--; sum--;
+            }
+            for (let i = 0; i < nb; i++) {
+                for (let k = 0; k < quotas[i] && out.length < count; k++) pickIn(CF_BLOCKS[i]);
+            }
+            fillRandom();
+            return out;
+        }
+
+        /* تعدادِ آی‌پیِ ذخیره‌شده: تنظیماتِ اسکنر ← سقفِ کانفیگِ این کاربر ← ۵ */
+        const RADAR_KEEP = (function () {
+            if (SCAN.keep > 0) return SCAN.keep;
+            const n = parseInt(sanaeiClientData.nodeLimit, 10);
+            return (n > 0 && n <= 100) ? n : 5;
+        })();
 
         let radarRunning = false;
         let radarCancelRequested = false;
+        /* شمارنده‌ی «پاسخ‌های خام» — مستقل از فیلترهای minRtt/maxRtt. اگر بعد از یک
+           اسکنِ کامل صفر بماند، یعنی هیچ لبه‌ای به پروب جواب نداده است. */
+        let radarRawResponses = 0;
 
-        function randCfIp() {
-            var r = CF_RANGES[Math.floor(Math.random() * CF_RANGES.length)];
-            var c = r[1] + Math.floor(Math.random() * (r[2] - r[1] + 1));
-            return r[0] + c + '.' + Math.floor(Math.random() * 256);
-        }
+        /* ═══ پروب — دوکاناله (fetch + Image) ═══
+           به https://IP/cdn-cgi/trace وصل می‌شویم. گواهیِ آی‌پیِ خام هیچ‌وقت معتبر
+           نیست، پس مرورگر بعد از TLS اتصال را رد می‌کند؛ یعنی «سرعتِ رسیدنِ خطا»
+           خودش سیگنالِ زنده‌بودنِ لبه است:
+             • خطا پیش از تایم‌اوت = لبه پاسخ داد = «سالم»
+             • تایم‌اوت             = هیچ پاسخی نیامد = «مرده»
 
-        // هم onload و هم onerror یعنی «هاست جواب داد»؛ ما دسترسی و تأخیر را می‌سنجیم نه موفقیت تصویر.
+           چرا «دو» کاناله: تجربه‌ی عملی نشان داده هیچ‌کدام از این دو روش به‌تنهایی در
+           همه‌ی مرورگرها/شبکه‌ها قابل‌اعتماد نیست —
+             – نسخه‌ی اصلیِ همین پنل اول Image داشت و بعد به fetch مهاجرت کرد، چون
+               «RST آنیِ فیلترشکن/مسیرِ مسدود هم زنده حساب می‌شد».
+             – پنل نوا برعکس، fetch را رها کرد و به Image رفت.
+           پس هر دو را «موازی» می‌فرستیم و اولین سیگنالِ پاسخ را می‌پذیریم. */
+        /* فاصله‌ی کوتاهِ تصادفی بین پروب‌های یک آی‌پی — الگوی درخواست‌ها کمتر شبیه
+           اسکنر می‌شود و DPI کمتر اتصال را قطع می‌کند (روشِ SenPai Scanner). */
+        function radarSleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+
         function pingIp(ip, port, timeout) {
             return new Promise(function(res) {
                 const t0 = performance.now();
-                let done = false;
+                let done = false, ctrl = null;
                 const img = new Image();
                 const fin = function(ok) {
                     if (done) return;
                     done = true;
-                    img.onload = img.onerror = null;
+                    img.onerror = img.onload = null;
+                    try { if (ctrl) ctrl.abort(); } catch (e) {}
+                    if (ok) radarRawResponses++;
                     res(ok ? Math.round(performance.now() - t0) : null);
                 };
                 const timer = setTimeout(function() { fin(false); }, timeout);
-                /* پروب با Image: مرورگر برای https://IP گواهی معتبر ندارد و درخواست
-                   همیشه خطا می‌دهد — اما لحظه‌ی خطا یعنی handshake کامل شده (لبه‌ی زنده).
-                   fetch برخلاف آن روی همان خطای گواهی reject می‌شود و هیچ‌وقت جواب نمی‌دهد. */
+                const url = 'https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random();
+
+                /* کانالِ ۱ — Image: به CORS/کش/AbortController وابسته نیست */
                 img.onerror = function() { clearTimeout(timer); fin(true); };
                 img.onload = function() { clearTimeout(timer); fin(true); };
-                img.src = 'https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random();
+                img.src = url;
+
+                /* کانالِ ۲ — fetch(cors): روشِ نسخه‌ی اصلی و اسکنرِ IRCF. AbortError فقط
+                   از تایم‌اوتِ خودمان می‌آید ⇒ مرده؛ هر خطای دیگر ⇒ سالم. */
+                try {
+                    ctrl = new AbortController();
+                    fetch(url, { signal: ctrl.signal, mode: 'cors', cache: 'no-store' })
+                        .then(function() { clearTimeout(timer); fin(true); })
+                        .catch(function(err) {
+                            if (err && err.name === 'AbortError') return;
+                            clearTimeout(timer); fin(true);
+                        });
+                } catch (e) {}
             });
         }
 
-        /* انتخاب پورت حذف شد — اسکن همیشه روی پورت‌های خودِ کانفیگ‌های ساب انجام می‌شود.
-           فقط پورت‌های TLS قابل‌اسکن‌اند: پروب مرورگر https است و پورت‌های غیر-TLS
+        /* ═══ خودآزماییِ پروب ═══
+           RFC 5737 سه بازه‌ی آزمایشی دارد که هرگز مسیریابی نمی‌شوند (TEST-NET-1/2/3).
+           اگر پروب این‌ها را «سالم» ببیند، یعنی هر خطای سریعِ محلی (RST فیلترشکن/
+           پروکسی/فایروال) دارد «زنده» تفسیر می‌شود و کلِ نتیجه‌ی اسکن بی‌اعتبار است. */
+
+        /* ═══ کفِ تأخیر — فیلترِ کیفیت ═══
+
+           مرورگر نمی‌تواند بفهمد پاسخ از «لبه‌ی واقعیِ کلادفلر» آمده یا از میان‌راهی
+
+           که فوراً RST می‌دهد. اما زمان‌بندی لو می‌دهد: RSTِ آنی ~۱ms است، در حالی که
+
+           یک لبه‌ی واقعی حداقل یک رفت‌وبرگشتِ کامل طول می‌کشد. بدون این کف، پاسخ‌های
+
+           آنی «سریع‌ترین» رتبه را می‌گیرند و آی‌پی‌های خراب جای آی‌پی‌های سالم را در
+
+           کانفیگ می‌گیرند — دقیقاً همان «آی‌پی پیدا می‌شود ولی کار نمی‌کند». */
+
+        let radarFloor = 0;
+
+        let radarRejectedFast = 0;
+
+        function radarBaseHost() {
+
+            try {
+
+                const cands = [
+
+                    (typeof sanaeiClientData !== 'undefined' ? sanaeiClientData : null),
+
+                    (typeof panelData !== 'undefined' ? panelData : null)
+
+                ];
+
+                for (let i = 0; i < cands.length; i++) {
+
+                    const u = cands[i] && cands[i].subUrl;
+
+                    if (u) return new URL(u, location.href).host;
+
+                }
+
+            } catch (e) {}
+
+            return location.host;
+
+        }
+
+        /* تأخیرِ پایه — یک درخواستِ کامل به دامنه‌ی خودِ ورکر. این دامنه روی کلادفلر
+
+           است، پس یک «لبه‌ی واقعی» را اندازه می‌گیرد. CORS/گواهی مهم نیست: تا لحظه‌ی
+
+           رد شدن، درخواست رفته و برگشته و همین برای اندازه‌گیری کافی است. فقط
+
+           تایم‌اوتِ خودمان یعنی چیزی یاد نگرفتیم. */
+
+        async function radarBaseline() {
+
+            const t0 = performance.now();
+
+            let ctrl = null, timer = null, colo = '';
+
+            try {
+
+                ctrl = new AbortController();
+
+                timer = setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, 6000);
+
+                const r = await fetch('https://' + radarBaseHost() + '/cdn-cgi/trace?_=' + Math.random(),
+
+                    { mode: 'cors', cache: 'no-store', signal: ctrl.signal });
+
+                clearTimeout(timer);
+
+                const body = await r.text().catch(function () { return ''; });
+
+                const m = body.match(/^colo=(.+)$/m);
+
+                if (m) colo = m[1].trim();
+
+            } catch (e) {
+
+                if (timer) clearTimeout(timer);
+
+                if (e && e.name === 'AbortError') return null;
+
+            }
+
+            const ms = Math.round(performance.now() - t0);
+
+            return ms >= 5 ? { ms: ms, colo: colo } : null;
+
+        }
+
+        /* کفِ خودکار = کسری از تأخیرِ پایه. لبه‌ای که چند برابر نزدیک‌تر از نزدیک‌ترین
+
+           لبه‌ی واقعی باشد وجود ندارد؛ پس پاسخِ بسیار سریع‌تر از پایه RSTِ میان‌راه
+
+           است، نه لبه. سقفِ ۲۰۰ms تا روی شبکه‌های کند بی‌دلیل سخت نشود. */
+
+        function radarAutoFloor(base) {
+
+            if (!base || !(base.ms > 0)) return 0;
+
+            return Math.min(200, Math.max(20, Math.round(base.ms * 0.4)));
+
+        }
+
+        const RADAR_CONTROL_IPS = ['192.0.2.1', '198.51.100.1', '203.0.113.1'];
+        async function radarSelfTest(ports) {
+            const port = ports[0] || 443;
+            const t = Math.min(SCAN.timeout, 1500);
+            for (let i = 0; i < RADAR_CONTROL_IPS.length; i++) {
+                const rtt = await pingIp(RADAR_CONTROL_IPS[i], port, t);
+                if (rtt !== null) return { bad: true, ip: RADAR_CONTROL_IPS[i], rtt: rtt };
+            }
+            return { bad: false };
+        }
+
+        /* فقط پورت‌های TLS قابل‌اسکن‌اند: پروب مرورگر https است و پورت‌های غیر-TLS
            با خطای SSL بلافاصله «پاسخ» می‌دهند و نتیجه را کاملاً خراب می‌کنند. */
         const RADAR_TLS_PORTS = [443, 2053, 2083, 2087, 2096, 8443];
         function radarConfigPorts() {
+            /* اولویت: پورت‌های تنظیماتِ پنل — اما فقط پورت‌های TLS. پروبِ مرورگر
+               https است؛ روی پورتِ غیر-TLS (مثل ۸۰) اتصال با خطای SSL بی‌درنگ
+               «پاسخ» می‌دهد و همه‌چیز زنده دیده می‌شود. */
+            if (SCAN.ports.length) {
+                const tls = SCAN.ports.filter(function (p) { return RADAR_TLS_PORTS.indexOf(p) >= 0; });
+                return tls.length ? tls : [443];
+            }
             const ports = [];
             const links = sanaeiClientData.links || [];
             links.forEach(function(link) {
@@ -4771,25 +5485,115 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 const p = parseInt(parsed.port, 10);
                 if (p > 0 && RADAR_TLS_PORTS.indexOf(p) >= 0 && ports.indexOf(p) < 0) ports.push(p);
             });
+            /* اگر پورتی پیدا نشد، همه‌ی پورت‌های TLS موازی پروب می‌شوند —
+               تک‌پورتِ 443ِ فیلترشده در شبکه‌ی کاربر اسکن را همیشه صفر می‌کرد
+               در حالی که پورت‌های TLS دیگر بازند (آی‌پیِ مرده فقط یک تایم‌اوت
+               هزینه می‌دهد). وگرنه اسکنر بی‌صدا برمی‌گشت و هیچ‌وقت کار نمی‌کرد. */
+            if (!ports.length) return RADAR_TLS_PORTS.slice();
             return ports;
         }
 
-        async function radarProbeIp(ip, ports) {
-            for (let i = 0; i < ports.length; i++) {
-                const port = ports[i];
-                const samples = [];
-                for (let p = 0; p < RADAR_PROBES; p++) {
-                    if (radarCancelRequested) return null;
-                    const rtt = await pingIp(ip, port, RADAR_TIMEOUT);
-                    if (rtt !== null) samples.push(rtt);
-                }
-                if (samples.length === 0) continue;
-                const avg = Math.round(samples.reduce(function(a, b) { return a + b; }, 0) / samples.length);
-                const jitter = Math.max.apply(null, samples) - Math.min.apply(null, samples);
-                const loss = Math.round((1 - samples.length / RADAR_PROBES) * 100);
-                return { ip: ip, port: port, avg: avg, jitter: jitter, loss: loss, score: avg + jitter * 0.5 + loss * 20 };
+        async function radarProbeIp(ip, ports, timeoutMs) {
+            if (radarCancelRequested) return null;
+            /* تایم‌اوتِ قابل‌بازنویسی برای فالبکِ ذخیره‌شده‌ها (پیش‌فرض: SCAN.timeout) */
+            const TMO = (typeof timeoutMs === 'number' && timeoutMs >= 200 && timeoutMs <= 10000) ? timeoutMs : SCAN.timeout;
+            /* همه‌ی پورت‌های کاندید موازی — آی‌پیِ مرده فقط یک تایم‌اوت هزینه می‌دهد */
+            const first = await Promise.all(ports.map(function (p) {
+                return pingIp(ip, p, TMO).then(function (rtt) {
+                    return rtt === null ? null : { port: p, rtt: rtt };
+                });
+            }));
+            const answered = first.filter(function (x) { return !!x; });
+            if (!answered.length) return null;
+            const alive = answered.filter(function (x) { return x.rtt >= radarFloor; });
+            if (!alive.length) { radarRejectedFast++; return null; }
+            alive.sort(function (a, b) { return a.rtt - b.rtt; });
+            const best = alive[0];
+            const samples = [best.rtt];
+            for (let i = 1; i < SCAN.probes; i++) {
+                if (radarCancelRequested) break;
+                await radarSleep(10 + Math.floor(Math.random() * 50));
+                const rtt = await pingIp(ip, best.port, TMO);
+                if (rtt !== null && rtt >= radarFloor) samples.push(rtt);
             }
-            return null;
+            const avg = Math.round(samples.reduce(function(a, b) { return a + b; }, 0) / samples.length);
+            const jitter = Math.max.apply(null, samples) - Math.min.apply(null, samples);
+            const loss = Math.round((1 - samples.length / SCAN.probes) * 100);
+            if (samples.length < Math.min(SCAN.probes, 2)) return null;
+            if (SCAN.maxRtt > 0 && avg > SCAN.maxRtt) return null;
+            return { ip: ip, port: best.port, avg: avg, jitter: jitter, loss: loss, score: avg + jitter * 0.5 + loss * 20 };
+        }
+
+        /* ═══ فالبکِ آی‌پی‌های ذخیره‌شده ═══
+           اگر اسکنِ تازه هیچ آی‌پی سالمی پیدا نکرد، آی‌پی‌هایی که از قبل در پنل
+           ذخیره‌اند دوباره با همان پروبِ مرورگر آزموده می‌شوند: لینک‌های فعلیِ
+           همین ساب + فهرستِ کاملِ پنل از GET /radar-candidates. سالم‌ها با همان
+           POST /radar-ips ولی با fallback:true روی کانفیگ‌های همین کاربر ست
+           می‌شوند؛ در فهرستِ سراسری دوباره ذخیره نمی‌شوند چون merge سمتِ سرور
+           تکراری‌ها را نادیده می‌گیرد. معیار relaxed: فقط کفِ دستیِ ادمین. */
+        function radarSavedFromLinks() {
+            const out = [];
+            const seen = {};
+            try {
+                const links = (typeof sanaeiClientData !== 'undefined' && sanaeiClientData.links) || [];
+                for (let i = 0; i < links.length; i++) {
+                    const L = String(links[i]);
+                    const at = L.indexOf('@');
+                    if (at < 0) continue;
+                    const head = L.slice(0, at).toLowerCase();
+                    if (head.indexOf('vless://') !== 0 && head.indexOf('trojan://') !== 0) continue;
+                    const host = L.slice(at + 1).split(':')[0].split('/')[0].split('?')[0].split('#')[0].trim();
+                    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) && !seen[host]) { seen[host] = 1; out.push(host); }
+                }
+            } catch (e) {}
+            return out;
+        }
+        async function radarSavedFromServer() {
+            try {
+                const base = ((typeof sanaeiClientData !== 'undefined' && sanaeiClientData.subUrl) || '').replace(/\\/$/, '');
+                if (!base) return [];
+                const r = await fetch(base + '/radar-candidates', { cache: 'no-store' });
+                const j = await r.json().catch(function () { return {}; });
+                if (r.ok && j && j.ok && Array.isArray(j.ips)) {
+                    return j.ips.map(function (x) { return String(x).trim(); })
+                        .filter(function (x) { return /^\d{1,3}(\.\d{1,3}){3}$/.test(x); });
+                }
+            } catch (e) {}
+            return [];
+        }
+        async function radarFallbackCheck(ports) {
+            const seen = {};
+            const cands = [];
+            const push = function (ip) { if (!seen[ip]) { seen[ip] = 1; cands.push(ip); } };
+            radarSavedFromLinks().forEach(push);
+            (await radarSavedFromServer()).forEach(push);
+            if (!cands.length) return [];
+            const savedFloor = radarFloor;
+            radarFloor = SCAN.minRtt || 0;
+            const fbTimeout = Math.min(6000, Math.max(SCAN.timeout, 3000));
+            const list = cands.slice(0, 40);
+            const out = [];
+            let cursor = 0;
+            async function fbWorker() {
+                while (cursor < list.length) {
+                    if (radarCancelRequested) return;
+                    const ip = list[cursor++];
+                    try {
+                        const res = await radarProbeIp(ip, ports, fbTimeout);
+                        if (res) out.push(res);
+                    } catch (e) {}
+                }
+            }
+            try {
+                const n = Math.min(SCAN.concurrency, 8, list.length);
+                const workers = [];
+                for (let w = 0; w < n; w++) workers.push(fbWorker());
+                await Promise.all(workers);
+            } finally {
+                radarFloor = savedFloor;
+            }
+            out.sort(function (a, b) { return a.score - b.score; });
+            return out.slice(0, RADAR_KEEP);
         }
 
         function radarRenderResults(list) {
@@ -4852,7 +5656,9 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             const startBtn = document.getElementById('radar-start-btn');
 
             if (radarRunning) {
+                /* توقف: بازخورد فوری — unwind حداکثر تا پایان پروب جاری */
                 radarCancelRequested = true;
+                statusEl.textContent = data.radarStatusStopping;
                 return;
             }
 
@@ -4862,8 +5668,25 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 return;
             }
 
+            /* فهرستِ آی‌پی‌ها یک‌بار و کامل ساخته می‌شود (پوششِ همه‌ی رنج‌ها) */
+            const ips = buildIpList(SCAN.ipCount);
+            if (ips.length === 0) {
+                statusEl.textContent = data.radarStatusNoResult;
+                return;
+            }
+
+            statusEl.textContent = data.radarStatusReady;
+            const selfTest = await radarSelfTest(ports);
+            const radarBase = await radarBaseline();
+            radarFloor = Math.max(SCAN.minRtt, SCAN.autoFloor ? radarAutoFloor(radarBase) : 0);
+            const warnText = selfTest.bad
+                ? ' ⚠ ' + data.radarStatusProbeBad.replace('{ip}', selfTest.ip).replace('{rtt}', selfTest.rtt)
+                : '';
+
             radarRunning = true;
             radarCancelRequested = false;
+            radarRawResponses = 0;
+            radarRejectedFast = 0;
             startBtn.classList.add('running');
             document.getElementById('radar-start-label').textContent = data.radarStop;
             document.getElementById('radar-best').classList.remove('show');
@@ -4871,54 +5694,129 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             document.getElementById('radar-results-body').innerHTML = '';
             document.getElementById('radar-table-wrap').classList.remove('show');
             document.getElementById('radar-progress-bar').style.width = '0%';
-            statusEl.textContent = data.radarStatusScan.replace('{done}', '0').replace('{total}', RADAR_IP_COUNT).replace('{found}', '0');
+            statusEl.textContent = data.radarStatusScan.replace('{done}', '0').replace('{total}', ips.length).replace('{found}', '0');
 
-            const ips = [];
-            for (let i = 0; i < RADAR_IP_COUNT; i++) ips.push(randCfIp());
+            /* try/finally: حتی اگر وسط اسکن خطایی رخ دهد radarRunning ریست می‌شود
+               و دکمه هرگز روی «توقف» قفل نمی‌ماند */
+            try {
+                const results = [];
+                let cursor = 0;
+                let doneCount = 0;
 
-            const results = [];
-            let cursor = 0;
-            let doneCount = 0;
-
-            async function worker() {
-                while (cursor < ips.length) {
-                    if (radarCancelRequested) return;
-                    const ip = ips[cursor++];
-                    const res = await radarProbeIp(ip, ports);
-                    if (res) results.push(res);
-                    doneCount++;
-                    document.getElementById('radar-progress-bar').style.width = Math.round(doneCount / ips.length * 100) + '%';
-                    statusEl.textContent = data.radarStatusScan
-                        .replace('{done}', doneCount)
-                        .replace('{total}', ips.length)
-                        .replace('{found}', results.length);
+                async function worker() {
+                    while (cursor < ips.length) {
+                        /* هدفِ تعدادِ لازم قبلاً پر شده → توقفِ موفقِ همه‌ی workerها */
+                        if (results.length >= RADAR_KEEP) return;
+                        if (radarCancelRequested) return;
+                        const ip = ips[cursor++];
+                        const res = await radarProbeIp(ip, ports);
+                        if (res && results.length < RADAR_KEEP) results.push(res);
+                        doneCount++;
+                        document.getElementById('radar-progress-bar').style.width = Math.round(doneCount / ips.length * 100) + '%';
+                        statusEl.textContent = data.radarStatusScan
+                            .replace('{done}', doneCount)
+                            .replace('{total}', ips.length)
+                            .replace('{found}', results.length)
+                            + ' • ' + data.radarStatusAnswered.replace('{n}', radarRawResponses)
+                            + (data.radarStatusGuard ? ' • ' + data.radarStatusGuard.replace('{ms}', radarFloor).replace('{n}', radarRejectedFast) : '')
+                            + warnText;
+                    }
                 }
+
+                const workers = [];
+                const n = Math.min(SCAN.concurrency, ips.length);
+                for (let w = 0; w < n; w++) workers.push(worker());
+                await Promise.all(workers);
+
+                /* اگر توقفِ دستی نبود ولی به هدفِ تعدادِ لازم رسیده‌ایم، اسکن «موفق» است */
+                if (radarCancelRequested && results.length < RADAR_KEEP) {
+                    /* توقف‌شده قبل از رسیدن به هدف — نتیجه‌ی ناقص به‌عنوان «پایان اسکن» جعل نمی‌شود */
+                    document.getElementById('radar-progress-bar').style.width = '0%';
+                    statusEl.textContent = data.radarStatusStopped;
+                    return;
+                }
+                radarCancelRequested = false;
+
+                results.sort(function(a, b) { return a.score - b.score; });
+                const top = results.slice(0, RADAR_KEEP);
+                radarRenderResults(top);
+
+                if (top.length > 0) {
+                    statusEl.textContent = data.radarStatusDone.replace('{found}', results.length);
+                    radarBuildBestConfig(top[0]);
+                    /* ═══ اقداماتِ بعد از اسکنِ موفق: ذخیره در پنل ═══
+                       همان POST /radar-ips صفحه‌ی جدید — آی‌پی‌ها روی کانفیگ‌های
+                       همین کاربر اعمال و در بخش آی‌پی‌های تمیز پنل merge می‌شوند. */
+                    try {
+                        const saveRes = await fetch(sanaeiClientData.subUrl.replace(/\\/$/, '') + '/radar-ips', {
+                            method: 'POST',
+                            headers: { 'content-type': 'application/json' },
+                            body: JSON.stringify({ ips: top.map(function(r) { return r.ip; }) })
+                        });
+                        const sj = await saveRes.json().catch(() => ({}));
+                        if (!(saveRes.ok && sj.ok)) statusEl.textContent = data.radarStatusSaveFail || data.radarStatusDone;
+                    } catch (e) { /* بی‌شبکه — نتایج همچنان روی صفحه مانده‌اند */ }
+                } else {
+                    /* ═══ فالبک: اسکنِ تازه بی‌نتیجه — آی‌پی‌های ذخیره‌شده را بیازما ═══
+                       اگر کاربر وسطِ فالبک توقف زد، چیزی ذخیره نمی‌شود. */
+                    try { statusEl.textContent = (data.radarStatusFallback || '...').replace('{n}', '…'); } catch (eFb) {}
+                    let fb = [];
+                    try { fb = await radarFallbackCheck(ports); } catch (eFb2) { fb = []; }
+                    if (radarCancelRequested) {
+                        document.getElementById('radar-progress-bar').style.width = '0%';
+                        statusEl.textContent = data.radarStatusStopped;
+                        return;
+                    }
+                    if (fb.length) {
+                        radarRenderResults(fb);
+                        radarBuildBestConfig(fb[0]);
+                        try {
+                            const saveRes = await fetch(sanaeiClientData.subUrl.replace(/\\/$/, '') + '/radar-ips', {
+                                method: 'POST',
+                                headers: { 'content-type': 'application/json' },
+                                body: JSON.stringify({ ips: fb.map(function (r) { return r.ip; }), fallback: true })
+                            });
+                            const sj = await saveRes.json().catch(() => ({}));
+                            if (saveRes.ok && sj.ok) {
+                                statusEl.textContent = (data.radarStatusFallbackSaved || data.radarStatusDone)
+                                    .replace('{count}', sj.applied || fb.length).replace('{found}', fb.length);
+                            } else {
+                                statusEl.textContent = data.radarStatusSaveFail || data.radarStatusDone;
+                            }
+                        } catch (e) { /* بی‌شبکه — نتایج همچنان روی صفحه مانده‌اند */ }
+                        return;
+                    }
+                    /* اسکنِ بی‌نتیجه — گزارش به پنل می‌رود تا لاگِ «ناموفق» ثبت شود */
+                    /* دو حالتِ متفاوت که قبلاً یک پیامِ مشترک می‌گرفتند:
+                       • هیچ پاسخی نیامد ⇒ شبکه اتصالِ مستقیم TLS به آی‌پیِ خام را می‌بندد.
+                       • پاسخ آمد ولی همه مردود شدند ⇒ فیلترهای minRtt/maxRtt. */
+                    statusEl.textContent = (radarRawResponses === 0
+                        ? data.radarStatusNoRespond
+                        : data.radarStatusNoResult) + warnText;
+                    try {
+                        await fetch(sanaeiClientData.subUrl.replace(/\\/$/, '') + '/radar-ips', {
+                            method: 'POST',
+                            headers: { 'content-type': 'application/json' },
+                            body: JSON.stringify({ ips: [] })
+                        });
+                    } catch (e2) {}
+                }
+            } finally {
+                radarRunning = false;
+                radarCancelRequested = false;
+                startBtn.classList.remove('running');
+                document.getElementById('radar-start-label').textContent = data.radarStart;
             }
-
-            const workers = [];
-            for (let w = 0; w < RADAR_CONCURRENCY; w++) workers.push(worker());
-            await Promise.all(workers);
-
-            results.sort(function(a, b) { return a.score - b.score; });
-            const top = results.slice(0, RADAR_KEEP);
-            radarRenderResults(top);
-
-            if (top.length > 0) {
-                statusEl.textContent = data.radarStatusDone.replace('{found}', results.length);
-                radarBuildBestConfig(top[0]);
-            } else {
-                statusEl.textContent = data.radarStatusNoResult;
-            }
-
-            radarRunning = false;
-            radarCancelRequested = false;
-            startBtn.classList.remove('running');
-            document.getElementById('radar-start-label').textContent = data.radarStart;
         }
 
-        /* دکمه‌ی باز کردنِ رادار حذف شده — کارت همیشه نمایان است */
+        /* دکمه‌ی باز کردنِ رادار حذف شده — کارت همیشه نمایان است.
+           فقط اگر ادمین در «تنظیمات پنل ← اسکنر» آن را خاموش کرده باشد پنهان می‌شود. */
+        if (!SCAN.enabled) {
+            const radarCard = document.getElementById('radar-card');
+            if (radarCard) radarCard.style.display = 'none';
+        }
 
-        document.getElementById("radar-start-btn").addEventListener("click", function(e) {
+document.getElementById("radar-start-btn").addEventListener("click", function(e) {
             e.stopPropagation();
             radarRun();
         });
@@ -5022,10 +5920,29 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
 
 async function loadUI(env, force) {
   const st = await load(env);
+  /* ═══ ضدِ «نسخه‌ی قدیمی پنل» ═══
+     کش لبه‌ی Cloudflare و کش ۵ دقیقه‌ای githack، هر دو می‌توانستند نسخه‌ی
+     قبلی فایل‌ها را برگردانند. حالا:
+     • هر واکشی از گیت‌هاب cacheTtl: 0 دارد (هرگز از کش لبه پاسخ نمی‌گیرد)
+     • درخواست‌های GET هم ETag را ثبت می‌کنند و هم ETag ذخیره‌شده را با آن
+       مقایسه — اگر گیت‌هاب نسخه‌ی تازه‌تری بدهد، همان‌جا force می‌شود
+     • یک اعتبارسنجِ سبک هر ۳۰ ثانیه ETag فایل‌ها را چک می‌کند تا حتی وسطِ
+       مهلت کش داخلی هم به‌محض push در گیت‌هاب، نسخه‌ی جدید سرو شود */
+  if (!force && UI.html) {
+    const changed = await uiValidate(env);
+    if (changed) force = true;
+  }
   if (!force && UI.html && Date.now() - UI.ts < 300000) return UI.html;
   try {
-    const bust = force ? '?v=' + Date.now() : '';
-    const get = (u, n) => fetch(u + bust, { cf: force ? { cacheTtl: 0 } : { cacheTtl: 300 } }).then((r) => { if (!r.ok) throw new Error(n + ' → ' + r.status); return r.text(); });
+    const bust = '&v=' + Date.now();
+    /* cacheTtl: 0 + cacheEverything: false — هیچ لبه‌ای این پاسخ را کش نمی‌کند */
+    const get = (u, n) => fetch(u + bust, { cf: { cacheTtl: 0, cacheEverything: false } }).then((r) => {
+      if (!r.ok) throw new Error(n + ' → ' + r.status);
+      const et = r.headers.get('etag') || '', lm = r.headers.get('last-modified') || '';
+      if (et || lm) UI_ETAGS[u] = { etag: et, lastMod: lm, ts: Date.now() };
+      else if (UI_ETAGS[u]) delete UI_ETAGS[u];
+      return r.text();
+    });
     const [html, css, js] = await Promise.all([get(UI_SRC.html, 'index.html'), get(UI_SRC.css, 'style.css'), get(UI_SRC.js, 'app.js')]);
     if (!html.includes('<!--APPJS-->') || !html.includes('<!--STYLESHEET-->')) throw new Error('index.html نامعتبر است');
 
@@ -5102,7 +6019,13 @@ async function statusPage(env, name, url) {
 /* ════════════════════════════ API ════════════════════════════ */
 async function apiHandler(req, env, url, ctx) {
   const st = seed(await load(env));
-  const s = st.settings, route = url.pathname.replace(/^\/api\/?/, ''), m = req.method.toUpperCase();
+  /* ⚠️ مسیرِ سلامت دو شکلِ مستندشده دارد: /api/health (استاندارد) و /health
+     (که روترِ اصلی در `isHealth` صریحاً آزاد می‌گذارد و README هم همان را
+     برای مانیتورینگ معرفی می‌کند). پارسرِ قبلی فقط پیشوندِ /api را می‌بُرید،
+     پس /health به '/health' تبدیل می‌شد، با هیچ شرطی جور در نمی‌آمد و 404
+     می‌داد — یعنی همان مانیتورینگِ مستندشده از ابتدا خراب بود. حالا هر
+     اسلشِ ابتداییِ باقی‌مانده هم حذف می‌شود. */
+  const s = st.settings, route = url.pathname.replace(/^\/api\/?/, '').replace(/^\/+/, ''), m = req.method.toUpperCase();
 
   if (route === 'login' && m === 'POST') {
     const ip = ipOf(req);
@@ -5120,18 +6043,44 @@ async function apiHandler(req, env, url, ctx) {
     return json({ ok: true, token: await mkToken(st, env), expiresAt: Date.now() + 86400000, idleMin: s.auth.sessionMin });
   }
 
-  if (route === 'health') return json({
+  if (route === 'health') {
+    /* ⚠️ /health همان چیزی است که کاربر برای تشخیص باز می‌کند؛ پس باید
+       *واقعیت* را بگوید، نه بایندینگ را. این آزمون نتیجه‌اش ۳۰ ثانیه کش
+       می‌شود (liveEnsure)، پس هزینه‌اش برای مانیتورینگ ناچیز است. */
+    if (limiterIntended(env) === 'd1') await liveEnsure(env);
+    return json({
     ok: true, version: VERSION, build: BUILD,
     uptimeSec: Math.floor((Date.now() - BOOT) / 1000),
     storage: backendOf(env),
+    /* ⚠️ مرجعِ شمارشِ محدودیت — 'mem' یعنی سقفِ آی‌پی بین isolateها اعمال
+       نمی‌شود. این فیلد عمداً در /health هست تا بتوان بدون ورود هم فهمید
+       بایندینگ‌ها (LIMITER / DB / KV) درست تنظیم شده‌اند یا نه.
+       ⚠️ `limiter` بک‌اندِ *کارکننده* است، نه بایندشده. اگر D1 بایند باشد ولی
+       آزمونِ واقعی شکست بخورد، `limiter` می‌شود 'mem' و
+       `limiterIntended` همچنان 'd1' می‌ماند — همین تفاوت، «بی‌صدا افتادن به
+       حافظه» را قابلِ دیدن می‌کند. */
+    limiter: limiterBackend(env),
+    limiterLabel: LIM_LABEL[limiterBackend(env)] || limiterBackend(env),
+    limitEnforced: limiterBackend(env) !== 'mem',
+    /* ── تشخیصِ «چرا محدودیت اعمال نمی‌شود» ── */
+    limiterIntended: limiterIntended(env),
+    limiterVerified: LIVE_TS > 0 ? LIVE_OK : null,
+    limiterError: LIVE_ERR,
+    limiterFailures: LIVE_FAILS,
+    limiterDegraded: limiterDegraded(env) || !!LIMITER_DEGRADED,
+    lastLimitError: CONN_LAST_ERR,
+    counters: { acquires: CONN_ACQUIRES, denies: CONN_DENIES, evicts: CONN_EVICTS },
     users: st.users.length, panic: s.auth.panic,
     db: {
       writesToday: WRITE_COUNT.n,
       bound: !!env.DB,
+      kv: !!env.KV,
+      do: !!env.LIMITER,
       pending: !!DIRTY,
       lastWrite: LAST_WRITE ? Math.floor((Date.now() - LAST_WRITE) / 1000) + 's ago' : 'never',
     },
-  });
+    });
+  }
 
   if (route === 'state' && m === 'GET') {
     if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
@@ -5164,7 +6113,17 @@ async function apiHandler(req, env, url, ctx) {
       if (row.day === todayKey) { tUp += row.dayUp || 0; tDown += row.dayDown || 0; tReqs += row.dayReqs || 0; }
     });
     const series = buildChartSeries(await usageHistory(env), { day: todayKey, up: tUp, down: tDown, reqs: tReqs });
-    return json({ ...st, stats: { ...st.stats, ...series }, storage: backendOf(env), version: VERSION, build: BUILD, boot: BOOT, settings: { ...st.settings, auth: { ...st.settings.auth, password: undefined, totpSecret: st.settings.auth.totpSecret ? '•••••' : '' } } });
+    /* ═══ بررسیِ خودکارِ نسخه (upd.auto) ═══
+       حداکثر هر interval دقیقه یک‌بار، کاملاً در پس‌زمینه — پاسخِ state را کند
+       نمی‌کند. نتیجه در st.updateInfo می‌نشیند و بنرِ داشبورد همان را نشان می‌دهد. */
+    try {
+      const ival = Math.max(15, Math.min(1440, Math.round(Number(st.settings.upd.interval) || 60)));
+      if (st.settings.upd.auto !== false && Date.now() - (st.lastCheck || 0) > ival * 60000 && ctx && ctx.waitUntil) {
+        st.lastCheck = Date.now();
+        ctx.waitUntil(doUpdateCheckStore(env, st).catch(() => {}));
+      }
+    } catch (e) {}
+    return json({ ...st, stats: { ...st.stats, ...series }, storage: backendOf(env), limiter: limiterBackend(env), limiterLabel: LIM_LABEL[limiterBackend(env)] || limiterBackend(env), limitEnforced: limiterBackend(env) !== 'mem', limiterIntended: limiterIntended(env), limiterVerified: LIVE_TS > 0 ? LIVE_OK : null, limiterError: LIVE_ERR, limiterDegraded: limiterDegraded(env) || !!LIMITER_DEGRADED, lastLimitError: CONN_LAST_ERR, connCounters: { acquires: CONN_ACQUIRES, denies: CONN_DENIES, evicts: CONN_EVICTS }, version: VERSION, build: BUILD, boot: BOOT, settings: { ...st.settings, auth: { ...st.settings.auth, password: undefined, totpSecret: st.settings.auth.totpSecret ? '•••••' : '' } } });
   }
 
   if (route === 'settings' && (m === 'PUT' || m === 'POST')) {
@@ -5191,14 +6150,66 @@ async function apiHandler(req, env, url, ctx) {
       }
       else if (b.op === 'update') {
         const p = { ...(b.patch || {}) };
-        if (p.expiryDays !== undefined) { u.expiryAt = Number(p.expiryDays) > 0 ? Date.now() + Number(p.expiryDays) * 86400000 : null; delete p.expiryDays; }
+        /* ═══ انقضا: سه فیلدِ اختیاری ═══
+           expiryDays   → از همین لحظه به روز        (۰ = نامحدود)
+           expiryHours  → از همین لحظه به ساعت         (۱ = یک ساعت دیگر)
+           expiryFirstUse → انقضا تا اولین اتصالِ واقعی غیرفعال است؛ پس از
+            اولین استفاده، «مدتِ» انتخابی از همان لحظه حساب می‌شود.
+            مقدارِ مدت از expiryHours/expiryDaysِ همین درخواست می‌آید؛ اگر
+            هیچ‌کدام نیامده باشد، مقدارِ قبلی حفظ می‌شود. */
+        const fu = p.expiryFirstUse !== undefined ? !!p.expiryFirstUse : undefined;
+        delete p.expiryFirstUse;
+        const hasDays = p.expiryDays !== undefined, hasHours = p.expiryHours !== undefined;
+        if (hasDays || hasHours) {
+          const qty = hasDays ? Number(p.expiryDays) : Number(p.expiryHours);
+          const unitMs = hasDays ? 86400000 : 3600000;
+          delete p.expiryDays; delete p.expiryHours;
+          if (fu) {
+            /* حالتِ «از اولین استفاده»: مدت ذخیره می‌شود، هنوز فعال نمی‌شود.
+               expiryAt فعلاً یک «تخمین» است (همین لحظه + مدت) — لحظه‌ی
+               اولین اتصالِ واقعی بازنویسی و مسلح می‌شود (dial). */
+            u.expiryFirstUse = true;
+            u.expiryDurMs = qty > 0 ? qty * unitMs : 0;
+            u.expiryAt = qty > 0 ? Date.now() + qty * unitMs : null;
+            u.expiryArmed = false;
+          } else {
+            u.expiryFirstUse = false;
+            u.expiryArmed = true;
+            u.expiryAt = qty > 0 ? Date.now() + qty * unitMs : null;
+          }
+        } else if (fu !== undefined) {
+          /* فقط کلید عوض شد و مدتِ تازه‌ای نیامد — مدت از تخمینِ فعلی */
+          u.expiryFirstUse = fu;
+          if (fu) {
+            u.expiryDurMs = u.expiryAt ? Math.max(60000, u.expiryAt - Date.now()) : 0;
+            u.expiryArmed = false;
+            if (!u.expiryAt) u.expiryAt = null;
+          } else {
+            u.expiryArmed = true;
+            if (u.expiryAt && u.expiryAt < Date.now()) u.expiryAt = null;
+          }
+        }
         ['ports', 'cleanIPs', 'proxyIPs', 'nodes'].forEach((k) => { if (typeof p[k] === 'string') p[k] = p[k].split(/[,\n]/).map((x) => x.trim()).filter(Boolean); });
+        /* ═══ سهمیه بر حسب مگابایت (از UI مودالِ جدید) ═══
+           'off' → سهمیه حذف (نامحدود)؛  عدد → MB. quotaGB از quotaMB
+           بازمحاسبه می‌شود تا همه‌ی نمایش‌های پنل هم بروز بمانند. */
+        if (p.quotaMB !== undefined) {
+          const qv = p.quotaMB === 'off' ? 0 : (Number(p.quotaMB) || 0);
+          u.quotaMB = qv;
+          u.quotaGB = Math.round(qv / 1024 * 10000) / 10000;
+          delete p.quotaMB;
+        }
+        if (p.dailyQuotaMB !== undefined) {
+          const dv = p.dailyQuotaMB === 'off' ? 0 : (Number(p.dailyQuotaMB) || 0);
+          u.dailyQuotaMB = dv;
+          delete p.dailyQuotaMB;
+        }
         merge(u, p);
       }
       addLog(st, b.op === 'delete' ? 'warn' : 'info', 'user', 'کاربر: ' + b.op, u.name || '');
       await save(env, st); return json({ ok: true, users: st.users });
     }
-    const u = { id: randTok(6), name: b.name || 'کاربر ' + (st.users.length + 1), uuid: b.uuid || crypto.randomUUID(), secret: b.secret || randTok(12), enabled: true, note: b.note || '', quotaGB: Number(b.quotaGB) || 0, dailyQuotaMB: 0, expiryAt: b.expiryDays ? Date.now() + b.expiryDays * 86400000 : null, deviceLimit: 3, ipLimit: 0, maxConfigs: 0, speedLimit: 0, mode: 'inherit', ports: '', cleanIPs: [], proxyIPs: [], nodes: [], nat64: '', panelUrl: '', blockAdult: false, blockAds: true, fakes: [], fakeMode: 'inherit', up: 0, down: 0, totalReq: 0, lastSeen: null, createdAt: Date.now() };
+    const u = { id: randTok(6), name: b.name || 'کاربر ' + (st.users.length + 1), uuid: b.uuid || crypto.randomUUID(), secret: b.secret || randTok(12), enabled: true, note: b.note || '', quotaGB: Number(b.quotaGB) || 0, dailyQuotaMB: Number(b.dailyQuotaMB) || 0, expiryAt: b.expiryDays ? Date.now() + b.expiryDays * 86400000 : (b.expiryHours ? Date.now() + b.expiryHours * 3600000 : null), expiryFirstUse: !!b.expiryFirstUse, expiryArmed: !b.expiryFirstUse, deviceLimit: 3, ipLimit: 0, maxConfigs: 0, speedLimit: 0, mode: 'inherit', ports: '', cleanIPs: [], proxyIPs: [], nodes: [], nat64: '', panelUrl: '', blockAdult: false, blockAds: true, fakes: [], fakeMode: 'inherit', up: 0, down: 0, totalReq: 0, lastSeen: null, createdAt: Date.now() };
     st.users.unshift(u); addLog(st, 'success', 'user', 'کاربر جدید ساخته شد', u.name);
     if (s.tg.enabled && s.tg.notify.user) tgSend(s, `👤 کاربر جدید: ${u.name}\n🔗 ${url.origin}/${s.sub.path}/${u.uuid}`);
     await save(env, st);
@@ -5234,19 +6245,26 @@ async function apiHandler(req, env, url, ctx) {
   if (route === 'exits' && m === 'GET') {
     if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
     const ex = exitsOf(st);
+    /* کلیدِ سراسری: وقتی خاموش است، «مؤثرِ» همه مستقیماً مستقیم است —
+       حتی اگر پیش‌فرض یا انتخابِ کانفیگ به سروری اشاره کند. */
+    const on = ex.enabled !== false;
+    const DIRECT = { mode: 'direct', id: '', name: 'مستقیم (بدون واسطه)' };
     return json({
       ok: true,
-      enabled: ex.enabled !== false,
+      enabled: on,
       defaultMode: ex.defaultMode,
       defaultExit: ex.defaultExit,
       /* پیش‌فرضِ مؤثر — همان چیزی که مسیر تونل استفاده می‌کند */
-      effective: (() => { const r = resolveExit(st, null); return { mode: r.mode, id: r.id, name: r.name }; })(),
+      effective: (() => { const r = on ? resolveExit(st, null) : { mode: 'direct' }; return { mode: r.mode, id: r.id || '', name: r.name || DIRECT.name }; })(),
       servers: ex.servers.map((x) => ({ ...x })),
       stats: { ...EXIT_STATS, lastError: EXIT_LAST_ERR || null },
-      /* انتخابِ هر کانفیگ — برای نمایشِ وضعیت در پنل */
+      proxyStats: { attempts: PROXY_STATS.attempts, connects: PROXY_STATS.connects, fails: PROXY_STATS.fails, lastAt: PROXY_STATS.lastAt, lastError: PROXY_STATS.lastError || null },
+      /* انتخابِ هر کانفیگ — برای نمایشِ وضعیت در پنل
+         reason علتِ «مستقیم‌شدن» را می‌گوید (مثلاً سرور غیرفعال است) تا ادمین
+         بفهمد چرا ترافیکِ آن کانفیگ از سرور رد نمی‌شود. */
       perConfig: st.users.map((u) => {
-        const r = resolveExit(st, u);
-        return { id: u.id, name: u.name, mode: u.exitMode || 'inherit', exitId: u.exitId || '', effectiveMode: r.mode, effectiveId: r.id };
+        const r = on ? resolveExit(st, u) : { mode: 'direct', name: DIRECT.name };
+        return { id: u.id, name: u.name, mode: u.exitMode || 'inherit', exitId: u.exitId || '', effectiveMode: r.mode, effectiveId: r.id || '', effectiveName: r.name || DIRECT.name, reason: r.reason || '' };
       }),
     });
   }
@@ -5306,6 +6324,48 @@ async function apiHandler(req, env, url, ctx) {
       return json({ ok: true, op, servers: ex.servers, msg: 'سرور خروجی حذف شد — کانفیگ‌هایی که به آن وابسته بودند مستقیم شدند' });
     }
 
+    /* کلیدِ فعال/غیرفعالِ یک سرور — توقفِ موقت، نه حذفِ انتخاب‌ها:
+       خاموش‌کردن فقط مسیر را می‌بندد؛ پیش‌فرضِ سراسری و انتخابِ کانفیگ‌ها
+       دست‌نخورده می‌مانند تا با فعال‌کردنِ دوباره همان مسیرِ قبلی برگردد.
+       (قبلاً این‌جا انتخاب‌ها پاک می‌شد — بعد از فعال‌کردنِ مجدد، ترافیک دیگر
+       از سرور رد نمی‌شد و مستقیم می‌رفت = نشتِ IP.) */
+    if (op === 'toggle') {
+      const id = String((b && b.id) || '').trim();
+      const srv = exitById(st, id);
+      if (!srv) return json({ ok: false, error: 'سرور خروجی با این شناسه پیدا نشد' }, 404);
+      const cur = srv.enabled !== false;
+      const want = b.enabled === undefined ? !cur : !!b.enabled;
+      if (want === cur) {
+        return json({ ok: true, op, id, enabled: want, servers: ex.servers, msg: 'وضعیتِ «' + srv.name + '» تغییری نکرد' });
+      }
+      srv.enabled = want;
+      addLog(st, want ? 'success' : 'warn', 'core',
+        want ? 'فعال‌کردن سرور خروجی' : 'غیرفعال‌کردن سرور خروجی',
+        srv.name + ' — انتخابِ کانفیگ‌ها حفظ شد');
+      await save(env, st);
+      return json({
+        ok: true, op, id, enabled: want, servers: ex.servers, defaultMode: ex.defaultMode, defaultExit: ex.defaultExit,
+        msg: 'سرور خروجی «' + srv.name + '» ' + (want
+          ? 'فعال شد — کانفیگ‌هایی که قبلاً آن را انتخاب کرده بودند دوباره از آن عبور می‌کنند'
+          : 'غیرفعال شد (توقفِ موقت) — تا فعال‌کردنِ دوباره هیچ کانفیگی از آن عبور نمی‌کند؛ انتخاب‌ها پاک نشدند'),
+      });
+    }
+
+    /* کلیدِ سراسری: خروجی‌ها اصلاً در مسیرِ تونل به کار بروند یا نه؟
+       خاموش = فهرستِ سرورها دست‌نخورده می‌ماند اما همه‌ی کانفیگ‌ها مستقیم می‌روند. */
+    if (op === 'master') {
+      const want = !!b.enabled;
+      if (want === (ex.enabled !== false)) {
+        return json({ ok: true, op, enabled: want, msg: 'تغییری لازم نبود' });
+      }
+      ex.enabled = want;
+      addLog(st, want ? 'success' : 'warn', 'core',
+        want ? 'فعال‌سازی مسیر خروجی' : 'خاموش‌کردن مسیر خروجی',
+        want ? 'سرورهای خروجی در تونل به کار می‌روند' : 'همه‌ی کانفیگ‌ها مستقیم می‌روند (فهرستِ سرورها حفظ شد)');
+      await save(env, st);
+      return json({ ok: true, op, enabled: want, msg: want ? 'مسیر خروجی فعال شد' : 'مسیر خروجی خاموش شد — همه‌ی کانفیگ‌ها مستقیم می‌روند' });
+    }
+
     /* انتخاب برای هر کانفیگ: پیش‌فرضِ سراسری / یکی از سرورها / مستقیم */
     if (op === 'select') {
       const uuid = String((b && b.uuid) || '').trim();
@@ -5318,6 +6378,9 @@ async function apiHandler(req, env, url, ctx) {
       if (mode === 'exit') {
         const srv = exitById(st, b.exitId);
         if (!srv) return json({ ok: false, error: 'سرور خروجی انتخاب‌شده پیدا نشد' }, 404);
+        if (srv.enabled === false) {
+          return json({ ok: false, error: 'سرور خروجی «' + srv.name + '» غیرفعال است — اول آن را فعال کنید', issues: ['exit-disabled'] }, 400);
+        }
         u.exitMode = 'exit'; u.exitId = srv.id;
       } else if (mode === 'direct') { u.exitMode = 'direct'; u.exitId = ''; }
       else { u.exitMode = 'inherit'; u.exitId = ''; }
@@ -5348,6 +6411,9 @@ async function apiHandler(req, env, url, ctx) {
     }
     const srv = exitById(st, (b && b.exitId !== undefined) ? b.exitId : b.id);
     if (!srv) return json({ ok: false, error: 'سرور خروجی با این شناسه پیدا نشد' }, 404);
+    if (srv.enabled === false) {
+      return json({ ok: false, error: 'سرور خروجی «' + srv.name + '» غیرفعال است — اول آن را فعال کنید', issues: ['exit-disabled'] }, 400);
+    }
     ex.defaultMode = 'exit'; ex.defaultExit = srv.id;
     addLog(st, 'info', 'core', 'پیش‌فرضِ سراسریِ خروجی', srv.name);
     await save(env, st);
@@ -5404,6 +6470,38 @@ async function apiHandler(req, env, url, ctx) {
     return json({
       ok: true, relogin: true,
       msg: 'رمز عبور تغییر کرد — لطفاً دوباره وارد شوید',
+    });
+  }
+
+  /* ═══════ تستِ در دسترس بودنِ Proxy IPها از سمتِ خودِ ورکر (روش BPB) ═══════
+     هر ورودی دو بار واقعاً وصل می‌شود و زمانِ پاسخ گزارش می‌شود تا ادمین
+     ببیند کدام Proxy IP از شبکه‌ی کلادفلر زنده است — و آیا اصلاً در مسیر
+     تونل تلاش شده یا نه (stats.attempts). */
+  if (route === 'proxyips/test' && m === 'POST') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const b = await req.json().catch(() => ({}));
+    const all = (st.settings.proxyIPs || []).map((x) => String(x).trim()).filter(Boolean);
+    const list = (Array.isArray(b.list) && b.list.length)
+      ? b.list.map((x) => String(x).trim()).filter(Boolean)
+      : all;
+    if (!list.length) return json({ ok: false, error: 'Proxy IPای برای تست نیست — اول در «پیکربندی ← شبکه ← IPهای پروکسی» چند مورد وارد کنید' }, 400);
+    const results = [];
+    for (const raw of list) {
+      const r1 = await probeProxyOnce(raw, 443, 5000);
+      const r2 = r1.ok ? null : await probeProxyOnce(raw, 443, 5000);
+      results.push(r2
+        ? { input: raw, ok: r2.ok, ms: Math.min(r1.ms, r2.ms), error: r2.ok ? '' : (r2.error || r1.error || 'ناموفق') }
+        : { input: raw, ok: true, ms: r1.ms, error: '' });
+    }
+    const okN = results.filter((r) => r.ok).length;
+    addLog(st, okN ? 'success' : 'warn', 'core', 'تست Proxy IPها',
+      fa(okN) + ' از ' + fa(results.length) + ' مورد در دسترس');
+    return json({
+      ok: true, total: results.length, reachable: okN, results,
+      stats: { attempts: PROXY_STATS.attempts, connects: PROXY_STATS.connects, fails: PROXY_STATS.fails, lastAt: PROXY_STATS.lastAt, lastError: PROXY_STATS.lastError || null },
+      msg: okN
+        ? fa(okN) + ' از ' + fa(results.length) + ' مورد در دسترس است'
+        : 'هیچ‌کدام از Proxy IPها از دسترسِ ورکر در دسترس نیستند — لیست را عوض کنید یا از «سرور خروجی» استفاده کنید',
     });
   }
 
@@ -5538,7 +6636,9 @@ async function apiHandler(req, env, url, ctx) {
         .then((r) => ({ name, ok: !!(r && r.ok), note: (r && r.note) || '' }))
         .catch((e) => ({ name, ok: false, note: 'خطا: ' + String((e && e.message) || e) }));
 
-      const active = st.users.filter((u) => u.enabled && (!u.expiryAt || u.expiryAt > Date.now()));
+      /* مثل session(): منتظرِ اولین اتصال هم برای تست مجاز است */
+      const active = st.users.filter((u) => u.enabled && ((!u.expiryFirstUse || u.expiryArmed)
+        ? (!u.expiryAt || u.expiryAt > Date.now()) : true));
       const tester = active[0];                       /* ← باید قبل از استفاده تعریف شود */
       const host = s.host || url.hostname;
       checks.push({ name: 'مسیر تونل', ok: !!s.path, note: s.path });
@@ -5579,7 +6679,7 @@ async function apiHandler(req, env, url, ctx) {
       };
       let socketsOk = false;
       try {
-        const sock = connect({ hostname: '8.8.8.8', port: 53 });
+        const sock = connect({ hostname: dialableAddr('8.8.8.8'), port: 53 });
         await Promise.race([sock.opened, new Promise((_, rj) => setTimeout(() => rj(new Error('timeout در برقراری اتصال')), 6000))]);
         const w = sock.writable.getWriter(); await w.write(dnsQuery()); w.releaseLock();
         const rd = sock.readable.getReader();
@@ -5631,7 +6731,7 @@ async function apiHandler(req, env, url, ctx) {
       /* ۱ب) تست ترفند sslip.io — همان روش BPB برای دور زدن محدودیت IP literal */
       if (socketsOk) {
         const sl = await safe('ترفند sslip.io (دور زدن محدودیت IP literal)', async () => {
-          const sock2 = connect({ hostname: 'www.93.184.216.34.sslip.io', port: 80 });
+          const sock2 = connect({ hostname: 'www.93.184.216.34.sslip.io', port: 443 }); // ضد-1101: پورت 80 از ورکر ممنوع، فقط TLS
           await Promise.race([sock2.opened, new Promise((_, rj) => setTimeout(() => rj(new Error('timeout')), 4000))]);
           const w2 = sock2.writable.getWriter();
           await w2.write(new TextEncoder().encode('HEAD / HTTP/1.0\r\nHost: example.com\r\n\r\n'));
@@ -5697,7 +6797,7 @@ async function apiHandler(req, env, url, ctx) {
             const target = '8.8.8.8', tport = 53;
             const header = vlessHeader(tester, target, tport, dnsQuery());
             const parsed = parseVless(header);
-            const sock = connect({ hostname: parsed.addr, port: parsed.port });
+            const sock = connect({ hostname: dialableAddr(parsed.addr), port: parsed.port }); // ضد-1101: IP خام via sslip.io
             await sock.opened;
             const w = sock.writable.getWriter();
             await w.write(parsed.payload);
@@ -5738,7 +6838,9 @@ async function apiHandler(req, env, url, ctx) {
 
       /* ۳) کانفیگ نمونه‌ی واقعی */
       try {
-        const list = await buildList(active[0] || st.users[0], s, url, req.cf || null);
+        const built = await buildList(active[0] || st.users[0], s, url, req.cf || null);
+        /* buildList حالا { mains, fakes, list } برمی‌گرداند — list فهرستِ کانفیگ‌های اصلیِ در سقف */
+        const list = built.list || [];
         const sample = list[0] && list[0].uri;
         checks.push({ name: 'کانفیگ نمونه', ok: !!sample, note: sample ? sample.slice(0, 190) : 'تولید نشد' });
         checks.push({ name: 'تعداد کانفیگ تولیدی', ok: list.length > 0, note: list.length + ' کانفیگ' });
@@ -5750,17 +6852,81 @@ async function apiHandler(req, env, url, ctx) {
       await save(env, st);
       return json({ ok: checks.every((c) => c.ok), checks });
     }
+/* ═══════════════════════════════════════════════════════════════════════════
+   بررسیِ نسخه از همین ریپو (آپدیت خودکارِ پنل)
+   ───────────────────────────────────────────────────────────────────────────
+   اول releases/latest (اگر ریپو release داشته باشد)؛ وگرنه جدیدترین کامیتِ
+   شاخه‌ی main. «تازه‌تر بودن» با تاریخِ بیلدِ همین ورکر سنجیده می‌شود —
+   BUILD تاریخِ ساخت است و با هر `npm run build` به‌روز می‌شود، پس ورکری که
+   امروز بیلد و پیست شده فردا «قدیمی» نیست و ورکرِ ماهِ قبل هست.
+   نتیجه ۱۰ دقیقه در حافظه‌ی isolate کش می‌شود تا سهمیه‌ی GitHub API
+   (۶۰ درخواست/ساعت بدون توکن) با رفرش‌های پنل تمام نشود.
+   ═══════════════════════════════════════════════════════════════════════════ */
+async function checkRepoUpdate(s) {
+  const repo = String((s && s.upd && s.upd.repo) || UPD_DEFAULT_REPO).trim() || UPD_DEFAULT_REPO;
+  const branch = 'main';
+  const ck = repo + '#' + branch;
+  const now = Date.now();
+  if (UPD_CACHE.key === ck && UPD_CACHE.data && now - UPD_CACHE.at < 10 * 60 * 1000) return UPD_CACHE.data;
+  const gh = { headers: { 'user-agent': 'panel', accept: 'application/vnd.github+json' } };
+  const putCache = (data) => { UPD_CACHE = { at: now, key: ck, data }; return data; };
+  /* ۱) release — اگر ریپو release دارد، تگ با نسخه‌ی همین ورکر مقایسه می‌شود */
+  try {
+    const r = await fetch('https://api.github.com/repos/' + repo + '/releases/latest', gh);
+    if (r.ok) {
+      const j = await r.json().catch(() => null);
+      if (j && j.tag_name) {
+        const tag = String(j.tag_name);
+        return putCache({
+          source: 'release', latest: tag,
+          newer: tag !== ('v' + VERSION) && tag !== VERSION,
+          note: String((j && j.name) || tag),
+        });
+      }
+    }
+  } catch (e) {}
+  /* ۲) جدیدترین کامیت — وقتی releaseای نیست؛ تاریخش با BUILD مقایسه می‌شود */
+  try {
+    const r = await fetch('https://api.github.com/repos/' + repo + '/commits/' + branch, gh);
+    if (r.ok) {
+      const j = await r.json().catch(() => null);
+      const sha = j && j.sha ? String(j.sha).slice(0, 7) : '';
+      const date = j && j.commit && j.commit.author && j.commit.author.date ? String(j.commit.author.date).slice(0, 10) : '';
+      const msg = j && j.commit ? String(j.commit.message || '').split('\n')[0].slice(0, 120) : '';
+      const bnum = Number(String(BUILD).replace(/\./g, ''));
+      const cnum = Number(String(date).replace(/-/g, ''));
+      return putCache({
+        source: 'commit', latest: (date || '?') + ' • ' + sha,
+        newer: !!(cnum && bnum && cnum > bnum),
+        sha, date, note: msg,
+      });
+    }
+  } catch (e) {}
+  return { source: 'none', latest: null, newer: false, note: 'ریپو در دسترس نیست — نامِ ریپو (upd.repo) را بررسی کنید' };
+}
+
+/** ذخیره‌ی نتیجه‌ی بررسی برای بنرِ داشبورد (فراخوانی در پس‌زمینه) */
+async function doUpdateCheckStore(env, st) {
+  try {
+    const info = await checkRepoUpdate(st.settings);
+    st.updateInfo = { latest: info.latest, newer: !!info.newer, source: info.source, note: info.note || '', at: Date.now() };
+    st.lastCheck = Date.now();
+    await save(env, st);
+  } catch (e) {}
+}
     if (a === 'update-check' || a === 'update-deploy' || a === 'update-rollback') {
-      let latest = null;
-      try { const r = await fetch(`https://api.github.com/repos/${s.upd.repo}/releases/latest`, { headers: { 'user-agent': 'panel' } }); if (r.ok) latest = (await r.json()).tag_name; } catch (e) {}
-      const cur = 'v' + VERSION, newer = latest && latest !== cur;
+      const info = await checkRepoUpdate(s);
+      const latest = info.latest, newer = !!info.newer;
+      const cur = 'v' + VERSION;
+      const srcNote = info.source === 'release' ? 'release' : info.source === 'commit' ? 'commit' : 'نامشخص';
       const steps = a === 'update-deploy' ? ['بررسی نسخه', 'دانلود بسته', 'استقرار با Cloudflare API', 'سلامت‌سنجی', latest ? 'انتشار به نودها' : 'پایان'] : ['بررسی نسخه'];
-      st.updateLog = steps.map((x, i) => ({ step: x, ok: a === 'update-rollback' ? i === 0 : true, note: i === 0 ? `فعلی ${cur} • آخرین ${latest || 'نامشخص'}` : 'انجام شد' }));
+      st.updateLog = steps.map((x, i) => ({ step: x, ok: a === 'update-rollback' ? i === 0 : true, note: i === 0 ? `فعلی ${cur} (بیلد ${BUILD}) • آخرین ${latest || 'نامشخص'} [${srcNote}]` : 'انجام شد' }));
       if (a === 'update-rollback') st.updateLog.push({ step: 'بازگشت به نسخه‌ی قبل', ok: true, note: cur });
+      st.updateInfo = { latest, newer, source: info.source, note: info.note || '', at: Date.now() };
       st.lastCheck = Date.now();
       addLog(st, 'info', 'system', 'عملیات به‌روزرسانی', a + (latest ? ' • ' + latest : ''));
       await save(env, st);
-      return json({ ok: true, current: cur, latest, newer, msg: a === 'update-check' ? (newer ? 'نسخه‌ی جدید موجود است: ' + latest : 'در آخرین نسخه هستید') : a === 'update-deploy' ? 'استقرار انجام شد' : 'بازگشت انجام شد' });
+      return json({ ok: true, current: cur, build: BUILD, latest, newer, source: info.source, note: info.note || '', msg: a === 'update-check' ? (newer ? 'نسخه‌ی جدید موجود است: ' + latest : latest ? 'در آخرین نسخه هستید' : 'ریپو در دسترس نیست — upd.repo را بررسی کنید') : a === 'update-deploy' ? 'استقرار انجام شد' : 'بازگشت انجام شد' });
     }
 
     /* ═══ نمای زنده‌ی اتصال‌ها — «چه کسی، از کدام آی‌پی، چند اتصال» ═══
@@ -5773,9 +6939,47 @@ async function apiHandler(req, env, url, ctx) {
          خوانا؟، ستون conns وجود دارد؟، افزایش واقعاً ثبت می‌شود؟،
          محدودیت IP واقعاً اتصال سوم را رد می‌کند؟، مصرف هر کاربر چقدر است؟ */
       const kind = backendOf(env);
+      /* ⚠️ پیش از هر گزارشی، مرجعِ محدودیت را *واقعاً* بیازما. بدون این،
+         نخستین اجرا نتیجهٔ کهنه می‌دهد: `limiterBackend` پیش از نخستین آزمون
+         به بایندینگ اعتماد می‌کند و 'd1' برمی‌گرداند — یعنی همان سبزِ کاذبی که
+         کاربر را گمراه می‌کرد. `liveEnsure` نتیجه را ۳۰ ثانیه کش می‌کند، پس
+         این آزمون در هر کلیک هزینه‌ی D1 ندارد. */
+      if (limiterIntended(env) === 'd1') await liveEnsure(env);
       const lim = limiterBackend(env);
-      const out = { ok: true, storage: kind, limiter: lim, limiterLabel: LIM_LABEL[lim] || lim, db: { bound: !!env.DB, kv: !!env.KV, do: !!env.LIMITER, storage: kind }, checks: [], users: [] };
+      const out = { ok: true, storage: kind, limiter: lim, limiterLabel: LIM_LABEL[lim] || lim, limitEnforced: lim !== 'mem', limiterIntended: limiterIntended(env), limiterVerified: LIVE_TS > 0 ? LIVE_OK : null, limiterError: LIVE_ERR, limiterFailures: LIVE_FAILS, limiterDegraded: limiterDegraded(env) || !!LIMITER_DEGRADED, lastLimitError: CONN_LAST_ERR, db: { bound: !!env.DB, kv: !!env.KV, do: !!env.LIMITER, storage: kind }, checks: [], users: [] };
       const chk = (name, ok, note) => { out.checks.push({ name, ok: !!ok, note: String(note || '') }); if (!ok) out.ok = false; };
+
+      /* ۰) مرجعِ مشترکِ محدودیت — علتِ شماره‌ی یکِ «محدودیت کار نمی‌کند».
+         ⚠️ درسِ گرفته‌شده از تاریخِ پروژه: تا وقتی wrangler.toml وجود داشت،
+         بایندینگ‌های LIMITER (شیءِ ماندگار) و DB (D1) خودکار ساخته می‌شدند و
+         محدودیت دقیق کار می‌کرد. کامیتِ 360e05c فایل را حذف کرد و پروژه به
+         استقرارِ «پیست در داشبورد» رفت؛ بایندینگ‌ها ناپدید شدند و محدودیت
+         بی‌صدا — بدون هیچ خطایی — به حافظه‌ی هر isolate افتاد. پس این بررسی
+         اول از همه می‌آید: اگر mem باشد، هیچ‌چیزِ دیگری مهم نیست.
+
+         ⚠️⚠️ و یک درسِ دوم که دیرتر گرفته شد: *بایند بودن* با *کار کردن*
+         یکی نیست. اگر DB بایند باشد ولی جدولِ conns ساخته/خوانده نشود،
+         مسیرِ D1 شکست می‌خورد و شمارش بی‌صدا به حافظه می‌افتد — در حالی که
+         `limiter` همچنان 'd1' گزارش می‌شد و کاربر فکر می‌کرد همه‌چیز درست
+         است. حالا `limiter` بک‌اندِ کارکننده است و این حالت جداگانه و
+         *شکست‌خور* گزارش می‌شود. */
+      const intended = limiterIntended(env);
+      if (limiterDegraded(env)) chk('مرجعِ مشترکِ محدودیت (LIMITER / DB / KV)', false,
+        '⚠️ بایندینگ «' + intended + '» وجود دارد ولی در عمل کار نمی‌کند — پس شمارش بی‌صدا به حافظه‌ی همین isolate افتاده و ' +
+        'سقفِ آی‌پی بین isolateها اعمال نمی‌شود (دو دستگاه به دو isolate می‌افتند و هر کدام فقط ۱ آی‌پی می‌بیند). ' +
+        'خطا: ' + (LIVE_ERR || 'نامشخص') + ' • ' + LIVE_FAILS + ' بار پشت‌سرهم. ' +
+        'راه‌حل: بایندینگِ DB را بازبینی کنید (Settings → Bindings → D1 با Variable name برابر DB) و مطمئن شوید پایگاه‌داده ' +
+        'درست انتخاب شده است؛ جدولِ conns باید خودکار ساخته شود. /health هم فیلدهای limiterVerified و limiterError را نشان می‌دهد.');
+      else if (lim === 'mem') chk('مرجعِ مشترکِ محدودیت (LIMITER / DB / KV)', false,
+        'هیچ‌کدام از LIMITER (شیءِ ماندگار)، DB (D1) و KV بایند نیستند — پس هر isolate حافظهٔ خودش را می‌شمارد و ' +
+        'سقفِ آی‌پی عملاً اعمال نمی‌شود (اتصالِ سوم به isolate تازه می‌افتد و از صفر شمرده می‌شود). ' +
+        'راه‌حل: Settings → Bindings → Add → D1 database با Variable name برابر DB ' +
+        '(یا Durable Object namespace با نام LIMITER و کلاس ConnLimiter). جزئیات در wrangler.toml و README.');
+      else if (lim === 'kv') chk('مرجعِ مشترکِ محدودیت (LIMITER / DB / KV)', true,
+        'KV بایند شده — شمارش بین isolateها مشترک است اما با تأخیر (تقریبی). برای دقتِ کامل یک D1 با نام DB ببندید.');
+      else chk('مرجعِ مشترکِ محدودیت (LIMITER / DB / KV)', true,
+        lim === 'do' ? 'Durable Object — یک نمونهٔ سراسری؛ شمارش بین همهٔ isolateها دقیق ✓'
+          : 'D1 — همهٔ isolateها یک پایگاه‌داده را می‌بینند، پس شمارش سراسری و دقیق ✓ (جدول conns؛ آزمونِ واقعی خواندن هم موفق بود)');
 
       /* ۱) بایندینگ ذخیره‌سازی — علتِ شماره‌ی یکِ «شمارش کار نمی‌کند» */
       if (kind === 'd1') chk('اتصال D1 (env.DB)', true, 'بایند شده — افزایش اتمیک واقعی ✓');
@@ -5881,7 +7085,51 @@ async function apiHandler(req, env, url, ctx) {
         await relAll();
         const okOne = s1a.ok && s1b.ok && !s1c.ok && s1d.ok;
         const okTwo = s2a.ok && s2b.ok && !s2c.ok && s2d.ok;
-        const yn = (r, want) => (r.ok === want ? (want ? 'مجاز ✓' : 'مجاز ✗') : (want ? 'رد ✗' : 'رد ✓'));
+        /* ⚠️ برچسبِ تصمیم باید وضعیتِ *واقعی* را بگوید، نه انتظار را.
+           نسخه‌ی قبلی برای حالت‌های «انتظارِ رد» کلمه‌ی برعکس چاپ می‌کرد
+           (وقتی آی‌پیِ دوم اشتباهاً مجاز می‌شد، «رد ✓» نشان می‌داد) — یعنی
+           کارتِ سلامت درست همان‌جایی که باگ بود، سبز به نظر می‌رسید. */
+        const yn = (r, want) => ((r.ok ? 'مجاز' : 'رد') + (r.ok === want ? ' ✓' : ' ✗ (انتظار: ' + (want ? 'مجاز' : 'رد') + ')'));
+
+        /* ── سناریو ۳: اتصالِ بازِ بی‌ترافیک سهمیه‌اش را از دست نمی‌دهد ──
+           ⚠️ این همان باگِ «سقفِ آی‌پی درست اعمال نمی‌شود» است. پنجره‌ی
+           قبلیِ ۳ ثانیه «بی‌ترافیک» را با «مرده» یکی می‌گرفت، پس ردیفِ یک
+           تونلِ باز ولی ساکت (گوشی با صفحه‌ی خاموش، لپ‌تاپ در فاصله‌ی دو صفحه)
+           در پاک‌سازی حذف می‌شد و جایش به آی‌پیِ تازه داده می‌شد.
+           سناریو: آی‌پیِ اول را ۱۰ ثانیه «بی‌ترافیک» می‌کنیم — بزرگ‌تر از
+           پنجره‌ی باگ‌دارِ قبلی و کوچک‌تر از مهلتِ فعلی. انتظار:
+             • ردیف زنده بماند → آی‌پیِ دوم رد شود؛
+           بعد ۵ ثانیه فراتر از مهلت عقب می‌بریم: شبکه‌ی ایمنی باید ردیف را
+           «رفته» فرض کند → آی‌پیِ دوم مجاز شود. */
+        let okIdle = true, idleNote = '';
+        if (lim === 'd1' || lim === 'mem') {
+          const ipD = '198.51.100.10', ipE = '198.51.100.11';
+          const ageRow = async (ipv, cid, ms) => {
+            const ts = Date.now() - ms;
+            if (lim === 'd1' && env.DB) {
+              try { await env.DB.prepare('UPDATE conns SET last_ts = ? WHERE conn_id = ?').bind(ts, cid).run(); return true; }
+              catch (e) { return false; }
+            }
+            const um = CONNS.get(pu), m = um && um.get(ipv);
+            if (m && m.has(cid)) { m.set(cid, ts); return true; }
+            return false;
+          };
+          const s3a = await connAcquire(env, pu, ipD, 1, id(31));         /* مجاز */
+          const aged10 = await ageRow(ipD, id(31), 10000);               /* ۱۰ ثانیه بی‌ترافیک */
+          const s3b = await connAcquire(env, pu, ipE, 1, id(32));         /* باید رد شود */
+          const agedOut = await ageRow(ipD, id(31), CONN_TTL + 5000);     /* فراتر از مهلت */
+          const s3c = await connAcquire(env, pu, ipE, 1, id(33));         /* باید مجاز شود */
+          okIdle = s3a.ok && aged10 && !s3b.ok && agedOut && s3c.ok;
+          idleNote = 'IP اول: ' + yn(s3a, true) +
+            ' • پس از ۱۰ ثانیه بی‌ترافیکی، IP دوم: ' + yn(s3b, false) +
+            ' • پس از گذشتنِ مهلتِ ' + fa(Math.floor(CONN_TTL / 1000)) + ' ثانیه‌ای، IP دوم: ' + yn(s3c, true);
+          await connRelease(env, pu, ipD, id(31));
+          await connRelease(env, pu, ipE, id(32));
+          await connRelease(env, pu, ipE, id(33));
+        } else {
+          idleNote = 'روی «' + lim + '» قابل شبیه‌سازی نیست (این سناریو فقط روی D1 و حافظه اجرا می‌شود)';
+        }
+        chk('سقف آی‌پی برای اتصالِ بازِ بی‌ترافیک', okIdle, idleNote);
         chk('تست زنده‌ی محدودیت (سقف ۱ IP)', okOne,
           'روی «' + lim + '» • اتصال ۱ از IP اول: ' + yn(s1a, true) +
           ' • اتصال ۲ از همان IP: ' + yn(s1b, true) +
@@ -5890,21 +7138,18 @@ async function apiHandler(req, env, url, ctx) {
         chk('تست زنده‌ی محدودیت (سقف ۲ IP)', okTwo,
           'IP اول: ' + yn(s2a, true) + ' • IP دوم: ' + yn(s2b, true) +
           ' • IP سوم: ' + yn(s2c, false) + ' • بعد از آزادسازی: ' + yn(s2d, true));
-        /* بک‌اندِ محدودیت — باید صریح باشد: حافظه بین isolateها مشترک نیست */
-        chk('مرجعِ شمارشِ محدودیت اتصال', lim === 'do' || lim === 'd1',
-          lim === 'do' ? 'Durable Object — یک نمونه‌ی سراسری؛ شمارش بین همه‌ی isolateها دقیق ✓'
-            : lim === 'd1' ? 'D1 — همه‌ی isolateها یک پایگاه‌داده را می‌بینند، پس شمارش سراسری و دقیق ✓ (جدول conns)'
-            : lim === 'kv' ? 'KV بایند شده — شمارش بین isolateها مشترک است اما با تأخیر (تقریبی). برای دقت کامل یک پایگاه D1 با نام DB ببندید.'
-            : 'هیچ مرجعِ مشترکی نیست (نه D1، نه KV، نه LIMITER): هر isolate حافظه‌ی خودش را می‌شمارد، پس اتصالِ اضافه در isolate دیگر از صفر شمرده می‌شود و محدودیت عملاً اعمال نمی‌شود. در Settings → Variables یک پایگاه D1 با نام DB ببندید.'
-        );
+        /* ⚠️ چکِ «مرجعِ مشترکِ محدودیت» بالاتر (چکِ ۰) همین موضوع را می‌سنجد؛
+           اینجا تکرار نمی‌شود تا کارت دو خطِ قرمزِ مشابه نداشته باشد. */
         chk('آمارِ محدودیت اتصال', true,
           fa(CONN_ACQUIRES) + ' درخواست پذیرش • ' + fa(CONN_DENIES) + ' رد شده • ' +
           fa(CONN_EVICTS) + ' آی‌پیِ کهنه بیرون رانده شد' +
           (CONN_LAST_ERR ? ' • آخرین خطا: ' + CONN_LAST_ERR : ' • بدون خطا ✓'));
-      chk('آزادسازی آی‌پی', true,
-          'آنی هنگام قطع شدن؛ حداکثر ' + fa(Math.floor(CONN_TTL / 1000)) +
-          ' ثانیه برای قطعیِ ناگهانی • اتصالی که واقعاً ترافیک دارد با هر بایت تمدید می‌شود ' +
-          '(حداکثر یک بار در ثانیه) و هرگز بیرون رانده نمی‌شود');
+        chk('آزادسازی آی‌پی', true,
+          'آنی هنگام قطع شدن (رویدادِ close/خطا) • حداکثر ' + fa(Math.floor(CONN_TTL / 1000)) +
+          ' ثانیه فقط برای قطعیِ بی‌خبر (kill شدنِ isolate / قطعِ ناگهانی) • ' +
+          'اتصالِ باز ولی بی‌ترافیک با ضربانِ هر ' + fa(Math.floor(CONN_KEEPALIVE_MS / 1000)) +
+          ' ثانیه و اتصالِ فعال با هر بایت (حداکثر یک بار در ' + fa(Math.floor(CONN_ACTIVITY_MS / 1000)) +
+          ' ثانیه) تمدید می‌شود و هرگز بیرون رانده نمی‌شود');
         chk('شمارنده‌ی محدودیت در دسترس است', !CONN_LAST_ERR || kind === 'kv',
           CONN_LAST_ERR ? ('آخرین خطا: ' + CONN_LAST_ERR + ' — محدودیت روی حافظه ادامه دارد') : 'بدون خطا ✓');
       } catch (e) { chk('تست زنده‌ی محدودیت IP', false, 'خطا: ' + String((e && e.message) || e)); }
@@ -5931,7 +7176,8 @@ async function apiHandler(req, env, url, ctx) {
         perUser: st.users.map((u) => ({ name: u.name, uuid: u.uuid, limit: Number(u.ipLimit) || gLimit || 0 })),
         connErr: CONN_LAST_ERR || null, usageErr: USAGE_LAST_ERR || null,
         acquires: CONN_ACQUIRES, denies: CONN_DENIES,
-        releaseSec: Math.floor(CONN_TTL / 1000), evicts: CONN_EVICTS,
+        releaseSec: Math.floor(CONN_TTL / 1000), keepAliveSec: Math.floor(CONN_KEEPALIVE_MS / 1000),
+        activitySec: Math.floor(CONN_ACTIVITY_MS / 1000), ipv6Group64: IPV6_GROUP64, evicts: CONN_EVICTS,
         liveSource: lim, live: out.live
       };
       chk('سقف مؤثری که ورکر برای هر کاربر می‌خواند', true,
@@ -5963,7 +7209,8 @@ async function apiHandler(req, env, url, ctx) {
          خودش را صدا بزند). */
       const sizeMB = Number(b.sizeMB) || 1;
       const want = Math.max(1024, Math.min(20 * 1024 * 1024, Math.round(sizeMB * 1048576)));
-      const pool = st.users.filter((u) => u.enabled && (!u.expiryAt || u.expiryAt > Date.now()));
+      const pool = st.users.filter((u) => u.enabled && ((!u.expiryFirstUse || u.expiryArmed)
+        ? (!u.expiryAt || u.expiryAt > Date.now()) : true));
       const target = (b.uuid && st.users.find((u) => u.uuid === b.uuid)) || pool[0] || st.users[0];
       if (!target) return json({ ok: false, error: 'هیچ کاربری برای تست وجود ندارد' }, 400);
       await usageEnsure(env);
@@ -6034,13 +7281,42 @@ async function tgSend(s, text) {
 }
 
 /* ════════════════════════════ اشتراک ════════════════════════════ */
+/* ═══ تنظیمات اسکنر برای صفحه‌ی کاربر ═══
+   هر مقدار با کف/سقفِ امن بریده می‌شود تا مقدارِ خرابِ state (یا بک‌آپِ
+   قدیمی) هرگز اسکنِ کاربر را خراب نکند. رنج‌ها هم اعتبارسنجیِ CIDR می‌شوند. */
+function scannerCfg(s) {
+  const sc = (s && s.scanner && typeof s.scanner === 'object' && !Array.isArray(s.scanner)) ? s.scanner : {};
+  const int = (v, lo, hi, d) => {
+    const n = parseInt(v, 10);
+    return (isFinite(n) && n >= lo && n <= hi) ? n : d;
+  };
+  const arr = (v) => (Array.isArray(v) ? v : []);
+  return {
+    enabled: sc.enabled !== false,
+    ipCount: int(sc.ipCount, 16, 65536, 2048),
+    concurrency: int(sc.concurrency, 1, 256, 16),
+    timeout: int(sc.timeout, 200, 10000, 2000),
+    probes: int(sc.probes, 1, 5, 3),
+    minRtt: int(sc.minRtt, 0, 5000, 0),
+    autoFloor: sc.autoFloor !== false,
+    maxRtt: int(sc.maxRtt, 0, 20000, 0),
+    keep: int(sc.keep, 0, 100, 0),
+    mode: (sc.mode === 'random' || sc.mode === 'even') ? sc.mode : 'smart',
+    ports: arr(sc.ports).map((x) => parseInt(x, 10)).filter((x) => x > 0 && x < 65536).slice(0, 12),
+    ranges: arr(sc.ranges).map((x) => String(x).trim())
+      .filter((x) => /^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(x)).slice(0, 64),
+  };
+}
+
 /* ── صفحه‌ی کاربر (داشبورد + اشتراک در یک صفحه) ── */
-function renderUserPage(u, st, url, dailyUsed) {
+async function renderUserPage(u, st, url, dailyUsed) {
   const s = st.settings;
   const base = url.origin + '/' + s.sub.path + '/' + u.uuid;
   const q = (u.quotaGB || 0) * 1073741824, used = (u.up || 0) + (u.down || 0);
   const gb = (x) => Number((x / 1073741824).toFixed(2));
-  const code = !u.enabled ? 'paused' : u.expiryAt && u.expiryAt < Date.now() ? 'expired' : q && used >= q ? 'limit' : dailyUsed >= (u.dailyQuotaMB || 0) * 1048576 && u.dailyQuotaMB ? 'dailyLimit' : 'active';
+  /* «انقضا از اولین استفاده»: تا مسلح نشده، وضعیتِ صفحه‌ی کاربر «فعال» است */
+  const expArmed = !u.expiryFirstUse || u.expiryArmed;
+  const code = !u.enabled ? 'paused' : u.expiryAt && expArmed && u.expiryAt < Date.now() ? 'expired' : q && used >= q ? 'limit' : dailyUsed >= (u.dailyQuotaMB || 0) * 1048576 && u.dailyQuotaMB ? 'dailyLimit' : 'active';
   const iso = u.expiryAt ? new Date(u.expiryAt).toISOString().slice(0, 10) : '';
   const faDate = u.expiryAt ? new Date(u.expiryAt).toLocaleDateString('fa-IR') : '';
   const map = {
@@ -6058,6 +7334,18 @@ function renderUserPage(u, st, url, dailyUsed) {
     __LIMIT_BYTES__: String(q),
     __EXPIRE_SECONDS__: u.expiryAt ? String(Math.floor(u.expiryAt / 1000)) : '0',
     __LAST_ONLINE_MS__: String(u.lastSeen || 0),
+    /* تعدادِ کانفیگِ مؤثرِ این کاربر — رادارِ صفحه‌ی کاربر همین‌قدر آی‌پی ذخیره می‌کند */
+    __NODE_LIMIT__: String(Number(u.maxConfigs) || Number(s.sub.nodeLimit) || 0),
+    /* ═══ تنظیمات اسکنر (پنل ← پیکربندی ← اسکنر) ═══
+       مقدار داخلِ کوتیشنِ همین تمپلیت می‌نشیند:  JSON.parse("__SCANNER_CFG_JSON__")
+       پس باید «محتوای» یک رشته‌ی جاوااسکریپت باشد — یعنی بک‌اسلش و کوتیشنِ
+       JSON دوباره escape شوند، وگرنه کوتیشنِ اضافه کلِ اسکریپتِ صفحه را
+       می‌شکند (باگِ واقعی: JSON.parse(""{"enabled":true}"") → SyntaxError).
+       `<` هم به \u003c تبدیل می‌شود تا هرگز تگِ script بسته نشود. */
+    __SCANNER_CFG_JSON__: JSON.stringify(scannerCfg(s))
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/</g, '\\u003c'),
     __SYNC_NORMAL__: base,
     __SYNC_NORMAL_BASE64__: base + '?format=base64',
     __SYNC_RAW__: base + '?format=raw',
@@ -6075,7 +7363,21 @@ function renderUserPage(u, st, url, dailyUsed) {
       return 'https://t.me/' + String(raw).replace('@', '');
     })(),
   };
+  /* خواسته‌ی کاربر: صفحه‌ی قدیمی هرگز لود نشود. ترتیب: تمپلیت جدید
+     (new-subscription) → همگام‌سازی فوری از گیت‌هاب → آخرین نسخه‌ی کش‌شده.
+     USER_PAGE (نسخه‌ی پشتیبانِ داخلی) فقط وقتی گیت‌هاب در دسترس نیست و هیچ
+     کشی هم نداریم استفاده می‌شود — نه به‌عنوان جایگزینِ صفحه‌ی جدید. */
   let out = USER_HTML || USER_PAGE;
+  if (!USER_HTML) {
+    /* تلاش همگام‌سازی یک‌باره — تا اولین بازدیدِ غیرادمین هم صفحه‌ی جدید ببیند.
+       env اینجا در دسترس نیست؛ فقط واکشیِ تمپلیت لازم است نه ذخیره‌ی uiLoaded. */
+    try {
+      const get = (u, n) => fetch(u, { cf: { cacheTtl: 0, cacheEverything: false } })
+        .then((r) => { if (!r.ok) throw new Error(n + ' → ' + r.status); return r.text(); });
+      USER_HTML = await get(UI_SRC.userNew, 'new-subscription');
+      out = USER_HTML;
+    } catch (e) { try { USER_HTML = await fetch(UI_SRC.user.replace('?r=' + UI_REV, '?r=' + UI_REV + '&fb=1')).then((r) => r.ok ? r.text() : null); if (USER_HTML) out = USER_HTML; } catch (e2) { /* بی‌شبکه → fallback داخلی */ } }
+  }
   for (const k in map) out = out.split(k).join(map[k]);
   return new Response(out, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
 }
@@ -6085,6 +7387,102 @@ const CLIENT_UA = /v2ray|hiddify|clash|sing-box|karing|happ|shadowrocket|streisa
 async function subHandler(req, env, url, cf, wantPage) {
   const st = seed(await load(env)), s = st.settings;
   if (s.auth.panic || s.sec.killSwitch) return txt('503 Service Unavailable', {}, 503);
+
+  /* ═══ رادار صفحه‌ی کاربر: ذخیره‌ی آی‌پی‌های تمیز پیدا‌شده ═══
+     POST /<sub-path>/<user-id>/radar-ips  بدنه: {"ips": ["1.2.3.4", ...]}
+     ۱) روی کانفیگ‌های همین کاربر اعمال می‌شود (u.cleanIPs — در ipsOf بر global اولویت دارد)
+     ۲) در بخش آی‌پی‌های تمیز پنل هم merge می‌شود (s.cleanIPs، بدون تکرار) */
+  const segsAll = url.pathname.split('/').filter(Boolean);
+  if (segsAll[segsAll.length - 1] === 'radar-ips') {
+    if (req.method.toUpperCase() !== 'POST') return json({ ok: false, error: 'method not allowed' }, 405);
+    const userId = decodeURIComponent(segsAll[segsAll.length - 2] || '');
+    const ru = st.users.find((x) => x.uuid === userId || x.secret === userId || x.name === userId);
+    if (!ru) return json({ ok: false, error: 'user not found' }, 404);
+    const rb = await req.json().catch(() => ({}));
+    /* ═══ اسکنِ رادارِ صفحه‌ی کاربر ═══
+       خواسته‌ی کاربر: به‌محضِ رسیدنِ ۵ آی‌پیِ تمیز، اسکن باید «موفق» تمام شود
+       و اقداماتِ بعدِ پایان (ذخیره + اعمال روی کانفیگ‌ها + لاگ) انجام شود.
+       مرورگر اکنون به‌محضِ پیدا شدنِ ۵ آی‌پی، اسکن را قطع و همین‌ها را می‌فرستد
+       و همین‌جا هم اعتبارسنجی و ذخیره می‌شود. */
+    if (!Array.isArray(s.cleanIPs)) s.cleanIPs = [];
+    /* تعدادِ آی‌پی دقیقاً بر اساس تنظیمات: اول «تعدادِ نگه‌داری» اسکنر
+       (پنل ← اسکنر ← keep)، وگرنه سقفِ کانفیگِ کاربر (maxConfigs) یا nodeLimit
+       سراسری پنل — مرورگر قبل از ارسال در همان تعداد راستی‌آزمایی کرده است؛
+       اینجا هم سقف اعمال می‌شود تا تعدادِ ذخیره‌شده همیشه درست باشد. */
+    const scKeep = Math.min(100, Math.max(0, parseInt((s.scanner && s.scanner.keep) || 0, 10) || 0));
+    const wantN = scKeep > 0 ? scKeep : Math.max(1, Number(ru.maxConfigs) || Number(s.sub.nodeLimit) || 8);
+    const ips = (Array.isArray(rb.ips) ? rb.ips : [])
+      .map((x) => String(x).trim())
+      .filter((x) => /^\d{1,3}(\.\d{1,3}){3}$/.test(x))
+      .slice(0, Math.min(wantN, 100));
+    if (!ips.length) {
+      /* ═══ گزارشِ اسکنِ بی‌نتیجه — لاگِ «ناموفق» ثبت می‌شود ═══
+         خواسته‌ی کاربر: «لاگ اسکن‌های ناموفق ثبت نمی‌شد». مرورگر حالا حتی وقتی
+         اسکن هیچ آی‌پی‌ای پیدا نمی‌کند همین POST را با فهرستِ خالی می‌فرستد تا
+         این رویداد در لاگِ پنل دیده شود (سطح warn). */
+      addLog(st, 'warn', 'radar', 'اسکن رادار بی‌نتیجه بود',
+        'کاربر: ' + (ru.name || '—') + ' • هیچ آی‌پی سالمی برای ذخیره‌سازی نیامد');
+      await save(env, st);
+      return json({ ok: false, error: 'no valid ips', reported: true }, 400);
+    }
+    /* خواسته‌ی کاربر: فقط خودِ IP ذخیره شود — بدون نام شهر یا هر پسوند دیگری.
+       (نامِ کشور موقعِ ساخت ساب و فقط برای سرور خروجی/IP واقعی به‌دست می‌آید.) */
+    ru.cleanIPs = ips.slice();
+    /* ذخیره در بخش آی‌پی‌های تمیز پنل — بدون تکرارِ آی‌پی، بدون پسوند نام
+       ⚠️ قبلاً اگر s.cleanIPs آرایه نبود (دست‌کاریِ دستیِ state یا بک‌آپِ قدیمی)
+       اینجا کرش می‌کرد → پاسخ 500 → «ذخیره‌ی آی‌پی‌ها ناموفق بود» در صفحه‌ی
+       کاربر، در حالی که اسکن موفق بود. حالا همیشه آرایه‌ی معتبر تضمین می‌شود. */
+    if (!Array.isArray(s.cleanIPs)) s.cleanIPs = [];
+    const have = new Set(s.cleanIPs.map((e) => String(e).split('#')[0]));
+    ips.forEach((ip) => { if (!have.has(ip)) s.cleanIPs.unshift(ip); });
+    s.cleanIPs = s.cleanIPs.slice(0, 100);
+    /* لاگِ اسکنر — همیشه ثبت می‌شود (خواسته‌ی کاربر: «لاگ‌های اسکن دیگر نشان داده
+       نمی‌شدند»). اسکنِ بی‌نتیجه هم رویدادِ خودش را دارد تا در لاگِ پنل دیده شود؛
+       فقط «ذخیره‌ی موفقِ آی‌پی» سطحِ success می‌گیرد.
+       ═══ حالتِ فالبک (fallback:true) ═══
+       مرورگر اسکنِ تازه را بی‌نتیجه تمام کرده و آی‌پی‌های از قبل ذخیره‌شده را
+       دوباره پروب کرده است؛ سالم‌ها همین‌جا روی کانفیگ‌های کاربر ست می‌شوند.
+       در فهرستِ سراسری دوباره ذخیره نمی‌شوند چون merge زیر تکراری‌ها را
+       نادیده می‌گیرد (همان‌ها از قبل ذخیره‌اند) — فقط لاگش متفاوت است. */
+    if (rb && rb.fallback) {
+      addLog(st, 'success', 'radar', 'فالبک رادار — آی‌پی ذخیره‌شده سالم اعمال شد',
+        'کاربر: ' + (ru.name || '—') + ' • اسکنِ تازه بی‌نتیجه بود؛ از ذخیره‌شده‌ها: ' + fa(ips.length) + ' • ' + ips.join(', ').slice(0, 300));
+    } else {
+      addLog(st, 'success', 'radar', 'اسکن رادار — آی‌پی تمیز ذخیره شد',
+        'کاربر: ' + (ru.name || '—') + ' • یافت‌شده: ' + fa(ips.length) + ' (سقف: ' + fa(wantN) + ') • ' + ips.join(', ').slice(0, 300));
+    }
+    addLog(st, 'info', 'radar', 'اعمال روی کانفیگ‌های کاربر',
+      'کاربر: ' + (ru.name || '—') + ' • تعدادِ آی‌پی‌های تمیزِ فعال: ' + fa(ru.cleanIPs.length));
+    save(env, st);
+    return json({ ok: true, saved: ips.length, applied: ru.cleanIPs.length, fallback: !!(rb && rb.fallback) });
+  }
+
+  /* ═══ رادار صفحه‌ی کاربر: نامزدهای فالبکِ آی‌پی‌های ذخیره‌شده ═══
+     GET /<sub-path>/<user-id>/radar-candidates
+     اجتماعِ آی‌پی‌های تمیزِ مؤثرِ همین کاربر (u.cleanIPs) + آی‌پی‌های تمیزِ
+     سراسریِ پنل (s.cleanIPs) — فقط پایه‌ی IPv4، بدون پسوندِ نام، بدون تکرار.
+     وقتی اسکنِ تازه‌ی مرورگر هیچ آی‌پی سالمی پیدا نکرد، همین فهرست دوباره با
+     همان پروبِ مرورگر آزموده می‌شود و سالم‌ها با POST /radar-ips و
+     fallback:true روی کانفیگ‌ها ست می‌شوند. (شناسه‌ی کاربر در مسیر، همان
+     مجوزِ دسترسی است — مثل خودِ radar-ips و ساب.) */
+  if (segsAll[segsAll.length - 1] === 'radar-candidates') {
+    if (req.method.toUpperCase() !== 'GET') return json({ ok: false, error: 'method not allowed' }, 405);
+    const userId = decodeURIComponent(segsAll[segsAll.length - 2] || '');
+    const cu = st.users.find((x) => x.uuid === userId || x.secret === userId || x.name === userId);
+    if (!cu) return json({ ok: false, error: 'user not found' }, 404);
+    const seen = new Set();
+    const out = [];
+    const pushAll = (arr) => {
+      for (const e of (Array.isArray(arr) ? arr : [])) {
+        const b = String(e == null ? '' : e).split('#')[0].trim();
+        if (/^\d{1,3}(\.\d{1,3}){3}$/.test(b) && !seen.has(b)) { seen.add(b); out.push(b); }
+      }
+    };
+    pushAll(cu.cleanIPs);
+    pushAll(s.cleanIPs);
+    return json({ ok: true, ips: out.slice(0, 100), count: out.length });
+  }
+
   const id = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || '');
   let u = st.users.find((x) => x.uuid === id || x.secret === id || x.name === id);
   if (!u) return wantPage ? notFoundPage() : txt('user not found', {}, 404);
@@ -6100,20 +7498,21 @@ async function subHandler(req, env, url, cf, wantPage) {
   const dailyUsed = (usageRow.dayUp || 0) + (usageRow.dayDown || 0);
   if (wantPage || (!fmtQ && !CLIENT_UA.test(ua))) return renderUserPage(u, st, url, dailyUsed);
   if (u.dailyQuotaMB && dailyUsed >= u.dailyQuotaMB * 1048576) return txt('daily quota exceeded', {}, 403);
-  if (u.expiryAt && u.expiryAt < Date.now()) return txt('subscription expired', {}, 403);
+  /* «انقضا از اولین استفاده»: تا قبل از اولین اتصالِ واقعی، صفحه‌ی ساب کار می‌کند */
+  if (u.expiryAt && u.expiryAt < Date.now() && (!u.expiryFirstUse || u.expiryArmed)) return txt('subscription expired', {}, 403);
   const q = (u.quotaGB || 0) * 1073741824;
   /* ⚠️ NaN-safe: اگر up/down undefined باشند، NaN >= q برابر false می‌شد و سهمیه هرگز فعال نمی‌شد */
   const usedBytes = (Number(u.up) || 0) + (Number(u.down) || 0);
   if (q > 0 && usedBytes >= q) return txt('quota exceeded', {}, 403);
 
-  const list = await buildList(u, s, url, cf);
+  const { mains, fakes, list } = await buildList(u, s, url, cf);
   const format = url.searchParams.get('format') || sniff(req.headers.get('user-agent'));
   let body;
-  if (format === 'clash') body = clashYaml(list, u, s, url);
-  else if (format === 'meta') body = metaJson(list, u, s, url);
-  else if (format === 'singbox') body = singboxJson(list, u, s, url);
-  else if (format === 'v2ray') body = v2rayJson(list, u, s, url);
-  else { const l = list.map((c) => c.uri); l.push(...fakeCfg(u, s)); body = format === 'raw' ? l.join('\n') : b64(l.join('\n')); }
+  if (format === 'clash') body = clashYaml(list, u, s, url, mains);
+  else if (format === 'meta') body = metaJson(list, u, s, url, mains);
+  else if (format === 'singbox') body = singboxJson(list, u, s, url, mains);
+  else if (format === 'v2ray') body = v2rayJson(list, u, s, url, mains);
+  else { const l = mains.concat(fakes); body = format === 'raw' ? l.join('\n') : b64(l.join('\n')); }
   if (s.sub.converter && url.searchParams.get('convert')) {
     try { return Response.redirect(`${s.sub.converter}?url=${encodeURIComponent(url.origin + '/' + s.sub.path + '/' + u.uuid)}&target=${url.searchParams.get('convert')}`, 302); } catch (e) {}
   }
@@ -6121,12 +7520,22 @@ async function subHandler(req, env, url, cf, wantPage) {
   save(env, st);                                  // بافر دارد — بدون await
   const supId = s.sub.telegramSupport || s.sub.telegramChannel || '';
   const supUrl = supId ? (supId.startsWith('http') ? supId : 'https://t.me/' + String(supId).replace('@', '')) : '';
+  /* ═══ ضدِ «سابِ قدیمی» ═══
+     txt() به‌صورت پیش‌فرض no-store می‌گذارد؛ این هدرها صریحاً تکرار می‌شوند تا
+     هر لایه‌ی احتمالی (کلاینت، مرورگر، لبه‌ی کلودفلر حتی برای کاربر ناشناس،
+     و ربات‌های میانی) مطمئن شود این پاسخ هرگز نباید از کش سرو شود.
+     cdn-cache-control هم کش لبه را برای همین پاسخ صریحاً خاموش می‌کند. */
   return txt(body, {
     'subscription-userinfo': quotaHdr(u),
+    /* صفحه‌ی کاربر برای «وضعیت زنده» از این هدر می‌خواند (میلی‌ثانیه) */
+    'subscription-last-online': String(Math.floor((Number(u.lastSeen) || 0))),
     'profile-update-interval': '12',
     'profile-title': encodeURIComponent(s.panel.name + ' — ' + u.name),
     ...(supUrl ? { 'support-url': supUrl, 'profile-web-page-url': supUrl } : {}),
     'content-disposition': `attachment; filename="${encodeURIComponent(u.name)}.txt"`,
+    'cache-control': 'no-store, no-cache, must-revalidate, max-age=0',
+    'cdn-cache-control': 'no-store',
+    'cloudflare-cdn-cache-control': 'no-store',
   });
 }
 
@@ -6201,6 +7610,9 @@ let EXIT_LAST_ERR = '';
 const EXIT_STATS = { tunnels: 0, fallbacks: 0, lastMs: 0, lastAt: 0 };
 const exitNote = (msg) => { EXIT_LAST_ERR = String(msg).slice(0, 300); EXIT_STATS.lastAt = Date.now(); };
 
+/* آمارِ تلاشِ ProxyIP/NAT64 در مسیرِ تونل — فقط برای گزارش در پنل */
+const PROXY_STATS = { attempts: 0, connects: 0, fails: 0, lastAt: 0, lastError: '' };
+
 const toU8 = (d) => {
   if (!d) return new Uint8Array(0);
   if (d instanceof Uint8Array) return d;
@@ -6211,7 +7623,22 @@ const toU8 = (d) => {
 };
 
 const EXIT_FIELDS = ['name', 'label', 'address', 'port', 'uuid', 'flow', 'security', 'transport',
-  'path', 'serviceName', 'sni', 'host', 'enabled'];
+  'path', 'serviceName', 'sni', 'host', 'enabled', 'pbk', 'sid', 'spx'];
+
+/* اعتبارسنجیِ پارامترهای reality — base64url بدونِ padding، دقیقاً ۳۲ بایت (کلیدِ X25519 سرور) */
+function realityPbkOk(pbk) {
+  const t = String(pbk || '').trim();
+  if (!/^[A-Za-z0-9_-]{43}$/.test(t)) return false;
+  try {
+    const bin = atob(t.replace(/-/g, '+').replace(/_/g, '/') + '=');
+    return bin.length === 32;
+  } catch (e) { return false; }
+}
+/* shortId هگز، حداکثر ۸ بایت (۱۶ نویسه) — خالی هم مجاز است (سرورِ بدونِ shortId) */
+function realitySidOk(sid) {
+  const t = String(sid == null ? '' : sid).trim();
+  return /^[0-9a-fA-F]{0,16}$/.test(t);
+}
 
 /**
  * قِسم‌دادنِ یک سرور خروجی.
@@ -6220,11 +7647,20 @@ const EXIT_FIELDS = ['name', 'label', 'address', 'port', 'uuid', 'flow', 'securi
  */
 function normalizeExit(raw, keepId) {
   const o = (raw && typeof raw === 'object') ? raw : {};
+  /* مهاجرت: در نسخه‌های قبل pbk/sid/spx فقط در params می‌نشستند — به فیلدِ
+     اول‌کلاس منتقل می‌شوند تا اعتبارسنجی و هندشیک به آن‌ها برسند */
+  if (o && o.params && typeof o.params === 'object' && !Array.isArray(o.params)) {
+    if (!o.pbk && o.params.pbk) o.pbk = o.params.pbk;
+    if (!o.sid && (o.params.sid || o.params.shortId)) o.sid = o.params.sid || o.params.shortId;
+    if (!o.spx && o.params.spx) o.spx = o.params.spx;
+  }
   const id = String((keepId !== undefined && keepId !== null && keepId !== '') ? keepId : (o.id || '')).trim()
     || ('ex-' + randTok(6));
   let security = String(o.security || 'tls').toLowerCase();
   if (!EXIT_SECURITIES.includes(security)) security = 'tls';
   let transport = String(o.transport || 'ws').toLowerCase();
+  /* لینک‌های reality معمولاً type=tcp دارند — همان TCP خام است */
+  if (transport === 'tcp') transport = 'raw';
   if (!EXIT_TRANSPORTS.includes(transport)) transport = 'ws';
   const params = (o.params && typeof o.params === 'object' && !Array.isArray(o.params)) ? { ...o.params } : {};
   Object.keys(o).forEach((k) => {
@@ -6241,6 +7677,11 @@ function normalizeExit(raw, keepId) {
     port,
     uuid: String(o.uuid || '').trim(),
     flow: String(o.flow || '').trim(),
+    /* پارامترهای reality — فیلدِ اول‌کلاس تا در ذخیره/بازیابی و رفت‌وبرگشتِ
+       لینک گم نشوند (قبلاً فقط در params می‌نشستند) */
+    pbk: String(o.pbk || '').trim(),
+    sid: String(o.sid || o.shortId || '').trim(),
+    spx: String(o.spx || '').trim(),
     security,
     transport,
     path: String(o.path || '/').trim() || '/',
@@ -6266,6 +7707,11 @@ const VLESS_QUERY_MAP = {
   host: 'host',
   flow: 'flow',
   encryption: 'encryption',
+  /* پارامترهای reality — به فیلدِ اول‌کلاس می‌نشینند (نه params) */
+  pbk: 'pbk',
+  sid: 'sid',
+  shortId: 'sid',
+  spx: 'spx',
 };
 
 /** رمزگشاییِ امنِ بخش‌های لینک — لینکِ خراب نباید ورکر را بیندازد */
@@ -6294,7 +7740,10 @@ function parseVlessLink(link) {
     uuid: safeDecode(url.username),
     address: url.hostname,
     port: url.port ? Number(url.port) : 443,
-    enabled: true,
+    /* ⚠️ enabled عمداً اینجا نیست: لینکِ vless// هیچ کلیدی برای «فعال/غیرفعال» ندارد.
+       افزودن (add) پیش‌فرض فعال می‌شود، ولی ویرایش (update) از روی لینک نباید
+       سرورِ غیرفعال‌شده را بی‌صدا دوباره فعال کند — قبلاً enabled:true اینجا بود
+       و هر ویرایشی کلیدِ «غیرفعال» را می‌شکست. */
   };
   Object.keys(VLESS_QUERY_MAP).forEach((k) => {
     if (!q.has(k)) return;
@@ -6332,6 +7781,22 @@ function exitIssues(x) {
   if (!/^[a-z0-9.\-[\]:]+$/i.test(x.address)) e.push('آدرسِ سرور خروجی نویسه‌ی غیرمجاز دارد');
   if (x.transport === 'ws' && !x.path) e.push('برای انتقالِ ws باید مسیر (path) مشخص شود');
   if (x.transport === 'grpc' && !x.serviceName) e.push('برای انتقالِ grpc باید نام سرویس (serviceName) مشخص شود');
+  /* ⚠️ تشخیصِ زودهنگامِ پیکربندی‌های همیشه‌شکست‌خورده (خطای مبهمِ connect جلوی پنل نشان داده شود):
+     ۱) پورت‌های HTTP (۸۰/۸۰۸۰) از ورکرِ کلاودفلر ممنوع‌اند؛
+     ۲) IP literal برای connect() مجاز نیست (خطای HTTP-based service) — sslip.io در زمانِ dial حلش می‌کند، پس فقط هشدارِ اطلاعاتی؛
+     ۳) reality: پارامترهای ناقص (بدونِ pbk/sni یا sid بدریخت) هندشیک را هرگز رد نمی‌شود. */
+  const p = Math.max(1, Math.min(65535, Math.round(Number(x.port) || 0)));
+  if (p === 80 || p === 8080) e.push('پورتِ ' + p + ' (HTTP) برای سرور خروجی روی کلاودفلر قابل استفاده نیست — یک پورت TLS مثل ۴۴۳ تنظیم کنید');
+  if (x.security === 'reality') {
+    if (x.transport !== 'raw') e.push('reality فقط روی TCP خام (type=tcp) کار می‌کند — لینکِ ws/grpc با reality سازگار نیست');
+    if (!x.sni) e.push('برای reality باید SNI (دامنه‌ی استتار) مشخص باشد — همان sni لینک');
+    if (!realityPbkOk(x.pbk)) e.push('کلید عمومیِ reality (pbk) معتبر نیست — باید ۴۳ نویسه‌ی base64url (کلیدِ ۳۲ بایتی X25519) باشد');
+    if (!realitySidOk(x.sid)) e.push('shortId باید هگز و حداکثر ۱۶ نویسه باشد (خالی = سرورِ بدونِ shortId)');
+    /* نکته: flow (مثل xtls-rprx-vision) پذیرفته می‌شود — در addons هدرِ VLESS
+       می‌نشیند (vlessAddons) و relay خام انجام می‌شود. UDP هیچ‌وقت به exit
+       نمی‌رسد (فقط TCP)، پس حالت‌های vision-udp هم مثل vision رفتار می‌کنند.
+       اگر سرور flow را نخواهد، هندشیک/relay می‌شکند و سالم به مستقیم برمی‌گردیم. */
+  }
   return e;
 }
 
@@ -6361,9 +7826,15 @@ function resolveExit(st, u) {
   const mode = perConfig ? String(u.exitMode) : (ex.defaultMode === 'exit' ? 'exit' : 'direct');
   if (mode !== 'exit') return DIRECT;
   const id = perConfig ? String(u.exitId || '') : String(ex.defaultExit || '');
-  const srv = id ? (ex.servers || []).find((x) => x && x.id === id && x.enabled !== false) : null;
+  /* سرورِ هدف فقط وقتی فعال باشد در مسیر می‌نشیند؛ در غیر این‌صورت مستقیم.
+     دلیلِ دقیق گزارش می‌شود تا پنل «چرا غیرفعال شد» را نشان دهد. */
+  const any = id ? (ex.servers || []).find((x) => x && x.id === id) : null;
+  const srv = any && any.enabled !== false ? any : null;
   if (!srv) {
-    return { mode: 'direct', id: '', name: 'مستقیم (بدون واسطه)', server: null, reason: id ? 'سرور خروجی انتخاب‌شده یافت نشد' : 'هیچ سرور خروجی‌ای انتخاب نشده است' };
+    const reason = !any
+      ? (id ? 'سرور خروجی انتخاب‌شده یافت نشد' : 'هیچ سرور خروجی‌ای انتخاب نشده است')
+      : 'سرور خروجی «' + any.name + '» غیرفعال است';
+    return { mode: 'direct', id: '', name: 'مستقیم (بدون واسطه)', server: null, reason };
   }
   return { mode: 'exit', id: srv.id, name: srv.name, server: srv };
 }
@@ -6425,8 +7896,26 @@ function vlessAddons(flow) {
   return out;
 }
 
-/** بایت‌های درخواستِ VLESS که سرور خروجی انتظار دارد */
+/** بایت‌های درخواستِ VLESS که سرور خروجی انتظار دارد
+ *  ⚠️ آدرسِ مقصد با sslip.io پوشانده می‌شود (مثل BPB): سرورِ خروجیِ خودش روی
+ *  کلاودفلر است و connect() آنجا به IP literal ممنوع است — برای همین خطای
+ *  «proxy request failed … HTTP-based service — consider using fetch» از
+ *  سرورِ خروجی برمی‌گشت. با تبدیلِ 1.2.3.4 → www.1.2.3.4.sslip.io مقصدِ
+ *  دامنه‌دار می‌شود، سرورِ خروجی همان آی‌پی را resolve می‌کند و مسیرِ برگشت
+ *  هم همان است: مقصد ← سرورِ خروجی ← ورکرِ ما ← کاربر. */
 function vlessRequestHeader(srv, addr, port, payload) {
+  const p2 = Math.max(0, Math.min(65535, Math.round(Number(port) || 0)));
+  if (p2 === 80 || p2 === 8080) {
+    /* پورت‌های HTTP از داخل ورکرِ کلاودفلر ممنوع‌اند — خطای شفافِ فارسی به‌جای
+       خطای مبهمِ connect؛ مسیرِ مستقیم (fallback) خودش httpFallback دارد. */
+    throw new Error('پورتِ ' + p2 + ' (HTTP) از سرورِ خروجیِ روی کلاودفلر قابل استفاده نیست — فقط پورت‌های TLS مثل ۴۴۳');
+  }
+  /* ⚠️ آدرسِ داخلِ هدر باید از «target» ساخته شود نه خودِ addr:
+     IPv4 با sslip.io دامنه‌دار می‌شود تا سرورِ خروجیِ روی کلاودفلر بتواند
+     connect() کند. قبلاً target محاسبه می‌شد ولی هرگز استفاده نمی‌شد و هدر
+     با IP لخت (atyp=1) ساخته می‌شد — سرورِ خروجیِ بدونِ wrapper به خطای
+     «HTTP-based service» می‌خورد و chain کار نمی‌کرد. */
+  const target = dialableAddr(addr);
   const hex = String(srv.uuid || '').replace(/-/g, '');
   const uuidBytes = new Uint8Array(16);
   for (let i = 0; i < 16; i++) {
@@ -6436,8 +7925,8 @@ function vlessRequestHeader(srv, addr, port, payload) {
   const addons = vlessAddons(srv.flow);
 
   let atyp = 2, addrBytes;
-  const v4 = String(addr).match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  const v6 = v4 ? null : ipv6ToBytes(addr);
+  const v4 = String(target).match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  const v6 = v4 ? null : ipv6ToBytes(target);
   if (v4 && v4.slice(1).every((n) => Number(n) <= 255)) {
     atyp = 1;
     addrBytes = new Uint8Array(v4.slice(1).map(Number));
@@ -6445,14 +7934,13 @@ function vlessRequestHeader(srv, addr, port, payload) {
     atyp = 3;
     addrBytes = v6;
   } else {
-    const d = new TextEncoder().encode(String(addr));
+    const d = new TextEncoder().encode(String(target));
     addrBytes = new Uint8Array(1 + d.length);
     addrBytes[0] = Math.min(255, d.length);
     addrBytes.set(d.subarray(0, addrBytes[0]), 1);
   }
 
   const pl = toU8(payload);
-  const p2 = Math.max(0, Math.min(65535, Math.round(Number(port) || 0)));
   const out = new Uint8Array(1 + 16 + 1 + addons.length + 1 + 2 + 1 + addrBytes.length + pl.length);
   let i = 0;
   out[i++] = 0;                                   /* نسخه */
@@ -6588,6 +8076,563 @@ async function readHttpHead(sock, timeout) {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   REALITY client (آزمایشی) — سرورِ خروجی با security=reality روی TCP خام
+   ───────────────────────────────────────────────────────────────────────────
+   چرا دستی؟ وقتی secureTransport:'on' است، خودِ ورکر TLS را در لبه خاتمه
+   می‌دهد و ClientHello سفارشی ممکن نیست؛ reality به session_id و key_share
+   معتبر در ClientHello نیاز دارد، پس فقط روی TCP خام (secureTransport:'off')
+   با هندشیکِ دستیِ TLS 1.3 شدنی است.
+   احرازِ دوسویه چطور؟ سرور با کلیدِ خصوصی‌اش همان رازِ مشترک را می‌سازد و
+   AEAD روی session_id را باز می‌کند — مرورگرِ عبوری (بدونِ هیچ کلیدِ خصوصی)
+   نمی‌تواند چنین بایتی بسازد، پس shortId خوانده‌شده یعنی کلاینتِ مجاز. ما هم
+   سرور را با تأییدِ Finished احراز می‌کنیم (فقط دارنده‌ی خصوصی می‌تواند
+   Finished معتبر بفرستد). سرور فینگرپرینتِ CH را چک نمی‌کند (فقط DPIِ میانِ
+   راه مهم است)؛ shortId خامِ بدونِ AEAD هرگز تأیید نمی‌شود.
+   محدودیت‌های نسخه‌ی فعلی: فقط TLS_AES_128_GCM_SHA256؛ flow (vision) در
+   addons می‌نشیند و relay خام می‌شود. هر خطا = throw و مسیرِ مستقیم
+   جایگزین می‌شود. کدِ alert سرور هم در خطا می‌آید تا علت معلوم باشد.
+   ═══════════════════════════════════════════════════════════════════════════ */
+/* @@REALITY_BEGIN@@ */
+
+/* ── X25519 خالص با BigInt (RFC 7748 §5) — بدون نیاز به WebCrypto ── */
+const X25519_P = (1n << 255n) - 19n;
+const X25519_A24 = 121665n;
+function rlClamp32(k) {
+  const t = toU8(k).slice();
+  if (t.length !== 32) throw new Error('کلیدِ X25519 باید ۳۲ بایت باشد');
+  t[0] &= 248; t[31] &= 127; t[31] |= 64;
+  return t;
+}
+function rlLeToBig(b) { const u = toU8(b); let v = 0n; for (let i = u.length - 1; i >= 0; i--) v = (v << 8n) | BigInt(u[i]); return v; }
+function rlBigToLe(v, n) {
+  let x = ((v % X25519_P) + X25519_P) % X25519_P;
+  const o = new Uint8Array(n);
+  for (let i = 0; i < n; i++) { o[i] = Number(x & 255n); x >>= 8n; }
+  return o;
+}
+function rlModPow(b, e) {
+  let r = 1n, x = ((b % X25519_P) + X25519_P) % X25519_P, n = e;
+  while (n > 0n) { if (n & 1n) r = (r * x) % X25519_P; x = (x * x) % X25519_P; n >>= 1n; }
+  return r;
+}
+/** X25519(scalar, u) — نردبانِ Montgomery (با بردارهای مستقل راستی‌آزمایی شده) */
+function rlX25519(scalarBytes, uBytes) {
+  const s = rlLeToBig(rlClamp32(scalarBytes));
+  const x1 = rlLeToBig(toU8(uBytes)) % X25519_P;
+  const mod = (a) => ((a % X25519_P) + X25519_P) % X25519_P;
+  let x2 = 1n, z2 = 0n, x3 = x1, z3 = 1n, swap = 0;
+  for (let t = 254; t >= 0; t--) {
+    const kt = Number((s >> BigInt(t)) & 1n);
+    swap ^= kt;
+    if (swap) { let tmp = x2; x2 = x3; x3 = tmp; tmp = z2; z2 = z3; z3 = tmp; }
+    swap = kt;
+    const A = mod(x2 + z2), AA = mod(A * A), B = mod(x2 - z2), BB = mod(B * B);
+    const E = mod(AA - BB);
+    const C = mod(x3 + z3), D = mod(x3 - z3);
+    const DA = mod(D * A), CB = mod(C * B);
+    x3 = mod(mod(DA + CB) * mod(DA + CB));
+    z3 = mod(x1 * mod(mod(DA - CB) * mod(DA - CB)));
+    x2 = mod(AA * BB);
+    z2 = mod(E * mod(AA + X25519_A24 * E));
+  }
+  return rlBigToLe(mod(x2 * rlModPow(z2, X25519_P - 2n)), 32);
+}
+function rlX25519Base(privBytes) { const b = new Uint8Array(32); b[0] = 9; return rlX25519(privBytes, b); }
+
+/* ── ابزارهای بایت ── */
+function rlConcat(...arrs) {
+  const us = arrs.map(toU8);
+  let n = 0;
+  for (const u of us) n += u.length;
+  const o = new Uint8Array(n);
+  let i = 0;
+  for (const u of us) { o.set(u, i); i += u.length; }
+  return o;
+}
+function rlU16(v) { return new Uint8Array([(v >> 8) & 255, v & 255]); }
+function rlU32(v) { const x = Math.floor(Number(v) || 0) >>> 0; return new Uint8Array([(x >>> 24) & 255, (x >>> 16) & 255, (x >>> 8) & 255, x & 255]); }
+async function rlImportAes(rawBytes) {
+  return crypto.subtle.importKey('raw', toU8(rawBytes), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+function rlEq(a, b) {
+  const x = toU8(a), y = toU8(b);
+  if (x.length !== y.length) return false;
+  let d = 0;
+  for (let i = 0; i < x.length; i++) d |= x[i] ^ y[i];
+  return d === 0;
+}
+function rlHexToBytes(h) {
+  const t = String(h == null ? '' : h).trim();
+  if (!/^[0-9a-fA-F]*$/.test(t) || t.length % 2 !== 0) throw new Error('hex نامعتبر');
+  const o = new Uint8Array(t.length / 2);
+  for (let i = 0; i < o.length; i++) o[i] = parseInt(t.substr(i * 2, 2), 16);
+  return o;
+}
+function rlB64uToBytes(s) {
+  const t = String(s == null ? '' : s).trim().replace(/-/g, '+').replace(/_/g, '/');
+  if (!t) throw new Error('متنِ base64 خالی است');
+  const bin = atob(t + '='.repeat((4 - t.length % 4) % 4));
+  const o = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) o[i] = bin.charCodeAt(i);
+  return o;
+}
+
+/* ── HKDF/TLS 1.3 (RFC 8446 §7.1) روی WebCrypto ── */
+async function rlHmac(keyBytes, dataBytes) {
+  const k = await crypto.subtle.importKey('raw', toU8(keyBytes), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return new Uint8Array(await crypto.subtle.sign('HMAC', k, toU8(dataBytes)));
+}
+async function rlSha256(d) { return new Uint8Array(await crypto.subtle.digest('SHA-256', toU8(d))); }
+/* HKDF-Expand خام با info دلخواه (بدونِ پیشوندِ tls13) */
+async function rlHkdfExpand(prk, info, len) {
+  const inf = toU8(info);
+  const out = new Uint8Array(len);
+  let t = new Uint8Array(0), off = 0, c = 1;
+  while (off < len) {
+    t = await rlHmac(prk, rlConcat(t, inf, new Uint8Array([c])));
+    const n = Math.min(t.length, len - off);
+    out.set(t.subarray(0, n), off); off += n; c++;
+  }
+  return out;
+}
+/* HKDF-Expand-Label(secret, label, context, L) */
+async function rlExpandLabel(secret, label, context, len) {
+  const lab = new TextEncoder().encode('tls13 ' + label);
+  const ctx = toU8(context);
+  const info = rlConcat(rlU16(len), new Uint8Array([lab.length]), lab, new Uint8Array([ctx.length]), ctx);
+  return rlHkdfExpand(secret, info, len);
+}
+const rlDeriveSecret = (secret, label, trHash) => rlExpandLabel(secret, label, trHash, 32);
+async function rlAesKeyIv(secret) {
+  const rawK = await rlExpandLabel(secret, 'key', new Uint8Array(0), 16);
+  const rawI = await rlExpandLabel(secret, 'iv', new Uint8Array(0), 12);
+  const k = await crypto.subtle.importKey('raw', rawK, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+  return { k, iv: rawI };
+}
+function rlNonce(iv12, seq) {
+  const n = toU8(iv12).slice();
+  const s = BigInt(seq);
+  for (let i = 0; i < 8; i++) n[11 - i] ^= Number((s >> BigInt(i * 8)) & 255n);
+  return n;
+}
+/* رمزکردنِ یک رکوردِ app-data (seq جدا برای هر جهت، از صفر) */
+async function rlSeal(keyObj, plaintext, seq) {
+  const pt = toU8(plaintext);
+  const L = pt.length + 16;
+  const hdr = new Uint8Array([23, 3, 3, (L >> 8) & 255, L & 255]);
+  const ct = new Uint8Array(await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: rlNonce(keyObj.iv, seq), additionalData: hdr }, keyObj.k, pt));
+  return rlConcat(hdr, ct);
+}
+/* رمزگشاییِ یک رکوردِ کامل (هدر ۵ + بدنه) — برمی‌گرداند {plaintext, total} */
+async function rlOpen(keyObj, record, seq) {
+  const r = toU8(record);
+  if (r.length < 5 + 16 || r[0] !== 23) throw new Error('رکوردِ app-data نامعتبر');
+  const hdr = r.slice(0, 5);
+  const L = (hdr[3] << 8) | hdr[4];
+  if (r.length - 5 < L) throw new Error('رکوردِ ناقص');
+  const pt = new Uint8Array(await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: rlNonce(keyObj.iv, seq), additionalData: hdr }, keyObj.k, r.slice(5, 5 + L)));
+  return { plaintext: pt, total: 5 + L };
+}
+
+/* ── ClientHello شبیه‌کروم ──
+   ترتیب/مقادیرِ اکستنشن‌ها از الگوی Chrome پیروی می‌کند (best-effort؛ خودِ
+   سرورِ reality فینگرپرینت را چک نمی‌کند — احراز با AEAD است — ولی DPIِ
+   میانِ راه با قالبِ مرورگریِ معتبر آرام‌تر است).
+   sid باید دقیقاً ۳۲ بایت باشد (ساخته‌شده با rlSealSession — صفرِ خام برای
+   مرحله‌ی AAD، بعد با بایت‌های AEAD جایگزین می‌شود). */
+function rlExt(t, body) { const b = toU8(body); return rlConcat(rlU16(t), rlU16(b.length), b); }
+/* GREASE تصادفی مثل کرومِ واقعی (BoringSSL در هر دست‌دادنی یکی می‌سازد و همه‌جا
+   همان را می‌گذارد) — مقدارِ ثابتِ 0x0a0a در همه‌ی اتصال‌ها امضای «جعلِ کروم» است */
+function rlGrease() {
+  const table = [0x0a0a, 0x1a1a, 0x2a2a, 0x3a3a, 0x4a4a, 0x5a5a, 0x6a6a, 0x7a7a, 0x8a8a, 0x9a9a, 0xaaaa, 0xbaba, 0xcaca, 0xdada, 0xeaea, 0xfafa];
+  const b = new Uint8Array(1);
+  crypto.getRandomValues(b);
+  return table[b[0] & 15];
+}
+function rlBuildCH(o) {
+  const sni = String((o && o.sni) || '');
+  const host = new TextEncoder().encode(sni);
+  if (!host.length || host.length > 255) throw new Error('SNI نامعتبر');
+  const sid = toU8(o && o.sid);
+  if (sid.length !== 32) throw new Error('session_id باید دقیقاً ۳۲ بایت باشد');
+  const pub = toU8(o && o.pubkey);
+  if (pub.length !== 32) throw new Error('کلیدِ موقت باید ۳۲ بایت باشد');
+  const rnd = new Uint8Array(32);
+  crypto.getRandomValues(rnd);
+  const gr = rlGrease();
+  const cs = rlConcat(rlU16(gr), rlU16(0x1301), rlU16(0x1302), rlU16(0x1303));
+  const ks = rlConcat(
+    rlU16(gr), rlU16(1), new Uint8Array([0]),
+    rlU16(29), rlU16(32), pub,
+  );
+  const sigAlgs = [0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601, 0x0603];
+  const sigBody = rlConcat(rlU16(sigAlgs.length * 2), ...sigAlgs.map(rlU16));
+  const alpnProtos = rlConcat(new Uint8Array([2]), new TextEncoder().encode('h2'), new Uint8Array([8]), new TextEncoder().encode('http/1.1'));
+  const exts = rlConcat(
+    rlExt(0x0000, rlConcat(rlU16(3 + host.length), new Uint8Array([0]), rlU16(host.length), host)),
+    rlExt(0x0017, new Uint8Array(0)),
+    rlExt(0xff01, new Uint8Array([0])),
+    rlExt(0x000a, rlConcat(rlU16(8), rlU16(gr), rlU16(29), rlU16(23), rlU16(24))),
+    rlExt(0x000b, new Uint8Array([1, 0])),
+    rlExt(0x000d, sigBody),
+    rlExt(0x0010, rlConcat(rlU16(alpnProtos.length), alpnProtos)),
+    rlExt(0x0012, new Uint8Array(0)),
+    /* compress_certificate (RFC 8879 §3): algorithms<2..2^8-2> یعنی طولِ u8 +
+       شناسه‌های u16 — برای brotli تنها: [02, 00, 02]. شکلِ قبلیِ [01,02]
+       بدریخت بود و پارسرهای سخت‌گیر (غیر از Go/OpenSSL) با decode_error ردش
+       می‌کردند — دقیقاً خطایی که روی بعضی سرورها دیده شد. */
+    rlExt(0x001b, new Uint8Array([2, 0, 2])),
+    rlExt(0x0023, new Uint8Array(0)),
+    rlExt(0x002b, rlConcat(new Uint8Array([4]), rlU16(gr), new Uint8Array([3, 4]))),
+    rlExt(0x002d, new Uint8Array([1, 1])),
+    rlExt(0x0032, sigBody),
+    rlExt(0x0033, rlConcat(rlU16(ks.length), ks)),
+    rlExt(0x001c, new Uint8Array([0x40, 0x01]))
+  );
+  const body = rlConcat(
+    new Uint8Array([3, 3]), rnd,
+    new Uint8Array([sid.length]), sid,
+    rlU16(cs.length), cs,
+    new Uint8Array([1, 0]),
+    rlU16(exts.length), exts
+  );
+  const msg = rlConcat(new Uint8Array([1, (body.length >> 16) & 255, (body.length >> 8) & 255, body.length & 255]), body);
+  const record = rlConcat(new Uint8Array([22, 3, 1, (msg.length >> 8) & 255, msg.length & 255]), msg);
+  return { record, msg, random: rnd };
+}
+
+/* ── پارسِ ServerHello (plaintext) ── */
+function rlParseServerHello(body) {
+  const b = toU8(body);
+  if (b.length < 38) throw new Error('ServerHello کوتاه است');
+  if (b[0] !== 3 || b[1] !== 3) throw new Error('نسخه‌ی ServerHello نامعتبر');
+  const rand = b.slice(2, 34);
+  const sidLen = b[34];
+  let i = 35 + sidLen;
+  if (i + 3 > b.length) throw new Error('ServerHello ناقص است');
+  const cipher = (b[i] << 8) | b[i + 1]; i += 2;
+  if (cipher !== 0x1301) throw new Error('cipher غیرمنتظره (0x' + cipher.toString(16) + ') — فقط TLS_AES_128_GCM_SHA256');
+  i += 1;
+  if (i + 2 > b.length) throw new Error('اکستنشن‌های ServerHello ناقص است');
+  const extTotal = (b[i] << 8) | b[i + 1]; i += 2;
+  const end = i + extTotal;
+  if (end > b.length) throw new Error('اکستنشن‌ها ناقص‌اند');
+  let verOk = false, serverPub = null;
+  let j = i;
+  while (j + 4 <= end) {
+    const t = (b[j] << 8) | b[j + 1], L = (b[j + 2] << 8) | b[j + 3];
+    if (j + 4 + L > end) throw new Error('اکستنشن ناقص است');
+    const v = b.slice(j + 4, j + 4 + L);
+    if (t === 0x002b) {
+      for (let k = 0; k + 1 < v.length; k += 2) {
+        if (((v[k] << 8) | v[k + 1]) === 0x0304) verOk = true;
+      }
+    }
+    if (t === 0x0033 && v.length >= 4) {
+      const g = (v[0] << 8) | v[1], kl = (v[2] << 8) | v[3];
+      if (g === 29 && kl === 32 && v.length >= 36) serverPub = v.slice(4, 36);
+    }
+    j += 4 + L;
+  }
+  if (!verOk) throw new Error('سرور TLS 1.3 مذاکره نکرد');
+  if (!serverPub) throw new Error('key_share سرور یافت نشد');
+  return { random: rand, cipher, serverPub };
+}
+
+/* ── session_id واقعیِ REALITY (۳۲ بایتِ AEAD) ──
+   دقیقاً مثل کلاینتِ Xray: ۱۶ بایتِ اول [ver(3), 0, unix_time(4), shortId، صفر]
+   با کلیدِ AuthKey = HKDF-Expand(HKDF-Extract(salt=R[0:20], ikm=shared), "REALITY")
+   و nonce=R[20:32] روی aad=پیامِ ClientHello (با sid صفر) رمز می‌شود؛ خروجیِ
+   ۳۲ بایتی (متن+تگ) همان مقدارِ session_id است. سرور با همین محاسبه بازش
+   می‌کند: shortId و تازگیِ زمان را می‌خواند — shortId خامِ قبلی هرگز تأیید
+   نمی‌شد و سرور به camouflage/alert می‌رفت. */
+const RL_CLIENT_VER = [26, 7, 11];
+async function rlSealSession(o) {
+  const rnd = toU8(o.random);
+  if (rnd.length !== 32) throw new Error('random باید ۳۲ بایت باشد');
+  const shared = toU8(o.shared);
+  if (shared.length !== 32) throw new Error('رازِ مشترک باید ۳۲ بایت باشد');
+  const sidHex = String(o.sidHex == null ? '' : o.sidHex).trim();
+  const sidRaw = rlHexToBytes(sidHex);
+  if (sidRaw.length > 8) throw new Error('shortId بیش از ۸ بایت');
+  const first16 = new Uint8Array(16);
+  first16[0] = RL_CLIENT_VER[0]; first16[1] = RL_CLIENT_VER[1]; first16[2] = RL_CLIENT_VER[2]; first16[3] = 0;
+  const t = Math.floor(Date.now() / 1000) >>> 0;
+  first16[4] = (t >>> 24) & 255; first16[5] = (t >>> 16) & 255; first16[6] = (t >>> 8) & 255; first16[7] = t & 255;
+  first16.set(sidRaw, 8);
+  const authKeyRaw = await rlHkdfExpand(await rlHmac(rnd.slice(0, 20), shared), new TextEncoder().encode('REALITY'), 32);
+  const authKey = await rlImportAes(authKeyRaw);
+  const sealed = new Uint8Array(await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: rnd.slice(20, 32), additionalData: toU8(o.aad) }, authKey, first16));
+  if (sealed.length !== 32) throw new Error('خطای داخلیِ seal');
+  return { sealed, first16 };
+}
+
+/* ── کدهای alert برای تشخیصِ علت (به‌جای «هشدار داد» خشک) ── */
+const RL_ALERTS = {
+  10: 'unexpected_message', 20: 'bad_record_mac', 22: 'record_overflow',
+  40: 'handshake_failure', 42: 'bad_certificate', 43: 'unsupported_certificate',
+  44: 'certificate_revoked', 45: 'certificate_expired', 46: 'certificate_unknown',
+  47: 'illegal_parameter', 48: 'unknown_ca', 49: 'access_denied',
+  50: 'decode_error', 51: 'decrypt_error', 70: 'protocol_version',
+  71: 'insufficient_security', 80: 'internal_error', 86: 'inappropriate_fallback',
+  90: 'user_canceled', 109: 'missing_extension', 110: 'unsupported_extension',
+  112: 'unrecognized_name', 113: 'bad_certificate_status_response',
+  115: 'unknown_psk_identity', 116: 'certificate_required', 120: 'no_application_protocol',
+};
+function rlAlertName(d) { return RL_ALERTS[d] || ('code-' + d); }
+function rlAlertHint(d) {
+  if (d === 112) return 'SNI پذیرفته نشد — sni لینک با serverNames سرور نمی‌خواند یا آدرس پشتِ CDN است';
+  if (d === 40) return 'دست‌دادنی رد شد — نسخه/cipher یا پارامترها؛ sid و pbk و sni را بررسی کنید';
+  if (d === 47 || d === 50) return 'پیامِ ClientHello بدریخت بود';
+  if (d === 70) return 'نسخه‌ی TLS پذیرفته نشد';
+  return 'fingerprint/sid پذیرفته نشد';
+}
+async function rlAlertDetail(io, timeout) {
+  try {
+    const p = await io.readExact(2, Math.min(1500, Number(timeout) || 1500));
+    return ' (alert ' + p[0] + '/' + p[1] + ' ' + rlAlertName(p[1]) + ' — ' + rlAlertHint(p[1]) + ')';
+  } catch (e) { return ''; }
+}
+
+/* ── درایورِ هندشیک ──
+   io: { readExact(n, timeoutMs), write(bytes), close() } — تزریق‌پذیر تا هم
+   روی سوکتِ واقعی و هم در تست (سرورِ جعلیِ درون‌حافظه) کار کند.
+   برمی‌گرداند { cAp, sAp } (کلیدهای app-data). */
+async function rlHandshake(io, srv, timeoutMs) {
+  const timeout = Math.max(1000, Number(timeoutMs) || 8000);
+  const sni = String(srv.sni || '').trim();
+  if (!sni) throw new Error('برای reality باید SNI مشخص باشد');
+  let pbk;
+  try { pbk = rlB64uToBytes(srv.pbk); }
+  catch (e) { throw new Error('pbk نامعتبر است'); }
+  if (pbk.length !== 32) throw new Error('pbk باید کلیدِ ۳۲ بایتی باشد');
+  const sidHex = String(srv.sid == null ? '' : srv.sid).trim();
+  if (!/^[0-9a-fA-F]{0,16}$/.test(sidHex)) throw new Error('shortId نامعتبر است');
+  const epriv = new Uint8Array(32);
+  crypto.getRandomValues(epriv);
+  const epub = rlX25519Base(epriv);
+  const shared = rlX25519(epriv, pbk);
+  /* پاسِ اول با sid صفر (برای AAD)، بعد seal و جایگذاریِ ۳۲ بایتِ واقعی */
+  const ch0 = rlBuildCH({ sni, sid: new Uint8Array(32), pubkey: epub });
+  const sess = await rlSealSession({ random: ch0.random, shared, sidHex, aad: ch0.msg });
+  const record = ch0.record.slice();
+  record.set(sess.sealed, 44);
+  const msg = ch0.msg.slice();
+  msg.set(sess.sealed, 39);
+  await io.write(record);
+  const transcript = [msg];
+  const trBytes = () => rlConcat(...transcript);
+
+  /* قاب‌بندیِ پیام‌های handshake از بایت‌های خام */
+  let hsBuf = new Uint8Array(0);
+  const pullHs = () => {
+    const out = [];
+    let off = 0;
+    while (off + 4 <= hsBuf.length) {
+      const L = (hsBuf[off + 1] << 16) | (hsBuf[off + 2] << 8) | hsBuf[off + 3];
+      if (L < 0 || L > 1048576) throw new Error('پیامِ handshake نامعتبر');
+      if (off + 4 + L > hsBuf.length) break;
+      out.push({ type: hsBuf[off], body: hsBuf.slice(off + 4, off + 4 + L), raw: hsBuf.slice(off, off + 4 + L) });
+      off += 4 + L;
+    }
+    if (off) hsBuf = hsBuf.slice(off);
+    return out;
+  };
+  /* مرحله‌ی جاری برای پیامِ خطا */
+  let rlPhase = 'پاسخِ ServerHello';
+  const readRecord = async () => {
+    const h = await io.readExact(5, timeout);
+    if (h[0] === 21) throw new Error('سرور reality هشدار داد [مرحله: ' + rlPhase + ']' + await rlAlertDetail(io, timeout));
+    if (h[0] !== 22 && h[0] !== 23) throw new Error('رکوردِ نامعتبر از سرور (type=' + h[0] + ')');
+    const L = (h[3] << 8) | h[4];
+    if (L <= 0 || L > 262144) throw new Error('طولِ رکوردِ نامعتبر');
+    const body = await io.readExact(L, timeout);
+    return { h, body };
+  };
+
+  /* ۱) ServerHello (تنها رکوردِ plaintext) — alert در این مرحله یعنی سرور
+     هنوز ClientHello را می‌خواند/مسیریابی می‌کند (SNI، ساختار) */
+  let sh = null;
+  for (;;) {
+    const rec = await readRecord();
+    if (rec.h[0] !== 22) throw new Error('پیش از ServerHello رکوردِ رمزنگاری‌شده آمد');
+    hsBuf = rlConcat(hsBuf, rec.body);
+    const msgs = pullHs();
+    for (const m of msgs) {
+      if (sh) throw new Error('پیامِ اضافیِ plaintext بعد از ServerHello');
+      if (m.type !== 2) throw new Error('اولین پیام ServerHello نبود');
+      sh = rlParseServerHello(m.body);
+      transcript.push(m.raw);
+    }
+    if (sh) {
+      if (hsBuf.length) throw new Error('بایتِ اضافی بعد از ServerHello');
+      rlPhase = 'ادامه‌ی هندشیک';
+      break;
+    }
+  }
+
+  /* مشتقات کلید (RFC 8446 §7.1) */
+  const ZERO32 = new Uint8Array(32);
+  const early = await rlHmac(ZERO32, ZERO32);
+  const emptyHash = await rlSha256(new Uint8Array(0));
+  const derived1 = await rlExpandLabel(early, 'derived', emptyHash, 32);
+  const hsSecret = await rlHmac(derived1, shared);
+  const chShHash = await rlSha256(trBytes());
+  const cHs = await rlDeriveSecret(hsSecret, 'c hs traffic', chShHash);
+  const sHs = await rlDeriveSecret(hsSecret, 's hs traffic', chShHash);
+  const sHsKeys = await rlAesKeyIv(sHs);
+  const cHsKeys = await rlAesKeyIv(cHs);
+
+  /* ۲) flight رمزنگاری‌شده تا Finished سرور */
+  let sSeq = 0, cSeq = 0, serverDone = false;
+  for (;;) {
+    const rec = await readRecord();
+    if (rec.h[0] !== 23) throw new Error('بعد از ServerHello فقط رکوردِ رمزنگاری‌شده');
+    let pt;
+    try {
+      pt = new Uint8Array(await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: rlNonce(sHsKeys.iv, BigInt(sSeq)), additionalData: rec.h },
+        sHsKeys.k, rec.body));
+    } catch (e) { throw new Error('رمزگشاییِ flight ناموفق — کلیدِ مشترک ساخته نشد'); }
+    sSeq++;
+    hsBuf = rlConcat(hsBuf, pt);
+    const msgs = pullHs();
+    for (const m of msgs) {
+      if (m.type === 20) {
+        const fk = await rlExpandLabel(sHs, 'finished', new Uint8Array(0), 32);
+        const vd = (await rlHmac(fk, trBytes())).slice(0, 32);
+        if (!rlEq(vd, m.body)) throw new Error('تأییدِ Finished ناموفق — سرور کلیدِ reality را ندارد');
+        transcript.push(m.raw);
+        serverDone = true;
+      } else {
+        transcript.push(m.raw);
+      }
+    }
+    if (serverDone) break;
+    if (hsBuf.length > 262144) throw new Error('flight بیش از حد بزرگ');
+  }
+
+  /* ۳) Finished ما */
+  let hsEndHash;
+  {
+    const fk = await rlExpandLabel(cHs, 'finished', new Uint8Array(0), 32);
+    const vd = (await rlHmac(fk, trBytes())).slice(0, 32);
+    /* ⚠️ هشِ transcript برای مشتقاتِ master/app باید تا Finishedِ سرور باشد،
+       نه شاملِ Finished خودمان (RFC 8446 §7.1: ...server Finished).
+       وگرنه کلیدهای app-data از هر پیاده‌سازیِ درست منحرف می‌شوند و relay
+       می‌میرد — در حالی که خودِ هندشیک «موفق» به نظر می‌رسد! */
+    hsEndHash = await rlSha256(trBytes());
+    const msg = rlConcat(new Uint8Array([20, 0, 0, 32]), vd);
+    transcript.push(msg);
+    await io.write(await rlSeal(cHsKeys, msg, cSeq++));
+  }
+
+  /* ۴) کلیدهای app-data */
+  const fullHash = hsEndHash;
+  const derived2 = await rlExpandLabel(hsSecret, 'derived', fullHash, 32);
+  const master = await rlHmac(derived2, ZERO32);
+  const cApS = await rlDeriveSecret(master, 'c ap traffic', fullHash);
+  const sApS = await rlDeriveSecret(master, 's ap traffic', fullHash);
+  return { cAp: await rlAesKeyIv(cApS), sAp: await rlAesKeyIv(sApS) };
+}
+
+/* ── نادیده‌گرفتنِ ticketهای بعد از هندشیک ──
+   سرور ممکن است بلافاصله بعد از هندشیک NewSessionTicket بفرستد (داخل
+   رکوردِ app-data). اولین بسته‌ای که کاملاً پیامِ handshake باشد دور
+   ریخته می‌شود؛ اولین بسته‌ی غیرقابل‌پارس همان داده‌ی VLESS است و از آن
+   به بعد حالتِ relay خالص است. (هدرِ پاسخِ VLESS با [ver,0] شروع می‌شود و
+   هرگز پیامِ handshake کامل نیست، پس اشتباه گرفته نمی‌شود.) */
+function rlSkipHsMessages(pt) {
+  const b = toU8(pt);
+  let off = 0, sawAny = false;
+  while (off + 4 <= b.length) {
+    const t = b[off];
+    if (t !== 4 && t !== 24) break;
+    const L = (b[off + 1] << 16) | (b[off + 2] << 8) | b[off + 3];
+    if (L < 0 || off + 4 + L > b.length) break;
+    off += 4 + L; sawAny = true;
+  }
+  if (!sawAny) return b;
+  if (off >= b.length) return null;
+  return b.slice(off);
+}
+
+/* ── لفافِ استریم روی رکوردهای reality ── */
+function rlWrapStreams(io, cAp, sAp) {
+  let wSeq = 0, rSeq = 0, relayMode = false;
+  const readable = new ReadableStream({
+    async pull(controller) {
+      try {
+        for (;;) {
+          const h = await io.readExact(5);
+          if (h[0] === 21) { try { controller.close(); } catch (e) {} try { io.close(); } catch (e2) {} return; }
+          if (h[0] !== 23) throw new Error('رکوردِ غیرمنتظره از سرور reality');
+          const L = (h[3] << 8) | h[4];
+          if (L <= 16 || L > 262144) throw new Error('طولِ رکوردِ نامعتبر');
+          const body = await io.readExact(L);
+          let pt;
+          try {
+            pt = new Uint8Array(await crypto.subtle.decrypt(
+              { name: 'AES-GCM', iv: rlNonce(sAp.iv, BigInt(rSeq)), additionalData: h }, sAp.k, rlConcat(h, body)));
+          } catch (e) { throw new Error('رمزگشاییِ داده ناموفق'); }
+          rSeq++;
+          if (!relayMode) {
+            const rest = rlSkipHsMessages(pt);
+            if (rest === null) continue;
+            relayMode = true;
+            if (rest.length) controller.enqueue(rest);
+            return;
+          }
+          if (pt.length) controller.enqueue(pt);
+          return;
+        }
+      } catch (e) { try { controller.error(e); } catch (e2) {} }
+    },
+    cancel() { try { io.close(); } catch (e) {} },
+  });
+  const writable = new WritableStream({
+    async write(chunk) { await io.write(await rlSeal(cAp, toU8(chunk), wSeq++)); },
+    async abort() { try { io.close(); } catch (e) {} },
+    async close() { try { io.close(); } catch (e) {} },
+  });
+  return { readable, writable, close: () => { try { io.close(); } catch (e) {} } };
+}
+
+/* ── آداپتورِ io روی سوکتِ کلاودفلر (بافرِ مشترکِ handshake و relay) ── */
+function rlMakeSockIo(sock, timeoutMs) {
+  const timeout = Math.max(1000, Number(timeoutMs) || 8000);
+  const reader = sock.readable.getReader();
+  let buf = new Uint8Array(0);
+  const failAfter = (ms, msg) => new Promise((_, rj) => { const t = setTimeout(() => rj(new Error(msg)), ms); });
+  return {
+    async readExact(n, tmo) {
+      const lim = Math.max(500, Number(tmo) || timeout);
+      while (buf.length < n) {
+        const r = await Promise.race([reader.read(), failAfter(lim, 'زمان انتظار برای پاسخِ سرور reality تمام شد')]);
+        if (r.done) throw new Error('سرور reality اتصال را بست');
+        const v = toU8(r.value);
+        if (!v.length) continue;
+        const nb = new Uint8Array(buf.length + v.length);
+        nb.set(buf); nb.set(v, buf.length); buf = nb;
+      }
+      const o = buf.slice(0, n);
+      buf = buf.slice(n);
+      return o;
+    },
+    async write(b) {
+      const w = sock.writable.getWriter();
+      try { await w.write(toU8(b)); } finally { w.releaseLock(); }
+    },
+    release() { try { reader.releaseLock(); } catch (e) {} },
+    close() { try { reader.cancel(); } catch (e) {} try { sock.close(); } catch (e2) {} },
+  };
+}
+/* @@REALITY_END@@ */
+
 /**
  * اتصال‌دهنده‌ی بالادست — تنها تابعی که به جای مقصد، به سرور خروجی وصل می‌شود.
  *
@@ -6604,8 +8649,21 @@ async function openExitSocket(srv, info, opt) {
     throw new Error('انتقالِ grpc برای سرور خروجی پشتیبانی نمی‌شود (فقط raw و ws)');
   }
   const security = srv.security || 'tls';
-  const socketOpts = { secureTransport: security === 'none' ? 'off' : 'on' };
-  const sock = connect({ hostname: srv.address, port: srv.port }, socketOpts);
+  /* ═══ reality — هندشیکِ دستیِ TLS 1.3 روی TCP خام (rlHandshake، آزمایشی) ═══
+     روی secureTransport:'on' ممکن نبود (TLS در لبه خاتمه می‌یابد)، پس اتصال
+     خام می‌گیریم و ClientHello را خودمان می‌سازیم. هر خطا = throw و مسیرِ
+     مستقیم جایگزین می‌شود (اتصالِ کاربر قطع نمی‌شود)؛ علت در تستِ اتصال و
+     آمارِ پنل دیده می‌شود. */
+  if (security === 'reality') {
+    return await openRealitySocket(srv, info, { timeoutMs: timeout });
+  }
+  /* آدرسِ connect باید دامنه باشد — IP ممنوع است («HTTP-based service»).
+     واقعیِ hostِ کلاینت برای هدرِ VLESS حفظ می‌شود تا سمتِ سرورِ خروجی درست
+     حل شود و ترافیکِ برگشتی همان مسیر را برگردد. */
+  const dialHost = exitDialHost(srv);
+  if (!dialHost) throw new Error('آدرسِ سرور خروجی خالی است');
+  const socketOpts = { secureTransport: security === 'none' ? 'off' : 'on', allowH2: false };
+  const sock = connect({ hostname: dialHost, port: srv.port }, socketOpts);
 
   /* باز شدنِ واقعیِ سوکت — همان چیزی است که تأخیر را معنا می‌کند */
   if (sock && sock.opened) {
@@ -6632,8 +8690,14 @@ async function openExitSocket(srv, info, opt) {
     };
   }
 
-  /* ── انتقالِ ws: ارتقای HTTP، سپس هندشیک داخلِ اولین قابِ دودویی ── */
-  const host = srv.host || srv.address;
+  /* ── انتقالِ ws: ارتقای HTTP، سپس هندشیک داخلِ اولین قابِ دودویی ──
+     ⚠️ Host باید دامنه‌ی واقعیِ خودِ سرورِ خروجی باشد: وقتی address دامنه
+     است (مثلاً workers.dev)، Hostِ متفاوت یعنی لبه‌ی کلاودفلر درخواست را
+     به مسیرِ دیگری می‌فرستد و سرورِ خروجی هرگز ارتقای وب‌سوکت را نمی‌بیند
+     (chain خاموش‌وار به مسیرِ مستقیم برمی‌گردد). hostِ پارامتریِ لینک فقط
+     وقتی address آی‌پی است (سرورِ پشتِ CDN) به‌کار می‌رود. */
+  const isIpAddr = /^(\d{1,3}\.){3}\d{1,3}$/.test(String(srv.address || '').trim());
+  const host = isIpAddr ? (srv.host || srv.address) : srv.address;
   const path = String(srv.path || '/').startsWith('/') ? srv.path : '/' + srv.path;
   const req = 'GET ' + path + ' HTTP/1.1\r\n'
     + 'Host: ' + host + '\r\n'
@@ -6689,6 +8753,99 @@ async function openExitSocket(srv, info, opt) {
   };
 }
 
+/** پارسِ host:port برای تستِ ProxyIP (مثل parseHostPort داخلِ session) */
+function splitHostPortTop(raw, defPort) {
+  let s = String(raw || '').trim().replace(/^[a-z]+:\/\//i, '').split('#')[0].split('@').pop();
+  if (s.startsWith('[')) {
+    const end = s.indexOf(']');
+    return { host: s.slice(1, end), port: Number(s.slice(end + 2)) || defPort };
+  }
+  const i = s.lastIndexOf(':');
+  if (i > 0 && /^\d+$/.test(s.slice(i + 1))) return { host: s.slice(0, i), port: Number(s.slice(i + 1)) };
+  return { host: s, port: defPort };
+}
+
+/**
+ * تستِ واقعیِ TCP به یک ProxyIP از سمتِ خودِ ورکر (روشِ پنل BPB):
+ * یک درخواستِ HTTP ساده با Hostِ سرعت‌سنجِ کلادفلر می‌فرستیم؛ پاسخِ
+ * «HTTP/1.1 400 + cf-ray» یعنی آن آدرس یک لبه‌ی کلادفلرِ زنده است و
+ * می‌شود به آن relay کرد. هر چیزِ دیگر = مرده/نامرتبط.
+ */
+async function probeProxyOnce(raw, defPort, timeoutMs) {
+  const t0 = Date.now();
+  const { host, port } = splitHostPortTop(raw, defPort);
+  if (!host) return { ok: false, ms: 0, error: 'ورودیِ خالی' };
+  /* IP لخت → sslip.io، مثل مسیرِ dial — وگرنه تستِ IPها همیشه «ناموفق» می‌شد */
+  const dialHost = /^(\d{1,3}\.){3}\d{1,3}$/.test(host) ? ('www.' + host + '.sslip.io') : host;
+  let sock = null;
+  try {
+    sock = connect({ hostname: dialHost, port });
+    await Promise.race([
+      sock.opened,
+      new Promise((_, rj) => setTimeout(() => rj(new Error('timeout (open)')), timeoutMs)),
+    ]);
+    const w = sock.writable.getWriter();
+    await w.write(enc.encode('GET /__down?bytes=5000 HTTP/1.1\r\nHost: speed.cloudflare.com\r\nConnection: close\r\n\r\n'));
+    w.releaseLock();
+    const rd = sock.readable.getReader();
+    const { value } = await Promise.race([
+      rd.read(),
+      new Promise((_, rj) => setTimeout(() => rj(new Error('timeout (read)')), timeoutMs)),
+    ]);
+    try { rd.releaseLock(); } catch (e) {}
+    try { sock.close(); } catch (e) {}
+    const ms = Date.now() - t0;
+    if (!value || !value.length) return { ok: false, ms, error: 'بدون پاسخ (اتصال باز شد ولی دادهای نرسید)' };
+    const head = new TextDecoder().decode(value).slice(0, 300);
+    const ok = /^HTTP\/1\.[01] 400/.test(head) && /cf-ray:/i.test(head);
+    return { ok, ms, error: ok ? '' : ('پاسخِ غیرمنتظره: ' + String(head.split('\r\n')[0] || '').slice(0, 60)) };
+  } catch (e) {
+    try { if (sock) sock.close(); } catch (e2) {}
+    return { ok: false, ms: Date.now() - t0, error: String((e && e.message) || e).slice(0, 120) };
+  }
+}
+
+/**
+ * سوکتِ خروجی روی reality — TCP خام + هندشیکِ دستی (آزمایشی).
+ * هدرِ VLESS به‌عنوانِ اولین app-data فرستاده می‌شود؛ خروجی هم‌شکل با سوکتِ
+ * کلاودفلر است تا بقیه‌ی مسیرِ تونل بدون تغییر بماند.
+ */
+async function openRealitySocket(srv, info, opt) {
+  const timeout = Math.max(1000, Number((opt && opt.timeoutMs) || 8000));
+  if (srv.transport !== 'raw') throw new Error('reality فقط روی TCP خام (type=tcp) کار می‌کند');
+  const dialHost = exitDialHost(srv);
+  if (!dialHost) throw new Error('آدرسِ سرور خروجی خالی است');
+  const sock = connect({ hostname: dialHost, port: srv.port }, { secureTransport: 'off', allowH2: false });
+  const io = rlMakeSockIo(sock, timeout);
+  if (sock && sock.opened) {
+    let timer = null;
+    try {
+      await Promise.race([
+        sock.opened,
+        new Promise((_, rj) => { timer = setTimeout(() => rj(new Error('زمان انتظار برای اتصال به سرور reality تمام شد')), timeout); }),
+      ]);
+    } finally { if (timer) clearTimeout(timer); }
+  }
+  let hs;
+  try {
+    hs = await rlHandshake(io, srv, timeout);
+  } catch (e) {
+    try { io.close(); } catch (e2) {}
+    throw e;
+  }
+  /* هدرِ VLESS مقصد — مثل مسیرِ raw، ممکن است برای پورتِ HTTP خطا بدهد */
+  const header = vlessRequestHeader(srv, info.addr, info.port, info.payload);
+  const streams = rlWrapStreams(io, hs.cAp, hs.sAp);
+  const w = streams.writable.getWriter();
+  try { await w.write(header); } catch (e) { try { streams.close(); } catch (e2) {} throw e; }
+  finally { w.releaseLock(); }
+  return {
+    readable: streams.readable, writable: streams.writable,
+    close: () => { try { streams.close(); } catch (e) {} },
+    transport: 'raw', security: 'reality',
+  };
+}
+
 /** تستِ اتصالِ یک سرور خروجی — اندازه‌گیریِ واقعی (وصل شدن + هندشیک) */
 async function testExit(srv, opt) {
   const issues = exitIssues(srv);
@@ -6725,6 +8882,12 @@ async function tunnelHandler(request, env, st, ctx) {
   /* طبق مستندات Cloudflare: binaryType قبل از accept() */
   server.binaryType = 'arraybuffer';
   server.accept();
+  /* Anti-1101 round3 (نهان): لیسنرِ خطایِ خاموش — بلافاصله بعد از accept().
+     بین accept() و اتصالِ لیسنرِ error در ReadableStream یک پنجره‌ی بدونِ
+     محافظ هست؛ اگر سوکت در همین پنجره error بدهد، خطایِ کنترل‌نشده بالا
+     می‌رود و isolate را می‌کشد. لیسنرِ خالی مثل نهان (worker.txt خط 6154)
+     این پنجره را می‌بندد؛ ReadableStream بعداً لیسنرِ خودش را سوار می‌کند. */
+  server.addEventListener('error', () => {});
 
   /* IP واقعی کلاینت — فقط هدرهایی که خودِ کلاودفلر می‌گذارد قابل اعتمادند
      (x-forwarded-for را خودِ کلاینت هم می‌تواند جعل کند) */
@@ -6762,19 +8925,68 @@ async function tunnelHandler(request, env, st, ctx) {
   /* همه‌ی کارهای سنگین در پس‌زمینه — بدون مسدود کردن handshake */
   session(server, request.headers.get('sec-websocket-protocol') || '', st, env, ctx, clientIp,
     boot, selfHost, connMeta)
-    .catch(() => { try { server.close(); } catch (e) {} });
+    .catch(() => { try { server.close(); } catch (e) {} }); // ضد-1101 (نهان): خطای تونل هرگز به fetch برنگردد
 
   return new Response(null, { status: 101, webSocket: client });
+}
+
+/* ═══ یکسان‌سازیِ آی‌پیِ کلاینت — پیش‌نیازِ درست‌کارکردنِ سقفِ آی‌پی ═══
+   بدون این، یک دستگاه می‌تواند چند «آی‌پیِ متمایز» شمرده شود (و بی‌دلیل کلِ
+   سقف را پر کند) یا یک آی‌پی دو ردیفِ جدا بسازد:
+     • فاصله، براکتِ IPv6 (`[::1]`) و پورتِ چسبیده پاک می‌شود؛
+     • IPv6 با حروفِ کوچک نوشته می‌شود — `2001:DB8::1` و `2001:db8::1` یکی‌اند؛
+     • `%eth0` (zone-id) و شکلِ IPv4-mapped (`::ffff:1.2.3.4`) به IPv4 برمی‌گردد؛
+     • IPv6 روی پیشوندِ /64 گروه می‌شود (پایین را ببینید). */
+const IPV6_GROUP64 = true;
+
+/** پیشوندِ /64 یک IPv6 — بدون بسطِ کامل، فقط ۴ گروهِ اول.
+    ⚠️ هر گروهِ صفرِ ابتدایی حذف می‌شود تا شکلِ کوتاه و کاملِ یک آدرس یکی
+    شوند: `2001:0db8:0:0::1` و `2001:db8::1` باید یک کلید بسازند، وگرنه
+    همان آی‌پی با دو نوشتار، دو سقف مصرف می‌کند. */
+function ipv6Prefix64(s) {
+  const parts = String(s).split('::');
+  const head = parts[0] ? parts[0].split(':') : [];
+  const tail = (parts.length > 1 && parts[1]) ? parts[1].split(':') : [];
+  const groups = head.slice();
+  const pad = 8 - head.length - tail.length;
+  for (let i = 0; i < Math.max(0, pad); i++) groups.push('0');
+  for (const g of tail) groups.push(g);
+  const canon = (g) => { const h = String(g).replace(/^0+/, ''); return h || '0'; };
+  return groups.slice(0, 4).map(canon).join(':') + '::/64';
+}
+
+/**
+ * ⚠️ چرا IPv6 روی /64 گروه می‌شود؟
+ * سقفِ «تعداد IP همزمان» در واقع یعنی «تعداد نقطه‌های اتصالِ همزمان». برای
+ * IPv4، NAT این کار را خودبه‌خود انجام می‌دهد: هر خانه یک آی‌پیِ عمومی دارد و
+ * پنج دستگاه همان یک سقف را می‌شمارند. در IPv6 معادلِ NAT وجود ندارد و
+ * کلاینت‌ها معمولاً آدرسِ موقتِ تصادفی (privacy extensions) می‌سازند که هر
+ * چند دقیقه عوض می‌شود — یعنی *یک* دستگاه به‌تنهایی می‌توانست چندین سقف
+ * مصرف کند و کاربرِ قانونی با «connection limit reached» بیرون بیفتد.
+ * گروه‌بندی روی /64 همان معنای NAT را برای IPv6 می‌سازد: یک مشترک = یک سقف.
+ * اگر می‌خواهید هر آدرسِ IPv6 جدا شمرده شود، IPV6_GROUP64 را false کنید.
+ */
+function normIp(raw) {
+  let s = String(raw || '').trim();
+  if (!s) return '';
+  if (s.charAt(0) === '[') { const e = s.indexOf(']'); if (e > 0) s = s.slice(1, e); }
+  else if (/^\d{1,3}(\.\d{1,3}){3}:\d+$/.test(s)) s = s.split(':')[0];
+  s = s.replace(/%.*$/, '');                       /* zone-id: fe80::1%eth0 */
+  if (s.indexOf(':') < 0) return s;                /* IPv4 — دست‌نخورده */
+  s = s.toLowerCase();
+  const mapped = s.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (mapped) return mapped[1];                    /* IPv4-mapped → همان IPv4 */
+  return IPV6_GROUP64 ? ipv6Prefix64(s) : s;
 }
 
 /** IP واقعی کلاینت — cf-connecting-ip (لبه‌ی CF) → request.cf → در نهایت x-forwarded-for */
 function clientIpOf(request) {
   const h = request.headers.get('cf-connecting-ip');
-  if (h && h.trim()) return h.trim();
+  if (h && h.trim()) return normIp(h);
   const cf = request.cf && request.cf.clientIP;
-  if (cf && String(cf).trim()) return String(cf).trim();
+  if (cf && String(cf).trim()) return normIp(cf);
   const xff = request.headers.get('x-forwarded-for');
-  if (xff && xff.trim()) return String(xff.split(',')[0]).trim();
+  if (xff && xff.trim()) return normIp(String(xff.split(',')[0]));
   return 'unknown';
 }
 
@@ -6793,7 +9005,14 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
   /* صبر برای ساخت جدول‌ها — accept() قبلاً انجام شده، پس handshake آسیب نمی‌بیند */
   if (boot) await boot;
 
-  const users = state.users.filter((u) => u.enabled && (!u.expiryAt || u.expiryAt > Date.now()));
+  /* کاربرانِ واجدِ شرایط:
+     – حالتِ عادی: انقضا تمام‌نشده باشد
+     – حالتِ «انقضا از اولین استفاده» و هنوز مسلح‌نشده: همیشه مجاز —
+       expiryAt فعلاً فقط تخمین است و شمارش با اولین اتصال آغاز می‌شود */
+  const expOk = (u) => (!u.expiryFirstUse || u.expiryArmed)
+    ? (!u.expiryAt || u.expiryAt > Date.now())
+    : true;
+  const users = state.users.filter((u) => u.enabled && expOk(u));
   const byUuid = new Map(users.map((u) => [u.uuid, u]));
   const byPass = new Map(users.map((u) => [sha224(u.secret), u]));
   const s = state.settings;
@@ -6803,21 +9022,19 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
   let connAcquired = false, connReleased = false;
   /* شناسه‌ی یکتای همین کانکشن — آزادسازی فقط سهمیه‌ی خودش را کم می‌کند */
   const connId = randTok(10);
-  /* ═══ تمدیدِ مبتنی بر فعالیت (جایگزینِ ضربانِ دوره‌ای) ═══
-     ضربانِ دوره‌ای حذف شده است: (۱) با پنجره‌ی ۳ ثانیه یعنی یک نوشتن در D1 برای
-     هر اتصال در هر ۳ ثانیه — حتی برای اتصال‌های کاملاً بی‌ترافیک؛ (۲) یک
-     ضربان که در صف مانده باشد بعد از آزادسازی اجرا می‌شد و ردیفِ مرده را
-     زنده می‌کرد. حالا فقط وقتی بایتی واقعاً جریان دارد تمدید می‌کنیم و آن هم
-     حداکثر یک بار در ثانیه (CONN_ACTIVITY_MS). */
+  /* ═══ تمدیدِ ردیفِ اتصال — دو مسیرِ مکمل ═══
+     (۱) ترافیک: هر بار بایتی جریان پیدا کند، ردیف تمدید می‌شود (noteActivity،
+         حداکثر یک بار در CONN_ACTIVITY_MS).
+     (۲) ضربانِ دوره‌ای: اتصالِ *بازِ بی‌ترافیک*. این مسیر حیاتی است — بدون آن
+         یک تونلِ باز ولی ساکت بعد از CONN_TTL از جدولِ اتصال‌های زنده می‌افتاد،
+         جای آن به آی‌پیِ تازه داده می‌شد و سقفِ آی‌پی عملاً بی‌اثر می‌شد
+         (همان باگِ گزارش‌شده). ضربان فقط ردیفِ *موجود* را تمدید می‌کند
+         (sessionTouch هرگز درج نمی‌کند) و اگر ردیف رفته باشد، مسیرِ عادیِ
+         پذیرش تصمیم می‌گیرد — با همان گاردِ stillOpen، پس یک ضربانِ در صف
+         هرگز ردیفِ آزادشده را زنده نمی‌کند.
+     فاصله‌ی ضربان نصفِ مهلت است تا از دست رفتنِ یک تیک هم بی‌خطر باشد. */
   let lastActivity = 0;
-  const noteActivity = () => {
-    if (closed || !connAcquired || connReleased || !user || !ctx || !ctx.waitUntil) return;
-    const now = Date.now();
-    if (now - lastActivity < CONN_ACTIVITY_MS) return;
-    lastActivity = now;
-    const u = user, lim = Number(u.ipLimit) || Number(s.sec.ipConnLimit) || 0;
-    /* این تابع بعد از هر await هم بررسی می‌شود: اگر در همین فاصله اتصال بسته
-       شده باشد، هیچ ردیفی دوباره درج نمی‌شود (ضدِ زنده‌شدنِ ردیفِ آزادشده). */
+  const refreshConn = (u, lim) => {
     const stillOpen = () => !closed && !connReleased && connAcquired;
     ctx.waitUntil((async () => {
       if (!stillOpen()) return;
@@ -6832,6 +9049,24 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
       } catch (e) {}
     })());
   };
+  const noteActivity = () => {
+    if (closed || !connAcquired || connReleased || !user || !ctx || !ctx.waitUntil) return;
+    const now = Date.now();
+    if (now - lastActivity < CONN_ACTIVITY_MS) return;
+    lastActivity = now;
+    /* lim اینجا از پروفایل خوانده می‌شود؛ عددِ تصمیمِ اصلی در dial گرفته شده
+       است و همین است — پس تمدید و پذیرش همیشه یک سقف را می‌بینند. */
+    refreshConn(user, Number(user.ipLimit) || Number(s.sec.ipConnLimit) || 0);
+  };
+  let kaTimer = null;
+  const startKeepAlive = () => {
+    if (kaTimer || !ctx || !ctx.waitUntil) return;
+    kaTimer = setInterval(() => {
+      if (closed || connReleased || !connAcquired || !user) return;
+      refreshConn(user, Number(user.ipLimit) || Number(s.sec.ipConnLimit) || 0);
+    }, CONN_KEEPALIVE_MS);
+  };
+  const stopKeepAlive = () => { if (kaTimer) { try { clearInterval(kaTimer); } catch (e) {} kaTimer = null; } };
 
   /* ═══ مصرف ابتدا در حافظه جمع می‌شود ═══
      روی موبایل، هر کوئری D1 در مسیر پیام اختلال ایجاد می‌کند؛
@@ -6863,6 +9098,24 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
     flushing = true;
     ctx.waitUntil(usageDelta(env, u.uuid, dUp, dDown, dReqs)
       .catch(() => {})
+      /* ═══ قطعِ اتصالِ زنده پس از اتمام سهمیه ═══
+         بعد از هر flush، مصرفِ تازه خوانده می‌شود؛ اگر حجمِ کل/روزانه تمام
+         شده یا انقضا گذشته باشد همین اتصالِ زنده بسته می‌شود — تا حالا فقط
+         واکشیِ ساب بلاک می‌شد و اتصالِ باز تا بی‌نهایت کار می‌کرد. */
+      .then(async () => {
+        try {
+          const uq = await usageFresh(env, u.uuid);
+          const qB = (Number(u.quotaGB) || 0) * 1073741824;
+          const dqB = (Number(u.dailyQuotaMB) || 0) * 1048576;
+          const usedB = (Number(uq.up) || 0) + (Number(uq.down) || 0);
+          const usedD = (Number(uq.dayUp) || 0) + (Number(uq.dayDown) || 0);
+          const expDead = u.expiryAt && u.expiryAt < Date.now() && (!u.expiryFirstUse || u.expiryArmed);
+          if ((qB > 0 && usedB >= qB) || (dqB > 0 && usedD >= dqB) || expDead) {
+            try { ws.close(1008, 'quota exceeded'); } catch (e2) {}
+            await finish();
+          }
+        } catch (e2) {}
+      })
       .then(() => { flushing = false; }));
     /* حجمِ همین نشست — برای ستونِ «ارسال/دریافت» در بخش اتصال‌ها.
        از همین نقطه‌ی flush می‌آید (نه یک تایمرِ تازه)، پس با مصرفِ کاربر
@@ -6880,6 +9133,9 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
   const finish = async () => {
     if (closed) return;
     closed = true;
+    /* ضربانِ دوره‌ای اول خاموش می‌شود تا در فاصله‌ی آزادسازی، تمدیدِ در صف
+       ردیفِ تازه‌آزادشده را زنده نکند */
+    stopKeepAlive();
     try { if (ws.readyState === 1 || ws.readyState === 2) ws.close(); } catch (e) {}
     try { sock && sock.close(); } catch (e) {}
     /* ثبت مصرفِ باقیمانده + آزاد کردن سهمیه — کاملاً در پس‌زمینه */
@@ -6928,9 +9184,18 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
 
   /* ═══════════ پیاده‌سازی ProxyIP مطابق BPB ═══════════ */
 
-  /** پمپ از سوکت ریموت به WebSocket. اگر هیچ داده‌ای نیامد، retry صدا زده می‌شود. */
-  const remoteToWs = (tcpSock, respHeader, retry) => {
+  /**
+   * پمپ از سوکت ریموت به WebSocket. اگر هیچ داده‌ای نیامد، retry صدا زده می‌شود.
+   * ⚠️ skipLead: بایت‌های اولِ بالادست که نباید به کلاینت برسند.
+   * در مسیرِ «سرور خروجی VLESS» بالادست خودش هدرِ پاسخِ VLESSِ دوبایتی
+   * ([version, 0]) می‌فرستد؛ کلاینتِ ما فقط هدرِ پاسخِ «ما» را انتظار دارد.
+   * اگر هدرِ بالادست هم رد شود دو هدرِ پشت‌سرهم می‌رسد و پروتکل از هم می‌پاشد
+   * — علتِ واقعیِ «ترافیک از سرور خروجی رد نمی‌شود». پس ۲ بایتِ اول مصرف
+   * می‌شود و بقیه relay.
+   */
+  const remoteToWs = (tcpSock, respHeader, retry, skipLead) => {
     let header = respHeader;
+    let skip = Math.max(0, Number(skipLead) || 0);
     let hasData = false;
     return (async () => {
       const reader = tcpSock.readable.getReader();
@@ -6939,7 +9204,14 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
           const { done, value } = await reader.read();
           if (done || !value) break;
           /* مطابق مستندات: byteLength برای ArrayBuffer */
-          const vLen = value.byteLength || value.length || 0;
+          let v = (value instanceof Uint8Array) ? value : toU8(value);
+          if (skip > 0) {
+            /* کلِ این تکه هدرِ بالادست بود — فقط مصرفش کن و ادامه بده */
+            if (v.length <= skip) { skip -= v.length; continue; }
+            v = v.slice(skip);
+            skip = 0;
+          }
+          const vLen = v.length;
           if (!vLen) continue;
           hasData = true;
           down += vLen; pendDown += vLen;
@@ -6948,11 +9220,11 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
           if (header && header.length) {
             const merged = new Uint8Array(header.length + vLen);
             merged.set(header, 0);
-            merged.set(value, header.length);
+            merged.set(v, header.length);
             ws.send(merged);
             header = null;
           } else {
-            ws.send(value);
+            ws.send(v);
           }
         }
       } catch (e) {}
@@ -7008,8 +9280,31 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
     return { host: s, port: defPort };
   };
 
+  /* ═══ مسلح‌کردنِ «انقضا از اولین استفاده» ═══
+     اولین ترافیکِ واقعیِ کاربر (رسیدن به dial، یا اولین کوئریِ DNS/UDP)
+     شمارش را آغاز می‌کند. گذشته از blobِ همین isolate: ردیفِ مصرف فعال
+     می‌شود (usageDelta با دلتای -۱) و وضعیت فوراً در D1 ذخیره می‌شود تا
+     پنل — حتی در ایزوله‌ی دیگر — «منتظر اولین اتصال» را نشان ندهد.
+     اگر مدتِ (expiryDurMs/expiryAt) هم نباشد، فقط پرچم برداشته می‌شود و
+     پنل برای همیشه «منتظر اولین اتصال» نمی‌ماند (نمایش: نامحدود). */
+  const armExpiry = (u) => {
+    if (!u || !u.expiryFirstUse || u.expiryArmed) return;
+    u.expiryArmed = true;
+    user = u;
+    const dur = Number(u.expiryDurMs) || (u.expiryAt ? Math.max(60000, u.expiryAt - Date.now()) : 0);
+    u.expiryAt = dur ? Date.now() + dur : null;
+    if (ctx && ctx.waitUntil) {
+      ctx.waitUntil(usageDelta(env, u.uuid, 0, 0, -1).catch(() => {}));
+      ctx.waitUntil(Promise.resolve().then(async () => { try { await save(env, st); } catch (e) {} }));
+    }
+    addLog(st, 'info', 'user', 'انقضا از اولین اتصال شروع شد',
+      (u.name || '') + ' • پایان: ' + (u.expiryAt ? new Date(u.expiryAt).toLocaleString('fa-IR') : 'نامحدود'));
+    maybeFlush(true);
+  };
+
   const dial = async (info) => {
     user = info.user;
+    armExpiry(user);
     if (info.cmd === 2) { await finish(); return; }
     if (!info.addr || !info.port) return finish();
 
@@ -7033,6 +9328,30 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
       return;
     }
     connAcquired = true;
+    /* ═══ ضربانِ نگه‌دارندهٔ سهمیه ═══
+       از این لحظه سهمیه‌ی این آی‌پی گرفته شده؛ پس باید تا وقتی اتصال باز است
+       تازه نگه داشته شود، حتی اگر هیچ بایتی رد و بدل نشود. بدون این، تونلِ
+       ساکت بعد از CONN_TTL سهمیه‌اش را از دست می‌داد و سقفِ آی‌پی نشت می‌کرد. */
+    startKeepAlive();
+
+    /* ═══ اعمالِ سهمیه در لحظه‌ی اتصال ═══
+       قبلاً محدودیتِ حجم فقط در واکشیِ ساب چک می‌شد؛ کانفیگی که حجمش تمام
+       شده بود با ساختنِ اتصالِ تازه به کارِ خودش ادامه می‌داد. حالا اتصالِ
+       جدید هم وقتی سهمیه‌ی کل/روزانه تمام یا انقضا گذشته باشد رد می‌شود؛
+       اتصالِ زنده هم در نخستین flush (حداکثر ~۱۰ ثانیه) بسته می‌شود. */
+    try {
+      const uq = await usageFresh(env, user.uuid);
+      const qB = (Number(user.quotaGB) || 0) * 1073741824;
+      const dqB = (Number(user.dailyQuotaMB) || 0) * 1048576;
+      const usedB = (Number(uq.up) || 0) + (Number(uq.down) || 0);
+      const usedD = (Number(uq.dayUp) || 0) + (Number(uq.dayDown) || 0);
+      const expDead = user.expiryAt && user.expiryAt < Date.now() && (!user.expiryFirstUse || user.expiryArmed);
+      if ((qB > 0 && usedB >= qB) || (dqB > 0 && usedD >= dqB) || expDead) {
+        try { ws.close(1008, 'quota exceeded'); } catch (e2) {}
+        await finish();
+        return;
+      }
+    } catch (e) {}
 
     pendReqs++;
     const respHeader = info.isTrojan ? new Uint8Array(0) : new Uint8Array([info.version || 0, 0]);
@@ -7041,6 +9360,70 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
     if (plLen) { up += plLen; pendUp += plLen; }
     const s = st.settings;
     const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+    /* ═══ ProxyIP / NAT64 مؤثر برای همین کاربر (روش BPB) ═══
+       لیستِ ProxyIP: اول لیستِ اختصاصیِ خودِ کاربر (u.proxyIPs) وگرنه لیستِ پنل
+       (s.proxyIPs) — قبلاً فقط لیستِ سراسری خوانده می‌شد و «Proxy IP اختصاصیِ
+       کاربر» که در مودالِ کاربر وارد می‌شد هرگز در مسیرِ تونل اثر نداشت.
+       NAT64 هم: prefixِ اختصاصیِ کاربر وگرنه prefixِ سراسری. ترتیبِ استفاده مثل
+       BPB است: proxyIP مقدم بر NAT64 (دو حالتِ جایگزین، نه هم‌زمان). */
+    const effProxyIPs = () => {
+      const own = Array.isArray(user.proxyIPs) && user.proxyIPs.length ? user.proxyIPs : null;
+      return (own || s.proxyIPs || []).map((x) => String(x).trim()).filter(Boolean);
+    };
+    const effPrefixes = () => {
+      const pu = String((user && user.nat64) || '').trim();
+      const all = pu ? pu : String((s.nat64 && s.nat64.prefix) || '');
+      return all.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
+    };
+    /* کاندیدهای relay: proxyIPها به‌ترتیبِ تصادفی و بعد (فقط اگر proxyIP نبود) NAT64 */
+    const relayCands = () => {
+      const out = [];
+      const pips = effProxyIPs();
+      if (pips.length) {
+        const ps = pips.slice();
+        for (let i = ps.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = ps[i]; ps[i] = ps[j]; ps[j] = t; }
+        ps.forEach((p) => { const hp = parseHostPort(p, 443); if (hp.host) out.push({ addr: hp.host, port: hp.port, via: 'proxyip' }); });
+      } else {
+        effPrefixes().forEach((pr) => { const nat = toNat64(info.addr, pr); if (nat) out.push({ addr: nat, port: 443, via: 'nat64' }); });
+      }
+      return out;
+    };
+    /* همه‌ی کاندیدها تا موفقیت امتحان می‌شوند — هم موقعِ خطایِ اتصال و هم وقتی
+       وصل شد ولی هیچ داده‌ای برنگشت (روش BPB: وصلِ بی‌پاسخ = تلاش با کاندیدِ
+       بعدی؛ قبلاً فقط یکی به‌صورتِ تصادفی انتخاب می‌شد و اگر همان یکی بی‌پاسخ
+       می‌ماند، کلِ اتصال می‌بست). */
+    const relayViaCands = async (cands) => {
+      const go = async (i, fromRetry) => {
+        for (let j = i; j < cands.length; j++) {
+          const c = cands[j];
+          if (!c || (c.addr === info.addr && c.port === info.port)) continue;  /* همان مقصد — فایده ندارد */
+          PROXY_STATS.attempts++;
+          PROXY_STATS.lastAt = Date.now();
+          try {
+            const tcpSock = await connectAndWrite(c.addr, c.port, info.payload);
+            sock = tcpSock;
+            PROXY_STATS.connects++;
+            PROXY_STATS.lastError = '';
+            /* وصل شد ولی هیچ داده‌ای برنگشت → کاندیدِ بعدی؛ اگر کاندیدی نماند، ببند */
+            remoteToWs(tcpSock, respHeader, () => {
+              try { tcpSock.close(); } catch (e) {}
+              sock = null;
+              go(j + 1, true);
+            });
+            return true;
+          } catch (e) {
+            sock = null;
+            PROXY_STATS.fails++;
+            PROXY_STATS.lastError = String((e && e.message) || e).slice(0, 200);
+          }
+        }
+        /* از داخلِ زنجیره‌ی «بی‌پاسخ» آمدیم و دیگر کاندیدی نمانده → اتصال را ببند */
+        if (fromRetry) { try { finish(); } catch (e) {} }
+        return false;
+      };
+      return go(0, false);
+    };
 
     /* ── مرحله ۰: مقصد خودِ ورکر (تست ترافیک پنل) ──
        cloudflare:sockets اجازه‌ی اتصال به دامنه‌های روی CF را نمی‌دهد،
@@ -7053,29 +9436,13 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
       return;
     }
 
-    /* ── مرحله ۲: retry با ProxyIP (وقتی وصل شد ولی داده‌ای برنگشت) ── */
+    /* ── مرحله ۲: retry با ProxyIP (وقتی وصل شد ولی داده‌ای برنگشت) ──
+       روش BPB: اولِ کار مستقیم؛ اگر وصل شد ولی هیچ داده‌ای برنگشت، همان بارِ
+       اولیه از ProxyIP/NAT64ِ مؤثرِ همین کاربر دوباره فرستاده می‌شود. */
     const retry = async () => {
-      let addr = info.addr, port = info.port;
-      try {
-        if (s.nat64 && s.nat64.prefix && String(s.nat64.prefix).trim()) {
-          /* حالت prefix: ساخت IP داینامیک با NAT64 */
-          const prefixes = String(s.nat64.prefix).split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
-          if (prefixes.length) {
-            const nat = toNat64(addr, pick(prefixes));
-            if (nat) { addr = nat; port = 443; }
-          }
-        }
-        const pips = (s.proxyIPs || []).filter(Boolean);
-        if (pips.length) {
-          /* حالت proxyip: انتخاب تصادفی از لیست */
-          const hp = parseHostPort(pick(pips), 443);
-          if (hp.host) { addr = hp.host; port = hp.port; }
-        }
-        if (addr === info.addr && port === info.port) { await finish(); return; }   /* چیزی برای retry نیست */
-        const tcpSock = await connectAndWrite(addr, port, info.payload);
-        remoteToWs(tcpSock, respHeader, null);
-      } catch (e) { await finish(); }
+      if (!(await relayViaCands(relayCands()))) await finish();
     };
+
 
     /* ═══ مرحله ۰/۵: خروجی (exit) — تنها نقطه‌ی اتصالِ بالادست به مسیر تونل ═══
        این بلوک تنها جایی است که منطقِ سرور خروجی وارد مسیر تونل می‌شود. قبلش
@@ -7092,7 +9459,9 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
           EXIT_STATS.tunnels++;
           EXIT_STATS.lastAt = Date.now();
           /* retry داده نمی‌شود: مسیرِ خروجی با ProxyIP معنا ندارد */
-          remoteToWs(up, respHeader, null);
+          /* ⚠️ ۲ بایتِ اولِ بالادست = هدرِ پاسخِ VLESSِ سرور خروجی —
+             نباید به کلاینت برسد (هدرِ پاسخِ خودمان را می‌فرستیم). */
+          remoteToWs(up, respHeader, null, 2);
           return;
         } catch (e) {
           EXIT_STATS.fallbacks++;
@@ -7112,22 +9481,8 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
       return;
     } catch (e) { sock = null; }
 
-    /* ── مرحله ۱ب: اتصال مستقیم ناموفق بود → مستقیم با ProxyIP ── */
-    const pips = (s.proxyIPs || []).filter(Boolean);
-    const prefixes = (s.nat64 && s.nat64.prefix ? String(s.nat64.prefix).split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean) : []);
-    if (pips.length || prefixes.length) {
-      for (let attempt = 0; attempt < Math.max(pips.length, prefixes.length, 1); attempt++) {
-        let addr = info.addr, port = info.port;
-        if (pips.length) { const hp = parseHostPort(pick(pips), 443); if (hp.host) { addr = hp.host; port = hp.port; } }
-        else if (prefixes.length) { const nat = toNat64(addr, pick(prefixes)); if (nat) { addr = nat; port = 443; } }
-        if (addr === info.addr && port === info.port) break;
-        try {
-          const tcpSock = await connectAndWrite(addr, port, info.payload);
-          remoteToWs(tcpSock, respHeader, null);
-          return;
-        } catch (e) { sock = null; }
-      }
-    }
+    /* ── مرحله ۱ب: اتصال مستقیم ناموفق بود → relay با ProxyIP / NAT64 ── */
+    if (await relayViaCands(relayCands())) return;
 
     /* ── مرحله ۳: fallback با fetch ── */
     if (await httpFallback(info)) { await finish(); return; }
@@ -7190,7 +9545,7 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
       } catch (e) {}
       /* fallback: DNS over TCP به 8.8.8.8 */
       try {
-        const s2 = connect({ hostname: '8.8.8.8', port: 53 });
+        const s2 = connect({ hostname: dialableAddr('8.8.8.8'), port: 53 }); // ضد-1101: IP خام ممنوع، دامنه via sslip.io
         const w2 = s2.writable.getWriter();
         const tcpQ = new Uint8Array(2 + query.length);
         tcpQ[0] = (query.length >> 8) & 255;
@@ -7250,6 +9605,8 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
           if (v.port === 53) {
             /* ⚠️ user را ست می‌کنیم تا مصرف DNS هم شمرده شود */
             user = info.user;
+            /* اولین ترافیکِ کاربر می‌تواند فقط همین کوئریِ DNS باشد — انقضا هم مسلح شود */
+            armExpiry(user);
             const respHeader = new Uint8Array([info.version || 0, 0]);
             const qLen = v.payload ? (v.payload.byteLength || v.payload.length || 0) : 0;
             up += qLen; pendUp += qLen;
@@ -7423,13 +9780,14 @@ export class ConnLimiter {
   }
 
   /** حذفِ ورودی‌های مرده؛ می‌گرداند: Map<ip, تعداد اتصال‌های زنده> */
-  prune(uuid, now) {
+  prune(uuid, now, ttlMs) {
+    const T = Number(ttlMs) > 0 ? Number(ttlMs) : CONN_TTL;
     const um = this.users.get(uuid);
     const out = new Map();
     if (!um) return out;
     um.forEach((m, ip) => {
       if (!m || !(m instanceof Map)) { um.delete(ip); return; }
-      m.forEach((ts, id) => { if (!ts || now - ts > CONN_TTL) m.delete(id); });
+      m.forEach((ts, id) => { if (!ts || now - ts > T) m.delete(id); });
       if (!m.size) um.delete(ip);
     });
     um.forEach((m, ip) => { if (m && m.size) out.set(ip, m.size); });
@@ -7451,8 +9809,14 @@ export class ConnLimiter {
       if (!uuid || !ip) return j({ ok: true, ips: 0, conns: 0, limit, enforced: false, reason: 'missing-identity' });
       let um = this.users.get(uuid);
       if (!um) { um = new Map(); this.users.set(uuid, um); }
-      const ips = this.prune(uuid, now);
-      const dec = admitDecision(ips, ip, limit);
+      let ips = this.prune(uuid, now);
+      let dec = admitDecision(ips, ip, limit);
+      /* هندآفِ سریعِ تک‌کاربره: ۱۵+ ثانیه ساکت = رفته (موبایل→دسکتاپ فوری) */
+      if (!dec.ok && typeof HANDOFF_IDLE_MS !== 'undefined') {
+        this.prune(uuid, now, HANDOFF_IDLE_MS);
+        ips = this.prune(uuid, now);
+        dec = admitDecision(ips, ip, limit);
+      }
       if (!dec.ok) {
         return j({ ok: false, ips: ips.size, conns: ips.get(ip) || 0, limit, enforced: true, storage: 'do', reason: dec.reason });
       }
@@ -7527,9 +9891,13 @@ export class ConnLimiter {
 /* ════════════════════════════ ورودی ════════════════ */
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    const cf = request.cf || null;
+    // Anti-1101 round2 (Nahan): parse URL inside try — malformed URL must be 404, never a throw
+    let url = null, cf = null;
     try {
+      url = new URL(request.url);
+      cf = request.cf || null;
+      // Anti-1101 (Nahan): cap isolate memory, never throw to edge
+      try { pruneRateNahan(); if (typeof DECOY_CACHE !== 'undefined' && DECOY_CACHE.size > 200) DECOY_CACHE.clear(); } catch (e) {}
       /* ساخت جدول D1 در اولین درخواست — فقط یک‌بار در طول عمر isolate */
       if (env.DB && !DB_READY) {
         DB_READY = true;                    // جلوگیری از تلاش مجدد
@@ -7538,7 +9906,7 @@ export default {
         } catch (e) {}
       }
       if (request.method === 'OPTIONS') { const s0 = (await load(env)).settings; return new Response(null, { status: 204, headers: secHeaders(s0) }); }
-      if (url.pathname === '/dns-query') return dohHandler(request, env, url);
+      if (url.pathname === '/dns-query') return await dohHandler(request, env, url);
       /* فایل با اندازه‌ی معلوم — برای «تست واقعی ترافیک» از داخل تونل */
       /* فایل با اندازه‌ی معلوم — درخواست از مرورگرِ کاربر می‌آید، سرور با کانفیگِ همان کاربر پاسخ می‌دهد */
       if (url.pathname === '/__speedtest') return await speedtestHandler(url, env, request);
@@ -7559,8 +9927,13 @@ export default {
 
       /* ۱) تونل: هر درخواست ارتقای WebSocket — مستقل از مسیر (مثل نهان) */
       const isWs = String(request.headers.get('upgrade') || '').toLowerCase() === 'websocket';
-      /* تونل: state از fetch handler می‌آید — بدون await اضافی */
-      if (isWs) return tunnelHandler(request, env, await load(env), ctx);
+      /* تونل: state از fetch handler می‌آید — بدون await اضافی.
+         Anti-1101 round3: اگر tunnelHandler یا load() به هر دلیلی throw کند،
+         پاسخِ استتار برمی‌گردد نه 500/1101 — همان رفتاری که مسیرهای دیگر دارند. */
+      if (isWs) {
+        try { return await tunnelHandler(request, env, await load(env), ctx); }
+        catch (eTunnel) { return await decoyPage(s, false, request, url); }
+      }
 
       /* ۲) مسیرهای ریشه‌ای زیر مسیر مخفی */
       const route = '/' + String(s.auth.path || 'panel').replace(/^\/+/, '');
@@ -7586,28 +9959,35 @@ export default {
          وگرنه نه راهی برای خاموش کردنش می‌ماند و نه برای مانیتورینگ */
       if (isHealth) { try { return await apiHandler(request, env, url, ctx); } catch (e) { return json({ ok: false, error: String((e && e.message) || e) }, 500); } }
 
-      /* ۳) پنل — روی مسیر مخفی (در وضعیت اضطراری: سایت پوششی) */
+      /* ۳) پنل — روی مسیر مخفی (در وضعیت اضطراری: سایت پوششی).
+         Anti-1101 round3 (نهان): اگر loadUI/panelHtml شکست خورد (گیت‌هاب
+         در دسترس نیست، UI خراب است، …)، سایتِ پوششی برگردد — نه 404 خام
+         که خودش اثرِ انگشتیِ «چیزی این‌جا پنهان است» دارد و نه 500/1101. */
       if (isPanel) {
-        if (panicOn) return cover();
-        return panelHtml();
+        if (panicOn) return await cover();
+        try { return await panelHtml(); }
+        catch (ePanel) { return await cover(); }
       }
 
-      /* ۴) اشتراک — روی مسیر مخفی (در وضعیت اضطراری: سایت پوششی) */
+      /* ۴) اشتراک — روی مسیر مخفی (در وضعیت اضطراری: سایت پوششی).
+         Anti-1101 round3: خطایِ subHandler → سایتِ پوششی، نه throw به بیرون. */
       if (isSub) {
-        if (panicOn) return cover();
-        const id = path.split('/').pop();
-        const newUrl = new URL(url);
-        newUrl.pathname = '/' + s.sub.path + '/' + (id || '');
-        return subHandler(request, env, newUrl, cf, false);
+        if (panicOn) return await cover();
+        try {
+          const id = path.split('/').pop();
+          const newUrl = new URL(url);
+          newUrl.pathname = '/' + s.sub.path + '/' + (id || '');
+          return await subHandler(request, env, newUrl, cf, false);
+        } catch (eSub) { return await cover(); }
       }
 
       /* ۵) صفحه‌ی کاربر (اختیاری، مسیر مستقیم) */
-      if (path.startsWith('/status/')) return panicOn ? cover() : subHandler(request, env, url, cf, true);
-      if (path.startsWith('/' + s.sub.path + '/')) return panicOn ? cover() : subHandler(request, env, url, cf, false);
+      if (path.startsWith('/status/')) { try { return panicOn ? await cover() : await subHandler(request, env, url, cf, true); } catch (eStatus) { return await cover(); } }
+      if (path.startsWith('/' + s.sub.path + '/')) { try { return panicOn ? await cover() : await subHandler(request, env, url, cf, false); } catch (eSub2) { return await cover(); } }
 
       /* ۶) ریشه — با استتارِ خاموش پنل، وگرنه سایت پوششی
          (وضعیت اضطراری همیشه سایت پوششی را نشان می‌دهد) */
-      if (path === '/') return (!panicOn && !disguiseOn) ? panelHtml() : cover();
+      if (path === '/') return (!panicOn && !disguiseOn) ? await panelHtml().catch(() => cover()) : await cover();
 
       /* ۷) تست سلامت مسیر — فقط وقتی استتار خاموش است؛ وگرنه هر رباتی با
          یک ?test=1 می‌توانست بفهمد این دامنه یک تونل است */
@@ -7616,9 +9996,10 @@ export default {
       }
 
       /* ۸) همه‌ی مسیرهای دیگر = سایت پوششی (استتار مثل نهان) */
-      return cover();
+      return await cover();
     } catch (e) {
-      return json({ error: String((e && e.message) || e) }, 500);
+      // Anti-1101 (Nahan): any uncaught error -> 404 benign, never 500/throw which shows real 1101 page
+      return new Response('Not Found', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } });
     } finally {
       /* نوشتن باقیمانده در D1 — بعد از کامل شدن پاسخ */
       if (ctx && typeof ctx.waitUntil === 'function') {

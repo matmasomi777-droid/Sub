@@ -1,64 +1,87 @@
 # ─────────────────────────────────────────────────────────────
 #  Wrangler config — VPN Panel Worker
 #
-#  Deploy:
-#    npx wrangler login
-#    npx wrangler secret put MASTER_KEY
-#    npx wrangler deploy
+#  ⚠️⚠️  این فایل را حذف نکنید  ⚠️⚠️
 #
-#  The UI (ui/index.html, ui/style.css, ui/app.js) is pulled from
-#  GitHub raw at runtime, so no [assets] binding is needed here.
+#  این فایل «بایندینگ»های ورکر را تعریف می‌کند و محدودیت آی‌پی
+#  مستقیماً به آن‌ها وابسته است:
+#
+#      LIMITER → شیءِ ماندگار (Durable Object): یک نمونه‌ی جهانی
+#      DB      → پایگاه‌ی D1: یک جدولِ مشترک برای همه‌ی isolateها
+#
+#  اگر این فایل را حذف کنید و ورکر را با «پیست در داشبورد» مستقر کنید،
+#  این دو بایندینگ دیگر ساخته نمی‌شوند. آن‌وقت هر isolate حافظه‌ی خودش
+#  را می‌شمارد، اتصالِ سوم به isolate تازه می‌افتد و از صفر شمرده می‌شود،
+#  و محدودیت عملاً بی‌اثر می‌شود — بی‌صدا و بدون هیچ خطایی.
+#
+#  دقیقاً همین اتفاق در کامیتِ 360e05c («حذف wrangler») افتاد و همان
+#  چیزی است که کاربر دید: «قبل از حذف wrangler محدودیت درست کار می‌کرد».
+#
+#  پس دو راه دارید — هر کدام را انتخاب کردید، بایندینگ‌ها را داشته باشید:
+#
+#    الف) استقرار با wrangler (دقیق‌ترین حالت):
+#         npx wrangler login
+#         npx wrangler secret put MASTER_KEY
+#         npx wrangler deploy
+#
+#    ب) استقرار با پیست در داشبورد (روشِ فعلیِ پروژه):
+#         Settings → Bindings → Add
+#           • D1 database       → Variable name: DB
+#           • Durable Object    → Variable name: LIMITER (class: ConnLimiter)
+#           • KV Namespace      → Variable name: KV   (اختیاری، فقط برای ماندگاری)
+#         بدون بایندینگِ DB یا LIMITER، سقفِ آی‌پی اعمال نمی‌شود.
+#
+#  برای بررسیِ وضعیت، در پنل: «سلامت ورکر → مرجعِ شمارشِ محدودیت اتصال»
+#  یا مستقیم: GET /health  (فیلد limiterBackend)
 # ─────────────────────────────────────────────────────────────
 
 name = "panel"
-main = "worker.js"
+# main = "worker.js"            # نسخهٔ خام — فقط برای دیباگ
+main = "_worker.obf.js"          # نسخهٔ obfuscate شده (ضد-1101) — با `npm run build` ساخته می‌شود
 compatibility_date = "2026-01-15"
 
-# ── Connection limiter: Durable Object (REQUIRED for a working IP limit) ────
-# A Worker runs in many isolates; each isolate has its own memory. An in-memory
-# counter therefore only counts that one isolate, so the 3rd connection lands in
-# a fresh isolate, is counted from zero, and is allowed -> the limit never bites.
-# A Durable Object is a single global instance shared by every isolate, so the
-# concurrent-connection-per-IP limit is enforced worker-wide.
-# Deploy with wrangler (NOT by pasting code into the dashboard) to get it:
-#     npx wrangler deploy
+# ── محدودسازِ اتصال: شیءِ ماندگار (برای محدودیتِ دقیقِ آی‌پی الزامی است) ────
+# یک ورکر روی صدها isolate اجرا می‌شود و هر isolate حافظه‌ی خودش را دارد؛
+# پس یک شمارنده‌ی درون‌حافظه‌ای فقط «همین isolate» را می‌شمارد. اتصالِ سوم
+# به isolate تازه می‌افتد، از صفر شمرده می‌شود و اجازه می‌گیرد → محدودیت
+# هرگز اعمال نمی‌شود. شیءِ ماندگار یک نمونه‌ی جهانیِ مشترک است، پس سقفِ
+# «تعداد IPهای همزمانِ هر کاربر» واقعاً worker-wide اعمال می‌شود.
 [[durable_objects.bindings]]
 name       = "LIMITER"
 class_name = "ConnLimiter"
 
-# Required the first time a Durable Object class is added.
+# اولین بار که یک کلاسِ شیءِ ماندگار اضافه می‌شود لازم است.
 [[migrations]]
 tag      = "v1"
 new_classes = ["ConnLimiter"]
 
-# Optional: keep the limiter warm / inspect it. Without a Durable Object the
-# worker falls back to KV (shared, approximate) and then to per-isolate memory
-# (no guarantee at all). The panel's "usage health" card names the active one.
-
-# ── Storage: D1 (best) or KV (acceptable) ────────────────────
-# The worker now works with either binding, but accuracy differs:
-#   D1  → atomic increment; exact usage and exact connection limits
-#   KV  → usage counters persisted, approximate under heavy concurrency
-#   none→ in-memory only; usage and limits reset on every cold start
-# The panel's "usage health" card tells you which one is active.
+# ── ذخیره‌سازی: D1 (بهترین) یا KV (قابل قبول) ────────────────
+# ورکر با هر کدام از این دو کار می‌کند، ولی دقتشان فرق دارد:
+#   D1  → افزایشِ اتمیک؛ مصرف و سقفِ اتصال دقیق
+#   KV  → شمارنده‌ها ماندگار، ولی زیرِ بارِ سنگین تقریبی
+#   هیچ → فقط حافظه؛ مصرف و محدودیت با هر cold start ریست می‌شوند
+# کارتِ «سلامت ورکر» در پنل می‌گوید کدام فعال است.
 #
-# ── D1 (recommended) ─────────────────────────────────────────
-# Get both values with:   npx wrangler d1 list
-# Create a database with: npx wrangler d1 create panel-db
+# ⚠️ D1 مهم‌تر از فقط ماندگاری است: در روشِ «پیست در داشبورد»، اگر شیءِ
+# ماندگار نباشد، همین D1 تنها مرجعِ مشترکِ بین isolateهاست — یعنی بدونِ
+# DB هم سقفِ آی‌پی اعمال نمی‌شود. جدولِ conns خودکار ساخته می‌شود.
+#
+# ── D1 (توصیه‌شده) ───────────────────────────────────────────
+# هر دو مقدار را با این ببینید:  npx wrangler d1 list
+# ساخت پایگاه:                   npx wrangler d1 create panel-db
 [[d1_databases]]
 binding       = "DB"
 database_name = "REPLACE_WITH_DB_NAME"
 database_id   = "REPLACE_WITH_DB_ID"
 
-# ── KV (fallback if you don't want D1) ───────────────────────
-# Create: npx wrangler kv:namespace create PANEL_KV
-# Then uncomment the block below (and remove/keep the D1 block —
-# D1 wins when both are bound).
+# ── KV (جانشین اگر D1 نمی‌خواهید) ────────────────────────────
+# ساخت: npx wrangler kv:namespace create PANEL_KV
+# سپس بلوکِ زیر را از کامنت دربیاورید (اگر هر دو بایند باشند، D1 برنده است).
 # [[kv_namespaces]]
 # binding      = "KV"
 # id           = "REPLACE_WITH_KV_NAMESPACE_ID"
 
-# ── Secrets (never put these in this file) ───────────────────
+# ── رازها (هرگز در این فایل نگذارید) ─────────────────────────
 #   npx wrangler secret put MASTER_KEY
-# Used by the panel to encrypt stored data; if unset a default is
-# used and existing encrypted data stays unreadable after a change.
+# برای رمزنگاریِ داده‌های ذخیره‌شده. اگر تنظیم نشود یک مقدارِ پیش‌فرض
+# استفاده می‌شود و داده‌های رمزنگاری‌شده‌ی قبلی بعد از تغییر خوانده نمی‌شوند.

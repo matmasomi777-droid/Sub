@@ -1,0 +1,253 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  تستِ سرتاسریِ ورکر (نسخه‌ی obfuscate‌شده = همان فایلی که در داشبورد پیست می‌شود)
+ *  ───────────────────────────────────────────────────────────────────────────
+ *  ماژول واقعیِ _worker.obf.js با شبیه‌سازیِ محیطِ کلادفلر بارگذاری می‌شود و
+ *  صفحه‌ی کاربر («/status/<name>») ساخته می‌شود. بررسی می‌کند:
+ *    ۱) placeholderها واقعاً جایگزین می‌شوند (حتی بعد از obfuscate)
+ *    ۲) تنظیماتِ اسکنر به صفحه تزریق و درست پارس می‌شوند
+ *    ۳) اسکریپتِ درون‌خطیِ صفحه معتبر است
+ *    ۴) مسیرِ ذخیره‌ی رادار (POST /radar-ips) کار می‌کند
+ *
+ *  اجرا:  node tests-manual/worker-e2e.cjs
+ * ═══════════════════════════════════════════════════════════════════════════ */
+const fs = require('fs');
+const path = require('path');
+const acorn = require('acorn');
+
+const ROOT = path.resolve(__dirname, '..');
+const OBF = path.join(ROOT, '_worker.obf.js');
+const SRC = path.join(ROOT, 'worker.js');
+const TMP = path.join(ROOT, '.e2e-tmp');
+
+if (!fs.existsSync(OBF)) { console.error('FATAL: _worker.obf.js نیست — اول npm run build'); process.exit(1); }
+
+let fail = 0;
+const ok = (c, label, extra) => { console.log((c ? '  ✓ ' : '  ✗ ') + label + (extra ? '  → ' + extra : '')); if (!c) fail++; };
+
+/* ── محیطِ کلادفلر ── */
+fs.rmSync(TMP, { recursive: true, force: true });
+fs.mkdirSync(TMP, { recursive: true });
+let code = fs.readFileSync(OBF, 'utf8');
+/* import از 'cloudflare:sockets' با unicode-escape نوشته شده — نرمال‌سازی می‌کنیم */
+code = code.replace(/from\s*(['"])((?:\\x[0-9a-fA-F]{2}|\\.|[^'"])*)\1/, (m, q, body) => {
+  const spec = body.replace(/\\x([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+  if (spec !== 'cloudflare:sockets') return m;
+  return 'from "./sockets.cjs"';
+});
+fs.writeFileSync(path.join(TMP, 'obf.mjs'), code);
+fs.writeFileSync(path.join(TMP, 'sockets.mjs'), 'export const connect = () => { throw new Error("no sockets in test"); };\n');
+/* بدون package.json، پوشه‌ی موقت به‌عنوان CommonJS دیده می‌شود؛ type=module لازم است */
+fs.writeFileSync(path.join(TMP, 'package.json'), '{ "type": "module" }\n');
+
+/* fetch جعلی: فایل‌های گیت‌هاب از دیسکِ محلی سرو می‌شوند تا تمپلیتِ واقعی تست شود */
+globalThis.fetch = async (url) => {
+  const u = String(url);
+  const m = u.match(/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/[^/]+\/([^?#]+)/);
+  if (m) {
+    const f = path.join(ROOT, decodeURIComponent(m[1]));
+    if (fs.existsSync(f)) return new Response(fs.readFileSync(f, 'utf8'), { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+    return new Response('not found', { status: 404 });
+  }
+  return new Response('offline', { status: 404 });
+};
+globalThis.WebSocketPair = class { constructor() { this[0] = {}; this[1] = {}; } };
+globalThis.caches = { default: { match: async () => undefined, put: async () => {} } };
+
+(async () => {
+  /* ── ۱) هر دو نسخه باید بارگذاری شوند ── */
+  const load = async (srcFile, outFile) => {
+    let body = fs.readFileSync(srcFile, 'utf8');
+    /* specifier ممکن است خام یا unicode-escape شده باشد */
+    body = body.replace(/from\s*(['"])((?:\\x[0-9a-fA-F]{2}|\\.|[^'"])*)\1/, (m2, q, raw) => {
+      const spec = raw.replace(/\\x([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+      return spec === 'cloudflare:sockets' ? 'from "./sockets.mjs"' : m2;
+    });
+    fs.writeFileSync(path.join(TMP, outFile), body);
+    return import('file:///' + path.join(TMP, outFile).replace(/\\/g, '/'));
+  };
+
+  const env = {};
+  const ctx = { waitUntil() {}, passThroughFunction() {} };
+
+  for (const [tag, src, out] of [['_worker.obf.js', OBF, 'obf.mjs'], ['worker.js', SRC, 'src.mjs']]) {
+    console.log('== ' + tag + ' ==');
+    let mod;
+    try { mod = await load(src, out); } catch (e) { ok(false, 'بارگذاریِ ماژول', e.message); continue; }
+    const handler = mod.default || mod;
+    ok(typeof handler.fetch === 'function', 'handler.fetch موجود است');
+
+    let res, html = '';
+    try {
+      res = await handler.fetch(new Request('https://panel.example.com/status/admin'), env, ctx);
+      html = await res.text();
+    } catch (e) { ok(false, 'ساختِ صفحه‌ی کاربر', e.message); continue; }
+    ok(res.status === 200 && html.length > 5000, 'صفحه‌ی کاربر ساخته شد', res.status + ' • ' + html.length + ' بایت');
+
+    /* ── ۲) placeholderها ── */
+    const leftovers = (html.match(/__[A-Z0-9_]+__/g) || []);
+    ok(leftovers.length === 0, 'هیچ placeholder جایگزین‌نشده‌ای نمانده', leftovers.slice(0, 4).join(','));
+
+    /* ── ۳) تنظیماتِ اسکنر تزریق شده و پارس می‌شود ── */
+    const mm = html.match(/JSON\.parse\("((?:[^"\\]|\\.)*ipCount(?:[^"\\]|\\.)*)"\)/);
+    ok(!!mm, 'فراخوانِ JSON.parse در صفحه هست');
+    let cfg = null;
+    if (mm) { try { cfg = JSON.parse(JSON.parse('"' + mm[1] + '"')); } catch (e) { ok(false, 'پارسِ تنظیماتِ اسکنر', e.message); } }
+    if (cfg) {
+      ok(cfg.ipCount === 2048, 'ipCount = ۲۰۴۸', cfg.ipCount);
+      ok(cfg.mode === 'smart', 'حالت پیش‌فرض smart (سهمِ متناسب با اندازه‌ی رنج)', cfg.mode);
+      ok(cfg.concurrency > 0 && cfg.timeout > 0 && cfg.probes >= 1, 'هم‌روندی/تایم‌اوت/پروب معتبر', cfg.concurrency + '/' + cfg.timeout + '/' + cfg.probes);
+      ok(cfg.minRtt === 0, 'فیلترِ تأخیر خاموش است (minRtt=0)', cfg.minRtt);
+    }
+
+    /* ── ۴) موتورِ اسکنر در صفحه هست ── */
+    ok(html.includes('CF_CIDRS') && html.includes('buildIpList'), 'موتورِ اسکنر در صفحه هست');
+    const cidrs = html.match(/'1[0-9.]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+'/g) || [];
+    ok(cidrs.length >= 15, 'تمامِ ۱۵ رنج رسمی در صفحه هست', cidrs.length + ' رنج');
+    ok(!/'104\.0\.0\.0\/8'/.test(html), 'رنجِ غلطِ قبلی (104.0.0.0/8) حذف شده');
+
+    /* ── ۴ب) پروبِ دوکاناله، کفِ تأخیر، و فالبکِ پورت ──
+       هیچ‌کدام از دو کانال تنها کافی نیست: Image فقط هر RSTِ آنی را «زنده»
+       می‌بیند و fetch فقط آی‌پیِ unroutable را «زنده» می‌بیند. و بدونِ کفِ
+       تأخیر، پاسخ‌های بی‌درنگِ میان‌راه «سریع‌ترین» رتبه را می‌گیرند و
+       آی‌پیِ خراب در کانفیگ می‌نشیند. اگر فهرستِ پورت هم خالی بماند، اسکن
+       بی‌صدا رد می‌شود — پس باید همیشه ۴۴۳ فالبک شود. */
+    ok(html.includes('new Image()'), 'کانالِ Image در پروب هست');
+    ok(/fetch\(url, \{ signal: ctrl\.signal, mode: 'cors'/.test(html), 'کانالِ fetch(cors) هم موازی فرستاده می‌شود (پروبِ دوکاناله)');
+    ok(html.includes('RADAR_CONTROL_IPS'), 'خودآزماییِ پروب (آی‌پی‌های RFC 5737) در صفحه هست');
+    ok(html.includes('radarRawResponses'), 'شمارنده‌ی پاسخ‌های خام در صفحه هست');
+    ok(html.includes('radarStatusNoRespond'), 'پیامِ «هیچ پاسخی نیامد» در صفحه هست');
+    ok(html.includes('radarAutoFloor') && html.includes('radarBaseline'),
+       'کفِ خودکارِ تأخیر + اندازه‌گیریِ تأخیرِ پایه در صفحه هست');
+    ok(/radarFloor = Math\.max\(SCAN\.minRtt/.test(html), 'کف = max(کفِ دستی، کفِ خودکار)');
+    ok(html.includes('radarRejectedFast'), 'شمارنده‌ی «مردودِ سریع» در صفحه هست');
+    ok(html.includes('radarStatusGuard'), 'کلیدِ locale برای نمایشِ کف و مردودهای سریع هست');
+    ok(!/x\.rtt >= SCAN\.minRtt/.test(html), 'فیلترِ قدیمی جایگزین شده (حالا کفِ مؤثرِ محاسبه‌شده)');
+    ok(/samples\.length < Math\.min\(SCAN\.probes, 2\)/.test(html), 'دروازه‌ی ثبات (≥۲ پاسخ از N پروب) در صفحه هست');
+    ok(/if \(!ports\.length\) ports\.push\(443\)|return tls\.length \? tls : \[443\]|return RADAR_TLS_PORTS\.slice\(\)/.test(html),
+       'پورتِ اسکن هرگز خالی نمی‌ماند (فالبکِ ۴۴۳، فیلترِ TLS، یا همه‌ی TLS)');
+    ok(!/fetch\('https:\/\/' \+ host/.test(html),
+       'پروبِ تک‌کاناله‌ی قدیمی حذف شده (اکنون fetch داخلِ pingIp و با mode:cors است)');
+    ok(/return RADAR_TLS_PORTS\.slice\(\)/.test(html), 'فالبکِ پورت به همه‌ی TLS (تک‌پورتِ 443ِ فیلترشده اسکن را صفر می‌کرد)');
+    ok(html.includes('concurrency: 16'), 'هم‌روندیِ پیش‌فرض ۱۶ است (نه ۶۴)');
+    ok(html.includes('timeout: 2000'), 'تایم‌اوتِ پیش‌فرض ۲۰۰۰ms است (نه ۱۰۰۰)');
+    ok(/results\.length < RADAR_KEEP\) results\.push/.test(html), 'نتایج از سقفِ نگه‌داری بیشتر نمی‌شوند');
+    ok(html.includes('radarSleep'), 'فاصله‌ی تصادفی بین پروب‌ها هست (روشِ SenPai Scanner)');
+    /* ── ۴ج) فالبکِ آی‌پی‌های ذخیره‌شده (اسکنِ تازه بی‌نتیجه) ── */
+    ok(html.includes('radarFallbackCheck') && html.includes('radarSavedFromLinks') && html.includes('radarSavedFromServer'),
+       'فالبکِ آی‌پی‌های ذخیره‌شده در صفحه هست');
+    ok(html.includes('/radar-candidates'), 'مسیرِ نامزدهای فالبک در صفحه هست');
+    ok(html.includes('fallback: true'), 'ارسالِ fallback:true در صفحه هست');
+    ok(html.includes('radarStatusFallback'), 'کلیدهای locale فالبک در صفحه هست');
+
+    /* ── ۵) اسکریپتِ درون‌خطی معتبر است ── */
+    const scripts = html.match(/<script(?![^>]*src=)[^>]*>[\s\S]*?<\/script>/gi) || [];
+    let bad = 0;
+    scripts.forEach((s) => {
+      const body = s.replace(/^<script[^>]*>/i, '').replace(/<\/script>$/i, '');
+      try { acorn.parse(body, { ecmaVersion: 'latest' }); } catch (e) { bad++; console.log('      خطای اسکریپت: ' + e.message); }
+    });
+    ok(scripts.length > 0 && bad === 0, 'اسکریپت‌های درون‌خطی معتبرند', scripts.length + ' بلوک');
+
+    /* ── ۶) ذخیره‌ی رادار ── */
+    const idm = html.match(/\/sub\/([A-Za-z0-9_-]{6,})/);
+    if (!idm) { ok(false, 'شناسه‌ی کاربر در صفحه پیدا شد'); continue; }
+    const uid = idm[1];
+    const saveRes = await handler.fetch(new Request('https://panel.example.com/sub/' + uid + '/radar-ips', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ips: ['104.16.1.1', '172.64.1.2', 'bogus'] }),
+    }), env, ctx);
+    const sj = await saveRes.json().catch(() => ({}));
+    ok(saveRes.status === 200 && sj.ok === true, 'POST /radar-ips ذخیره کرد', JSON.stringify(sj));
+
+    /* بعد از ذخیره، آی‌پی‌ها باید در سابِ همان کاربر ظاهر شوند */
+    const subRes = await handler.fetch(new Request('https://panel.example.com/sub/' + uid + '?format=raw'), env, ctx);
+    const subTxt = await subRes.text();
+    ok(subTxt.includes('104.16.1.1'), 'آی‌پیِ تازه در سابِ کاربر اعمال شد');
+    ok(!subTxt.includes('bogus'), 'آی‌پیِ نامعتبر رد شد');
+
+    /* ── ۶ب) نامزدهای فالبک + ذخیره با fallback:true ── */
+    const candRes = await handler.fetch(new Request('https://panel.example.com/sub/' + uid + '/radar-candidates'), env, ctx);
+    const cand = await candRes.json().catch(() => ({}));
+    ok(candRes.status === 200 && cand.ok === true && Array.isArray(cand.ips), 'GET /radar-candidates فهرست می‌دهد', JSON.stringify(cand).slice(0, 120));
+    ok(cand.ips && cand.ips.indexOf('104.16.1.1') >= 0 && cand.ips.indexOf('172.64.1.2') >= 0, 'نامزدها شاملِ ذخیره‌شده‌ها هستند');
+    const fbRes = await handler.fetch(new Request('https://panel.example.com/sub/' + uid + '/radar-ips', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ips: ['104.16.1.1'], fallback: true }),
+    }), env, ctx);
+    const fbj = await fbRes.json().catch(() => ({}));
+    ok(fbRes.status === 200 && fbj.ok === true && fbj.fallback === true, 'POST /radar-ips با fallback:true ذخیره کرد', JSON.stringify(fbj));
+    const subRes2 = await handler.fetch(new Request('https://panel.example.com/sub/' + uid + '?format=raw'), env, ctx);
+    ok((await subRes2.text()).includes('104.16.1.1'), 'آی‌پیِ فالبک در سابِ کاربر اعمال شد');
+    console.log('');
+  }
+
+  /* ── سناریوی فالبک: گیت‌هاب در دسترس نیست → تمپلیتِ داخلیِ USER_PAGE ──
+     این مسیر قبلاً با دو regexِ کم‌escape‌شده کلِ اسکریپتِ صفحه را می‌شکست
+     (replace(/\/$/, '') داخل تمپلیت → replace(//$, '') → SyntaxError). */
+  console.log('== USER_PAGE (فالبکِ داخلی — گیت‌هاب در دسترس نیست) ==');
+  globalThis.fetch = async () => new Response('offline', { status: 404 });
+  let modF;
+  try { modF = await load(SRC, 'src_fallback.mjs'); } catch (e) { ok(false, 'بارگذاریِ ماژولِ فالبک', e.message); }
+  if (modF) {
+    const hF = modF.default || modF;
+    let htmlF = '';
+    try { htmlF = await (await hF.fetch(new Request('https://panel.example.com/status/admin'), env, ctx)).text(); }
+    catch (e) { ok(false, 'ساختِ صفحه‌ی فالبک', e.message); }
+    if (htmlF) {
+      ok(htmlF.includes('id="radar-card"'), 'کارتِ رادار در فالبک هست');
+      ok(htmlF.includes('CF_CIDRS') && htmlF.includes('buildIpList'), 'موتورِ اسکنر در فالبک هست');
+      ok(htmlF.includes('new Image()') && htmlF.includes('RADAR_CONTROL_IPS'), 'پروبِ دوکاناله + خودآزمایی در فالبکِ داخلی هست');
+      ok(/return RADAR_TLS_PORTS\.slice\(\)/.test(htmlF), 'فالبکِ پورت به همه‌ی TLS در فالبکِ داخلی هست');
+      ok(htmlF.includes('radarFallbackCheck') && htmlF.includes('/radar-candidates'), 'فالبکِ ذخیره‌شده‌ها در فالبکِ داخلی هست');
+      ok((htmlF.match(/'1[0-9.]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+'/g) || []).length >= 15, 'تمامِ ۱۵ رنج رسمی در فالبک هست');
+      const sc = htmlF.match(/<script(?![^>]*src=)[^>]*>[\s\S]*?<\/script>/i);
+      let badF = 0;
+      if (sc) {
+        const bodyF = sc[0].replace(/^<script[^>]*>/i, '').replace(/<\/script>$/i, '');
+        try { acorn.parse(bodyF, { ecmaVersion: 'latest' }); } catch (e) { badF++; console.log('      خطای اسکریپت: ' + e.message); }
+      }
+      ok(sc && badF === 0, 'اسکریپتِ فالبک معتبر است (باگِ regexِ کم‌escape رفع شد)');
+      ok((htmlF.match(/__[A-Z0-9_]+__/g) || []).length === 0, 'placeholderهای فالبک هم جایگزین شدند');
+    }
+  }
+
+  /* ── سناریوی دومِ فالبک: فقط ui/user.html در دسترس است ── */
+  console.log('== ui/user.html (فالبکِ دوم) ==');
+  const realFetch = async (url) => {
+    const u = String(url);
+    if (u.includes('new-subscription.html')) return new Response('gone', { status: 404 });
+    const m = u.match(/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/[^/]+\/([^?#]+)/);
+    if (m) {
+      const f = path.join(ROOT, decodeURIComponent(m[1]));
+      if (fs.existsSync(f)) return new Response(fs.readFileSync(f, 'utf8'), { status: 200 });
+    }
+    return new Response('offline', { status: 404 });
+  };
+  globalThis.fetch = realFetch;
+  let modU;
+  try { modU = await load(SRC, 'src_user.mjs'); } catch (e) { ok(false, 'بارگذاریِ ماژول', e.message); }
+  if (modU) {
+    const hU = modU.default || modU;
+    let htmlU = '';
+    try { htmlU = await (await hU.fetch(new Request('https://panel.example.com/status/admin'), env, ctx)).text(); }
+    catch (e) { ok(false, 'ساختِ صفحه', e.message); }
+    if (htmlU) {
+      ok(htmlU.includes('id="radar-card"') && htmlU.includes('CF_CIDRS'), 'کارت و موتورِ اسکنر در ui/user.html هست');
+      ok(htmlU.includes('new Image()') && htmlU.includes('RADAR_CONTROL_IPS'), 'پروبِ دوکاناله + خودآزمایی در ui/user.html هست');
+      ok(/return RADAR_TLS_PORTS\.slice\(\)/.test(htmlU), 'فالبکِ پورت به همه‌ی TLS در ui/user.html هست');
+      ok(htmlU.includes('radarFallbackCheck') && htmlU.includes('/radar-candidates'), 'فالبکِ ذخیره‌شده‌ها در ui/user.html هست');
+      ok((htmlU.match(/'1[0-9.]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+'/g) || []).length >= 15, 'تمامِ ۱۵ رنج رسمی هست');
+      const scU = htmlU.match(/<script(?![^>]*src=)[^>]*>[\s\S]*?<\/script>/i);
+      let badU = 0;
+      if (scU) {
+        try { acorn.parse(scU[0].replace(/^<script[^>]*>/i, '').replace(/<\/script>$/i, ''), { ecmaVersion: 'latest' }); }
+        catch (e) { badU++; console.log('      خطای اسکریپت: ' + e.message); }
+      }
+      ok(scU && badU === 0, 'اسکریپتِ ui/user.html معتبر است');
+    }
+  }
+
+  fs.rmSync(TMP, { recursive: true, force: true });
+  console.log(fail ? fail + ' تست ناموفق ✗' : 'همه‌ی تست‌ها موفق ✓');
+  process.exit(fail ? 1 : 0);
+})();
