@@ -204,7 +204,7 @@ const pick = (out, needle) => (out.checks || []).find((c) => strip(c.name).inclu
 
   /* ═══ ج) اثباتِ ارزشِ تست: با پنجره‌ی باگ‌دارِ ۳ ثانیه باید شکست بخورد ═══ */
   console.log('\n== C) کنترل: نسخه‌ی باگ‌دار (CONN_TTL = ۳ ثانیه) ==');
-  const buggy = srcText.replace('const CONN_TTL = 90000;', 'const CONN_TTL = 3000;');
+  const buggy = srcText.replace('const CONN_TTL = 30000;', 'const CONN_TTL = 3000;');
   if (buggy === srcText) {
     ok(false, 'جایگزینیِ CONN_TTL برای ساختِ نسخه‌ی کنترل — ثابتِ کد پیدا نشد');
   } else {

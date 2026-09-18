@@ -483,10 +483,10 @@ async function usageInit(env, st) {
      • CONN_KEEPALIVE_MS — ضربانِ دوره‌ای برای اتصال‌های بازِ بی‌ترافیک؛ ردیف
                            را تازه نگه می‌دارد تا واقعاً «زنده» بماند. دو
                            ضربان در هر مهلت = تحملِ یک ضربانِ ازدست‌رفته.
-     • CONN_ACTIVITY_MS  — تمدیدِ مبتنی بر ترافیک. با مهلتِ ۹۰ ثانیه‌ای،
-                           «یک نوشتن در ثانیه» کاملاً اضافی بود؛ به ۳۰ ثانیه
-                           رسید تا هزینه‌ی D1 یک‌سوم شود و پوشش کافی بماند
-                           (سه تمدید در هر مهلت).
+      • CONN_ACTIVITY_MS  — تمدیدِ مبتنی بر ترافیک. با مهلتِ ۳۰ ثانیه‌ای،
+                            «یک نوشتن در ثانیه» کاملاً اضافی بود؛ به ۱۰ ثانیه
+                            رسید تا هزینه‌ی D1 کم بماند و پوشش کافی بماند
+                            (سه تمدید در هر مهلت).
 
    تنظیمِ این سه عدد، همان معامله‌ی «دقتِ اعمالِ سقف» در برابر «سرعتِ آزاد
    شدنِ جای یک اتصالِ واقعاً مرده» است:
@@ -496,9 +496,15 @@ async function usageInit(env, st) {
        جای خود را نگه می‌دارد. (اتصالِ قطع‌شده‌ی معمولی همان لحظه آزاد
        می‌شود؛ این مهلت فقط برای قطعی‌های بی‌خبر است.)
    ═══════════════════════════════════════════════════════════════════════════ */
-const CONN_TTL = 90000;               // ۹۰ ثانیه — مهلتِ بقا (شبکه‌ی ایمنیِ قطعیِ بی‌خبر)
-const CONN_KEEPALIVE_MS = 45000;      // ضربانِ اتصال‌های بازِ بی‌ترافیک (۲ بار در هر مهلت)
-const CONN_ACTIVITY_MS = 30000;       // تمدیدِ مبتنی بر ترافیک: حداکثر ۱ نوشتن/۳۰ ثانیه
+const CONN_TTL = 30000;               // ۳۰ ثانیه — مهلتِ بقا (شبکه‌ی ایمنیِ قطعیِ بی‌خبر)
+const CONN_KEEPALIVE_MS = 12000;      // ضربانِ اتصال‌های بازِ بی‌ترافیک (۲+ بار در هر مهلت)
+const CONN_ACTIVITY_MS = 10000;       // تمدیدِ مبتنی بر ترافیک: حداکثر ۱ نوشتن/۱۰ ثانیه
+/* ═══ هندآفِ سریعِ تک‌کاربره (موبایل → دسکتاپ با اینترنتِ عوض‌شده) ═══
+   وقتی سقف پر است و آی‌پیِ تازه می‌رسد، آی‌پی‌هایی که بیش از این مدت هیچ
+   نشانه‌ی زندگی نداشته‌اند (نه بایت، نه ضربان) «رفته» فرض و فوری آزاد می‌شوند —
+   بدون انتظار تا پایانِ CONN_TTL. نتیجه: تعویضِ دستگاه/وای‌فای در حدِ چند ثانیه،
+   ولی دو دستگاهِ واقعاً همزمان (هر دو فعال در همین پنجره) همچنان بلاک می‌شوند. */
+const HANDOFF_IDLE_MS = 15000;        // ۱۵ ثانیه — آستانه‌ی «بی‌خبرِ رفته» برای هندآفِ فوری
 /* ⚠️ کمینه‌ی expirationTtl در KV کلادفلر ۶۰ ثانیه است؛ مقدارِ کمتر خطا می‌دهد
    و کلید هرگز نوشته نمی‌شود → شمارشِ KV بی‌صدا از کار می‌افتد (با مهلتِ
    قبلیِ ۳ ثانیه‌ای، مسیرِ KV در عمل هرگز کار نمی‌کرد). این clamp برای همان
@@ -743,16 +749,18 @@ async function liveIpsAged(env, uuid) {
 /** بیرون راندنِ آی‌پی‌های کهنه — راهِ خروج وقتی قطع شدن ثبت نشده است.
     اگر آزادسازی به هر دلیل (kill شدنِ isolate، قطعِ ناگهانیِ موبایل، خطای
     شبکه) اجرا نشده باشد، ردیف قفل می‌ماند. اینجا هر آی‌پی‌ای که به اندازه‌ی
-    CONN_TTL هیچ نشانه‌ی زندگی نداشته (نه بایت، نه ضربان)، «رفته» فرض و حذف
+    آستانه هیچ نشانه‌ی زندگی نداشته (نه بایت، نه ضربان)، «رفته» فرض و حذف
     می‌شود تا آی‌پیِ جدید جای آن را بگیرد. (پاک‌سازیِ هنگامِ پذیرش معمولاً
     زودتر این کار را کرده؛ این مسیر فقط شبکه‌ی ایمنیِ دوم است.)
-    ⚠️ چون CONN_TTL حالا ۹۰ ثانیه است، این تابع دیگر جای یک اتصالِ *بازِ
-    بی‌ترافیک* را نمی‌دهد — دقیقاً همان چیزی که سقفِ آی‌پی را واقعاً اعمال
-    می‌کند. آی‌پیِ عوض کردنِ اینترنت هم همچنان فوری است، چون اتصالِ قدیمی با
-    رویدادِ close همان لحظه آزاد می‌شود (این مسیر فقط برای قطعیِ بی‌خبر است). */
-async function d1EvictIdle(env, uuid, need) {
+    ⚠️ چون CONN_TTL حالا ۳۰ ثانیه است و هندآف ۱۵ ثانیه، این تابع دیگر جای یک
+    اتصالِ *بازِ بی‌ترافیک* را نمی‌دهد — دقیقاً همان چیزی که سقفِ آی‌پی را
+    واقعاً اعمال می‌کند. آی‌پیِ عوض کردنِ اینترنت هم فوری است: اتصالِ قدیمی با
+    رویدادِ close همان لحظه آزاد می‌شود، و قطعیِ بی‌خبر هم حداکثر در حدِ
+    HANDOFF_IDLE_MS جای تازه را می‌دهد (این مسیر فقط برای قطعیِ بی‌خبر است). */
+async function d1EvictIdle(env, uuid, need, idleMs) {
   if (!env || !env.DB || !uuid) return 0;
-  const cut = Date.now() - CONN_TTL;
+  const IDLE = Number(idleMs) > 0 ? Number(idleMs) : CONN_TTL;
+  const cut = Date.now() - IDLE;
   let removed = 0;
   try {
     const aged = await liveIpsAged(env, uuid);
@@ -796,11 +804,14 @@ async function d1Acquire(env, uuid, ip, limit, id, now) {
   await liveSweep(env, uuid);
   let ips = await liveIps(env, uuid);
   let dec = admitDecision(ips, ip, limit);
-  /* رد شدن به‌خاطر پر بودنِ سقف؟ اول آی‌پی‌های واقعاً رفته را بیرون بران
-     (به اندازه‌ی CONN_TTL فعالیت نداشته باشند) و دوباره تصمیم بگیر — این همان چیزی
-     است که «عوض کردنِ اینترنت» را فوری می‌کند. */
+  /* رد شدن به‌خاطر پر بودنِ سقف؟ اول هندآفِ سریع (آی‌پی‌های ۱۵+ ثانیه ساکت)
+     و بعد پاک‌سازیِ کاملِ TTL — این همان چیزی است که «عوض کردنِ اینترنت/
+     تعویضِ موبایل→دسکتاپ» را در حدِ چند ثانیه فوری می‌کند، بدون اینکه دو
+     دستگاهِ واقعاً همزمان بتوانند سقف را دور بزنند. */
   if (!dec.ok) {
-    const evicted = await d1EvictIdle(env, uuid, Math.max(1, ips.size - limit + 1));
+    const need = Math.max(1, ips.size - limit + 1);
+    let evicted = await d1EvictIdle(env, uuid, need, HANDOFF_IDLE_MS);
+    if (evicted <= 0) evicted = await d1EvictIdle(env, uuid, need, CONN_TTL);
     if (evicted > 0) { ips = await liveIps(env, uuid); dec = admitDecision(ips, ip, limit); }
   }
   if (!dec.ok) return { ok: false, ips: ips.size, conns: ips.get(ip) || 0, limit, enforced: true, storage: 'd1', reason: dec.reason, id };
@@ -1272,8 +1283,15 @@ async function connAcquireInner(env, uuid, ip, limit, connId) {
 
   /* ── ۳) حافظه: سریع، بدون نیاز به بایندینگ (فقط همین isolate) ── */
   const um = userMapOf(uuid, true);
-  const ipsMem = pruneUser(um, now);
-  const dec = admitDecision(ipsMem, ip, limit);
+  let ipsMem = pruneUser(um, now);
+  let dec = admitDecision(ipsMem, ip, limit);
+  /* هندآفِ سریع: اگر سقف پر است، اتصال‌های ۱۵+ ثانیه ساکت را فوری آزاد کن
+     (تعویضِ موبایل→دسکتاپ با وای‌فایِ عوض‌شده) و دوباره تصمیم بگیر */
+  if (!dec.ok) {
+    pruneUser(um, now, HANDOFF_IDLE_MS);
+    ipsMem = pruneUser(um, now);
+    dec = admitDecision(ipsMem, ip, limit);
+  }
   if (!dec.ok) {
     CONN_DENIES++;
     return { ok: false, ips: ipsMem.size, conns: ipsMem.get(ip) || 0, limit, enforced: true, storage: backendOf(env), reason: dec.reason };
@@ -2044,15 +2062,19 @@ const fa = (v) => String(v).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
 /* ════════════════════════════ تولید کانفیگ ════════════════════════════ */
 /* ═══════════ فرمت URI مطابق BPB — سازگار با دسکتاپ و موبایل ═══════════
    تفاوت‌های کلیدی با فرمت قبلی:
-   ۱. encryption=none همیشه هست (برخی کلاینت‌های موبایل بدون آن کار نمی‌کنند)
-   ۲. alpn در URI نیست (فقط در قالب‌های JSON) — روی موبایل مشکل می‌سازد
-   ۳. allowInsecure همیشه هست (۰ یا ۱)
-   ۴. ترتیب پارامترها مثل BPB است */
+   ۱. encryption=none همیشه هست (برخی کلاینت‌های موبایل/دسکتاپ بدون آن کار نمی‌کنند)
+   ۲. alpn در URI نیست (فقط در قالب‌های JSON) — روی موبایل و v2rayN مشکل می‌سازد
+   ۳. allowInsecure فقط وقتی ۱ است می‌آید (حذفِ =۰ برای سازگاریِ v2rayN/NekoRay دسکتاپ؛
+      مقدارِ غایب یعنی false و همه‌ی کلاینت‌ها همین را می‌فهمند)
+   ۴. ترتیب پارامترها مثل BPB است
+   ۵. fp همیشه معتبر (chrome پیش‌فرض) — مقدارِ خالی/randomized به chrome می‌رسد */
 function bpbUri(kind, u, s, entry, port, i, host) {
   const sec = s.tls ? 'tls' : 'none';
   const path = tPath(s, i, u.uuid, false);
-  const fp = (s.fingerprint === 'randomized' || s.fingerprint === 'random') ? 'chrome' : (s.fingerprint || 'chrome');
-  const inc = s.allowInsecure ? '1' : '0';
+  const FP_OK = ['chrome', 'firefox', 'safari', 'ios', 'android', 'edge', '360', 'qq', 'randomized'];
+  let fp = String(s.fingerprint || 'chrome').trim().toLowerCase();
+  if (fp === 'random' || fp === 'randomized') fp = 'chrome';
+  if (!FP_OK.includes(fp)) fp = 'chrome';
   const sni = s.sni || host;
 
   /* ⚠️ نکته‌ی حیاتی موبایل:
@@ -2060,13 +2082,15 @@ function bpbUri(kind, u, s, entry, port, i, host) {
      تفاوت: encodeURI اسلش (/) را کدگذاری نمی‌کند ولی encodeURIComponent آن را به %2F تبدیل می‌کند.
      کلاینت‌های موبایل (v2rayNG، Hiddify) %2F در پارامتر path را درست دیکد نمی‌کنند! */
   const encPath = encodeURI(path);
+  /* allowInsecure=1 فقط وقتی واقعاً ناامن است؛ غیبت = امن (سازگار با دسکتاپ) */
+  const incQ = s.allowInsecure ? '&allowInsecure=1' : '';
 
   if (kind === 'vless') {
-    const q = `encryption=none&security=${sec}&sni=${sni}&fp=${fp}&type=ws&host=${host}&path=${encPath}&allowInsecure=${inc}`;
+    const q = `encryption=none&security=${sec}&sni=${sni}&fp=${fp}&type=ws&host=${host}&path=${encPath}${incQ}`;
     return `vless://${u.uuid}@${entry.ip}:${port}?${q}#${encodeURIComponent(label(s, entry, port, '', u, i))}`;
   }
   if (kind === 'trojan') {
-    const q = `security=${sec}&sni=${sni}&fp=${fp}&type=ws&host=${host}&path=${encPath}&allowInsecure=${inc}`;
+    const q = `security=${sec}&sni=${sni}&fp=${fp}&type=ws&host=${host}&path=${encPath}${incQ}`;
     return `trojan://${u.secret}@${entry.ip}:${port}?${q}#${encodeURIComponent(label(s, entry, port, 'β', u, i))}`;
   }
   return '';
@@ -2487,7 +2511,10 @@ function fakeCfg(u, s) {
         if (!label) return null;
         const proto = f.proto === 'trojan' ? 'trojan' : 'vless';
         const cred = proto === 'trojan' ? (u.secret || '') : (u.uuid || '');
-        return `${proto}://${cred}@1.1.1.1:443?security=tls&type=ws#${encodeURIComponent(label)}`;
+        /* فیکِ سازگار با دسکتاپ: encryption=none برای vless تا پارسرِ سخت‌گیرِ
+           v2rayN/NekoRay کل ساب را به‌خاطر یک لینک خراب دور نریزد */
+        const enc = proto === 'vless' ? 'encryption=none&' : '';
+        return `${proto}://${cred}@1.1.1.1:443?${enc}security=tls&type=ws#${encodeURIComponent(label)}`;
       }).filter(Boolean);
   }
 
@@ -2502,7 +2529,8 @@ function fakeCfg(u, s) {
     if (!label) return null;
     const proto = f.proto === 'trojan' ? 'trojan' : 'vless';
     const cred = proto === 'trojan' ? (u.secret || '') : (u.uuid || '');
-    return `${proto}://${cred}@1.1.1.1:443?security=tls&type=ws#${encodeURIComponent(label)}`;
+    const enc = proto === 'vless' ? 'encryption=none&' : '';
+    return `${proto}://${cred}@1.1.1.1:443?${enc}security=tls&type=ws#${encodeURIComponent(label)}`;
   }).filter(Boolean);
 }
 
@@ -2609,8 +2637,14 @@ function sniff(ua) {
   if (s.includes(getGamma() + '.meta') || s.includes('mihomo') || s.includes('meta')) return 'meta';
   if (s.includes(getGamma()) || s.includes('fl' + getGamma())) return 'clash'; // Anti-1101 Nahan: split keyword
   if (s.includes('hiddify') || s.includes('karing') || s.includes('happ') || s.includes('si' + 'ng-box') || s.includes('sfi')) return 'singbox';
+  /* ═══ فیکسِ دسکتاپ (v2rayN / NekoRay / Qv2ray / v2rayNG) ═══
+     این کلاینت‌ها اشتراک را فقط به‌صورت base64 از لینک‌های vless:// می‌فهمند.
+     برگرداندن JSON باعث می‌شد ساب در دسکتاپ خالی/خراب وارد شود («کار نمی‌کند»).
+     نکته‌ی ظریف: «v2rayng» (موبایل) هم شاملِ «v2rayn» است، پس اول همه‌ی خانواده‌ی
+     v2ray را به base64 می‌فرستیم؛ JSON فقط با ?format=v2ray صریح یا UAی حاوی json. */
+  if (s.includes('v2rayn') || s.includes('v2rayng') || s.includes('nekoray') || s.includes('qv2ray')) return 'base64';
   if (s.includes('v2ray') && s.includes('json')) return 'v2ray';
-  if (s.includes('v2rayn') || s.includes('nekoray') || s.includes('qv2ray')) return 'v2ray';
+  if (s.includes('v2ray')) return 'base64';
   return 'base64';
 }
 /* ⚠️ واحد: بایت — همه‌ی کلاینت‌ها (Clash، sing-box، v2rayN) بایت انتظار دارند */
@@ -8876,13 +8910,14 @@ export class ConnLimiter {
   }
 
   /** حذفِ ورودی‌های مرده؛ می‌گرداند: Map<ip, تعداد اتصال‌های زنده> */
-  prune(uuid, now) {
+  prune(uuid, now, ttlMs) {
+    const T = Number(ttlMs) > 0 ? Number(ttlMs) : CONN_TTL;
     const um = this.users.get(uuid);
     const out = new Map();
     if (!um) return out;
     um.forEach((m, ip) => {
       if (!m || !(m instanceof Map)) { um.delete(ip); return; }
-      m.forEach((ts, id) => { if (!ts || now - ts > CONN_TTL) m.delete(id); });
+      m.forEach((ts, id) => { if (!ts || now - ts > T) m.delete(id); });
       if (!m.size) um.delete(ip);
     });
     um.forEach((m, ip) => { if (m && m.size) out.set(ip, m.size); });
@@ -8904,8 +8939,14 @@ export class ConnLimiter {
       if (!uuid || !ip) return j({ ok: true, ips: 0, conns: 0, limit, enforced: false, reason: 'missing-identity' });
       let um = this.users.get(uuid);
       if (!um) { um = new Map(); this.users.set(uuid, um); }
-      const ips = this.prune(uuid, now);
-      const dec = admitDecision(ips, ip, limit);
+      let ips = this.prune(uuid, now);
+      let dec = admitDecision(ips, ip, limit);
+      /* هندآفِ سریعِ تک‌کاربره: ۱۵+ ثانیه ساکت = رفته (موبایل→دسکتاپ فوری) */
+      if (!dec.ok && typeof HANDOFF_IDLE_MS !== 'undefined') {
+        this.prune(uuid, now, HANDOFF_IDLE_MS);
+        ips = this.prune(uuid, now);
+        dec = admitDecision(ips, ip, limit);
+      }
       if (!dec.ok) {
         return j({ ok: false, ips: ips.size, conns: ips.get(ip) || 0, limit, enforced: true, storage: 'do', reason: dec.reason });
       }
