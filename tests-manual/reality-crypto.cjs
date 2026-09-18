@@ -44,7 +44,7 @@ const toU8 = (d) => {
 };
 
 const M = new Function('toU8', 'crypto', 'atob', 'TextEncoder', 'TextDecoder',
-  rsrc + '\n;return { rlX25519, rlX25519Base, rlExpandLabel, rlHkdfExpand, rlDeriveSecret, rlHmac, rlSha256, rlAesKeyIv, rlImportAes, rlSeal, rlOpen, rlBuildCH, rlParseServerHello, rlHandshake, rlWrapStreams, rlMakeSockIo, rlConcat, rlU16, rlU32, rlEq, rlHexToBytes, rlB64uToBytes, rlSkipHsMessages, rlSealSession, rlAlertName, rlAlertHint, rlAlertDetail, RL_CLIENT_VER };'
+  rsrc + '\n;return { rlX25519, rlX25519Base, rlExpandLabel, rlHkdfExpand, rlDeriveSecret, rlHmac, rlSha256, rlAesKeyIv, rlImportAes, rlSeal, rlOpen, rlBuildCH, rlGrease, rlParseServerHello, rlHandshake, rlWrapStreams, rlMakeSockIo, rlConcat, rlU16, rlU32, rlEq, rlHexToBytes, rlB64uToBytes, rlSkipHsMessages, rlSealSession, rlAlertName, rlAlertHint, rlAlertDetail, RL_CLIENT_VER };'
 )(toU8, webcrypto, (s) => Buffer.from(s, 'base64').toString('binary'), TextEncoder, TextDecoder);
 
 /* ── ۲) استخراجِ plumbing سرورهای خروجی ── */
@@ -145,6 +145,13 @@ const refSha = (d) => createHash('sha256').update(Buffer.from(d)).digest();
     ok(raw.includes(Buffer.from([0x13, 0x01])), 'cipher 0x1301 پیشنهاد شده');
     /* گروه‌ها: کرومِ واقعی x448 ندارد (secp384r1 دارد) */
     ok(!raw.includes(Buffer.from([0x00, 0x1e])), 'گروهِ x448 پیشنهاد نشده');
+    /* GREASE: یکی از جدول، یکسان در همه‌ی جایگاه‌های همین دست‌دادنی */
+    const GREASES = [0x0a0a, 0x1a1a, 0x2a2a, 0x3a3a, 0x4a4a, 0x5a5a, 0x6a6a, 0x7a7a, 0x8a8a, 0x9a9a, 0xaaaa, 0xbaba, 0xcaca, 0xdada, 0xeaea, 0xfafa];
+    const g = M.rlGrease();
+    ok(GREASES.includes(g), 'GREASE از جدول است', '0x' + g.toString(16));
+    const seen = new Set();
+    for (let i = 0; i < 20; i++) seen.add(M.rlGrease());
+    ok(seen.size > 1, 'GREASE بین دست‌دادنی‌ها عوض می‌شود', [...seen].map((x) => '0x' + x.toString(16)).join(','));
   }
 
   console.log('== ۳ب) ساختِ session_id واقعی (AEAD) ==');

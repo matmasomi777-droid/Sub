@@ -8244,6 +8244,14 @@ async function rlOpen(keyObj, record, seq) {
    sid باید دقیقاً ۳۲ بایت باشد (ساخته‌شده با rlSealSession — صفرِ خام برای
    مرحله‌ی AAD، بعد با بایت‌های AEAD جایگزین می‌شود). */
 function rlExt(t, body) { const b = toU8(body); return rlConcat(rlU16(t), rlU16(b.length), b); }
+/* GREASE تصادفی مثل کرومِ واقعی (BoringSSL در هر دست‌دادنی یکی می‌سازد و همه‌جا
+   همان را می‌گذارد) — مقدارِ ثابتِ 0x0a0a در همه‌ی اتصال‌ها امضای «جعلِ کروم» است */
+function rlGrease() {
+  const table = [0x0a0a, 0x1a1a, 0x2a2a, 0x3a3a, 0x4a4a, 0x5a5a, 0x6a6a, 0x7a7a, 0x8a8a, 0x9a9a, 0xaaaa, 0xbaba, 0xcaca, 0xdada, 0xeaea, 0xfafa];
+  const b = new Uint8Array(1);
+  crypto.getRandomValues(b);
+  return table[b[0] & 15];
+}
 function rlBuildCH(o) {
   const sni = String((o && o.sni) || '');
   const host = new TextEncoder().encode(sni);
@@ -8254,9 +8262,10 @@ function rlBuildCH(o) {
   if (pub.length !== 32) throw new Error('کلیدِ موقت باید ۳۲ بایت باشد');
   const rnd = new Uint8Array(32);
   crypto.getRandomValues(rnd);
-  const cs = rlConcat(rlU16(0x0a0a), rlU16(0x1301), rlU16(0x1302), rlU16(0x1303));
+  const gr = rlGrease();
+  const cs = rlConcat(rlU16(gr), rlU16(0x1301), rlU16(0x1302), rlU16(0x1303));
   const ks = rlConcat(
-    rlU16(0x0a0a), rlU16(1), new Uint8Array([0]),
+    rlU16(gr), rlU16(1), new Uint8Array([0]),
     rlU16(29), rlU16(32), pub,
   );
   const sigAlgs = [0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601, 0x0603];
@@ -8266,14 +8275,14 @@ function rlBuildCH(o) {
     rlExt(0x0000, rlConcat(rlU16(3 + host.length), new Uint8Array([0]), rlU16(host.length), host)),
     rlExt(0x0017, new Uint8Array(0)),
     rlExt(0xff01, new Uint8Array([0])),
-    rlExt(0x000a, rlConcat(rlU16(8), rlU16(0x0a0a), rlU16(29), rlU16(23), rlU16(24))),
+    rlExt(0x000a, rlConcat(rlU16(8), rlU16(gr), rlU16(29), rlU16(23), rlU16(24))),
     rlExt(0x000b, new Uint8Array([1, 0])),
     rlExt(0x000d, sigBody),
     rlExt(0x0010, rlConcat(rlU16(alpnProtos.length), alpnProtos)),
     rlExt(0x0012, new Uint8Array(0)),
     rlExt(0x001b, new Uint8Array([1, 2])),
     rlExt(0x0023, new Uint8Array(0)),
-    rlExt(0x002b, new Uint8Array([4, 0x0a, 0x0a, 3, 4])),
+    rlExt(0x002b, rlConcat(new Uint8Array([4]), rlU16(gr), new Uint8Array([3, 4]))),
     rlExt(0x002d, new Uint8Array([1, 1])),
     rlExt(0x0032, sigBody),
     rlExt(0x0033, rlConcat(rlU16(ks.length), ks)),
@@ -8429,9 +8438,11 @@ async function rlHandshake(io, srv, timeoutMs) {
     if (off) hsBuf = hsBuf.slice(off);
     return out;
   };
+  /* مرحله‌ی جاری برای پیامِ خطا */
+  let rlPhase = 'پاسخِ ServerHello';
   const readRecord = async () => {
     const h = await io.readExact(5, timeout);
-    if (h[0] === 21) throw new Error('سرور reality هشدار داد' + await rlAlertDetail(io, timeout));
+    if (h[0] === 21) throw new Error('سرور reality هشدار داد [مرحله: ' + rlPhase + ']' + await rlAlertDetail(io, timeout));
     if (h[0] !== 22 && h[0] !== 23) throw new Error('رکوردِ نامعتبر از سرور (type=' + h[0] + ')');
     const L = (h[3] << 8) | h[4];
     if (L <= 0 || L > 262144) throw new Error('طولِ رکوردِ نامعتبر');
@@ -8439,7 +8450,8 @@ async function rlHandshake(io, srv, timeoutMs) {
     return { h, body };
   };
 
-  /* ۱) ServerHello (تنها رکوردِ plaintext) */
+  /* ۱) ServerHello (تنها رکوردِ plaintext) — alert در این مرحله یعنی سرور
+     هنوز ClientHello را می‌خواند/مسیریابی می‌کند (SNI، ساختار) */
   let sh = null;
   for (;;) {
     const rec = await readRecord();
@@ -8454,6 +8466,7 @@ async function rlHandshake(io, srv, timeoutMs) {
     }
     if (sh) {
       if (hsBuf.length) throw new Error('بایتِ اضافی بعد از ServerHello');
+      rlPhase = 'ادامه‌ی هندشیک';
       break;
     }
   }
