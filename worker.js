@@ -8080,18 +8080,18 @@ async function readHttpHead(sock, timeout) {
    REALITY client (آزمایشی) — سرورِ خروجی با security=reality روی TCP خام
    ───────────────────────────────────────────────────────────────────────────
    چرا دستی؟ وقتی secureTransport:'on' است، خودِ ورکر TLS را در لبه خاتمه
-   می‌دهد و ClientHello سفارشی ممکن نیست؛ reality به session_id (= shortId)
-   و key_share معتبر در ClientHello نیاز دارد، پس فقط روی TCP خام
-   (secureTransport:'off') با هندشیکِ دستیِ TLS 1.3 شدنی است.
-   احرازِ سرور چطور؟ هر دو طرف با X25519 از (کلیدِ موقتِ ما، کلیدِ عمومیِ
-   pbk سرور) رازِ مشترک می‌سازند و کلیدهای handshake از آن می‌آیند؛ فقط
-   سرورِ واقعی (دارنده‌ی کلیدِ خصوصی) می‌تواند Finished معتبر بفرستد — پس
-   تأییدِ Finished خودش احرازِ سرور است (بدونِ PKI). سرورِ جعلی یا مسیرِ
-   camouflage به Finished نامعتبر می‌رسد و throw می‌شود → مسیر مستقیم.
-   محدودیت‌های نسخه‌ی فعلی: فقط flow خالی (بدونِ xtls-vision)، فقط
-   TLS_AES_128_GCM_SHA256، قالبِ ClientHello شبیه‌کروم (best-effort؛ اگر
-   بررسیِ fingerprint رد شود، سرور به camouflage می‌رود و ما سالم به مستقیم
-   برمی‌گردیم). هر خطا = throw و مسیرِ مستقیم جایگزین می‌شود.
+   می‌دهد و ClientHello سفارشی ممکن نیست؛ reality به session_id و key_share
+   معتبر در ClientHello نیاز دارد، پس فقط روی TCP خام (secureTransport:'off')
+   با هندشیکِ دستیِ TLS 1.3 شدنی است.
+   احرازِ دوسویه چطور؟ سرور با کلیدِ خصوصی‌اش همان رازِ مشترک را می‌سازد و
+   AEAD روی session_id را باز می‌کند — مرورگرِ عبوری (بدونِ هیچ کلیدِ خصوصی)
+   نمی‌تواند چنین بایتی بسازد، پس shortId خوانده‌شده یعنی کلاینتِ مجاز. ما هم
+   سرور را با تأییدِ Finished احراز می‌کنیم (فقط دارنده‌ی خصوصی می‌تواند
+   Finished معتبر بفرستد). سرور فینگرپرینتِ CH را چک نمی‌کند (فقط DPIِ میانِ
+   راه مهم است)؛ shortId خامِ بدونِ AEAD هرگز تأیید نمی‌شود.
+   محدودیت‌های نسخه‌ی فعلی: فقط TLS_AES_128_GCM_SHA256؛ flow (vision) در
+   addons می‌نشیند و relay خام می‌شود. هر خطا = throw و مسیرِ مستقیم
+   جایگزین می‌شود. کدِ alert سرور هم در خطا می‌آید تا علت معلوم باشد.
    ═══════════════════════════════════════════════════════════════════════════ */
 /* @@REALITY_BEGIN@@ */
 
@@ -8151,6 +8151,10 @@ function rlConcat(...arrs) {
   return o;
 }
 function rlU16(v) { return new Uint8Array([(v >> 8) & 255, v & 255]); }
+function rlU32(v) { const x = Math.floor(Number(v) || 0) >>> 0; return new Uint8Array([(x >>> 24) & 255, (x >>> 16) & 255, (x >>> 8) & 255, x & 255]); }
+async function rlImportAes(rawBytes) {
+  return crypto.subtle.importKey('raw', toU8(rawBytes), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
 function rlEq(a, b) {
   const x = toU8(a), y = toU8(b);
   if (x.length !== y.length) return false;
@@ -8180,19 +8184,24 @@ async function rlHmac(keyBytes, dataBytes) {
   return new Uint8Array(await crypto.subtle.sign('HMAC', k, toU8(dataBytes)));
 }
 async function rlSha256(d) { return new Uint8Array(await crypto.subtle.digest('SHA-256', toU8(d))); }
+/* HKDF-Expand خام با info دلخواه (بدونِ پیشوندِ tls13) */
+async function rlHkdfExpand(prk, info, len) {
+  const inf = toU8(info);
+  const out = new Uint8Array(len);
+  let t = new Uint8Array(0), off = 0, c = 1;
+  while (off < len) {
+    t = await rlHmac(prk, rlConcat(t, inf, new Uint8Array([c])));
+    const n = Math.min(t.length, len - off);
+    out.set(t.subarray(0, n), off); off += n; c++;
+  }
+  return out;
+}
 /* HKDF-Expand-Label(secret, label, context, L) */
 async function rlExpandLabel(secret, label, context, len) {
   const lab = new TextEncoder().encode('tls13 ' + label);
   const ctx = toU8(context);
   const info = rlConcat(rlU16(len), new Uint8Array([lab.length]), lab, new Uint8Array([ctx.length]), ctx);
-  const out = new Uint8Array(len);
-  let t = new Uint8Array(0), off = 0, c = 1;
-  while (off < len) {
-    t = await rlHmac(secret, rlConcat(t, info, new Uint8Array([c])));
-    const n = Math.min(t.length, len - off);
-    out.set(t.subarray(0, n), off); off += n; c++;
-  }
-  return out;
+  return rlHkdfExpand(secret, info, len);
 }
 const rlDeriveSecret = (secret, label, trHash) => rlExpandLabel(secret, label, trHash, 32);
 async function rlAesKeyIv(secret) {
@@ -8229,16 +8238,18 @@ async function rlOpen(keyObj, record, seq) {
 }
 
 /* ── ClientHello شبیه‌کروم ──
-   ترتیب/مقادیرِ اکستنشن‌ها از الگوی Chrome پیروی می‌کند (best-effort):
-   اگر بررسیِ fingerprint سرور رد شود، سرور به camouflage می‌رود، تأییدِ
-   Finished می‌شکند و سالم به مسیرِ مستقیم برمی‌گردیم. */
+   ترتیب/مقادیرِ اکستنشن‌ها از الگوی Chrome پیروی می‌کند (best-effort؛ خودِ
+   سرورِ reality فینگرپرینت را چک نمی‌کند — احراز با AEAD است — ولی DPIِ
+   میانِ راه با قالبِ مرورگریِ معتبر آرام‌تر است).
+   sid باید دقیقاً ۳۲ بایت باشد (ساخته‌شده با rlSealSession — صفرِ خام برای
+   مرحله‌ی AAD، بعد با بایت‌های AEAD جایگزین می‌شود). */
 function rlExt(t, body) { const b = toU8(body); return rlConcat(rlU16(t), rlU16(b.length), b); }
 function rlBuildCH(o) {
   const sni = String((o && o.sni) || '');
   const host = new TextEncoder().encode(sni);
   if (!host.length || host.length > 255) throw new Error('SNI نامعتبر');
-  const sid = rlHexToBytes((o && o.sidHex) || '');
-  if (sid.length > 32) throw new Error('shortId بیش از ۳۲ بایت');
+  const sid = toU8(o && o.sid);
+  if (sid.length !== 32) throw new Error('session_id باید دقیقاً ۳۲ بایت باشد');
   const pub = toU8(o && o.pubkey);
   if (pub.length !== 32) throw new Error('کلیدِ موقت باید ۳۲ بایت باشد');
   const rnd = new Uint8Array(32);
@@ -8250,13 +8261,15 @@ function rlBuildCH(o) {
   );
   const sigAlgs = [0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601, 0x0603];
   const sigBody = rlConcat(rlU16(sigAlgs.length * 2), ...sigAlgs.map(rlU16));
+  const alpnProtos = rlConcat(new Uint8Array([2]), new TextEncoder().encode('h2'), new Uint8Array([8]), new TextEncoder().encode('http/1.1'));
   const exts = rlConcat(
     rlExt(0x0000, rlConcat(rlU16(3 + host.length), new Uint8Array([0]), rlU16(host.length), host)),
+    rlExt(0x0017, new Uint8Array(0)),
     rlExt(0xff01, new Uint8Array([0])),
-    rlExt(0x000a, rlConcat(rlU16(8), rlU16(0x0a0a), rlU16(29), rlU16(23), rlU16(30))),
+    rlExt(0x000a, rlConcat(rlU16(8), rlU16(0x0a0a), rlU16(29), rlU16(23), rlU16(24))),
     rlExt(0x000b, new Uint8Array([1, 0])),
     rlExt(0x000d, sigBody),
-    rlExt(0x0010, rlConcat(rlU16(3), new Uint8Array([2]), new TextEncoder().encode('h2'))),
+    rlExt(0x0010, rlConcat(rlU16(alpnProtos.length), alpnProtos)),
     rlExt(0x0012, new Uint8Array(0)),
     rlExt(0x001b, new Uint8Array([1, 2])),
     rlExt(0x0023, new Uint8Array(0)),
@@ -8316,6 +8329,62 @@ function rlParseServerHello(body) {
   return { random: rand, cipher, serverPub };
 }
 
+/* ── session_id واقعیِ REALITY (۳۲ بایتِ AEAD) ──
+   دقیقاً مثل کلاینتِ Xray: ۱۶ بایتِ اول [ver(3), 0, unix_time(4), shortId، صفر]
+   با کلیدِ AuthKey = HKDF-Expand(HKDF-Extract(salt=R[0:20], ikm=shared), "REALITY")
+   و nonce=R[20:32] روی aad=پیامِ ClientHello (با sid صفر) رمز می‌شود؛ خروجیِ
+   ۳۲ بایتی (متن+تگ) همان مقدارِ session_id است. سرور با همین محاسبه بازش
+   می‌کند: shortId و تازگیِ زمان را می‌خواند — shortId خامِ قبلی هرگز تأیید
+   نمی‌شد و سرور به camouflage/alert می‌رفت. */
+const RL_CLIENT_VER = [26, 7, 11];
+async function rlSealSession(o) {
+  const rnd = toU8(o.random);
+  if (rnd.length !== 32) throw new Error('random باید ۳۲ بایت باشد');
+  const shared = toU8(o.shared);
+  if (shared.length !== 32) throw new Error('رازِ مشترک باید ۳۲ بایت باشد');
+  const sidHex = String(o.sidHex == null ? '' : o.sidHex).trim();
+  const sidRaw = rlHexToBytes(sidHex);
+  if (sidRaw.length > 8) throw new Error('shortId بیش از ۸ بایت');
+  const first16 = new Uint8Array(16);
+  first16[0] = RL_CLIENT_VER[0]; first16[1] = RL_CLIENT_VER[1]; first16[2] = RL_CLIENT_VER[2]; first16[3] = 0;
+  const t = Math.floor(Date.now() / 1000) >>> 0;
+  first16[4] = (t >>> 24) & 255; first16[5] = (t >>> 16) & 255; first16[6] = (t >>> 8) & 255; first16[7] = t & 255;
+  first16.set(sidRaw, 8);
+  const authKeyRaw = await rlHkdfExpand(await rlHmac(rnd.slice(0, 20), shared), new TextEncoder().encode('REALITY'), 32);
+  const authKey = await rlImportAes(authKeyRaw);
+  const sealed = new Uint8Array(await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: rnd.slice(20, 32), additionalData: toU8(o.aad) }, authKey, first16));
+  if (sealed.length !== 32) throw new Error('خطای داخلیِ seal');
+  return { sealed, first16 };
+}
+
+/* ── کدهای alert برای تشخیصِ علت (به‌جای «هشدار داد» خشک) ── */
+const RL_ALERTS = {
+  10: 'unexpected_message', 20: 'bad_record_mac', 22: 'record_overflow',
+  40: 'handshake_failure', 42: 'bad_certificate', 43: 'unsupported_certificate',
+  44: 'certificate_revoked', 45: 'certificate_expired', 46: 'certificate_unknown',
+  47: 'illegal_parameter', 48: 'unknown_ca', 49: 'access_denied',
+  50: 'decode_error', 51: 'decrypt_error', 70: 'protocol_version',
+  71: 'insufficient_security', 80: 'internal_error', 86: 'inappropriate_fallback',
+  90: 'user_canceled', 109: 'missing_extension', 110: 'unsupported_extension',
+  112: 'unrecognized_name', 113: 'bad_certificate_status_response',
+  115: 'unknown_psk_identity', 116: 'certificate_required', 120: 'no_application_protocol',
+};
+function rlAlertName(d) { return RL_ALERTS[d] || ('code-' + d); }
+function rlAlertHint(d) {
+  if (d === 112) return 'SNI پذیرفته نشد — sni لینک با serverNames سرور نمی‌خواند یا آدرس پشتِ CDN است';
+  if (d === 40) return 'دست‌دادنی رد شد — نسخه/cipher یا پارامترها؛ sid و pbk و sni را بررسی کنید';
+  if (d === 47 || d === 50) return 'پیامِ ClientHello بدریخت بود';
+  if (d === 70) return 'نسخه‌ی TLS پذیرفته نشد';
+  return 'fingerprint/sid پذیرفته نشد';
+}
+async function rlAlertDetail(io, timeout) {
+  try {
+    const p = await io.readExact(2, Math.min(1500, Number(timeout) || 1500));
+    return ' (alert ' + p[0] + '/' + p[1] + ' ' + rlAlertName(p[1]) + ' — ' + rlAlertHint(p[1]) + ')';
+  } catch (e) { return ''; }
+}
+
 /* ── درایورِ هندشیک ──
    io: { readExact(n, timeoutMs), write(bytes), close() } — تزریق‌پذیر تا هم
    روی سوکتِ واقعی و هم در تست (سرورِ جعلیِ درون‌حافظه) کار کند.
@@ -8334,9 +8403,15 @@ async function rlHandshake(io, srv, timeoutMs) {
   crypto.getRandomValues(epriv);
   const epub = rlX25519Base(epriv);
   const shared = rlX25519(epriv, pbk);
-  const ch = rlBuildCH({ sni, sidHex, pubkey: epub });
-  await io.write(ch.record);
-  const transcript = [ch.msg];
+  /* پاسِ اول با sid صفر (برای AAD)، بعد seal و جایگذاریِ ۳۲ بایتِ واقعی */
+  const ch0 = rlBuildCH({ sni, sid: new Uint8Array(32), pubkey: epub });
+  const sess = await rlSealSession({ random: ch0.random, shared, sidHex, aad: ch0.msg });
+  const record = ch0.record.slice();
+  record.set(sess.sealed, 44);
+  const msg = ch0.msg.slice();
+  msg.set(sess.sealed, 39);
+  await io.write(record);
+  const transcript = [msg];
   const trBytes = () => rlConcat(...transcript);
 
   /* قاب‌بندیِ پیام‌های handshake از بایت‌های خام */
@@ -8356,7 +8431,7 @@ async function rlHandshake(io, srv, timeoutMs) {
   };
   const readRecord = async () => {
     const h = await io.readExact(5, timeout);
-    if (h[0] === 21) throw new Error('سرور reality هشدار داد — fingerprint/sid پذیرفته نشد');
+    if (h[0] === 21) throw new Error('سرور reality هشدار داد' + await rlAlertDetail(io, timeout));
     if (h[0] !== 22 && h[0] !== 23) throw new Error('رکوردِ نامعتبر از سرور (type=' + h[0] + ')');
     const L = (h[3] << 8) | h[4];
     if (L <= 0 || L > 262144) throw new Error('طولِ رکوردِ نامعتبر');

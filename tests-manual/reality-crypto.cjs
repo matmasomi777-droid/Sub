@@ -44,7 +44,7 @@ const toU8 = (d) => {
 };
 
 const M = new Function('toU8', 'crypto', 'atob', 'TextEncoder', 'TextDecoder',
-  rsrc + '\n;return { rlX25519, rlX25519Base, rlExpandLabel, rlDeriveSecret, rlHmac, rlSha256, rlAesKeyIv, rlSeal, rlOpen, rlBuildCH, rlParseServerHello, rlHandshake, rlWrapStreams, rlMakeSockIo, rlConcat, rlU16, rlEq, rlHexToBytes, rlB64uToBytes, rlSkipHsMessages };'
+  rsrc + '\n;return { rlX25519, rlX25519Base, rlExpandLabel, rlHkdfExpand, rlDeriveSecret, rlHmac, rlSha256, rlAesKeyIv, rlImportAes, rlSeal, rlOpen, rlBuildCH, rlParseServerHello, rlHandshake, rlWrapStreams, rlMakeSockIo, rlConcat, rlU16, rlU32, rlEq, rlHexToBytes, rlB64uToBytes, rlSkipHsMessages, rlSealSession, rlAlertName, rlAlertHint, rlAlertDetail, RL_CLIENT_VER };'
 )(toU8, webcrypto, (s) => Buffer.from(s, 'base64').toString('binary'), TextEncoder, TextDecoder);
 
 /* ── ۲) استخراجِ plumbing سرورهای خروجی ── */
@@ -132,14 +132,62 @@ const refSha = (d) => createHash('sha256').update(Buffer.from(d)).digest();
   console.log('== ۳) ساختارِ ClientHello ==');
   {
     const pub = randomBytes(32);
-    const { record, msg } = M.rlBuildCH({ sni: 'mask.example.com', sidHex: 'a1b2', pubkey: pub });
+    const sidZero = new Uint8Array(32);
+    const { record, msg, random } = M.rlBuildCH({ sni: 'mask.example.com', sid: sidZero, pubkey: pub });
+    ok(random.length === 32, 'random ۳۲ بایتی ساخته شد');
     ok(record[0] === 22 && record[1] === 3 && record[2] === 1, 'رکوردِ handshake معتبر است');
     ok(msg[0] === 1, 'پیام ClientHello است');
     const raw = Buffer.from(record);
     ok(raw.includes('mask.example.com'), 'SNI داخلِ پیام هست');
     ok(raw.includes(Buffer.from(pub)), 'کلیدِ موقت داخلِ key_share هست');
-    ok(raw.includes(Buffer.from('a1b2', 'hex')), 'shortId در session_id هست');
+    /* session_id دقیقاً ۳۲ بایت در آفستِ ۳۹ پیام است (مثل کلاینتِ Xray) */
+    ok(msg[38] === 32, 'طولِ session_id برابرِ ۳۲ است', 'len=' + msg[38]);
     ok(raw.includes(Buffer.from([0x13, 0x01])), 'cipher 0x1301 پیشنهاد شده');
+    /* گروه‌ها: کرومِ واقعی x448 ندارد (secp384r1 دارد) */
+    ok(!raw.includes(Buffer.from([0x00, 0x1e])), 'گروهِ x448 پیشنهاد نشده');
+  }
+
+  console.log('== ۳ب) ساختِ session_id واقعی (AEAD) ==');
+  {
+    const epriv = randomBytes(32);
+    const epub = M.rlX25519Base(epriv);
+    const srvKp = await webcrypto.subtle.generateKey({ name: 'X25519' }, true, ['deriveBits']);
+    const srvPub = new Uint8Array(await webcrypto.subtle.exportKey('raw', srvKp.publicKey));
+    const shared = M.rlX25519(epriv, srvPub);
+    const rnd = randomBytes(32);
+    const ch0 = M.rlBuildCH({ sni: 's.test', sid: new Uint8Array(32), pubkey: epub });
+    void rnd;
+    /* seal با random واقعیِ پیام */
+    const sess = await M.rlSealSession({ random: ch0.random, shared, sidHex: 'a1b2', aad: ch0.msg });
+    ok(sess.sealed.length === 32, 'خروجیِ seal دقیقاً ۳۲ بایت است');
+    /* بازکردن با مرجعِ مستقل */
+    const E0 = Buffer.alloc(0);
+    const authRef = refExpand(refHmac(Buffer.from(ch0.random).slice(0, 20), shared), Buffer.from('REALITY'), 32);
+    const aadZero = Buffer.from(ch0.msg);
+    const ptRef = Buffer.from(await webcrypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: new Uint8Array(Buffer.from(ch0.random).slice(20, 32)), additionalData: new Uint8Array(aadZero) },
+      await webcrypto.subtle.importKey('raw', authRef, { name: 'AES-GCM' }, false, ['decrypt']), sess.sealed));
+    ok(ptRef.length === 16, 'متنِ AEAD شانزده بایت است');
+    ok(ptRef[0] === 26 && ptRef[1] === 7 && ptRef[2] === 11 && ptRef[3] === 0, 'نسخه‌ی کلاینت مدرن است', [...ptRef.slice(0, 4)].join('.'));
+    const nowS = Math.floor(Date.now() / 1000);
+    const t = (ptRef[4] << 24) | (ptRef[5] << 16) | (ptRef[6] << 8) | ptRef[7];
+    ok(Math.abs(nowS - t) < 120, 'مُهرِ زمانی تازه است', 'dt=' + Math.abs(nowS - t) + 's');
+    ok(ptRef.slice(8, 10).toString('hex') === 'a1b2' && ptRef.slice(10, 16).every((b) => b === 0), 'shortId در جای درست نشسته');
+    /* sid نامعتبر */
+    let threw = false;
+    try { await M.rlSealSession({ random: ch0.random, shared, sidHex: 'zz', aad: ch0.msg }); } catch (e) { threw = true; }
+    ok(threw, 'sid بدریخت در seal رد می‌شود');
+  }
+
+  console.log('== ۳ج) نام و راهنمای alert ==');
+  {
+    ok(M.rlAlertName(112) === 'unrecognized_name', 'نامِ ۱۱۲ درست است');
+    ok(M.rlAlertName(40) === 'handshake_failure', 'نامِ ۴۰ درست است');
+    ok(M.rlAlertHint(112).includes('SNI'), 'راهنمای ۱۱۲ به SNI اشاره می‌کند');
+    /* خواندنِ بدنه‌ی alert از io */
+    const ioA = { readExact: async () => new Uint8Array([2, 40]), write: async () => {}, close: () => {} };
+    const d = await M.rlAlertDetail(ioA, 1000);
+    ok(d.includes('40') && d.includes('handshake_failure'), 'جزئیاتِ alert خوانده شد', d.slice(0, 60));
   }
 
   console.log('== ۴) plumbing لینکِ reality ==');
@@ -251,19 +299,45 @@ const refSha = (d) => createHash('sha256').update(Buffer.from(d)).digest();
     return pt;
   }
 
-  /* ساختِ flight سرور (مرجعِ مستقل) از روی CH واقعیِ کلاینت */
+  /* ساختِ flight سرور مثل سرورِ واقعی: اول session_id با AEAD باز و shortId/زمان
+     چک می‌شود؛ اگر تأیید نشد، مثل سرورِ سخت‌گیر alert می‌دهد (نه camouflage).
+     shortIds قابل‌قبول و پنجره‌ی زمانی از opts می‌آیند. pt رمزگشایی‌شده هم
+     برمی‌گردد تا نسخه/زمان/sid ادعاشده راستی‌آزمایی شود. */
   async function fakeFlight(chRecord, opts) {
     opts = opts || {};
+    const shortIds = Array.isArray(opts.shortIds) ? opts.shortIds : ['a1b2'];
+    const timeWindow = Number(opts.timeWindowSec) || 3600;
     const cliPub = clientPubOf(chRecord);
     const cliPubKey = await webcrypto.subtle.importKey('raw', cliPub, { name: 'X25519' }, false, []);
     const srvPrivKey = await webcrypto.subtle.importKey('jwk', srvJwk, { name: 'X25519' }, false, ['deriveBits']);
     const shared = Buffer.from(await webcrypto.subtle.deriveBits({ name: 'X25519', public: cliPubKey }, srvPrivKey, 256));
     const Z = Buffer.alloc(32), E0 = Buffer.alloc(0);
     const h = (d) => refSha(d);
+    const fullRec = Buffer.from(chRecord);
+    const chMsg = fullRec.slice(5);
+    const chRnd = chMsg.slice(6, 38);
+    const sidVal = chMsg.slice(39, 71);
+    /* تأییدِ AEAD مثل سرورِ واقعی */
+    const authRef = refExpand(refHmac(chRnd.slice(0, 20), shared), Buffer.from('REALITY'), 32);
+    const aadRef = Buffer.from(chMsg);
+    aadRef.fill(0, 39, 71);
+    let pt = null, sidOk = false;
+    try {
+      const authK = await webcrypto.subtle.importKey('raw', authRef, { name: 'AES-GCM' }, false, ['decrypt']);
+      pt = Buffer.from(await webcrypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: new Uint8Array(chRnd.slice(20, 32)), additionalData: new Uint8Array(aadRef) },
+        authK, sidVal));
+      const t = (pt[4] << 24) | (pt[5] << 16) | (pt[6] << 8) | pt[7];
+      const fresh = Math.abs(Math.floor(Date.now() / 1000) - t) <= timeWindow;
+      sidOk = fresh && shortIds.some((s) => {
+        const sb = Buffer.from(String(s), 'hex');
+        return sb.length <= 8 && pt.slice(8, 8 + sb.length).equals(sb) && pt.slice(8 + sb.length, 16).every((b) => b === 0);
+      });
+    } catch (e) { sidOk = false; }
+    if (!sidOk) return { flight: [Buffer.from([21, 3, 3, 0, 2, 2, 40])], rejected: true };
     const early = refHmac(Z, Z);
     const derived1 = refLabel(early, 'derived', h(E0), 32);
     const hs = refHmac(derived1, shared);
-    const chMsg = Buffer.from(chRecord).slice(5);
     const Rs = randomBytes(32);
     const shBody = cat(Buffer.from([3, 3]), Rs, Buffer.from([0]), u16(0x1301), Buffer.from([0]),
       u16(6 + 40),
@@ -303,7 +377,7 @@ const refSha = (d) => createHash('sha256').update(Buffer.from(d)).digest();
     const master = refHmac(refLabel(hs, 'derived', h(tr), 32), Z);
     const cAp = refLabel(master, 'c ap traffic', h(tr), 32);
     const sAp = refLabel(master, 's ap traffic', h(tr), 32);
-    return { flight: [shRec, r1, r2], cAp, sAp, tr };
+    return { flight: [shRec, r1, r2], cAp, sAp, tr, pt };
   }
 
   /* io تنبل: flight بعد از دیدنِ CH ساخته می‌شود */
@@ -343,6 +417,9 @@ const refSha = (d) => createHash('sha256').update(Buffer.from(d)).digest();
     ok(!!hs && !!hs.cAp && !!hs.sAp, 'هندشیک با سرورِ جعلی کامل شد');
     ok(t.writes.length >= 1, 'Finished کلاینت فرستاده شد', t.writes.length + ' write');
     const ref = t.ref();
+    /* سرور shortId را از AEAD خوانده است (نه از بایتِ خام) */
+    ok(ref.pt && ref.pt[0] === 26 && ref.pt[1] === 7 && ref.pt[2] === 11 && ref.pt[3] === 0, 'نسخه‌ی کلاینت مدرن است', ref.pt && [...ref.pt.slice(0, 4)].join('.'));
+    ok(ref.pt && ref.pt.slice(8, 10).toString('hex') === 'a1b2' && ref.pt.slice(10, 16).every((b) => b === 0), 'سرور shortId را از AEAD خواند');
     /* کلاینت→سرور با کلیدِ مرجع باز می‌شود */
     const pt1 = Buffer.from('hello reality');
     const rec1 = await M.rlSeal(hs.cAp, pt1, 0);
@@ -375,9 +452,16 @@ const refSha = (d) => createHash('sha256').update(Buffer.from(d)).digest();
   }
   {
     const t = lazyIo({ alert: true });
-    let threw = false;
-    try { await M.rlHandshake(t.io, srvCfg, 5000); } catch (e) { threw = true; }
-    ok(threw, 'alert سرور رد می‌شود');
+    let threw = false, msg = '';
+    try { await M.rlHandshake(t.io, srvCfg, 5000); } catch (e) { threw = true; msg = String((e && e.message) || e); }
+    ok(threw && msg.includes('40') && msg.includes('handshake_failure'), 'alert سرور با کدش گزارش می‌شود', msg.slice(0, 80));
+  }
+  /* shortId ناشناس برای سرور → alert (مثل خطای واقعیِ کاربر) */
+  {
+    const t = lazyIo({});
+    let threw = false, msg = '';
+    try { await M.rlHandshake(t.io, { ...srvCfg, sid: 'ffff' }, 5000); } catch (e) { threw = true; msg = String((e && e.message) || e); }
+    ok(threw && msg.includes('40'), 'sid ناشناس → alert و خطای گویا', msg.slice(0, 80));
   }
   {
     const t = lazyIo({});
