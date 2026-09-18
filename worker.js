@@ -8280,7 +8280,11 @@ function rlBuildCH(o) {
     rlExt(0x000d, sigBody),
     rlExt(0x0010, rlConcat(rlU16(alpnProtos.length), alpnProtos)),
     rlExt(0x0012, new Uint8Array(0)),
-    rlExt(0x001b, new Uint8Array([1, 2])),
+    /* compress_certificate (RFC 8879 §3): algorithms<2..2^8-2> یعنی طولِ u8 +
+       شناسه‌های u16 — برای brotli تنها: [02, 00, 02]. شکلِ قبلیِ [01,02]
+       بدریخت بود و پارسرهای سخت‌گیر (غیر از Go/OpenSSL) با decode_error ردش
+       می‌کردند — دقیقاً خطایی که روی بعضی سرورها دیده شد. */
+    rlExt(0x001b, new Uint8Array([2, 0, 2])),
     rlExt(0x0023, new Uint8Array(0)),
     rlExt(0x002b, rlConcat(new Uint8Array([4]), rlU16(gr), new Uint8Array([3, 4]))),
     rlExt(0x002d, new Uint8Array([1, 1])),

@@ -143,6 +143,9 @@ const refSha = (d) => createHash('sha256').update(Buffer.from(d)).digest();
     /* session_id دقیقاً ۳۲ بایت در آفستِ ۳۹ پیام است (مثل کلاینتِ Xray) */
     ok(msg[38] === 32, 'طولِ session_id برابرِ ۳۲ است', 'len=' + msg[38]);
     ok(raw.includes(Buffer.from([0x13, 0x01])), 'cipher 0x1301 پیشنهاد شده');
+    /* compress_certificate طبق RFC 8879 §3: ext [00 1b] + len [00 03] + body [02, 00, 02]
+       (شکلِ قبلیِ [01,02] بدریخت بود و پارسرِ سخت‌گیر با decode_error ردش می‌کرد) */
+    ok(raw.includes(Buffer.from([0x00, 0x1b, 0x00, 0x03, 0x02, 0x00, 0x02])), 'compress_certificate با طولِ u8 درست است');
     /* گروه‌ها: کرومِ واقعی x448 ندارد (secp384r1 دارد) */
     ok(!raw.includes(Buffer.from([0x00, 0x1e])), 'گروهِ x448 پیشنهاد نشده');
     /* GREASE: یکی از جدول، یکسان در همه‌ی جایگاه‌های همین دست‌دادنی */
