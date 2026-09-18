@@ -2674,7 +2674,7 @@ const FALLBACK = `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="
 /* ═══════════ منبع ثابت UI — فقط همین سه فایل، غیرقابل تغییر ═══════════ */
 /* UI_REV: با هر تغییرِ UI یک واحد زیاد شود تا کشِ Cloudflare/گیت‌هاب نسخه‌ی
    قدیمی را برگرداند (کلیدِ کش‌شکن در URL) */
-const UI_REV = '20260904b';
+const UI_REV = '20260905a';
 const UI_SRC = {
   html: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/index.html?r=' + UI_REV,
   css: 'https://raw.githubusercontent.com/matmasomi777-droid/Sub/refs/heads/main/ui/style.css?r=' + UI_REV,
@@ -4499,7 +4499,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStart: "شروع اسکن", radarStop: "توقف", radarStatusReady: "آماده برای اسکن",
                 radarStatusScan: "در حال اسکن... {done} از {total} - یافت‌شده: {found}",
                 radarStatusDone: "پایان اسکن - {found} آی‌پی سالم یافت شد",
-                radarStatusSaveFail: "ذخیره‌ی آی‌پی‌ها در پنل ناموفق بود",
+                radarStatusSaveFail: "ذخیره‌ی آی‌پی‌ها در پنل ناموفق بود", radarStatusFallback: "اسکن تازه آی‌پی سالمی پیدا نکرد — در حال بررسی {n} آی‌پی ذخیره‌شده...", radarStatusFallbackSaved: "{count} آی‌پی ذخیره‌شده سالم است و روی کانفیگ‌ها ست شد (آی‌پی تازه‌ای پیدا نشد)",
                 radarStatusStopping: "در حال توقف...", radarStatusStopped: "اسکن متوقف شد",
                 radarStatusNoResult: "آی‌پی سالمی یافت نشد", radarStatusAnswered: "پاسخ: {n}", radarStatusGuard: "کف {ms}ms • مردودِ سریع: {n}", radarStatusNoRespond: "هیچ آی‌پی به پروب پاسخ نداد — شبکه‌ی شما اتصالِ مستقیم TLS به آی‌پی‌های خامِ کلودفلر را می‌بندد. از یک VPS اسکن کنید یا تایم‌اوت را بالا ببرید", radarStatusProbeBad: "هشدار: پروب به آی‌پیِ آزمایشی {ip} هم در {rtt}ms پاسخ داد — نتیجه‌ی اسکن بی‌اعتبار است؛ «حداقل تأخیر» را روی ۶۰ بگذارید",
                 radarStatusNoConfig: "کانفیگ vless در این ساب یافت نشد",
@@ -4528,7 +4528,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStart: "Start Scan", radarStop: "Stop", radarStatusReady: "Ready to scan",
                 radarStatusScan: "Scanning... {done} of {total} - found: {found}",
                 radarStatusDone: "Scan finished - {found} healthy IPs found",
-                radarStatusSaveFail: "Failed to save IPs to the panel",
+                radarStatusSaveFail: "Failed to save IPs to the panel", radarStatusFallback: "Fresh scan found nothing — re-checking {n} saved IPs...", radarStatusFallbackSaved: "{count} saved IPs still work and were applied to your configs (no fresh IP found)",
                 radarStatusStopping: "Stopping...", radarStatusStopped: "Scan stopped",
                 radarStatusNoResult: "No healthy IP found", radarStatusAnswered: "answered: {n}", radarStatusGuard: "floor {ms}ms • too-fast rejected: {n}", radarStatusNoRespond: "No IP answered the probe — your network blocks direct TLS to raw Cloudflare IPs. Scan from a VPS, or raise the timeout", radarStatusProbeBad: "Warning: the probe also answered for test IP {ip} in {rtt}ms — results are unreliable; set 'min RTT' to 60",
                 radarStatusNoConfig: "No vless config found in this subscription",
@@ -4557,7 +4557,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStart: "Taramayı Başlat", radarStop: "Durdur", radarStatusReady: "Taramaya hazır",
                 radarStatusScan: "Taranıyor... {done} / {total} - bulunan: {found}",
                 radarStatusDone: "Tarama bitti - {found} sağlıklı IP bulundu",
-                radarStatusSaveFail: "IP'ler panele kaydedilemedi",
+                radarStatusSaveFail: "IP'ler panele kaydedilemedi", radarStatusFallback: "Yeni tarama sonuç vermedi — {n} kayıtlı IP yeniden denetleniyor...", radarStatusFallbackSaved: "{count} kayıtlı IP çalışıyor ve yapılandırmalarınıza uygulandı (yeni IP bulunamadı)",
                 radarStatusStopping: "Durduruluyor...", radarStatusStopped: "Tarama durduruldu",
                 radarStatusNoResult: "Sağlıklı IP bulunamadı", radarStatusAnswered: "yanıt: {n}", radarStatusGuard: "taban {ms}ms • çok hızlı reddedildi: {n}", radarStatusNoRespond: "Hiçbir IP yoklamaya yanıt vermedi — ağınız ham Cloudflare IP'lerine doğrudan TLS bağlantısını engelliyor. Bir VPS'ten tarayın veya zaman aşımını artırın", radarStatusProbeBad: "Uyarı: yoklama test IP'si {ip} için de {rtt}ms'de yanıt verdi — sonuçlar güvenilmez; 'min RTT' değerini 60 yapın",
                 radarStatusNoConfig: "Bu abonelikte vless konfigi bulunamadı",
@@ -4586,7 +4586,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 radarStart: "بدء الفحص", radarStop: "إيقاف", radarStatusReady: "جاهز للفحص",
                 radarStatusScan: "جارٍ الفحص... {done} من {total} - تم العثور: {found}",
                 radarStatusDone: "انتهى الفحص - تم العثور على {found} آي‌بي سليم",
-                radarStatusSaveFail: "فشل حفظ الآي‌بي في اللوحة",
+                radarStatusSaveFail: "فشل حفظ الآي‌بي في اللوحة", radarStatusFallback: "لم يعثر الفحص الجديد على شيء — تتم إعادة فحص {n} من عناوين IP المحفوظة...", radarStatusFallbackSaved: "ما زال {count} من عناوين IP المحفوظة يعمل وتم تطبيقه على تكويناتك (لم يتم العثور على عنوان جديد)",
                 radarStatusStopping: "جارٍ الإيقاف...", radarStatusStopped: "تم إيقاف الفحص",
                 radarStatusNoResult: "لم يتم العثور على آي‌بي سليم", radarStatusAnswered: "استجاب: {n}", radarStatusGuard: "الحد الأدنى {ms}ms • مرفوض سريع: {n}", radarStatusNoRespond: "لم يستجب أي آي‌بي للفحص — شبكتك تحجب اتصال TLS المباشر بعناوين كلودفلر الخام. افحص من VPS أو ارفع المهلة", radarStatusProbeBad: "تحذير: استجاب الفحص أيضًا لعنوان اختباري {ip} في {rtt}ms — النتائج غير موثوقة؛ اضبط «أدنى تأخير» على ٦٠",
                 radarStatusNoConfig: "لا يوجد تكوين vless في هذا الاشتراك",
@@ -5466,17 +5466,21 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                 const p = parseInt(parsed.port, 10);
                 if (p > 0 && RADAR_TLS_PORTS.indexOf(p) >= 0 && ports.indexOf(p) < 0) ports.push(p);
             });
-            /* اگر پورتی پیدا نشد، همان 443 اسکن می‌شود — وگرنه اسکنر بی‌صدا
-               با «پورتی برای اسکن نیست» برمی‌گشت و هیچ‌وقت کار نمی‌کرد. */
-            if (!ports.length) ports.push(443);
+            /* اگر پورتی پیدا نشد، همه‌ی پورت‌های TLS موازی پروب می‌شوند —
+               تک‌پورتِ 443ِ فیلترشده در شبکه‌ی کاربر اسکن را همیشه صفر می‌کرد
+               در حالی که پورت‌های TLS دیگر بازند (آی‌پیِ مرده فقط یک تایم‌اوت
+               هزینه می‌دهد). وگرنه اسکنر بی‌صدا برمی‌گشت و هیچ‌وقت کار نمی‌کرد. */
+            if (!ports.length) return RADAR_TLS_PORTS.slice();
             return ports;
         }
 
-        async function radarProbeIp(ip, ports) {
+        async function radarProbeIp(ip, ports, timeoutMs) {
             if (radarCancelRequested) return null;
+            /* تایم‌اوتِ قابل‌بازنویسی برای فالبکِ ذخیره‌شده‌ها (پیش‌فرض: SCAN.timeout) */
+            const TMO = (typeof timeoutMs === 'number' && timeoutMs >= 200 && timeoutMs <= 10000) ? timeoutMs : SCAN.timeout;
             /* همه‌ی پورت‌های کاندید موازی — آی‌پیِ مرده فقط یک تایم‌اوت هزینه می‌دهد */
             const first = await Promise.all(ports.map(function (p) {
-                return pingIp(ip, p, SCAN.timeout).then(function (rtt) {
+                return pingIp(ip, p, TMO).then(function (rtt) {
                     return rtt === null ? null : { port: p, rtt: rtt };
                 });
             }));
@@ -5490,7 +5494,7 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             for (let i = 1; i < SCAN.probes; i++) {
                 if (radarCancelRequested) break;
                 await radarSleep(10 + Math.floor(Math.random() * 50));
-                const rtt = await pingIp(ip, best.port, SCAN.timeout);
+                const rtt = await pingIp(ip, best.port, TMO);
                 if (rtt !== null && rtt >= radarFloor) samples.push(rtt);
             }
             const avg = Math.round(samples.reduce(function(a, b) { return a + b; }, 0) / samples.length);
@@ -5499,6 +5503,78 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
             if (samples.length < Math.min(SCAN.probes, 2)) return null;
             if (SCAN.maxRtt > 0 && avg > SCAN.maxRtt) return null;
             return { ip: ip, port: best.port, avg: avg, jitter: jitter, loss: loss, score: avg + jitter * 0.5 + loss * 20 };
+        }
+
+        /* ═══ فالبکِ آی‌پی‌های ذخیره‌شده ═══
+           اگر اسکنِ تازه هیچ آی‌پی سالمی پیدا نکرد، آی‌پی‌هایی که از قبل در پنل
+           ذخیره‌اند دوباره با همان پروبِ مرورگر آزموده می‌شوند: لینک‌های فعلیِ
+           همین ساب + فهرستِ کاملِ پنل از GET /radar-candidates. سالم‌ها با همان
+           POST /radar-ips ولی با fallback:true روی کانفیگ‌های همین کاربر ست
+           می‌شوند؛ در فهرستِ سراسری دوباره ذخیره نمی‌شوند چون merge سمتِ سرور
+           تکراری‌ها را نادیده می‌گیرد. معیار relaxed: فقط کفِ دستیِ ادمین. */
+        function radarSavedFromLinks() {
+            const out = [];
+            const seen = {};
+            try {
+                const links = (typeof sanaeiClientData !== 'undefined' && sanaeiClientData.links) || [];
+                for (let i = 0; i < links.length; i++) {
+                    const L = String(links[i]);
+                    const at = L.indexOf('@');
+                    if (at < 0) continue;
+                    const head = L.slice(0, at).toLowerCase();
+                    if (head.indexOf('vless://') !== 0 && head.indexOf('trojan://') !== 0) continue;
+                    const host = L.slice(at + 1).split(':')[0].split('/')[0].split('?')[0].split('#')[0].trim();
+                    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) && !seen[host]) { seen[host] = 1; out.push(host); }
+                }
+            } catch (e) {}
+            return out;
+        }
+        async function radarSavedFromServer() {
+            try {
+                const base = ((typeof sanaeiClientData !== 'undefined' && sanaeiClientData.subUrl) || '').replace(/\\/$/, '');
+                if (!base) return [];
+                const r = await fetch(base + '/radar-candidates', { cache: 'no-store' });
+                const j = await r.json().catch(function () { return {}; });
+                if (r.ok && j && j.ok && Array.isArray(j.ips)) {
+                    return j.ips.map(function (x) { return String(x).trim(); })
+                        .filter(function (x) { return /^\d{1,3}(\.\d{1,3}){3}$/.test(x); });
+                }
+            } catch (e) {}
+            return [];
+        }
+        async function radarFallbackCheck(ports) {
+            const seen = {};
+            const cands = [];
+            const push = function (ip) { if (!seen[ip]) { seen[ip] = 1; cands.push(ip); } };
+            radarSavedFromLinks().forEach(push);
+            (await radarSavedFromServer()).forEach(push);
+            if (!cands.length) return [];
+            const savedFloor = radarFloor;
+            radarFloor = SCAN.minRtt || 0;
+            const fbTimeout = Math.min(6000, Math.max(SCAN.timeout, 3000));
+            const list = cands.slice(0, 40);
+            const out = [];
+            let cursor = 0;
+            async function fbWorker() {
+                while (cursor < list.length) {
+                    if (radarCancelRequested) return;
+                    const ip = list[cursor++];
+                    try {
+                        const res = await radarProbeIp(ip, ports, fbTimeout);
+                        if (res) out.push(res);
+                    } catch (e) {}
+                }
+            }
+            try {
+                const n = Math.min(SCAN.concurrency, 8, list.length);
+                const workers = [];
+                for (let w = 0; w < n; w++) workers.push(fbWorker());
+                await Promise.all(workers);
+            } finally {
+                radarFloor = savedFloor;
+            }
+            out.sort(function (a, b) { return a.score - b.score; });
+            return out.slice(0, RADAR_KEEP);
         }
 
         function radarRenderResults(list) {
@@ -5662,6 +5738,35 @@ body { max-width: none; width: 100%; margin: 0; padding: 28px 24px 110px; }
                         if (!(saveRes.ok && sj.ok)) statusEl.textContent = data.radarStatusSaveFail || data.radarStatusDone;
                     } catch (e) { /* بی‌شبکه — نتایج همچنان روی صفحه مانده‌اند */ }
                 } else {
+                    /* ═══ فالبک: اسکنِ تازه بی‌نتیجه — آی‌پی‌های ذخیره‌شده را بیازما ═══
+                       اگر کاربر وسطِ فالبک توقف زد، چیزی ذخیره نمی‌شود. */
+                    try { statusEl.textContent = (data.radarStatusFallback || '...').replace('{n}', '…'); } catch (eFb) {}
+                    let fb = [];
+                    try { fb = await radarFallbackCheck(ports); } catch (eFb2) { fb = []; }
+                    if (radarCancelRequested) {
+                        document.getElementById('radar-progress-bar').style.width = '0%';
+                        statusEl.textContent = data.radarStatusStopped;
+                        return;
+                    }
+                    if (fb.length) {
+                        radarRenderResults(fb);
+                        radarBuildBestConfig(fb[0]);
+                        try {
+                            const saveRes = await fetch(sanaeiClientData.subUrl.replace(/\\/$/, '') + '/radar-ips', {
+                                method: 'POST',
+                                headers: { 'content-type': 'application/json' },
+                                body: JSON.stringify({ ips: fb.map(function (r) { return r.ip; }), fallback: true })
+                            });
+                            const sj = await saveRes.json().catch(() => ({}));
+                            if (saveRes.ok && sj.ok) {
+                                statusEl.textContent = (data.radarStatusFallbackSaved || data.radarStatusDone)
+                                    .replace('{count}', sj.applied || fb.length).replace('{found}', fb.length);
+                            } else {
+                                statusEl.textContent = data.radarStatusSaveFail || data.radarStatusDone;
+                            }
+                        } catch (e) { /* بی‌شبکه — نتایج همچنان روی صفحه مانده‌اند */ }
+                        return;
+                    }
                     /* اسکنِ بی‌نتیجه — گزارش به پنل می‌رود تا لاگِ «ناموفق» ثبت شود */
                     /* دو حالتِ متفاوت که قبلاً یک پیامِ مشترک می‌گرفتند:
                        • هیچ پاسخی نیامد ⇒ شبکه اتصالِ مستقیم TLS به آی‌پیِ خام را می‌بندد.
@@ -7240,13 +7345,49 @@ async function subHandler(req, env, url, cf, wantPage) {
     s.cleanIPs = s.cleanIPs.slice(0, 100);
     /* لاگِ اسکنر — همیشه ثبت می‌شود (خواسته‌ی کاربر: «لاگ‌های اسکن دیگر نشان داده
        نمی‌شدند»). اسکنِ بی‌نتیجه هم رویدادِ خودش را دارد تا در لاگِ پنل دیده شود؛
-       فقط «ذخیره‌ی موفقِ آی‌پی» سطحِ success می‌گیرد. */
-    addLog(st, 'success', 'radar', 'اسکن رادار — آی‌پی تمیز ذخیره شد',
-      'کاربر: ' + (ru.name || '—') + ' • یافت‌شده: ' + fa(ips.length) + ' (سقف: ' + fa(wantN) + ') • ' + ips.join(', ').slice(0, 300));
+       فقط «ذخیره‌ی موفقِ آی‌پی» سطحِ success می‌گیرد.
+       ═══ حالتِ فالبک (fallback:true) ═══
+       مرورگر اسکنِ تازه را بی‌نتیجه تمام کرده و آی‌پی‌های از قبل ذخیره‌شده را
+       دوباره پروب کرده است؛ سالم‌ها همین‌جا روی کانفیگ‌های کاربر ست می‌شوند.
+       در فهرستِ سراسری دوباره ذخیره نمی‌شوند چون merge زیر تکراری‌ها را
+       نادیده می‌گیرد (همان‌ها از قبل ذخیره‌اند) — فقط لاگش متفاوت است. */
+    if (rb && rb.fallback) {
+      addLog(st, 'success', 'radar', 'فالبک رادار — آی‌پی ذخیره‌شده سالم اعمال شد',
+        'کاربر: ' + (ru.name || '—') + ' • اسکنِ تازه بی‌نتیجه بود؛ از ذخیره‌شده‌ها: ' + fa(ips.length) + ' • ' + ips.join(', ').slice(0, 300));
+    } else {
+      addLog(st, 'success', 'radar', 'اسکن رادار — آی‌پی تمیز ذخیره شد',
+        'کاربر: ' + (ru.name || '—') + ' • یافت‌شده: ' + fa(ips.length) + ' (سقف: ' + fa(wantN) + ') • ' + ips.join(', ').slice(0, 300));
+    }
     addLog(st, 'info', 'radar', 'اعمال روی کانفیگ‌های کاربر',
       'کاربر: ' + (ru.name || '—') + ' • تعدادِ آی‌پی‌های تمیزِ فعال: ' + fa(ru.cleanIPs.length));
     save(env, st);
-    return json({ ok: true, saved: ips.length, applied: ru.cleanIPs.length });
+    return json({ ok: true, saved: ips.length, applied: ru.cleanIPs.length, fallback: !!(rb && rb.fallback) });
+  }
+
+  /* ═══ رادار صفحه‌ی کاربر: نامزدهای فالبکِ آی‌پی‌های ذخیره‌شده ═══
+     GET /<sub-path>/<user-id>/radar-candidates
+     اجتماعِ آی‌پی‌های تمیزِ مؤثرِ همین کاربر (u.cleanIPs) + آی‌پی‌های تمیزِ
+     سراسریِ پنل (s.cleanIPs) — فقط پایه‌ی IPv4، بدون پسوندِ نام، بدون تکرار.
+     وقتی اسکنِ تازه‌ی مرورگر هیچ آی‌پی سالمی پیدا نکرد، همین فهرست دوباره با
+     همان پروبِ مرورگر آزموده می‌شود و سالم‌ها با POST /radar-ips و
+     fallback:true روی کانفیگ‌ها ست می‌شوند. (شناسه‌ی کاربر در مسیر، همان
+     مجوزِ دسترسی است — مثل خودِ radar-ips و ساب.) */
+  if (segsAll[segsAll.length - 1] === 'radar-candidates') {
+    if (req.method.toUpperCase() !== 'GET') return json({ ok: false, error: 'method not allowed' }, 405);
+    const userId = decodeURIComponent(segsAll[segsAll.length - 2] || '');
+    const cu = st.users.find((x) => x.uuid === userId || x.secret === userId || x.name === userId);
+    if (!cu) return json({ ok: false, error: 'user not found' }, 404);
+    const seen = new Set();
+    const out = [];
+    const pushAll = (arr) => {
+      for (const e of (Array.isArray(arr) ? arr : [])) {
+        const b = String(e == null ? '' : e).split('#')[0].trim();
+        if (/^\d{1,3}(\.\d{1,3}){3}$/.test(b) && !seen.has(b)) { seen.add(b); out.push(b); }
+      }
+    };
+    pushAll(cu.cleanIPs);
+    pushAll(s.cleanIPs);
+    return json({ ok: true, ips: out.slice(0, 100), count: out.length });
   }
 
   const id = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || '');

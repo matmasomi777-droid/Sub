@@ -102,7 +102,7 @@ function mkModule(cfgObj, depOverrides) {
   const deps = Object.assign({}, baseDeps, depOverrides || {});
   const names = Object.keys(deps);
   const fn = new Function(...names, 'Image', 'fetch', 'AbortController', src +
-    '\n;return { SCAN, CF_CIDRS, CF_BLOCKS, buildIpList, randCfIp, radarConfigPorts, RADAR_KEEP, radarProbeIp, pingIp, radarFoundHtml, radarSelfTest, RADAR_CONTROL_IPS, rawResponses: function () { return radarRawResponses; }, radarAutoFloor: radarAutoFloor, radarBaseline: radarBaseline, radarBaseHost: radarBaseHost, setFloor: function (v) { radarFloor = v; }, getFloor: function () { return radarFloor; }, rejectedFast: function () { return radarRejectedFast; }, resetFast: function () { radarRejectedFast = 0; } };');
+    '\n;return { SCAN, CF_CIDRS, CF_BLOCKS, buildIpList, randCfIp, radarConfigPorts, RADAR_KEEP, radarProbeIp, pingIp, radarFoundHtml, radarSelfTest, RADAR_CONTROL_IPS, radarSavedFromLinks, radarFallbackCheck, rawResponses: function () { return radarRawResponses; }, radarAutoFloor: radarAutoFloor, radarBaseline: radarBaseline, radarBaseHost: radarBaseHost, setFloor: function (v) { radarFloor = v; }, getFloor: function () { return radarFloor; }, rejectedFast: function () { return radarRejectedFast; }, resetFast: function () { radarRejectedFast = 0; } };');
   return fn(...names.map((n) => deps[n]), makeFakeImage(), makeFakeFetch(), AbortController);
 }
 
@@ -179,10 +179,10 @@ console.log('== ۵) پروب و انتخابِ آی‌پی ==');
   /* کانفیگِ کاربر پورتِ غیر-TLS دارد و تنظیماتِ اسکنر هم خالی است:
      قبلاً این حالت فهرستِ خالی برمی‌گرداند و radarRun بلافاصله رد می‌شد. */
   const MnoTls = mkModule(Object.assign({}, DEF_CFG, { ports: [] }), { parseConfigLink: () => ({ port: '80', remark: 'n' }) });
-  ok(MnoTls.radarConfigPorts().join(',') === '443', 'پورتِ غیر-TLS → فالبک به 443 (نه فهرستِ خالی)', MnoTls.radarConfigPorts().join(','));
+  ok(MnoTls.radarConfigPorts().join(',') === '443,2053,2083,2087,2096,8443', 'پورتِ غیر-TLS با لینکِ خالی → همه‌ی پورت‌های TLS (تک‌پورتِ 443ِ فیلترشده اسکن را صفر می‌کرد)', MnoTls.radarConfigPorts().join(','));
 
   const Munparsed = mkModule(Object.assign({}, DEF_CFG, { ports: [] }), { parseConfigLink: () => ({ port: undefined, remark: 'n' }) });
-  ok(Munparsed.radarConfigPorts().join(',') === '443', 'پورتِ پارس‌نشده → فالبک به 443', Munparsed.radarConfigPorts().join(','));
+  ok(Munparsed.radarConfigPorts().join(',') === '443,2053,2083,2087,2096,8443', 'پورتِ پارس‌نشده → همه‌ی پورت‌های TLS', Munparsed.radarConfigPorts().join(','));
 
   const Mtls = mkModule(Object.assign({}, DEF_CFG, { ports: [] }), { parseConfigLink: () => ({ port: '2053', remark: 'n' }) });
   ok(Mtls.radarConfigPorts().join(',') === '2053', 'پورتِ TLS خودِ کانفیگ استفاده می‌شود', Mtls.radarConfigPorts().join(','));
@@ -308,6 +308,27 @@ console.log('== ۵) پروب و انتخابِ آی‌پی ==');
   ok(await M2.radarProbeIp('1.2.3.4', [443]) === null, 'کفِ دستی پاسخِ ۵ms را رد می‌کند');
   M2.setFloor(0);
   ok(await M2.radarProbeIp('1.2.3.4', [443]) !== null, 'برداشتنِ کف همان آی‌پی را برمی‌گرداند');
+
+  console.log('== ۱۸) فالبکِ آی‌پی‌های ذخیره‌شده (اسکنِ تازه بی‌نتیجه) ==');
+  /* نامزدها از لینک‌های فعلیِ ساب خوانده می‌شوند (vless/trojan، بدون تکرار) */
+  ok(JSON.stringify(M.radarSavedFromLinks()) === JSON.stringify(['1.2.3.4']), 'آی‌پیِ لینکِ فعلی نامزدِ فالبک است', M.radarSavedFromLinks().join(','));
+  const Mlinks = mkModule(DEF_CFG, { sanaeiClientData: { links: ['vless://u@1.2.3.4:443?x=1#n', 'trojan://s@5.6.7.8:443?x=1#m', 'vless://u@1.2.3.4:2053?x=1#d', 'garbage', 'vmess://eyJ9'], subUrl: 'https://p.example/sub/abc' } });
+  ok(JSON.stringify(Mlinks.radarSavedFromLinks().sort()) === JSON.stringify(['1.2.3.4', '5.6.7.8']), 'trojan هم خوانده و تکراری حذف می‌شود', Mlinks.radarSavedFromLinks().join(','));
+  /* فالبک با کفِ relaxed (فقط minRtt) آی‌پیِ سالمِ ذخیره‌شده را برمی‌گرداند و کف را برمی‌گرداند */
+  M.setFloor(50);
+  const fb = await M.radarFallbackCheck([443]);
+  ok(fb.length === 1 && fb[0].ip === '1.2.3.4', 'فالبک آی‌پیِ سالمِ ذخیره‌شده را پیدا می‌کند', fb.map((r) => r.ip).join(','));
+  ok(M.getFloor() === 50, 'کفِ اسکنِ اصلی بعد از فالبک برمی‌گردد', String(M.getFloor()));
+  M.setFloor(0);
+  /* هیچ نامزدی → فالبک خالی (نه خطا) */
+  const Mempty = mkModule(DEF_CFG, { sanaeiClientData: { links: [], subUrl: 'https://p.example/sub/abc' } });
+  ok((await Mempty.radarFallbackCheck([443])).length === 0, 'بدونِ نامزد، فالبک خالی برمی‌گردد');
+  /* تایم‌اوتِ صریحِ پروب */
+  ok(await M.radarProbeIp('7.7.7.7', [443], 300) !== null, 'پروب با تایم‌اوتِ صریح کار می‌کند');
+
+  console.log('== ۱۹) کلیدهای locale فالبک در هر ۴ زبان ==');
+  ok((html.match(/radarStatusFallback:/g) || []).length === 4, 'radarStatusFallback در هر ۴ زبان', String((html.match(/radarStatusFallback:/g) || []).length));
+  ok((html.match(/radarStatusFallbackSaved:/g) || []).length === 4, 'radarStatusFallbackSaved در هر ۴ زبان', String((html.match(/radarStatusFallbackSaved:/g) || []).length));
 
   console.log(fail ? '\n' + fail + ' تست ناموفق ✗' : '\nهمه‌ی تست‌ها موفق ✓');
   process.exit(fail ? 1 : 0);

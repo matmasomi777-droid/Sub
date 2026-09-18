@@ -25,10 +25,10 @@ if (scanStart < 0 || scanEnd < 0) { console.error('FATAL: PANEL_SCAN پیدا ن
 let scanSrc = app.slice(scanStart, scanEnd);
 
 /* قلابِ تست: فقط برای دیدنِ داخلی‌ها — کدِ تولید دست‌نخورده می‌ماند */
-const RET = 'return { start: start, apply: apply, reset: reset };';
+const RET = 'return { start: start, apply: apply, reset: reset, fallbackCheck: fallbackCheck };';
 if (scanSrc.indexOf(RET) < 0) { console.error('FATAL: return بلوکِ PANEL_SCAN پیدا نشد'); process.exit(1); }
 scanSrc = scanSrc.replace(RET,
-  'return { start: start, apply: apply, reset: reset, buildList: buildList, blocksOf: blocksOf, ping: ping, probe: probe, readCfg: readCfg,' +
+  'return { start: start, apply: apply, reset: reset, fallbackCheck: fallbackCheck, buildList: buildList, blocksOf: blocksOf, ping: ping, probe: probe, readCfg: readCfg,' +
   ' selfTest: selfTest, SCAN_TLS_PORTS: SCAN_TLS_PORTS, SCAN_CONTROL_IPS: SCAN_CONTROL_IPS,' +
   ' rawResponses: function () { return rawResponses; },' +
   ' autoFloor: autoFloor, baseline: baseline,' +
@@ -261,6 +261,26 @@ const ok = (cond, label, extra) => { console.log((cond ? '  ✓ ' : '  ✗ ') + 
   console.log('== ۱۳) تأخیرِ پایه ==');
   const b = await M.baseline();
   ok(b !== null && b > 0, 'تأخیرِ پایه از دامنه‌ی پنل اندازه‌گیری می‌شود', b === null ? 'null' : b + 'ms');
+
+  console.log('== ۱۴) فالبکِ آی‌پی‌های ذخیره‌شده (اسکنِ تازه بی‌نتیجه) ==');
+  /* نامزدها از «IPهای پاک» می‌آیند (بدون پسوند، بدون تکرار)؛ مرده‌ها خط می‌خورند */
+  deps.S.d.settings.cleanIPs = ['1.1.1.1', '9.9.9.9', '2.2.2.2', '1.1.1.1#dup'];
+  const fb = await M.fallbackCheck({ timeout: 300, probes: 2, minRtt: 0, maxRtt: 0, keep: 5, ports: [443], concurrency: 8 });
+  ok(fb.length === 2 && fb.every((r) => r.ip !== '9.9.9.9'), 'فالبک فقط ذخیره‌شده‌های سالم را برمی‌گرداند', fb.map((r) => r.ip).join(','));
+  /* کفِ اسکنِ اصلی بعد از فالبک برمی‌گردد */
+  M.setFloor(99);
+  await M.fallbackCheck({ timeout: 300, probes: 2, minRtt: 0, maxRtt: 0, keep: 5, ports: [443], concurrency: 8 });
+  ok(M.getFloor() === 99, 'کف بعد از فالبک برمی‌گردد', String(M.getFloor()));
+  M.setFloor(0);
+  /* بدونِ نامزد، فالبک خالی است (نه خطا) */
+  deps.S.d.settings.cleanIPs = [];
+  ok((await M.fallbackCheck({ timeout: 300, probes: 2, minRtt: 0, maxRtt: 0, keep: 5, ports: [443], concurrency: 8 })).length === 0, 'بدونِ نامزد، فالبک خالی برمی‌گردد');
+  deps.S.d.settings.cleanIPs = ['1.1.1.1', '2.2.2.2'];
+  /* مسیرِ کاملِ start با فیلترِ ناممکن: اسکن خالی می‌ماند و خطا نمی‌دهد */
+  form.minRtt.value = '5000';
+  await M.start();
+  ok(M._s().results.length === 0, 'با فیلترِ ناممکن، اسکن (با فالبک) خالی می‌ماند');
+  form.minRtt.value = '0';
 
   console.log(fail ? '\n' + fail + ' تست ناموفق ✗' : '\nهمه‌ی تست‌ها موفق ✓');
   process.exit(fail ? 1 : 0);

@@ -123,15 +123,21 @@ globalThis.caches = { default: { match: async () => undefined, put: async () => 
     ok(html.includes('radarStatusGuard'), 'کلیدِ locale برای نمایشِ کف و مردودهای سریع هست');
     ok(!/x\.rtt >= SCAN\.minRtt/.test(html), 'فیلترِ قدیمی جایگزین شده (حالا کفِ مؤثرِ محاسبه‌شده)');
     ok(/samples\.length < Math\.min\(SCAN\.probes, 2\)/.test(html), 'دروازه‌ی ثبات (≥۲ پاسخ از N پروب) در صفحه هست');
-    ok(/if \(!ports\.length\) ports\.push\(443\)|return tls\.length \? tls : \[443\]/.test(html),
-       'پورتِ اسکن هرگز خالی نمی‌ماند (فالبکِ ۴۴۳ یا فیلترِ TLS)');
+    ok(/if \(!ports\.length\) ports\.push\(443\)|return tls\.length \? tls : \[443\]|return RADAR_TLS_PORTS\.slice\(\)/.test(html),
+       'پورتِ اسکن هرگز خالی نمی‌ماند (فالبکِ ۴۴۳، فیلترِ TLS، یا همه‌ی TLS)');
     ok(!/fetch\('https:\/\/' \+ host/.test(html),
        'پروبِ تک‌کاناله‌ی قدیمی حذف شده (اکنون fetch داخلِ pingIp و با mode:cors است)');
-    ok(/if \(!ports\.length\) ports\.push\(443\)/.test(html), 'فالبکِ پورت به ۴۴۳ در موتور هست');
+    ok(/return RADAR_TLS_PORTS\.slice\(\)/.test(html), 'فالبکِ پورت به همه‌ی TLS (تک‌پورتِ 443ِ فیلترشده اسکن را صفر می‌کرد)');
     ok(html.includes('concurrency: 16'), 'هم‌روندیِ پیش‌فرض ۱۶ است (نه ۶۴)');
     ok(html.includes('timeout: 2000'), 'تایم‌اوتِ پیش‌فرض ۲۰۰۰ms است (نه ۱۰۰۰)');
     ok(/results\.length < RADAR_KEEP\) results\.push/.test(html), 'نتایج از سقفِ نگه‌داری بیشتر نمی‌شوند');
     ok(html.includes('radarSleep'), 'فاصله‌ی تصادفی بین پروب‌ها هست (روشِ SenPai Scanner)');
+    /* ── ۴ج) فالبکِ آی‌پی‌های ذخیره‌شده (اسکنِ تازه بی‌نتیجه) ── */
+    ok(html.includes('radarFallbackCheck') && html.includes('radarSavedFromLinks') && html.includes('radarSavedFromServer'),
+       'فالبکِ آی‌پی‌های ذخیره‌شده در صفحه هست');
+    ok(html.includes('/radar-candidates'), 'مسیرِ نامزدهای فالبک در صفحه هست');
+    ok(html.includes('fallback: true'), 'ارسالِ fallback:true در صفحه هست');
+    ok(html.includes('radarStatusFallback'), 'کلیدهای locale فالبک در صفحه هست');
 
     /* ── ۵) اسکریپتِ درون‌خطی معتبر است ── */
     const scripts = html.match(/<script(?![^>]*src=)[^>]*>[\s\S]*?<\/script>/gi) || [];
@@ -158,6 +164,20 @@ globalThis.caches = { default: { match: async () => undefined, put: async () => 
     const subTxt = await subRes.text();
     ok(subTxt.includes('104.16.1.1'), 'آی‌پیِ تازه در سابِ کاربر اعمال شد');
     ok(!subTxt.includes('bogus'), 'آی‌پیِ نامعتبر رد شد');
+
+    /* ── ۶ب) نامزدهای فالبک + ذخیره با fallback:true ── */
+    const candRes = await handler.fetch(new Request('https://panel.example.com/sub/' + uid + '/radar-candidates'), env, ctx);
+    const cand = await candRes.json().catch(() => ({}));
+    ok(candRes.status === 200 && cand.ok === true && Array.isArray(cand.ips), 'GET /radar-candidates فهرست می‌دهد', JSON.stringify(cand).slice(0, 120));
+    ok(cand.ips && cand.ips.indexOf('104.16.1.1') >= 0 && cand.ips.indexOf('172.64.1.2') >= 0, 'نامزدها شاملِ ذخیره‌شده‌ها هستند');
+    const fbRes = await handler.fetch(new Request('https://panel.example.com/sub/' + uid + '/radar-ips', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ips: ['104.16.1.1'], fallback: true }),
+    }), env, ctx);
+    const fbj = await fbRes.json().catch(() => ({}));
+    ok(fbRes.status === 200 && fbj.ok === true && fbj.fallback === true, 'POST /radar-ips با fallback:true ذخیره کرد', JSON.stringify(fbj));
+    const subRes2 = await handler.fetch(new Request('https://panel.example.com/sub/' + uid + '?format=raw'), env, ctx);
+    ok((await subRes2.text()).includes('104.16.1.1'), 'آی‌پیِ فالبک در سابِ کاربر اعمال شد');
     console.log('');
   }
 
@@ -177,7 +197,8 @@ globalThis.caches = { default: { match: async () => undefined, put: async () => 
       ok(htmlF.includes('id="radar-card"'), 'کارتِ رادار در فالبک هست');
       ok(htmlF.includes('CF_CIDRS') && htmlF.includes('buildIpList'), 'موتورِ اسکنر در فالبک هست');
       ok(htmlF.includes('new Image()') && htmlF.includes('RADAR_CONTROL_IPS'), 'پروبِ دوکاناله + خودآزمایی در فالبکِ داخلی هست');
-      ok(/if \(!ports\.length\) ports\.push\(443\)/.test(htmlF), 'فالبکِ پورت به ۴۴۳ در فالبکِ داخلی هست');
+      ok(/return RADAR_TLS_PORTS\.slice\(\)/.test(htmlF), 'فالبکِ پورت به همه‌ی TLS در فالبکِ داخلی هست');
+      ok(htmlF.includes('radarFallbackCheck') && htmlF.includes('/radar-candidates'), 'فالبکِ ذخیره‌شده‌ها در فالبکِ داخلی هست');
       ok((htmlF.match(/'1[0-9.]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+'/g) || []).length >= 15, 'تمامِ ۱۵ رنج رسمی در فالبک هست');
       const sc = htmlF.match(/<script(?![^>]*src=)[^>]*>[\s\S]*?<\/script>/i);
       let badF = 0;
@@ -213,7 +234,8 @@ globalThis.caches = { default: { match: async () => undefined, put: async () => 
     if (htmlU) {
       ok(htmlU.includes('id="radar-card"') && htmlU.includes('CF_CIDRS'), 'کارت و موتورِ اسکنر در ui/user.html هست');
       ok(htmlU.includes('new Image()') && htmlU.includes('RADAR_CONTROL_IPS'), 'پروبِ دوکاناله + خودآزمایی در ui/user.html هست');
-      ok(/if \(!ports\.length\) ports\.push\(443\)/.test(htmlU), 'فالبکِ پورت به ۴۴۳ در ui/user.html هست');
+      ok(/return RADAR_TLS_PORTS\.slice\(\)/.test(htmlU), 'فالبکِ پورت به همه‌ی TLS در ui/user.html هست');
+      ok(htmlU.includes('radarFallbackCheck') && htmlU.includes('/radar-candidates'), 'فالبکِ ذخیره‌شده‌ها در ui/user.html هست');
       ok((htmlU.match(/'1[0-9.]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+'/g) || []).length >= 15, 'تمامِ ۱۵ رنج رسمی هست');
       const scU = htmlU.match(/<script(?![^>]*src=)[^>]*>[\s\S]*?<\/script>/i);
       let badU = 0;

@@ -1887,11 +1887,20 @@
         await Promise.all(Array.from({ length: Math.min(cfg.concurrency, ips.length) }, worker));
 
         if (!results.length) {
-          /* تفکیکِ دو حالتِ کاملاً متفاوت — «کار نمی‌کند» را به پیامِ قابل‌اقدام
-             تبدیل می‌کند: هیچ پاسخی نیامد (شبکه) در مقابل پاسخ آمد ولی فیلتر شد. */
-          toast(rawResponses === 0
-            ? 'هیچ آی‌پی به پروب پاسخ نداد — شبکه/مرورگر اتصالِ مستقیم TLS به آی‌پیِ خام را می‌بندد. تایم‌اوت را بالا ببرید یا از یک VPS اسکن کنید'
-            : 'هیچ آی‌پیِ سالمی پیدا نشد — «حداقل/حداکثر تأخیر» را بررسی کنید', 'err');
+          /* ═══ فالبک: اسکنِ تازه بی‌نتیجه — آی‌پی‌های ذخیره‌شده را بیازما ═══ */
+          let fb = [];
+          if (!cancel) fb = await fallbackCheck(cfg);
+          if (!cancel && fb.length) {
+            results = fb;
+            paint();
+            toast('اسکنِ تازه بی‌نتیجه بود — ' + fa(fb.length) + ' آی‌پیِ ذخیره‌شده سالم است؛ «اعمال و ذخیره» را بزنید تا روی کانفیگ‌ها بنشیند', 'info');
+          } else if (!cancel) {
+            /* تفکیکِ دو حالتِ کاملاً متفاوت — «کار نمی‌کند» را به پیامِ قابل‌اقدام
+               تبدیل می‌کند: هیچ پاسخی نیامد (شبکه) در مقابل پاسخ آمد ولی فیلتر شد. */
+            toast(rawResponses === 0
+              ? 'هیچ آی‌پی به پروب پاسخ نداد — شبکه/مرورگر اتصالِ مستقیم TLS به آی‌پیِ خام را می‌بندد. تایم‌اوت را بالا ببرید یا از یک VPS اسکن کنید'
+              : 'هیچ آی‌پیِ سالمی پیدا نشد — «حداقل/حداکثر تأخیر» را بررسی کنید', 'err');
+          }
         } else {
           toast(fa(results.length) + ' آی‌پیِ سالم پیدا شد — «اعمال و ذخیره» را بزنید', 'info');
         }
@@ -1929,7 +1938,51 @@
       toast('نتیجه‌ی اسکن پاک شد', 'info');
     }
 
-    return { start: start, apply: apply, reset: reset };
+    /* ═══ فالبکِ آی‌پی‌های ذخیره‌شده ═══
+       اگر اسکنِ تازه هیچ آی‌پی سالمی پیدا نکرد، آی‌پی‌های از قبل ذخیره‌شده در
+       «IPهای پاک» دوباره با همان پروب آزموده می‌شوند؛ سالم‌ها در results
+       می‌نشینند تا ادمین با «اعمال و ذخیره» تأییدشان کند. apply() تکراری‌ها را
+       نادیده می‌گیرد، پس چیزی دوباره ذخیره نمی‌شود. معیار relaxed: فقط
+       minRtt دستی (نه کفِ خودکار — اگر همان باعثِ صفر شدن شده باشد، فالبک
+       شانسِ دوباره دارد) + تایم‌اوتِ کمی بیشتر. */
+    async function fallbackCheck(cfg) {
+      const seen = {};
+      const cands = [];
+      const cur = Array.isArray(S.d.settings.cleanIPs) ? S.d.settings.cleanIPs : [];
+      for (let i = 0; i < cur.length; i++) {
+        const b = String(cur[i]).split('#')[0].trim();
+        if (/^\d{1,3}(\.\d{1,3}){3}$/.test(b) && !seen[b]) { seen[b] = 1; cands.push(b); }
+      }
+      if (!cands.length) return [];
+      const savedFloor = floor;
+      floor = (cfg && cfg.minRtt) || 0;
+      const fbCfg = {
+        timeout: Math.min(6000, Math.max((cfg && cfg.timeout) || 2000, 3000)),
+        probes: (cfg && cfg.probes) || 2,
+        minRtt: (cfg && cfg.minRtt) || 0,
+        maxRtt: (cfg && cfg.maxRtt) || 0,
+      };
+      const list = cands.slice(0, 40);
+      const out = [];
+      let cursor = 0;
+      const fbWorker = async () => {
+        while (cursor < list.length) {
+          if (cancel) return;
+          const r = await probe(list[cursor++], cfg.ports, fbCfg);
+          if (r) out.push(r);
+        }
+      };
+      try {
+        await Promise.all(Array.from({ length: Math.min(cfg.concurrency || 8, 8, list.length) }, fbWorker));
+      } finally {
+        floor = savedFloor;
+      }
+      out.sort((a, b) => a.score - b.score);
+      const kn = cfg.keep > 0 ? cfg.keep : 20;
+      return out.slice(0, kn);
+    }
+
+    return { start: start, apply: apply, reset: reset, fallbackCheck: fallbackCheck };
   })();
 
   function scannerView() {
