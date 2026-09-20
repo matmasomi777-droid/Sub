@@ -135,9 +135,9 @@ function exitDialHost(srv) {
    BUILD: مُهرِ زمانِ بیلد (UTC)
    BUILD_REV: اثرِ انگشتِ sha256 محتوای worker.js + ui — معیارِ دقیقِ «نسخه‌ی
    تازه» در بررسیِ آپدیت است (بدونِ تکیه بر تاریخ؛ چند پوش در یک روز هم دیده می‌شود) */
-const VERSION = '3.0.9';
-const BUILD = '2026.09.20-17:59';
-const BUILD_REV = '7f7139627cdfb90ecd3ef695784e7a2f8417a938826bf4ec8b8181202a4084e6';
+const VERSION = '3.0.11';
+const BUILD = '2026.09.20-18:28';
+const BUILD_REV = '3653bf7b2afa17e3a0053b2169fb65bcacc15099113bcf6ea7fc1790d1a3606a';
 const BOOT = Date.now();
 /* شاخه‌ی پیش‌فرض برای بررسیِ نسخه */
 const UPD_DEFAULT_BRANCH = 'main';
@@ -6760,13 +6760,21 @@ async function apiHandler(req, env, url, ctx) {
       reachable: r.ok, ms: r.ms, handshakeMs: r.handshakeMs || 0, bytes: r.bytes || 0, head: r.head || '',
       dest: r.dest || '', note: r.note || '',
       ipOk: !!(r.ip && r.ip.ok), ipBytes: (r.ip && r.ip.bytes) || 0, ipHead: (r.ip && r.ip.head) || '',
+      /* کاوشِ حجمی — یک درخواستِ HTTP با بدنهٔ ۱۲۸KB از تونل؛ هم رکوردبندیِ
+         آپلود (جایی که تونلِ vision بریده می‌شد) و هم برگشتِ پاسخ را می‌سنجد */
+      volumeOk: !!(r.http && r.http.ok), volumeSkipped: !!(r.http && r.http.skipped),
+      volumeUpload: (r.http && r.http.uploaded) || 0, volumeBytes: (r.http && r.http.bytes) || 0,
+      volumeStatus: (r.http && r.http.status) || '', volumeError: (r.http && r.http.error) || '',
       phase: r.phase || '', transport: r.transport, security: r.security,
       error: r.error,
       ip: ip || srv.resolvedIp || '',
       resolvedAt: srv.resolvedAt || 0,
       msg: r.ok
-        ? '«' + srv.name + '» سالم است — هندشیک و عبورِ داده هر دو در ' + fa(r.ms) + ' میلی‌ثانیه (' + fa(r.bytes || 0) + ' بایت پاسخِ واقعی، مقصدِ دامنه و آی‌پی)'
-        : (r.phase === 'traffic-ip'
+        ? '«' + srv.name + '» سالم است — هندشیک و عبورِ داده هر دو در ' + fa(r.ms) + ' میلی‌ثانیه (' + fa(r.bytes || 0) + ' بایت پاسخِ واقعی، مقصدِ دامنه و آی‌پی'
+          + (r.http && r.http.ok ? ' • آپلودِ ' + fa(Math.round((r.http.uploaded || 0) / 1024)) + ' کیلوبایتی و پاسخِ ' + (r.http.status || '—') : (r.http && r.http.skipped ? ' • کاوشِ حجمی رد شد (خروجی روی کلاودفلر)' : '')) + ')'
+        : (r.phase === 'volume'
+          ? '«' + srv.name + '» هندشیک و تبادلِ چند‌بایتی را رد می‌کند ولی ترافیکِ پرحجم از آن عبور نمی‌کند — یعنی کانفیگِ کاربر وسطِ کار (آپلود/دانلود/ویدیو) می‌میرد، درست همان‌جایی که تست‌های قبلی سبز می‌ماندند: ' + (r.error || '')
+          : r.phase === 'traffic-ip'
           ? '«' + srv.name + '» با مقصدِ دامنه‌ای کار می‌کند ولی با مقصدِ آی‌پی نه — کانفیگ‌ها با این سرور وصل نمی‌شوند: ' + (r.error || '')
           : r.phase === 'traffic'
             ? '«' + srv.name + '» هندشیک را رد کرد ولی داده‌ای از تونل عبور نکرد — با این سرور، کانفیگ‌ها وصل نمی‌شوند: ' + (r.error || '')
@@ -8169,10 +8177,10 @@ const EXIT_TRANSPORTS = ['raw', 'ws', 'grpc'];
 /* آخرین خطا و آمار — فقط برای گزارش؛ هیچ تایمری راه نمی‌افتد */
 let EXIT_LAST_ERR = '';
 const EXIT_STATS = {
-  tunnels: 0, fallbacks: 0, strictCloses: 0, lastMs: 0, lastAt: 0,
+  tunnels: 0, fallbacks: 0, strictCloses: 0, direct: 0, lastMs: 0, lastAt: 0,
   /* تشخیصی: چون حالتِ سخت‌گیر شکست را *بی‌صدا* می‌بندد، باید معلوم باشد
      «آخرین اتصالِ کاربر چه مقصدی خواست و کدام سرورِ خروجی شکست خورد» */
-  lastDest: '', lastExit: '', lastUser: '', lastFail: '',
+  lastDest: '', lastExit: '', lastUser: '', lastFail: '', lastDirect: '',
 };
 const exitNote = (msg) => { EXIT_LAST_ERR = String(msg).slice(0, 300); EXIT_STATS.lastAt = Date.now(); };
 
@@ -8216,6 +8224,28 @@ function exitLogOk(env, st, ctx, srvName, dest, userName, ms) {
     addLog(st, 'success', 'exit', 'عبورِ ترافیک از سرور خروجی',
       '«' + String(srvName || '?') + '» • مقصدِ درخواستی: ' + String(dest || '?')
       + (userName ? ' • کاربر: ' + String(userName) : '') + (ms ? ' • ' + fa(Math.round(ms)) + ' میلی‌ثانیه' : ''));
+  } catch (e) {}
+  const p = save(env, st);
+  try { if (ctx && ctx.waitUntil) ctx.waitUntil(p); else p.catch(() => {}); } catch (e) {}
+}
+
+/* ═══ رویدادِ «مستقیم» — چرا یک کانفیگ از سرور خروجی رد *نشد*؟ ══════════════
+   کارتِ تشخیص فقط شکست/موفقیتِ خروجی را می‌نوشت؛ اگر کانفیگ روی «مستقیم» بود
+   یا خروجیِ انتخاب‌شده غیرفعال/حذف شده بود، هیچ رویدادی ثبت نمی‌شد و کارت
+   *کاملاً خالی* می‌ماند («کارت چیزی نشان نمی‌دهد») در حالی که علت واقعی همین
+   نرسیدن به مسیرِ خروجی بود. اکنون همان تصمیمِ مسیر — با علت — در لاگِ پایدار
+   می‌نشیند (ضدِ طوفان: هر (کاربر، علت) در هر ۶۰ ثانیه یک‌بار). */
+const EXIT_DIRECT_AT = new Map();
+function exitLogDirect(env, st, ctx, userName, dest, why) {
+  const key = String(userName || '?') + '|' + String(why || '?');
+  const now = Date.now();
+  if (now - (EXIT_DIRECT_AT.get(key) || 0) < 60000) return;
+  if (EXIT_DIRECT_AT.size > 200) EXIT_DIRECT_AT.clear();
+  EXIT_DIRECT_AT.set(key, now);
+  try {
+    addLog(st, 'warn', 'exit', 'بدونِ سرور خروجی (مسیرِ مستقیم)',
+      (userName ? 'کاربر «' + String(userName) + '» • ' : '') + 'مقصد: ' + String(dest || '?')
+      + ' • علت: ' + String(why || 'نامشخص').slice(0, 160));
   } catch (e) {}
   const p = save(env, st);
   try { if (ctx && ctx.waitUntil) ctx.waitUntil(p); else p.catch(() => {}); } catch (e) {}
@@ -8666,6 +8696,16 @@ function vlessUuidBytes(uuid) {
 }
 
 /** یک بلوکِ Vision — ساختارِ دقیقِ XtlsPadding (UUID فقط در بلوکِ اول) */
+/* ⚠️ سقفِ یک *نوشتنِ* واحد در مسیرِ خروجی: قالبِ Vision طولِ محتوا را در
+   دو بایت می‌ریزد (حداکثر ۶۵۵۳۵) و خودِ کلاودفلر هم هر نوشتنِ بزرگ‌تر از
+   ۶۴KB روی سوکت را رد می‌کند («The requested length exceeds 65,536 bytes»).
+   یک فریمِ ورودیِ بزرگ (مرورگرها و کلاینت‌هایی مثل v2rayNG/sing-box بافرهای
+   ۶۴KB+ دارند) پیش‌تر به *یک* بلوکِ بیش‌از‌حد بزرگ تبدیل می‌شد؛ طولِ ۱۶ بیتی
+   سرریز می‌کرد و سرورِ خروجی بقیهٔ بایت‌ها را به‌عنوان سرآیندِ بلوکِ بعدی
+   می‌خواند → قالب به هم می‌ریخت و تونل *وسطِ* آپلود/دانلود می‌مرد، در حالی
+   که تستِ چند‌بایتیِ پنل سبز بود. */
+const EXIT_WRITE_CHUNK = 60000;
+
 function visionPadBlock(content, o) {
   const c = toU8(content || new Uint8Array(0));
   const first = !!(o && o.first);
@@ -8835,20 +8875,36 @@ function vlessClientWrap(pair, o) {
     cancel(reason) { try { reader.cancel(reason); } catch (e) {} },
   });
   const writable = new WritableStream({
+    /* ⚠️ نوشتن‌های بزرگ باید به قطعه‌های ≤۶۰KB شکسته شوند: قالبِ Vision طولِ
+       محتوا را ۱۶ بیتی می‌نویسد و کلاودفلر هم نوشتنِ بیش از ۶۴KB را رد می‌کند.
+       برای نوشتن‌های کوچک (حالتِ عادی) رفتار دقیقاً مثل قبل است — یک نوشتن. */
     async write(chunk) {
       const c = toU8(chunk);
       if (!headerSent) {
         headerSent = true;
-        const parts = [header];
-        if (c.length) parts.push(vision ? visionPadBlock(c, { first: true, uuid, long: true, command: 0 }) : c);
-        else if (vision) parts.push(visionPadBlock(new Uint8Array(0), { first: true, uuid, long: true, command: 0 }));
-        await writer.write(parts.length === 1 ? parts[0] : rlConcat(...parts));
+        let off = 0, first = true;
+        for (;;) {
+          const n = Math.min(EXIT_WRITE_CHUNK, c.length - off);
+          const part = c.subarray(off, off + Math.max(0, n));
+          const block = vision ? visionPadBlock(part, { first, uuid, long: first, command: 0 }) : part;
+          /* هدرِ VLESS با *اولین* قطعه یک‌جا می‌رود (سرور انتظارِ بلافصلِ هدر را دارد) */
+          await writer.write(first ? rlConcat(header, block) : block);
+          first = false;
+          off += Math.max(0, n);
+          if (off >= c.length) break;
+        }
         firstBlock = false;
         return;
       }
       if (!c.length) return;
-      await writer.write(vision ? visionPadBlock(c, { first: firstBlock, uuid, long: false, command: 0 }) : c);
-      firstBlock = false;
+      let off = 0;
+      while (off < c.length) {
+        const n = Math.min(EXIT_WRITE_CHUNK, c.length - off);
+        const part = c.subarray(off, off + n);
+        await writer.write(vision ? visionPadBlock(part, { first: firstBlock, uuid, long: false, command: 0 }) : part);
+        off += n;
+        firstBlock = false;
+      }
     },
     async abort(reason) { try { await writer.abort(reason); } catch (e) {} },
     async close() { try { await writer.close(); } catch (e) {} },
@@ -9132,13 +9188,36 @@ function rlNonce(iv12, seq) {
 const RL_CT_APPDATA = 23;
 const RL_CT_HANDSHAKE = 22;
 const RL_CT_ALERT = 21;
+/* ⚠️ سقفِ *متنِ داخلیِ* هر رکوردِ TLS 1.3 برابر ۲^۱۴ = ۱۶۳۸۴ بایت است و شاملِ
+   بایتِ نوعِ محتوا هم می‌شود (RFC 8446 §5.2)، پس محتوا حداکثر ۱۶۳۸۳ بایت.
+   سرورِ Xray (Go) رکوردِ بزرگ‌تر را با record_overflow رد و اتصال را می‌بندد.
+   چرا این فقط روی خروجی‌های reality اثر داشت: در انتقالِ ws/tls خودِ TLSِ
+   کلاودفلر بایت‌ها را رکوردبندی می‌کند، ولی روی reality ما خودمان لایه‌ی
+   رکورد را می‌سازیم. یک فریمِ ورودیِ بزرگ (کلاینت‌هایی مثل v2rayNG/sing-box
+   بافرهای ۳۲KB دارند، نه ۱۶KBِ Xray) به یک رکوردِ ۳۲KB+ تبدیل می‌شد و تونل
+   *وسطِ کار* می‌مرد — در حالی که تستِ پنل (که چند بایت می‌فرستد) سبز بود. */
+const RL_MAX_CONTENT = 16384 - 1;
+async function rlSealRecords(keyObj, plaintext, seq, innerType) {
+  const ct = innerType === undefined ? RL_CT_APPDATA : innerType;
+  const src = toU8(plaintext);
+  const records = [];
+  let off = 0, s = Number(seq) || 0;
+  for (;;) {
+    const n = Math.min(RL_MAX_CONTENT, src.length - off);
+    const inner = rlConcat(src.subarray(off, off + n), new Uint8Array([ct]));
+    const L = inner.length + 16;
+    const hdr = new Uint8Array([23, 3, 3, (L >> 8) & 255, L & 255]);
+    const sealed = new Uint8Array(await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: rlNonce(keyObj.iv, s), additionalData: hdr }, keyObj.k, inner));
+    records.push(rlConcat(hdr, sealed));
+    off += n; s++;
+    if (off >= src.length) break;
+  }
+  return { records, nextSeq: s };
+}
+/* تک‌رکوردی — برای پیام‌های کوچک (Finished) و بازخوانیِ ساده */
 async function rlSeal(keyObj, plaintext, seq, innerType) {
-  const inner = rlConcat(toU8(plaintext), new Uint8Array([innerType === undefined ? RL_CT_APPDATA : innerType]));
-  const L = inner.length + 16;
-  const hdr = new Uint8Array([23, 3, 3, (L >> 8) & 255, L & 255]);
-  const sealed = new Uint8Array(await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: rlNonce(keyObj.iv, seq), additionalData: hdr }, keyObj.k, inner));
-  return rlConcat(hdr, sealed);
+  return (await rlSealRecords(keyObj, plaintext, seq, innerType)).records[0];
 }
 /* رمزگشاییِ یک رکوردِ کامل (هدر ۵ + بدنه) — برمی‌گرداند {plaintext, total, ct}.
    بایتِ آخرِ متنِ داخلی نوعِ محتوا است (RFC 8446 §5.2) و از خروجی حذف می‌شود.
@@ -9612,7 +9691,13 @@ function rlWrapStreams(io, cAp, sAp) {
     cancel() { try { io.close(); } catch (e) {} },
   });
   const writable = new WritableStream({
-    async write(chunk) { await io.write(await rlSeal(cAp, toU8(chunk), wSeq++)); },
+    async write(chunk) {
+      /* یک نوشتنِ بزرگ = چند رکوردِ ≤۱۶KB (وگرنه record_overflow در سرورِ
+         خروجی و مرگِ تونل وسطِ یک آپلود/دانلود) */
+      const { records, nextSeq } = await rlSealRecords(cAp, toU8(chunk), wSeq);
+      wSeq = nextSeq;
+      for (const rec of records) await io.write(rec);
+    },
     async abort() { try { io.close(); } catch (e) {} },
     async close() { try { io.close(); } catch (e) {} },
   });
@@ -9970,6 +10055,77 @@ async function probeExit(srv, opt) {
    سبز می‌ماند — یعنی «تستِ پنل سبز، کانفیگِ کاربر مرده». از این پس دامنه *و*
    آی‌پی هر دو سنجیده می‌شوند و اختلافشان صریح گزارش می‌شود. */
 const EXIT_PROBE_IP = '1.1.1.1';
+
+/* ═══ کاوشِ حجمِ واقعی ══════════════════════════════════════════════════════
+   تا امروز تستِ پنل چند بایت می‌فرستاد و «سبز» می‌شد، در حالی که تونلِ کاربر
+   وسطِ یک آپلود/دانلودِ بزرگ بی‌صدا می‌مرد: رکوردهای TLS را روی خروجی‌های
+   reality *خودمان* می‌سازیم و سقفِ ۲^۱۴ بایتِ هر رکورد را رعایت نکردن یعنی
+   بسته‌شدنِ اتصال از سوی سرورِ خروجی. این کاوش یک درخواستِ HTTPِ واقعی با
+   بدنهٔ ۱۲۸KB از تونل می‌فرستد و برگشتنِ پاسخِ مقصد را شرطِ «سالم» می‌گذارد.
+   (پورتِ ۸۰ فقط برای سرورهای واقعی مجاز است؛ خروجیِ روی کلاودفلر رد می‌شود.) */
+const EXIT_PROBE_HTTP_HOST = 'www.cloudflare.com';
+const EXIT_PROBE_UP_BYTES = 128 * 1024;
+async function probeExitHttp(srv, opt) {
+  if (exitCfFronted(srv)) {
+    return { ok: false, skipped: true, bytes: 0, status: '', error: 'سرورِ خروجی روی کلاودفلر است — پورتِ ۸۰ برای کاوشِ حجمی مجاز نیست' };
+  }
+  const timeoutMs = Math.max(1500, Math.min(30000, Number((opt && opt.timeoutMs) || 8000)));
+  const up = new Uint8Array(EXIT_PROBE_UP_BYTES);
+  /* ⚠️ `crypto.getRandomValues` سقفِ ۶۴KB دارد (QuotaExceededError) — پس
+     فقط ابتدای بدنه تصادفی می‌شود و بقیه با الگو پر می‌شود؛ هدف اینجا
+     *حجم* است نه تصادفی‌بودن (محتوا هم فقط باید یک HTTP body معتبر باشد). */
+  up.fill(0x41);
+  crypto.getRandomValues(up.subarray(0, 4096));
+  const head = 'POST /__probe HTTP/1.1\r\n'
+    + 'Host: ' + EXIT_PROBE_HTTP_HOST + '\r\n'
+    + 'User-Agent: sub-panel-exit-probe\r\n'
+    + 'Content-Type: application/octet-stream\r\n'
+    + 'Content-Length: ' + up.length + '\r\n'
+    + 'Connection: close\r\n\r\n';
+  const target = {
+    addr: EXIT_PROBE_HTTP_HOST, port: 80, cmd: 1,
+    payload: rlConcat(new TextEncoder().encode(head), up),
+  };
+  const t0 = Date.now();
+  let out = null;
+  try {
+    out = await openExitSocket(srv, target, { timeoutMs });
+  } catch (e) {
+    return { ok: false, ms: Date.now() - t0, bytes: 0, status: '', uploaded: EXIT_PROBE_UP_BYTES, phase: 'handshake', error: String((e && e.message) || e) };
+  }
+  let acc = new Uint8Array(0), bytes = 0, readErr = '';
+  try {
+    const reader = out.readable.getReader();
+    const deadline = Date.now() + Math.min(timeoutMs, 8000);
+    for (;;) {
+      const left = deadline - Date.now();
+      if (left <= 0) break;
+      const r = await Promise.race([
+        reader.read(),
+        new Promise((res) => { setTimeout(() => res({ timedOut: true }), left); }),
+      ]);
+      if (!r || r.timedOut || r.done) break;
+      if (!r.value || !r.value.length) continue;
+      bytes += r.value.length;
+      acc = rlConcat(acc, r.value);
+      if (acc.length >= 96) break;
+    }
+    try { reader.releaseLock(); } catch (e2) {}
+  } catch (e) { readErr = String((e && e.message) || e); }
+  finally { try { out.close(); } catch (e) {} }
+  const status = (new TextDecoder().decode(acc.subarray(0, 96)).split('\r\n')[0] || '').trim();
+  const ok = /^HTTP\/1\.[01] \d{3}/.test(status);
+  return {
+    ok, ms: Date.now() - t0, bytes, status, uploaded: EXIT_PROBE_UP_BYTES,
+    phase: ok ? '' : 'volume',
+    error: ok ? '' : (readErr
+      ? ('پاسخی برنگشت • ' + readErr)
+      : (bytes
+        ? ('پاسخِ مقصد HTTP نبود: ' + String(status).slice(0, 40))
+        : 'مقصد به بدنهٔ ۱۲۸ کیلوبایتی هیچ پاسخی نداد — رکوردبندیِ TLS/vision یا مسیرِ آپلود خراب است')),
+  };
+}
+
 function exitCfNote(srv) {
   return exitCfFronted(srv)
     ? 'سرورِ خروجی روی کلاودفلر شناسایی شد (محدودیت‌های آی‌پی/پورت اعمال می‌شود)'
@@ -9984,6 +10140,12 @@ async function testExit(srv, opt) {
   const ip = await probeExit(srv, { addr: EXIT_PROBE_IP, port: 443, timeoutMs: o.timeoutMs });
   out.ip = { ok: !!ip.ok, bytes: ip.bytes || 0, head: ip.head || '', phase: ip.phase || '', error: ip.error || '' };
   out.note = exitCfNote(srv);
+  /* حجمِ واقعی — همان چیزی که تستِ چند‌بایتی هرگز نمی‌دید */
+  const hprobe = await probeExitHttp(srv, { timeoutMs: o.timeoutMs });
+  out.http = hprobe;
+  if (!hprobe.skipped && !hprobe.ok) {
+    return { ...out, ok: false, phase: 'volume', error: 'عبورِ داده با حجمِ واقعی شکست خورد (بدنهٔ ' + Math.round(EXIT_PROBE_UP_BYTES / 1024) + ' کیلوبایتی): ' + (hprobe.error || 'بدونِ پاسخ') };
+  }
   if (main.ok && !ip.ok) {
     return {
       ...out,
@@ -10624,17 +10786,38 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
           }
           /* ادامه به مسیر مستقیم — هیچ استثنایی بالا نمی‌رود */
         }
-      } else if (exitsStrict(st) && ex.reason) {
-        /* کانفیگ به سرور خروجی بسته شده ولی سرور در دسترس نیست (غیرفعال/حذف) —
-           حالتِ سخت‌گیر: به‌جای نشتِ بی‌صدای مستقیم، اتصال بسته می‌شود */
-        EXIT_STATS.strictCloses++;
+      } else {
+        /* ── مسیرِ مستقیم *در حالی که خروجی‌ها فعال‌اند* ──
+           شایع‌ترین حالتِ واقعی و تا امروز کاملاً بی‌صدا: کانفیگ روی «مستقیم»
+           است، یا خروجیِ انتخاب‌شده غیرفعال/حذف شده. کاربر «کانفیگ کار نمی‌کند»
+           می‌دید و کارتِ تشخیص هیچ چیزی نداشت که نشان بدهد چرا. */
+        EXIT_STATS.direct++;
         EXIT_STATS.lastDest = String(info.addr || '') + ':' + String(info.port || '');
-        EXIT_STATS.lastFail = 'strict — ' + ex.reason;
-        exitNote('strict — ' + ex.reason);
-        exitLogFail(env, st, ctx, 'strict', EXIT_STATS.lastDest, ex.reason);
-        try { await finish(); } catch (e3) {}
-        return;
+        EXIT_STATS.lastUser = (user && user.name) || '';
+        EXIT_STATS.lastExit = (ex.server && (ex.server.name || ex.server.id)) || '';
+        const why = ex.reason || 'این کانفیگ (و پیش‌فرضِ سراسری) روی «مستقیم» است';
+        EXIT_STATS.lastDirect = why.slice(0, 200);
+        exitLogDirect(env, st, ctx, (user && user.name) || '', EXIT_STATS.lastDest, why);
+        if (exitsStrict(st) && ex.reason) {
+          /* کانفیگ به سرور خروجی بسته شده ولی سرور در دسترس نیست (غیرفعال/حذف) —
+             حالتِ سخت‌گیر: به‌جای نشتِ بی‌صدای مستقیم، اتصال بسته می‌شود */
+          EXIT_STATS.strictCloses++;
+          EXIT_STATS.lastFail = 'strict — ' + ex.reason;
+          exitNote('strict — ' + ex.reason);
+          exitLogFail(env, st, ctx, 'strict', EXIT_STATS.lastDest, ex.reason);
+          try { await finish(); } catch (e3) {}
+          return;
+        }
       }
+    } else {
+      /* کل مسیرِ خروجی خاموش است — همین را هم باید کارت نشان بدهد، وگرنه
+         «هیچ چیزی نشان نمی‌دهد» و کاربر فکر می‌کند باگ است */
+      EXIT_STATS.direct++;
+      EXIT_STATS.lastDest = String(info.addr || '') + ':' + String(info.port || '');
+      EXIT_STATS.lastUser = (user && user.name) || '';
+      const why = 'مسیرِ خروجی در پنل خاموش است';
+      EXIT_STATS.lastDirect = why;
+      exitLogDirect(env, st, ctx, (user && user.name) || '', EXIT_STATS.lastDest, why);
     }
 
     /* ── مرحله ۱: اتصال مستقیم ── */

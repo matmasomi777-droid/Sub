@@ -85,6 +85,22 @@ let targetHits = 0;
 const bigBody = Buffer.alloc(BIG, 0x41);
 const targetSrv = http.createServer((req, res) => {
   targetHits++;
+  /* ⚠️ POST با بدنهٔ بزرگ — جهتِ *آپلود* هرگز آزمایش نشده بود.
+     سرورِ خروجیِ reality رکوردهای TLS را خودمان می‌سازیم (rlSeal) و
+     محدودیتِ ۲^۱۴ بایتِ هر رکورد اگر رعایت نشود، سرورِ Xray اتصال را
+     با record_overflow می‌بندد — و همین فقط در جهتِ آپلود دیده می‌شود،
+     چون جهتِ دانلود محدودیتِ طول را از خودِ سرور می‌گیرد. */
+  if (req.method === 'POST' && req.url === '/up') {
+    const h = crypto.createHash('sha1');
+    let n = 0;
+    req.on('data', (d) => { h.update(d); n += d.length; });
+    req.on('end', () => {
+      const body = 'UPLOAD ' + n + ' ' + h.digest('hex');
+      res.writeHead(200, { 'content-type': 'text/plain', 'content-length': String(body.length) });
+      res.end(body);
+    });
+    return;
+  }
   if (req.url === '/big') {
     res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': String(BIG), connection: 'close' });
     res.end(bigBody);
@@ -395,7 +411,7 @@ const tlsThroughSocks = async (host, port, request, timeoutMs) => {
   }
 };
 
-const httpGet = (sock, p) => new Promise((res, rej) => {
+const httpRaw = (sock, reqBuf, timeoutMs) => new Promise((res, rej) => {
   let buf = Buffer.alloc(0);
   const onData = (d) => {
     buf = Buffer.concat([buf, d]);
@@ -411,9 +427,11 @@ const httpGet = (sock, p) => new Promise((res, rej) => {
   };
   sock.on('data', onData);
   sock.on('error', rej);
-  sock.write('GET ' + p + ' HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n');
-  setTimeout(() => { sock.removeListener('data', onData); rej(new Error('timeout')); }, 15000);
+  sock.write(reqBuf);
+  setTimeout(() => { sock.removeListener('data', onData); rej(new Error('timeout')); }, timeoutMs || 15000);
 });
+
+const httpGet = (sock, p) => httpRaw(sock, 'GET ' + p + ' HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n');
 
 (async () => {
   const XRAY = findXray();
@@ -500,6 +518,22 @@ const httpGet = (sock, p) => new Promise((res, rej) => {
   results.push(['بدنهٔ ' + (BIG / 1024) + ' کیلوبایتی بی‌کم‌وکاست رسید', bigOk]);
   try { sock.destroy(); } catch (e) {}
 
+  /* ═══ ۳.۵) جهتِ آپلود ═══════════════════════════════════════════════
+     همه‌ی تست‌های قبلی فقط *دانلود* را می‌سنجیدند. در جهتِ آپلود، بایت‌ها
+     را ورکر با رکوردهای TLS خودش می‌فرستد و محدودیتِ طولِ رکورد (۲^۱۴ بایت
+     در TLS 1.3) اگر رعایت نشود، سرورِ خروجی اتصال را می‌بندد. */
+  for (const [label, size] of [['۶۴ کیلوبایتی', 64 * 1024], ['۵۱۲ کیلوبایتی', 512 * 1024]]) {
+    const up = Buffer.alloc(size, 0x42);
+    const s = await socksConnect('127.0.0.1', TARGET_PORT);
+    const want = 'UPLOAD ' + size + ' ' + crypto.createHash('sha1').update(up).digest('hex');
+    const r = await httpRaw(s,
+      Buffer.concat([Buffer.from('POST /up HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/octet-stream\r\nContent-Length: ' + size + '\r\n\r\n'), up]),
+      20000).catch((e) => ({ err: String(e.message) }));
+    try { s.destroy(); } catch (e) {}
+    results.push(['آپلودِ بدنهٔ ' + label + ' از تونلِ خروجی (رکوردهای TLSِ خودمان)', !r.err && String(r.body) === want]);
+    if (r.err || String(r.body) !== want) console.log('      ↳ پاسخ: ' + JSON.stringify(String(r.body || r.err).slice(0, 80)));
+  }
+
   /* ۴) اتصالِ تازه (بدونِ keep-alive) — مثلِ بازکردنِ یک تبِ جدید */
   const sock2 = await socksConnect('127.0.0.1', TARGET_PORT);
   const r2 = await httpGet(sock2, '/fresh').catch((e) => ({ err: String(e.message) }));
@@ -520,6 +554,14 @@ const httpGet = (sock, p) => new Promise((res, rej) => {
   await waitFor(() => targetHits >= 5, 5000);
   for (const [label, good] of results) ok(good, label, good ? '' : 'شکست');
   ok(targetHits > 0, 'درخواست‌ها واقعاً به مقصدِ نهایی رسیدند', targetHits + ' درخواست در ' + (Date.now() - t0) + 'ms');
+
+  /* ═══ تستِ خودِ پنل — همان دکمه‌ای که کاربر می‌زند ═══
+     ⚠️ تا امروز این تست فقط چند بایت می‌فرستاد و «سبز» می‌شد، در حالی که
+     تونلِ vision وسطِ ترافیکِ پرحجم می‌مرد. حالا باید *حجمِ واقعی* (آپلودِ
+     ۱۲۸ کیلوبایتی + پاسخِ مقصد) را هم تأیید کند — وگرنه سبز بودنش بی‌معناست. */
+  const tst = await api('/api/exits/test', { id: added.server.id });
+  ok(tst.ok === true && tst.reachable === true, 'تستِ پنل: سرورِ خروجی «سالم» شد', (tst && (tst.error || tst.msg) || '').toString().slice(0, 140));
+  ok(tst.volumeOk === true, 'تستِ پنل: عبورِ ترافیکِ پرحجم (آپلود ' + Math.round((tst.volumeUpload || 0) / 1024) + 'KB + پاسخِ ' + (tst.volumeStatus || '—') + ')', tst.volumeError || '');
 
   const ex = await (await handler.fetch(new Request('https://panel.test/api/exits', { headers: { authorization: 'Bearer ' + token } }), env, ctx)).json();
   const st = (ex && ex.stats) || {};

@@ -677,13 +677,23 @@
     const ipLine = (r.ipOk === true || r.ipOk === false)
       ? (' • مقصدِ آی‌پی: ' + (r.ipOk ? 'سالم (' + fa(Number(r.ipBytes) || 0) + ' بایت)' : 'ناموفق'))
       : '';
+    /* کاوشِ حجمی — تا پیش از این، تست فقط چند بایت می‌فرستاد و ترافیکِ پرحجم
+       (آپلود/دانلود در حجمِ واقعی) هرگز سنجیده نمی‌شد: همان جایی که تونلِ
+       vision می‌مرد و کاربر «کانفیگ کار نمی‌کند» می‌دید در حالی که تست سبز بود. */
+    const volLine = r.volumeSkipped
+      ? ' • حجم: انجام نشد (خروجیِ روی کلاودفلر)'
+      : (r.volumeOk === true || r.volumeOk === false)
+        ? (' • حجم ' + fa(Math.round((Number(r.volumeUpload) || 0) / 1024)) + 'KB: ' + (r.volumeOk
+            ? 'سالم (' + fa(Number(r.volumeBytes) || 0) + ' بایت • ' + esc(String(r.volumeStatus || '').slice(0, 24)) + ')'
+            : 'ناموفق'))
+        : '';
     return '<div class="row-item" style="margin-top:8px">' + icon(good ? 'fa-circle-check' : 'fa-circle-xmark') +
       '<div class="grow"><b>' + esc(r.name) + ' — ' + title + '</b>' +
       '<div class="cell-sub">' + (good ? ('پاسخِ واقعی: ' + fa(Number(r.bytes) || 0) + ' بایت'
           + (r.head ? ' • <span class="mono">' + esc(r.head) + '</span>' : '')
-          + ipLine
+          + ipLine + volLine
           + ' • کل ' + fa(Number(r.ms) || 0) + ' ms' + (r.handshakeMs ? ' (هندشیک ' + fa(Number(r.handshakeMs)) + ' ms)' : ''))
-        : ('علت: ' + esc(r.error || 'نامشخص') + ipLine + (r.handshakeMs ? ' • هندشیک ' + fa(Number(r.handshakeMs)) + ' ms موفق بود' : '')))
+        : ('علت: ' + esc(r.error || 'نامشخص') + ipLine + volLine + (r.handshakeMs ? ' • هندشیک ' + fa(Number(r.handshakeMs)) + ' ms موفق بود' : '')))
       + (r.ip ? ' • آی‌پیِ خروجی: <span class="mono">' + esc(r.ip) + '</span>' : '')
       + (r.transport ? ' • ' + esc(r.transport) : '') + (r.security ? ' • ' + esc(r.security) : '') + '</div>'
       + (r.note ? '<div class="cell-sub">' + icon('fa-circle-info') + ' ' + esc(r.note) + '</div>' : '') + '</div>' +
@@ -764,7 +774,11 @@
       '<div class="grow"><b>تشخیصِ مسیرِ خروجی (از زمانِ بالا آمدنِ این ورکر)</b>' +
       '<div class="cell-sub">تونلِ سالم: <b>' + fa(Number(exSt.tunnels) || 0) + '</b>'
       + ' • بازگشت به مستقیم: ' + fa(Number(exSt.fallbacks) || 0)
-      + ' • بستنِ سخت‌گیر: ' + fa(Number(exSt.strictCloses) || 0) + '</div>'
+      + ' • بستنِ سخت‌گیر: ' + fa(Number(exSt.strictCloses) || 0)
+      + ' • مستقیم (بدونِ خروجی): ' + fa(Number(exSt.direct) || 0) + '</div>'
+      /* علتِ «چرا خروجی استفاده نشد» — قبلاً این حالت هیچ رویدادی نمی‌ساخت و
+         کارت *کاملاً* خالی می‌ماند؛ حالا دقیقاً همان‌جا نوشته می‌شود. */
+      + (exSt.lastDirect ? '<div class="cell-sub">آخرین تصمیمِ مسیر: <b>مستقیم</b> — ' + esc(exSt.lastDirect) + '</div>' : '')
       + (exSt.lastDest ? '<div class="cell-sub">آخرین اتصال: مقصد <span class="mono">' + esc(exSt.lastDest) + '</span>'
           + (exSt.lastExit ? ' • سرور «' + esc(exSt.lastExit) + '»' : '') + (exSt.lastUser ? ' • کاربر ' + esc(exSt.lastUser) : '')
           + (exSt.tunnels && !exSt.lastFail ? ' • سالم' : '') + '</div>' : '')

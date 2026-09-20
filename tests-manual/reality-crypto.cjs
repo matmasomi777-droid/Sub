@@ -90,6 +90,13 @@ if (LE0 < 0 || LE1 < LE0) { console.error('FATAL: exitToLink در ui/app.js پی
 const L = new Function('URLSearchParams', 'encodeURIComponent', APP.slice(LE0, LE1) + '\n;return exitToLink;'
 )(URLSearchParams, encodeURIComponent);
 
+/* ── ساختِ بایت‌های تصادفی برای تست‌های حجمی (getRandomValues سقفِ ۶۴KB دارد) ── */
+const randBig = (n) => {
+  const out = Buffer.alloc(n);
+  for (let o = 0; o < n; o += 65536) randomBytes(Math.min(65536, n - o)).copy(out, o);
+  return out;
+};
+
 /* ── مرجعِ مستقلِ HKDF-Expand (createHmac — نه subtle) ── */
 function refExpand(prk, info, len) {
   const out = [];
@@ -652,6 +659,68 @@ const refSha = (d) => createHash('sha256').update(Buffer.from(d)).digest();
     ok(f.s.seen.addr === 'mask.example.com' && f.s.seen.port === 443, 'مقصد و پورت درست پارس شدند', f.s.seen.addr + ':' + f.s.seen.port);
     ok(f.s.seen.visionOut && eq(f.s.seen.visionOut, payload), 'XtlsUnpaddingِ سرور داده‌ی اصلی را بی‌کم‌وکاست بیرون کشید', f.s.seen.visionOut ? f.s.seen.visionOut.length + ' بایت' : 'خیر');
     ok(got && got.value && Buffer.from(got.value).toString().slice(0, 12) === 'HTTP/1.1 200', 'پاسخِ سرور (هدرِ پاسخ + بلوکِ Vision) به کلاینت رسید', got && got.value ? Buffer.from(got.value).toString().slice(0, 20) : 'خیر');
+  }
+
+  console.log('== ۵ج) نوشتنِ بزرگ: بلوک‌های Vision ≤۶۵۵۳۵ بایتی و رکوردهای TLS ≤۱۶KB ==');
+  {
+    /* ⚠️ ریشهٔ «تستِ پنل سبز ولی کانفیگ کار نمی‌کند» در همین‌جا بود:
+       قالبِ Vision طولِ محتوا را در *دو بایت* می‌ریزد و کلاودفلر هر نوشتنِ
+       بیش از ۶۴KB روی سوکت را رد می‌کند. نوشتنِ بزرگ (مرورگر/کلاینت‌هایی با
+       بافرِ ۶۴KB به بالا) به یک بلوکِ سرریزشده تبدیل می‌شد؛ سرورِ Xray بقیهٔ
+       بایت‌ها را سرآیندِ بلوکِ بعدی می‌خواند و تونل *دقیقاً وسط* آپلود/دانلود
+       می‌مرد — در حالی که تستِ چند‌بایتی سالم بود. */
+    const FLOWV = 'xtls-rprx-vision';
+    const seen = [];
+    const sink = {
+      readable: new ReadableStream({ start() {} }),
+      writable: new WritableStream({ write(c) { seen.push(Buffer.from(c)); } }),
+      close() {},
+    };
+    const headerV = Buffer.from(V.vlessRequestHeader({ uuid: uuidStr, flow: FLOWV }, 'mask.example.com', 443, new Uint8Array(0)));
+    const wv = V.vlessClientWrap(sink, { header: headerV, uuid: uuidBytes, flow: FLOWV }).writable.getWriter();
+    const big = randBig(200000);
+    await wv.write(big);
+    const wire = Buffer.concat(seen);
+    /* اسکیلِ هدرِ VLESS را مثل خودِ سرور پیدا کن، بعد بلوک‌های Vision را با
+       پیاده‌سازیِ *مرجعِ* تست باز کن (نه پیاده‌سازیِ خودِ ورکر) */
+    const al = wire[17];
+    let i = 18 + al + 1;
+    i += 2;
+    const atypV = wire[i]; i += 1;
+    if (atypV === 1) i += 4;
+    else if (atypV === 2) { i += 1 + wire[i]; }
+    else i += 16;
+    const un = refVisionUnpad([wire.slice(i)], uuidBytes);
+    const lens = [];
+    for (let p = i; p + 5 <= wire.length; p += 5 + ((wire[p + 1] << 8) | wire[p + 2]) + ((wire[p + 3] << 8) | wire[p + 4])) {
+      const cl = (wire[p + 1] << 8) | wire[p + 2];
+      lens.push(cl);
+      if (cl === 0) break;
+    }
+    ok(un.ok && eq(un.out, big), 'نوشتنِ ۲۰۰ کیلوبایتی در چند بلوکِ Vision بی‌سرریز منتقل شد', un.ok ? (lens.length + ' بلوک • بزرگ‌ترین ' + Math.max(...lens) + ' بایت') : 'قالب به هم ریخت');
+    ok(Math.max(...lens) <= 65535, 'طولِ هر بلوک در بازه‌ی ۱۶ بیتی جا می‌شود (۶۵۵۳۵)', 'max=' + Math.max(...lens));
+
+    /* رکوردهای TLS را هم خودمان می‌سازیم (خروجیِ reality)؛ سقفِ ۲^۱۴ بایت
+       برای هر رکورد را رعایت نکردن، سرورِ Xray را به record_overflow می‌برد */
+    const keys = await M.rlAesKeyIv(randomBytes(32));
+    const recs = [];
+    const io = {
+      readExact: async () => { throw new Error('read لازم نیست'); },
+      write: async (b) => { recs.push(Buffer.from(b)); },
+      release() {}, close() {},
+    };
+    const s2 = M.rlWrapStreams(io, keys, keys);
+    const w2 = s2.writable.getWriter();
+    const big2 = randBig(100000);
+    await w2.write(big2);
+    const oversize = recs.filter((r) => ((r[3] << 8) | r[4]) > 16384 + 16);
+    ok(recs.length >= 6 && oversize.length === 0, 'نوشتنِ ۱۰۰ کیلوبایتی به ' + recs.length + ' رکوردِ TLSِ ≤۱۶KB شکسته شد', oversize.length ? oversize.length + ' رکورد بزرگ‌تر از حد' : '');
+    let back = Buffer.alloc(0);
+    for (let n = 0; n < recs.length; n++) {
+      const { plaintext } = await M.rlOpen(keys, recs[n], n);
+      back = Buffer.concat([back, Buffer.from(plaintext)]);
+    }
+    ok(eq(back, big2), 'همه‌ی رکوردها با ترتیبِ درست رمزگشایی و به بایت‌های اصلی بخیه شدند', back.length + ' بایت');
   }
 
   console.log('== ۶ب) نویزِ پس از هندشیک (ticket + رکوردِ خالی) به جریان تزریق نمی‌شود ==');
