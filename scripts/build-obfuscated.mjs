@@ -57,7 +57,8 @@ const fingerprint = () => {
   }
   return h.digest('hex');
 };
-{
+/* NO_STAMP=1 برای آزمایش‌های بیلد: بدونِ دست‌زدن به VERSION/version.json */
+if (!process.env.NO_STAMP) {
   const rev = fingerprint();
   const d = new Date();
   const p2 = (n) => String(n).padStart(2, '0');
@@ -86,6 +87,8 @@ const fingerprint = () => {
   writeFileSync(VERFILE, JSON.stringify(meta, null, 2) + '\n', 'utf8');
   console.log(`    نسخه: v${version}  •  بیلد: ${stamp}  •  rev: ${rev.slice(0, 10)}  •  sha: ${sha || '—'}`);
   console.log(`    version.json نوشته شد (${fpFiles.length} فایل اثرِ انگشت شد)`);
+} else {
+  console.log('    (NO_STAMP: نسخه/rev دست‌نخورده ماند)');
 }
 
 /* ── ۱) وصلهٔ سطحِ ماژول: exportها را قبل از obfuscate به شناسه‌های ساده تبدیل می‌کنیم
@@ -124,8 +127,24 @@ for (const [pat, rep] of [
   // نام DO دست نمی‌خورد — باید با بایندینگ داشبورد یکی بماند
 ]) src = src.replace(pat, rep);
 
-/* ── ۲) گزینه‌ها: همان سبک cfnew — سنگین ولی سازگار با Workers runtime ── */
-const OBF_OPTIONS = {
+/* ── ۲) گزینه‌ها: دو حالت
+   ══════════════════════════════════════════════════════════════════════════
+   ⚠️ درسِ گران: حالتِ «سنگین» فقط قیافهٔ کد را عوض نمی‌کند، بلکه CPUِ *زمانِ
+   اجرا* را هم چند برابر می‌کند — و در ورکرِ کلاودفلر، CPU سقفِ سختی دارد.
+   اندازه‌گیریِ محلی (tests-manual/cpu-bench.cjs) روی همین مخزن:
+
+     worker.js        بارِ ماژول: 31ms CPU   •  مسیرِ نشست‌ها: 359ms
+     _worker.obf.js   بارِ ماژول: 500ms CPU  •  مسیرِ نشست‌ها: 703ms
+
+   یعنی هر استارتِ isolate ~۰٫۵ ثانیه CPU می‌سوزاند و هر درخواست ۲ برابر
+   هزینه دارد. در لاگ‌های زندهٔ پنل، همین به‌صورتِ نشست‌های *کوتاه* (wall
+   ~۰٫۹s) که با «Worker exceeded CPU time limit» می‌میرند دیده می‌شد — یعنی
+   کاربر ترافیکش بی‌هیچ خطایی وسطِ کار قطع می‌شد.
+
+   پس: پیش‌فرض «cheap» است (رشته‌های پروتکل هنوز از اسکنر پنهان‌اند، ولی
+   بدونِ flattening و بدونِ decodeِ مکرر)؛ حالتِ سنگین با OBF_PRESET=heavy
+   در دسترس می‌ماند. عدد این تفاوت را جدی بگیرید: ۱۶ برابر. */
+const HEAVY = {
   compact: true,
   controlFlowFlattening: true,
   controlFlowFlatteningThreshold: 0.75,
@@ -158,6 +177,54 @@ const OBF_OPTIONS = {
   stringArrayThreshold: 1,
   unicodeEscapeSequence: true,
 };
+
+/* حالتِ سبک: همان پنهان‌سازیِ رشته‌ها (هدفِ اصلی: اسکنرِ استاتیکِ کلاودفلر
+   نباید «vless/trojan/clash» را ببیند) ولی بدونِ هزینهٔ زمانِ اجرا:
+   • controlFlowFlattening خاموش — هر تابع با یک switch، حلقه‌های داغ را
+     چند برابر کند می‌کند (فقط روی کدِ اجراشده اثر دارد، نه امنیت).
+   • رشته‌ها داخلِ آرایه می‌مانند (base64) ولی بدونِ crack/چند‌لایه wrapper.
+   • splitStrings/unicodeEscapeSequence خاموش — هم بیلد کوچک‌تر، هم parse
+     سریع‌تر (استارتِ isolate ارزان‌تر). */
+const CHEAP = {
+  compact: true,
+  controlFlowFlattening: false,
+  deadCodeInjection: false,
+  debugProtection: false,
+  disableConsoleOutput: false,
+  identifierNamesGenerator: 'hexadecimal',
+  renameGlobals: false,
+  rotateStringArray: true,
+  selfDefending: false,
+  splitStrings: false,
+  transformObjectKeys: false,
+  stringArray: true,
+  stringArrayCallsTransform: false,
+  stringArrayEncoding: ['base64'],
+  stringArrayIndexShift: true,
+  stringArrayRotate: true,
+  stringArrayShuffle: true,
+  stringArrayWrappersCount: 1,
+  stringArrayWrappersChainedCalls: false,
+  stringArrayWrappersParametersMaxCount: 2,
+  stringArrayWrappersType: 'variable',
+  stringArrayThreshold: 1,
+  unicodeEscapeSequence: false,
+  /* ⚠️ رشته‌های بسیار بلند (بدنهٔ UI و صفحاتِ فریب) از مجموعهٔ رمزنگاری‌شده
+     بیرون می‌مانند: هر بار خواندنِ یک عضوِ آرایه یک decode می‌خواد و این
+     رشته‌های غول‌آسا در *استارت* خوانده می‌شوند — یعنی CPUِ isolate بی‌دلیل
+     می‌سوزد. این رشته‌ها دیگر رازِ پروتکلی نیستند (به مرورگر سرو می‌شوند)،
+     پس پنهان‌کردنشان هیچ ارزشی ندارد. */
+  reservedStrings: ['^[\\s\\S]{300,}$'],
+};
+
+const PRESETS = { cheap: CHEAP, heavy: HEAVY };
+const PRESET = String(process.env.OBF_PRESET || 'cheap').toLowerCase();
+if (!PRESETS[PRESET]) {
+  console.error('FATAL: OBF_PRESET باید cheap یا heavy باشد (دریافت: ' + PRESET + ')');
+  process.exit(1);
+}
+const OBF_OPTIONS = PRESETS[PRESET];
+console.log('    حالتِ obfuscate: ' + PRESET + (PRESET === 'heavy' ? '  (هشدار: ~۱۶ برابر CPUِ استارت)' : ''));
 
 const obfuscator = require('javascript-obfuscator');
 const result = obfuscator.obfuscate(src, OBF_OPTIONS);

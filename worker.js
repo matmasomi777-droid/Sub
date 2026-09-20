@@ -104,15 +104,30 @@ function isCloudflareIp(ip) {
   }
   return false;
 }
-/* آیا سرورِ خروجی خودش روی کلاودفلر اجرا می‌شود؟ (only این‌ها محدودیت دارند)
-   – ws/xhttp ⇒ سرورِ خروجی یک ورکر است ⇒ بله.
-   – raw/tcp   ⇒ سوکتِ خام به یک سرورِ واقعی (Xray) ⇒ فقط اگر آدرسش روی
-     رنج‌های کلاودفلر باشد (پراکسیِ TCP کلادفلر). */
+/* آیا سرورِ خروجی خودش روی کلاودفلر اجرا می‌شود؟ (فقط این‌ها محدودیت دارند)
+   – ws/xhttp/h2/grpc ⇒ سرورِ خروجی یک ورکر است ⇒ بله.
+   – raw/tcp/reality  ⇒ سوکتِ خام به یک سرورِ واقعی (Xray روی VPS) ⇒ *هرگز*،
+     چون connect() ورکر فقط سرورِ خروجی را می‌گیرد و آن سرور خودش مقصد را
+     dial می‌کند.
+   ═════════════════════════════════════════════════════════════════════════
+   ⚠️ درسِ گران (از لاگ‌های زندهٔ یک نصبِ واقعی): قبلاً برای raw آدرسِ حل‌شده
+   را با رنج‌های کلاودفلر مقایسه می‌کردیم و اگر داخل بود «روی کلاودفلر»
+   حساب می‌شد. نتیجه‌اش این بود که سرورِ واقعیِ کاربر (reality روی VPS)
+   محدودیت‌های *ورکرِ* میزبان را می‌خورد:
+     • مقصدهای پورت ۸۰/۸۰۸۰ («سایت‌های HTTP») با خطا رد می‌شدند
+       → ۱۰۶ شکستِ خروجی فقط در ۶ ساعت، بدونِ هیچ ربطی به خودِ سرور.
+     • مقصدهای آی‌پی به www.<ip>.sslip.io تبدیل می‌شدند که سرورِ داخلِ ایران
+       نمی‌تواند resolve کند ⇒ صفر بایت ترافیک.
+   سرورِ reality ذاتاً روی سوکتِ خامِ TCP کار می‌کند، پس «reality» خودش بهترین
+   گواهِ این است که میزبان یک سرورِ واقعی است — حتی اگر دامنه‌اش از CDN
+   کلادفلر/اسپکتروم رد شود. */
 function exitCfFronted(srv) {
   if (!srv) return false;
+  const sec = String(srv.security || '').toLowerCase();
+  if (sec === 'reality') return false;                 /* reality = سوکتِ خامِ سرورِ واقعی */
   const t = String(srv.transport || 'ws').toLowerCase();
-  if (t === 'raw' || t === 'tcp') return isCloudflareIp(srv.resolvedIp || srv.address);
-  return true;
+  if (t === 'raw' || t === 'tcp') return false;        /* connect() خام به خودِ سرور */
+  return true;                                         /* ws/xhttp/... = ورکرِ میزبان */
 }
 /* پوشاندنِ مقصدِ IP با sslip.io؟ auto ⇒ فقط وقتی سرورِ خروجی روی کلاودفلر است */
 function exitIpWrap(srv) {
@@ -135,9 +150,9 @@ function exitDialHost(srv) {
    BUILD: مُهرِ زمانِ بیلد (UTC)
    BUILD_REV: اثرِ انگشتِ sha256 محتوای worker.js + ui — معیارِ دقیقِ «نسخه‌ی
    تازه» در بررسیِ آپدیت است (بدونِ تکیه بر تاریخ؛ چند پوش در یک روز هم دیده می‌شود) */
-const VERSION = '3.0.13';
-const BUILD = '2026.09.20-19:03';
-const BUILD_REV = '0dbf874c7f6d48bcf29e5348394a23a4d115eeaf8469642a6553fdc932daea9d';
+const VERSION = '3.0.17';
+const BUILD = '2026.09.20-19:39';
+const BUILD_REV = 'b9927a73030e8749de828d9a66ec8cfcce5dd7c980024e358fdd2d6214d68bf5';
 const BOOT = Date.now();
 /* شاخه‌ی پیش‌فرض برای بررسیِ نسخه */
 const UPD_DEFAULT_BRANCH = 'main';

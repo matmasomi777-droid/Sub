@@ -280,7 +280,13 @@ const refSha = (d) => createHash('sha256').update(Buffer.from(d)).digest();
     ok(V.isCloudflareIp('104.16.1.5') === true && V.isCloudflareIp('23.191.200.206') === false, 'تشخیصِ آی‌پیِ کلاودفلر درست است');
     ok(V.exitCfFronted(realSrv) === false, 'خروجیِ raw روی سرورِ واقعی ⇒ محدودیت‌ها اعمال نمی‌شود');
     ok(V.exitCfFronted(cfSrv) === true, 'خروجیِ ws ⇒ روی کلاودفلر شناسایی می‌شود');
-    ok(V.exitCfFronted({ transport: 'raw', resolvedIp: '104.17.1.1' }) === true, 'خروجیِ raw روی رنجِ کلاودفلر هم محدود می‌شود');
+    /* ⚠️ درسِ گران (لاگِ زندهٔ نصبِ کاربر): اگر آدرسِ سرورِ واقعی از رنجِ
+       کلاودفلر/CDN رد شود، نباید «ورکرِ میزبان» حساب شود — وگرنه تمام
+       مقصدهای HTTP (پورت ۸۰/۸۰۸۰) رد می‌شوند: ۱۰۶ شکستِ خروجی در ۶ ساعت. */
+    ok(V.exitCfFronted({ transport: 'raw', security: 'reality', resolvedIp: '104.17.1.1' }) === false,
+      'خروجیِ raw روی رنجِ کلاودفلر هم سرورِ واقعی است (محدودیتِ ورکر ممنوع)');
+    ok(V.exitCfFronted({ transport: 'ws', security: 'reality', resolvedIp: '' }) === false,
+      'reality ذاتاً سوکتِ خام است ⇒ حتی با transport اشتباه هم سرورِ واقعی شمرده می‌شود');
     ok(V.exitIpWrap(realSrv) === false, 'پیش‌فرض (auto) برای سرورِ واقعی: بدونِ sslip');
     ok(V.exitIpWrap({ ...realSrv, ipWrap: 'always' }) === true, 'override دستی: always');
     ok(V.exitIpWrap({ ...cfSrv, ipWrap: 'never' }) === false, 'override دستی: never');
@@ -294,6 +300,16 @@ const refSha = (d) => createHash('sha256').update(Buffer.from(d)).digest();
     let rawPort80 = '';
     try { V.vlessRequestHeader(realSrv, '1.2.3.4', 80, new Uint8Array(0)); } catch (e) { rawPort80 = String(e.message); }
     ok(rawPort80 === '', 'پورت ۸۰ روی سرورِ واقعی رد نمی‌شود');
+    /* همان شکستِ ۱۰۶‌باریِ تولید: سرورِ reality که آی‌پی حل‌شده‌اش در رنجِ
+       کلاودفلر بود، سایت‌های HTTP را کامل می‌کشت. */
+    let realPort80 = '';
+    try {
+      V.vlessRequestHeader({ ...realSrv, resolvedIp: '104.17.1.1' }, '1.2.3.4', 80, new Uint8Array(0));
+      V.vlessRequestHeader({ ...realSrv, resolvedIp: '104.17.1.1' }, '1.2.3.4', 8080, new Uint8Array(0));
+    } catch (e) { realPort80 = String(e.message); }
+    ok(realPort80 === '', 'پورت ۸۰/۸۰۸۰ روی سرورِ واقعیِ reality هم رد نمی‌شود (باگِ تولید)');
+    ok(V.exitIpWrap({ ...realSrv, resolvedIp: '104.17.1.1' }) === false,
+      'مقصدِ آی‌پی برای همان سرور هم sslip.io نمی‌شود (DNSِ فیلترشده = صفر بایت)');
     let cfPort80 = '';
     try { V.vlessRequestHeader(cfSrv, '1.2.3.4', 80, new Uint8Array(0)); } catch (e) { cfPort80 = String(e.message); }
     ok(/HTTP/.test(cfPort80), 'پورت ۸۰ روی خروجیِ کلاودفلر همچنان رد می‌شود');
