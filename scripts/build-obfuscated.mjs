@@ -12,32 +12,80 @@
  *  خروجی: _worker.obf.js — آن را در داشبورد کلاودفلر کپی/آپلود کنید.
  * ═══════════════════════════════════════════════════════════════════════════
  */
-import { readFileSync, writeFileSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, statSync, readdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { execSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const SRC = fileURLToPath(new URL('../worker.js', import.meta.url));
 const OUT = fileURLToPath(new URL('../_worker.obf.js', import.meta.url));
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+const VERFILE = fileURLToPath(new URL('../version.json', import.meta.url));
 
 let src = readFileSync(SRC, 'utf8');
 
-/* ── ۰) مُهرِ تاریخِ بیلد — بررسیِ نسخه (آپدیت خودکار) تاریخِ جدیدترین کامیتِ
-   ریپو را با همین تاریخ مقایسه می‌کند؛ بدونِ این مُهر، ورکرِ تازه‌مستقرشده هم
-   برای همیشه «قدیمی» دیده می‌شد. قالب: YYYY.MM.DD */
-{
-  const d = new Date();
-  const stamp = d.getUTCFullYear() + '.' + String(d.getUTCMonth() + 1).padStart(2, '0') + '.' + String(d.getUTCDate()).padStart(2, '0');
-  const m = src.match(/const BUILD = '([^']*)';/);
-  if (!m) {
-    console.error('WARN: مُهرِ BUILD پیدا نشد — بررسیِ نسخه دقیق نخواهد بود');
-  } else if (m[1] === stamp) {
-    console.log(`    مُهرِ بیلد: ${stamp} (قبلاً به‌روز بود)`);
-  } else {
-    src = src.replace(/const BUILD = '[^']*';/, `const BUILD = '${stamp}';`);
-    writeFileSync(SRC, src, 'utf8');
-    console.log(`    مُهرِ بیلد: ${stamp}`);
+/* ── ۰) مُهرِ نسخه/بیلد/اثرِ انگشت — قلبِ «آپدیت خودکار»
+   ───────────────────────────────────────────────────────────────────────────
+   VERSION با هر بیلد خودکار بالا می‌رود (سریال در version.json) تا هر تغییرِ
+   کد در پنل دیده شود. REV اثرِ انگشتِ sha256 محتوای worker.js + ui است و
+   «تازه‌تر بودن» با آن سنجیده می‌شود — نه با تاریخ — پس چند پوش در یک روز هم
+   بلافاصله به‌عنوان نسخهٔ تازه دیده می‌شود. version.json هم برای همین بررسی
+   در مخزن بازنویسی می‌شود (منبعِ بررسی از raw.githubusercontent — بدونِ
+   سهمیه‌ی GitHub API که از آی‌پی‌های کلادفلر زود به ۴۰۳ می‌خورد).
+   خط‌های مُهر در اثرِ انگشت نادیده گرفته می‌شوند تا محاسبه خودارجاع نشود. */
+const normStamp = (t) => t
+  .replace(/const VERSION = '[^']*';/, "const VERSION = '';")
+  .replace(/const BUILD = '[^']*';/, "const BUILD = '';")
+  .replace(/const BUILD_REV = '[^']*';/, "const BUILD_REV = '';");
+const listDir = (d, re) => {
+  try { return readdirSync(d).filter((f) => re.test(f)).map((f) => d + '/' + f); } catch (e) { return []; }
+};
+const fpFiles = [
+  SRC,
+  ...listDir(ROOT + 'ui', /\.(js|html|css)$/),
+  ...listDir(ROOT, /\.html$/),
+].sort();
+const fingerprint = () => {
+  const h = createHash('sha256');
+  for (const f of fpFiles) {
+    let t = '';
+    try { t = readFileSync(f, 'utf8'); } catch (e) { continue; }
+    h.update(f === SRC ? normStamp(t) : t);
+    h.update('\u0000');
   }
+  return h.digest('hex');
+};
+{
+  const rev = fingerprint();
+  const d = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  const stamp = d.getUTCFullYear() + '.' + p2(d.getUTCMonth() + 1) + '.' + p2(d.getUTCDate()) + '-' + p2(d.getUTCHours()) + ':' + p2(d.getUTCMinutes());
+  let prev = {};
+  try { prev = JSON.parse(readFileSync(VERFILE, 'utf8')); } catch (e) {}
+  const serial = (Number(prev.serial) || 0) + 1;
+  const cur = (src.match(/const VERSION = '([^']*)';/) || [, '3.0.0'])[1];
+  const parts = String(cur).split('.');
+  const version = (parts[0] || '3') + '.' + (parts[1] || '0') + '.' + serial;
+  if (!/const VERSION = '[^']*';/.test(src) || !/const BUILD_REV = '[^']*';/.test(src)) {
+    console.error('FATAL: const VERSION/BUILD_REV در worker.js پیدا نشد');
+    process.exit(1);
+  }
+  src = src.replace(/const VERSION = '[^']*';/, `const VERSION = '${version}';`)
+    .replace(/const BUILD = '[^']*';/, `const BUILD = '${stamp}';`)
+    .replace(/const BUILD_REV = '[^']*';/, `const BUILD_REV = '${rev}';`);
+  writeFileSync(SRC, src, 'utf8');
+  let sha = '';
+  try { sha = execSync('git rev-parse --short HEAD', { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch (e) {}
+  const meta = {
+    name: 'sub-panel', version, serial, build: stamp, rev,
+    at: new Date().toISOString(), sha,
+    note: sha ? 'کامیت ' + sha : 'بیلدِ محلی',
+  };
+  writeFileSync(VERFILE, JSON.stringify(meta, null, 2) + '\n', 'utf8');
+  console.log(`    نسخه: v${version}  •  بیلد: ${stamp}  •  rev: ${rev.slice(0, 10)}  •  sha: ${sha || '—'}`);
+  console.log(`    version.json نوشته شد (${fpFiles.length} فایل اثرِ انگشت شد)`);
 }
 
 /* ── ۱) وصلهٔ سطحِ ماژول: exportها را قبل از obfuscate به شناسه‌های ساده تبدیل می‌کنیم

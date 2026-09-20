@@ -6,5 +6,9 @@ package-lock.json
 .e2e-tmp/
 .iplimit-tmp/
 .tunnellimit-tmp/
+.updcheck-tmp/
+# باینریِ Xray برای تستِ زندهٔ واقعیت (reality-live-e2e) — چند ده مگابایت است
+# و هر کس خودش دانلود می‌کند؛ هرگز کامیت نشود
+tests-manual/.e2e/
 # پیامِ کامیتِ موقت (فقط برای اسکریپت‌ها)
 .commitmsg.txt

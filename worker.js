@@ -77,9 +77,17 @@ function exitDialHost(srv) {
   return dialableAddr(srv.address);
 }
 
-const VERSION = '3.0.0';
-const BUILD = '2026.09.20';
+/* ⚙️ این سه با هر `npm run build` خودکار مُهر می‌شوند — دستی تغییرشان ندهید.
+   VERSION: نسخه‌ی نمایشی (سریالِ بیلد خودکار بالا می‌رود تا هر تغییر در UI دیده شود)
+   BUILD: مُهرِ زمانِ بیلد (UTC)
+   BUILD_REV: اثرِ انگشتِ sha256 محتوای worker.js + ui — معیارِ دقیقِ «نسخه‌ی
+   تازه» در بررسیِ آپدیت است (بدونِ تکیه بر تاریخ؛ چند پوش در یک روز هم دیده می‌شود) */
+const VERSION = '3.0.2';
+const BUILD = '2026.09.20-15:12';
+const BUILD_REV = 'eec1eed7c83aa3a7c427a8ae8e91a59bd21c59c3ae185a020a67ad97ec84c925';
 const BOOT = Date.now();
+/* شاخه‌ی پیش‌فرض برای بررسیِ نسخه */
+const UPD_DEFAULT_BRANCH = 'main';
 /* مخزنِ آپدیت خودکارِ پنل (همین ریپو) + کشِ نتیجه‌ی بررسی — سطحِ ماژول تا
    بین درخواست‌های همین isolate بماند و سهمیه‌ی GitHub API تمام نشود */
 const UPD_DEFAULT_REPO = 'matmasomi777-droid/Sub';
@@ -137,7 +145,10 @@ const DEF = () => ({
     },
     cf: { accountId: '', apiToken: '', zoneId: '', domain: '', usageApi: true },
     linked: { enabled: false, hubUrl: '', apiKey: '', propagateConfig: true, propagateUpdate: true, loginSignal: true },
-    upd: { auto: true, repo: 'matmasomi777-droid/Sub', channel: 'stable', interval: 60, healthCheck: true, rollback: true },
+    /* upd: آپدیتِ خودکار. token ⇒ GitHub (ریپوی خصوصی/سهمیه)، cfToken/cfAccount/
+       script ⇒ استقرارِ واقعی روی کلاودفلر؛ autoDeploy پیش‌فرض خاموش است چون
+       یک پوشِ خراب می‌تواند پنلِ در حالِ کار را از کار بیندازد. */
+    upd: { auto: true, repo: 'matmasomi777-droid/Sub', branch: 'main', channel: 'stable', interval: 60, healthCheck: true, rollback: true, token: '', asset: '_worker.obf.js', cfToken: '', cfAccount: '', script: '', autoDeploy: false },
     auth: { totp: false, totpSecret: '', sessionMin: 15, loginRate: '5/10m', path: 'panel', pathRotate: false, disguise: true, maintenanceHost: 'nginx', decoyUrl: '', panic: false, password: 'simorgh' },
     /* ipConnLimit: پیش‌فرضِ سراسریِ «حداکثر اتصال همزمانِ هر IP» —
        فقط وقتی کاربر ipLimit خودش را ندارد (۰) استفاده می‌شود */
@@ -1952,6 +1963,12 @@ function normalize(st) {
   if (typeof s.upd.healthCheck !== 'boolean') s.upd.healthCheck = s.upd.healthCheck !== false;
   if (typeof s.upd.rollback !== 'boolean') s.upd.rollback = s.upd.rollback !== false;
   if (typeof s.upd.channel !== 'string' || !s.upd.channel) s.upd.channel = 'stable';
+  /* فیلدهای نسخهی جدیدِ آپدیت (نصب‌های قدیمی اینها را ندارند) */
+  if (typeof s.upd.branch !== 'string' || !/^[\w.\-/]+$/.test(s.upd.branch || '')) s.upd.branch = 'main';
+  if (typeof s.upd.asset !== 'string' || !s.upd.asset) s.upd.asset = '_worker.obf.js';
+  for (const k of ['token', 'cfToken', 'cfAccount', 'script']) if (typeof s.upd[k] !== 'string') s.upd[k] = '';
+  if (typeof s.upd.autoDeploy !== 'boolean') s.upd.autoDeploy = s.upd.autoDeploy === true;
+  /* توکن‌ها هیچ‌وقت به‌صورتِ خام به مرورگر نمی‌روند — فقط ماسک */
 
   /* ── کانفیگ‌های فیک: همیشه آرایه‌ی معتبر — بدون هیچ کانفیگ ثابت ──
      خواسته‌ی کاربر: در بخش کانفیگ‌های فیک هیچ مورد پیش‌فرضی نباید باشد؛
@@ -6051,7 +6068,7 @@ async function apiHandler(req, env, url, ctx) {
        می‌شود (liveEnsure)، پس هزینه‌اش برای مانیتورینگ ناچیز است. */
     if (limiterIntended(env) === 'd1') await liveEnsure(env);
     return json({
-    ok: true, version: VERSION, build: BUILD,
+    ok: true, version: VERSION, build: BUILD, rev: BUILD_REV,
     uptimeSec: Math.floor((Date.now() - BOOT) / 1000),
     storage: backendOf(env),
     /* ⚠️ مرجعِ شمارشِ محدودیت — 'mem' یعنی سقفِ آی‌پی بین isolateها اعمال
@@ -6123,15 +6140,30 @@ async function apiHandler(req, env, url, ctx) {
       if (st.settings.upd.auto !== false && Date.now() - (st.lastCheck || 0) > ival * 60000 && ctx && ctx.waitUntil) {
         st.lastCheck = Date.now();
         ctx.waitUntil(doUpdateCheckStore(env, st).catch(() => {}));
+        /* ═══ استقرارِ خودکار (اختیاری، پیش‌فرض خاموش) ═══
+           اگر کاربر autoDeploy را روشن کرده باشد و اعتبارنامه‌های کلاودفلر کامل
+           باشند، همان بررسیِ پس‌زمینه نسخه را هم مستقر می‌کند. پیش‌فرض خاموش
+           است چون یک پوشِ خراب می‌تواند پنل را از کار بیندازد. */
+        if (st.settings.upd.autoDeploy === true) ctx.waitUntil(doAutoDeploy(env, st).catch(() => {}));
       }
     } catch (e) {}
-    return json({ ...st, stats: { ...st.stats, ...series }, storage: backendOf(env), limiter: limiterBackend(env), limiterLabel: LIM_LABEL[limiterBackend(env)] || limiterBackend(env), limitEnforced: limiterBackend(env) !== 'mem', limiterIntended: limiterIntended(env), limiterVerified: LIVE_TS > 0 ? LIVE_OK : null, limiterError: LIVE_ERR, limiterDegraded: limiterDegraded(env) || !!LIMITER_DEGRADED, lastLimitError: CONN_LAST_ERR, connCounters: { acquires: CONN_ACQUIRES, denies: CONN_DENIES, evicts: CONN_EVICTS }, version: VERSION, build: BUILD, boot: BOOT, settings: { ...st.settings, auth: { ...st.settings.auth, password: undefined, totpSecret: st.settings.auth.totpSecret ? '•••••' : '' } } });
+    return json({ ...st, stats: { ...st.stats, ...series }, storage: backendOf(env), limiter: limiterBackend(env), limiterLabel: LIM_LABEL[limiterBackend(env)] || limiterBackend(env), limitEnforced: limiterBackend(env) !== 'mem', limiterIntended: limiterIntended(env), limiterVerified: LIVE_TS > 0 ? LIVE_OK : null, limiterError: LIVE_ERR, limiterDegraded: limiterDegraded(env) || !!LIMITER_DEGRADED, lastLimitError: CONN_LAST_ERR, connCounters: { acquires: CONN_ACQUIRES, denies: CONN_DENIES, evicts: CONN_EVICTS }, version: VERSION, build: BUILD, rev: BUILD_REV, boot: BOOT, settings: { ...st.settings, upd: { ...st.settings.upd, token: st.settings.upd.token ? '•••••' : '', cfToken: st.settings.upd.cfToken ? '•••••' : '' }, auth: { ...st.settings.auth, password: undefined, totpSecret: st.settings.auth.totpSecret ? '•••••' : '' } } });
   }
 
   if (route === 'settings' && (m === 'PUT' || m === 'POST')) {
     if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
     const b = await req.json().catch(() => ({}));
-    if (b.settings) merge(s, b.settings);
+    if (b.settings) {
+      /* ماسکِ توکن‌ها = «تغییر نده»؛ وگرنه یک ذخیرهٔ ساده توکن را پاک می‌کرد */
+      const u = b.settings.upd;
+      if (u && typeof u === 'object') {
+        for (const k of ['token', 'cfToken']) {
+          const v = u[k];
+          if (v === undefined || v === null || v === '' || v === '•••••') u[k] = (s.upd && s.upd[k]) || '';
+        }
+      }
+      merge(s, b.settings);
+    }
     addLog(st, 'info', 'panel', 'تنظیمات ذخیره شد', Object.keys(b.settings || {}).join(', '));
     await save(env, st);
     return json({ ok: true, storage: backendOf(env) });
@@ -6913,71 +6945,289 @@ async function apiHandler(req, env, url, ctx) {
    نتیجه ۱۰ دقیقه در حافظه‌ی isolate کش می‌شود تا سهمیه‌ی GitHub API
    (۶۰ درخواست/ساعت بدون توکن) با رفرش‌های پنل تمام نشود.
    ═══════════════════════════════════════════════════════════════════════════ */
-async function checkRepoUpdate(s) {
-  const repo = String((s && s.upd && s.upd.repo) || UPD_DEFAULT_REPO).trim() || UPD_DEFAULT_REPO;
-  const branch = 'main';
+function updRepoOf(s) {
+  return String((s && s.upd && s.upd.repo) || UPD_DEFAULT_REPO).trim() || UPD_DEFAULT_REPO;
+}
+function updBranchOf(s) {
+  const b = String((s && s.upd && s.upd.branch) || UPD_DEFAULT_BRANCH).trim();
+  return /^[\w.\-/]+$/.test(b) ? b : UPD_DEFAULT_BRANCH;
+}
+/* هدرهای GitHub — توکنِ اختیاری (upd.token) برای ریپوی خصوصی و سهمیه‌ی بالاتر.
+   ⚠️ بدونِ توکن، api.github.com از آی‌پی‌های مشترکِ کلاودفلر زود به ۴۰۳ می‌خورد؛
+   به همین دلیل منبعِ اصلی version.json از raw.githubusercontent است که سهمیه ندارد. */
+function updHeaders(s) {
+  const h = { 'user-agent': 'sub-panel', accept: 'application/vnd.github+json' };
+  const tok = String((s && s.upd && s.upd.token) || '').trim();
+  if (tok) h.authorization = 'Bearer ' + tok;
+  return h;
+}
+async function updGetJson(url, s) {
+  try {
+    const r = await fetch(url, { headers: updHeaders(s), cf: { cacheTtl: 0 } });
+    const j = await r.json().catch(() => null);
+    return { status: r.status, ok: r.ok && !!j, data: j };
+  } catch (e) { return { status: 0, ok: false, data: null, err: String((e && e.message) || e) }; }
+}
+/* مقایسه‌ی «تازه‌تر» — اول اثرِ انگشتِ محتوا، بعد سریالِ بیلد، آخر تاریخ */
+function updIsNewer(j) {
+  const rev = String((j && j.rev) || '').trim();
+  if (rev && BUILD_REV) return rev !== BUILD_REV;
+  const serial = Number(String((j && j.serial) || '').replace(/\D/g, '')) || 0;
+  const mine = Number(String(VERSION).split('.')[2] || '') || 0;
+  if (serial && mine) return serial > mine;
+  const b = String((j && j.build) || '');
+  return !!(b && b > String(BUILD));
+}
+async function checkRepoUpdate(s, opts) {
+  const force = !!(opts && opts.force);
+  const repo = updRepoOf(s);
+  const branch = updBranchOf(s);
   const ck = repo + '#' + branch;
   const now = Date.now();
-  if (UPD_CACHE.key === ck && UPD_CACHE.data && now - UPD_CACHE.at < 10 * 60 * 1000) return UPD_CACHE.data;
-  const gh = { headers: { 'user-agent': 'panel', accept: 'application/vnd.github+json' } };
+  if (!force && UPD_CACHE.key === ck && UPD_CACHE.data && now - UPD_CACHE.at < 10 * 60 * 1000) return UPD_CACHE.data;
   const putCache = (data) => { UPD_CACHE = { at: now, key: ck, data }; return data; };
-  /* ۱) release — اگر ریپو release دارد، تگ با نسخه‌ی همین ورکر مقایسه می‌شود */
-  try {
-    const r = await fetch('https://api.github.com/repos/' + repo + '/releases/latest', gh);
-    if (r.ok) {
-      const j = await r.json().catch(() => null);
-      if (j && j.tag_name) {
-        const tag = String(j.tag_name);
-        return putCache({
-          source: 'release', latest: tag,
-          newer: tag !== ('v' + VERSION) && tag !== VERSION,
-          note: String((j && j.name) || tag),
-        });
-      }
-    }
-  } catch (e) {}
-  /* ۲) جدیدترین کامیت — وقتی releaseای نیست؛ تاریخش با BUILD مقایسه می‌شود */
-  try {
-    const r = await fetch('https://api.github.com/repos/' + repo + '/commits/' + branch, gh);
-    if (r.ok) {
-      const j = await r.json().catch(() => null);
-      const sha = j && j.sha ? String(j.sha).slice(0, 7) : '';
-      const date = j && j.commit && j.commit.author && j.commit.author.date ? String(j.commit.author.date).slice(0, 10) : '';
-      const msg = j && j.commit ? String(j.commit.message || '').split('\n')[0].slice(0, 120) : '';
-      const bnum = Number(String(BUILD).replace(/\./g, ''));
-      const cnum = Number(String(date).replace(/-/g, ''));
+  const notes = [];
+  /* ۱) version.json — منبعِ اصلی: اسکریپتِ بیلد با هر بیلد بازنویسی‌اش می‌کند،
+        سهمیه‌ی GitHub API ندارد و روی CDN کش می‌شود. اثرِ انگشتِ محتوا (rev)
+        دقیق‌ترین معیارِ تازه‌بودن است: چند پوش در یک روز هم فوراً دیده می‌شود. */
+  {
+    const url = 'https://raw.githubusercontent.com/' + repo + '/' + branch + '/version.json?t=' + now;
+    const r = await updGetJson(url, s);
+    const j = r.data;
+    if (r.ok && j && (j.rev || j.version)) {
+      const ver = String(j.version || '');
       return putCache({
-        source: 'commit', latest: (date || '?') + ' • ' + sha,
-        newer: !!(cnum && bnum && cnum > bnum),
-        sha, date, note: msg,
+        source: 'version.json',
+        latest: ver ? 'v' + ver : String(j.rev || '').slice(0, 10),
+        version: ver, rev: String(j.rev || ''), serial: Number(j.serial) || 0,
+        sha: String(j.sha || ''), at: String(j.at || ''), build: String(j.build || ''),
+        newer: updIsNewer(j),
+        note: String(j.note || j.title || 'بیلد ' + (j.at || '?') + (j.sha ? ' • ' + String(j.sha).slice(0, 7) : '')),
+        checked: now,
       });
     }
-  } catch (e) {}
-  return { source: 'none', latest: null, newer: false, note: 'ریپو در دسترس نیست — نامِ ریپو (upd.repo) را بررسی کنید' };
+    notes.push('version.json: ' + (r.status || 'خطا'));
+  }
+  /* ۲) release — اگر ریپو تگ/release داشته باشد */
+  {
+    const r = await updGetJson('https://api.github.com/repos/' + repo + '/releases/latest', s);
+    const j = r.data;
+    if (r.ok && j && j.tag_name) {
+      const tag = String(j.tag_name);
+      return putCache({
+        source: 'release', latest: tag, version: tag.replace(/^v/, ''),
+        newer: tag !== ('v' + VERSION) && tag !== VERSION,
+        note: String(j.name || tag), checked: now,
+      });
+    }
+    notes.push('release: ' + (r.status || 'خطا'));
+  }
+  /* ۳) جدیدترین کامیت — وقتی releaseای نیست؛ تاریخش با BUILD مقایسه می‌شود */
+  {
+    const r = await updGetJson('https://api.github.com/repos/' + repo + '/commits/' + branch, s);
+    const j = r.data;
+    if (r.ok && j && j.sha) {
+      const sha = j && j.sha ? String(j.sha).slice(0, 7) : '';
+      const date = j.commit && j.commit.author && j.commit.author.date ? String(j.commit.author.date).slice(0, 10) : '';
+      const msg = j.commit ? String(j.commit.message || '').split('\n')[0].slice(0, 120) : '';
+      const bnum = Number(String(BUILD).split('-')[0].replace(/\./g, ''));
+      const cnum = Number(String(date).replace(/-/g, ''));
+      return putCache({
+        source: 'commit', latest: (date || '?') + ' • ' + sha, sha, date,
+        newer: !!(cnum && bnum && cnum > bnum),
+        note: msg || 'کامیت ' + sha, checked: now, notes,
+      });
+    }
+    notes.push('commits: ' + (r.status || 'خطا'));
+  }
+  return {
+    source: 'none', latest: null, newer: false, checked: now, notes,
+    note: 'ریپو در دسترس نیست — نامِ ریپو (upd.repo)، شاخه، و در ریپوی خصوصی توکن (upd.token) را بررسی کنید',
+  };
 }
 
 /** ذخیره‌ی نتیجه‌ی بررسی برای بنرِ داشبورد (فراخوانی در پس‌زمینه) */
 async function doUpdateCheckStore(env, st) {
   try {
     const info = await checkRepoUpdate(st.settings);
-    st.updateInfo = { latest: info.latest, newer: !!info.newer, source: info.source, note: info.note || '', at: Date.now() };
+    st.updateInfo = {
+      latest: info.latest, newer: !!info.newer, source: info.source, note: info.note || '',
+      at: Date.now(), rev: info.rev || '', serial: info.serial || 0, sha: info.sha || '',
+      version: info.version || '', notes: info.notes || [],
+    };
     st.lastCheck = Date.now();
     await save(env, st);
   } catch (e) {}
 }
-    if (a === 'update-check' || a === 'update-deploy' || a === 'update-rollback') {
-      const info = await checkRepoUpdate(s);
-      const latest = info.latest, newer = !!info.newer;
-      const cur = 'v' + VERSION;
-      const srcNote = info.source === 'release' ? 'release' : info.source === 'commit' ? 'commit' : 'نامشخص';
-      const steps = a === 'update-deploy' ? ['بررسی نسخه', 'دانلود بسته', 'استقرار با Cloudflare API', 'سلامت‌سنجی', latest ? 'انتشار به نودها' : 'پایان'] : ['بررسی نسخه'];
-      st.updateLog = steps.map((x, i) => ({ step: x, ok: a === 'update-rollback' ? i === 0 : true, note: i === 0 ? `فعلی ${cur} (بیلد ${BUILD}) • آخرین ${latest || 'نامشخص'} [${srcNote}]` : 'انجام شد' }));
-      if (a === 'update-rollback') st.updateLog.push({ step: 'بازگشت به نسخه‌ی قبل', ok: true, note: cur });
-      st.updateInfo = { latest, newer, source: info.source, note: info.note || '', at: Date.now() };
-      st.lastCheck = Date.now();
-      addLog(st, 'info', 'system', 'عملیات به‌روزرسانی', a + (latest ? ' • ' + latest : ''));
-      await save(env, st);
-      return json({ ok: true, current: cur, build: BUILD, latest, newer, source: info.source, note: info.note || '', msg: a === 'update-check' ? (newer ? 'نسخه‌ی جدید موجود است: ' + latest : latest ? 'در آخرین نسخه هستید' : 'ریپو در دسترس نیست — upd.repo را بررسی کنید') : a === 'update-deploy' ? 'استقرار انجام شد' : 'بازگشت انجام شد' });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   استقرارِ خودکار روی کلاودفلر (اختیاری — با Cloudflare API)
+   ───────────────────────────────────────────────────────────────────────────
+   کدِ ساختهٔ‌شده (پیش‌فرض _worker.obf.js) از مخزن خوانده و آپلود می‌شود.
+   ⚠️ نکتهٔ حیاتی: بایندینگ‌های فعلی (D1/DO/KV/…) از settings خودِ اسکریپت
+   خوانده و همراهِ آپلود فرستاده می‌شوند — آپلودِ سادهٔ اسکریپت بدونِ آنها
+   بایندینگ‌ها را پاک می‌کند و پنل از کار می‌افتد. اگر settings خوانده نشود،
+   آپلود عمداً متوقف می‌شود (به‌جای خراب‌کردنِ نصبِ سالم).
+   نیازمندی‌ها: upd.cfToken (مجوزِ Workers Scripts:Edit)، upd.cfAccount،
+   upd.script؛ اختیاری upd.asset / upd.branch.
+   ═══════════════════════════════════════════════════════════════════════════ */
+async function deployWorker(env, st, opts) {
+  opts = opts || {};
+  const s = st.settings;
+  const u = (s && s.upd) || {};
+  const steps = [];
+  const push = (step, okk, note) => { steps.push({ step, ok: !!okk, note: String(note == null ? '' : note).slice(0, 300) }); };
+  const repo = updRepoOf(s);
+  const branch = updBranchOf(s);
+  const acct = String(u.cfAccount || '').trim();
+  const name = String(u.script || '').trim();
+  const tok = String(u.cfToken || '').trim();
+  const asset = String(u.asset || '_worker.obf.js').trim().replace(/^\/+/, '');
+  if (!tok || !acct || !name) {
+    push('اعتبارسنجی', false, 'برای استقرار، توکنِ کلاودفلر (upd.cfToken)، شناسهٔ حساب (upd.cfAccount) و نامِ اسکریپت (upd.script) لازم است — بدونِ آنها از پیستِ دستی استفاده کنید');
+    return { ok: false, steps };
+  }
+  if (!/^[\w.\-/]+$/.test(asset)) { push('اعتبارسنجی', false, 'مسیرِ فایلِ کد نامعتبر است'); return { ok: false, steps }; }
+  const ref = opts.ref ? String(opts.ref) : branch;
+  if (!/^[\w.\-/]+$/.test(ref)) { push('اعتبارسنجی', false, 'ارجاعِ نسخه نامعتبر است'); return { ok: false, steps }; }
+  const url = 'https://raw.githubusercontent.com/' + repo + '/' + ref + '/' + asset + '?t=' + Date.now();
+  let code = '';
+  try {
+    const r = await fetch(url, { headers: { ...updHeaders(s), accept: 'text/plain' }, cf: { cacheTtl: 0 } });
+    if (!r.ok) {
+      push('دریافتِ بسته', false, 'کد از مخزن خوانده نشد (HTTP ' + r.status + ')' + (r.status === 404 ? ' — مسیر/شاخه یا (برای ریپوی خصوصی) توکن را بررسی کنید' : ''));
+      return { ok: false, steps, status: r.status };
+    }
+    code = await r.text();
+  } catch (e) { push('دریافتِ بسته', false, String((e && e.message) || e)); return { ok: false, steps }; }
+  if (code.length < 2000) { push('اعتبارسنجیِ بسته', false, 'فایلِ دانلودشده کوچک‌تر از آن است که کدِ ورکر باشد (' + code.length + ' بایت) — شاید upd.asset اشتباه است'); return { ok: false, steps }; }
+  push('دریافتِ بسته', true, asset + ' • ' + Math.round(code.length / 1024) + ' KB @ ' + ref.slice(0, 12));
+  const api = 'https://api.cloudflare.com/client/v4/accounts/' + encodeURIComponent(acct) + '/workers/scripts/' + encodeURIComponent(name);
+  const cfl = { authorization: 'Bearer ' + tok, 'user-agent': 'sub-panel' };
+  let cur = null;
+  try {
+    const g = await fetch(api + '/settings', { headers: cfl });
+    const j = await g.json().catch(() => null);
+    cur = j && j.result ? j.result : null;
+    if (!cur) push('خواندنِ تنظیمات', false, 'پاسخِ کلاودفلر: ' + (j && Array.isArray(j.errors) ? j.errors.map((e) => e && (e.message || e.code)).join('، ') : 'HTTP ' + g.status));
+  } catch (e) { push('خواندنِ تنظیمات', false, String((e && e.message) || e)); }
+  if (!cur) {
+    push('خواندنِ تنظیمات', false, 'تنظیماتِ اسکریپت خوانده نشد؛ برای اینکه بایندینگ‌ها (D1/DO) پاک نشوند آپلود را متوقف کردم — مجوزِ توکن (Workers Scripts:Edit) و نامِ اسکریپت را بررسی کنید');
+    return { ok: false, steps };
+  }
+  const meta = { main_module: 'worker.js', bindings: Array.isArray(cur.bindings) ? cur.bindings : [] };
+  if (cur.compatibility_date) meta.compatibility_date = cur.compatibility_date;
+  if (Array.isArray(cur.compatibility_flags) && cur.compatibility_flags.length) meta.compatibility_flags = cur.compatibility_flags;
+  if (cur.usage_model) meta.usage_model = cur.usage_model;
+  if (cur.observability) meta.observability = cur.observability;
+  if (cur.placement && cur.placement.mode) meta.placement = cur.placement;
+  push('خواندنِ تنظیمات', true, (meta.bindings.length ? meta.bindings.length + ' بایندینگ حفظ می‌شود' : 'بایندینگی برای حفظ نبود') + (meta.compatibility_date ? ' • سازگاری ' + meta.compatibility_date : ''));
+  if (opts.dryRun) { push('حالتِ آزمایشی', true, 'همه‌چیز آماده است — آپلود انجام نشد'); return { ok: true, steps, dryRun: true }; }
+  try {
+    const fd = new FormData();
+    fd.set('metadata', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
+    fd.set('worker.js', new Blob([code], { type: 'application/javascript+module' }), 'worker.js');
+    const up = await fetch(api, { method: 'PUT', headers: cfl, body: fd });
+    const j = await up.json().catch(() => null);
+    if (!up.ok || (j && j.success === false)) {
+      const errs = j && Array.isArray(j.errors) ? j.errors.map((e) => e && (e.message || e.code)).join('، ') : '';
+      push('آپلود به کلاودفلر', false, errs || 'HTTP ' + up.status);
+      return { ok: false, steps, status: up.status };
+    }
+    push('آپلود به کلاودفلر', true, 'اسکریپت «' + name + '» در حساب ' + acct.slice(0, 6) + '… به‌روزرسانی شد');
+  } catch (e) { push('آپلود به کلاودفلر', false, String((e && e.message) || e)); return { ok: false, steps }; }
+  push('پایان', true, 'انتشار چند ثانیه‌ای است؛ سپس همین صفحه را رفرش کنید تا نسخهٔ جدید فعال شود');
+  return { ok: true, steps, ref, bytes: code.length };
+}
+
+/* استقرارِ خودکار در پس‌زمینه — فقط وقتی autoDeploy روشن و اعتبارنامه‌ها کامل‌اند */
+async function doAutoDeploy(env, st) {
+  try {
+    const u = st.settings.upd || {};
+    if (!u.autoDeploy || !u.cfToken || !u.cfAccount || !u.script) return;
+    const info = await checkRepoUpdate(st.settings);
+    if (!info || !info.newer) return;
+    const r = await deployWorker(env, st, {});
+    st.updateLog = r.steps;
+    st.updateInfo = {
+      ...(st.updateInfo || {}), latest: info.latest, source: info.source, note: info.note || '', at: Date.now(),
+      rev: info.rev || '', serial: info.serial || 0, sha: info.sha || '',
+      deployOk: !!r.ok, deployedAt: r.ok ? Date.now() : ((st.updateInfo && st.updateInfo.deployedAt) || null),
+    };
+    addLog(st, r.ok ? 'info' : 'warn', 'system', 'استقرارِ خودکارِ نسخه', (r.ok ? 'موفق • ' : 'ناموفق • ') + String(info.latest || ''));
+    await save(env, st);
+  } catch (e) {}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   عملیاتِ به‌روزرسانی (دکمه‌های پنل)
+   ───────────────────────────────────────────────────────────────────────────
+   check   : بررسیِ تازه (force — کشِ ۱۰ دقیقه‌ای را دور می‌زند)
+   verify  : همان بررسی + اعتبارسنجیِ کاملِ استقرار در حالتِ آزمایشی (بدونِ آپلود)
+   deploy  : استقرارِ واقعی روی کلاودفلر (بایندینگ‌ها حفظ می‌شوند)
+   rollback: استقرارِ نسخه‌ی قبلی (آخرین کامیتی که version.json را عوض کرده)
+   ═══════════════════════════════════════════════════════════════════════════ */
+async function updAction(env, st, a) {
+  const s = st.settings;
+  const info = await checkRepoUpdate(s, { force: true });
+  const latest = info.latest, newer = !!info.newer;
+  const cur = 'v' + VERSION;
+  const src = String(info.source || 'none');
+  const srcNote = src === 'version.json' ? 'version.json مخزن (بدونِ سهمیه‌ی API)' : src === 'release' ? 'release گیت‌هاب' : src === 'commit' ? 'کامیتِ شاخه (تقریبی)' : 'نامشخص';
+  st.lastCheck = Date.now();
+  const steps = [{
+    step: 'بررسیِ نسخه', ok: true,
+    note: 'فعلی ' + cur + ' (بیلد ' + BUILD + (BUILD_REV ? ' • rev ' + BUILD_REV.slice(0, 10) : '') + ') • مخزن: ' + (latest || 'نامشخص') + ' [' + srcNote + ']',
+  }];
+  let deployOk = null;
+  if (a === 'update-deploy' || a === 'update-verify') {
+    const dr = await deployWorker(env, st, { dryRun: a === 'update-verify' });
+    steps.push(...(dr.steps || []));
+    deployOk = !!dr.ok;
+  }
+  if (a === 'update-rollback') {
+    /* کامیتِ قبلی‌ای که version.json را عوض کرده، مبنای بازگشت است (نه
+       تاریخچه‌ی کل — پس بازگشت همیشه به یک بیلدِ سازگار می‌رسد). */
+    const repo = updRepoOf(s), br = updBranchOf(s);
+    const bh = await updGetJson('https://api.github.com/repos/' + repo + '/commits?path=version.json&per_page=5&sha=' + encodeURIComponent(br), s);
+    const list = bh.ok && Array.isArray(bh.data) ? bh.data : [];
+    const mine = String(info.sha || '').slice(0, 7);
+    const prev = list.filter((c) => c && c.sha && (!mine || !String(c.sha).startsWith(mine)))[0];
+    if (!prev || !prev.sha) {
+      steps.push({ step: 'یافتنِ نسخه‌ی قبلی', ok: false, note: 'کامیتِ قبلیِ version.json پیدا نشد (تاریخچه‌ی کم/محدودیتِ API) — لطفاً کد را دستی از GitHub پیست کنید' });
+      deployOk = false;
+    } else {
+      steps.push({ step: 'نسخه‌ی بازگشتی', ok: true, note: String(prev.sha).slice(0, 10) + ' • ' + String((prev.commit && prev.commit.author && prev.commit.author.date) || '').slice(0, 10) });
+      const dr = await deployWorker(env, st, { ref: String(prev.sha) });
+      steps.push(...(dr.steps || []));
+      deployOk = !!dr.ok;
+    }
+  }
+  st.updateLog = steps;
+  st.updateInfo = {
+    latest, newer, source: src, note: info.note || '', at: Date.now(),
+    rev: info.rev || '', serial: info.serial || 0, sha: info.sha || '', version: info.version || '',
+    notes: info.notes || [],
+    deployOk, deployedAt: deployOk === true ? Date.now() : ((st.updateInfo && st.updateInfo.deployedAt) || null),
+  };
+  const failed = steps.find((x) => x && x.ok === false);
+  addLog(st, deployOk === false ? 'warn' : 'info', 'system', 'عملیاتِ به‌روزرسانی', a + (latest ? ' • ' + latest : '') + (deployOk === false ? ' • ناموفق' : ''));
+  await save(env, st);
+  const msg = a === 'update-check'
+    ? (newer ? 'نسخه‌ی تازه در مخزن هست: ' + latest : latest ? 'در آخرین نسخه هستید (' + cur + ')' : 'مخزن در دسترس نیست — upd.repo/شاخه/توکن را بررسی کنید')
+    : a === 'update-verify'
+      ? (deployOk ? 'همه‌چیز برای استقرار آماده است (آپلودی انجام نشد)' : 'آماده نیست: ' + ((failed && failed.note) || 'خطای نامشخص'))
+      : a === 'update-deploy'
+        ? (deployOk ? 'استقرار انجام شد؛ چند ثانیه تا انتشار' : 'استقرار ناموفق: ' + ((failed && failed.note) || 'خطای نامشخص'))
+        : (deployOk ? 'بازگشت به نسخه‌ی قبلی انجام شد' : 'بازگشت ناموفق: ' + ((failed && failed.note) || 'خطای نامشخص'));
+  return json({
+    ok: deployOk === null ? true : deployOk,
+    current: cur, build: BUILD, rev: BUILD_REV, latest, newer, source: src, note: info.note || '',
+    sha: info.sha || '', steps, deployedAt: deployOk === true ? Date.now() : null, msg,
+  });
+}
+    if (a === 'update-check' || a === 'update-deploy' || a === 'update-rollback' || a === 'update-verify') {
+      return await updAction(env, st, a);
     }
 
     /* ═══ نمای زنده‌ی اتصال‌ها — «چه کسی، از کدام آی‌پی، چند اتصال» ═══
@@ -7991,12 +8241,17 @@ function ipv6ToBytes(addr) {
   return out;
 }
 
-/** addons فقط وقتی flow تنظیم شده باشد (XTLS-Vision): [نوع=۱][طول][رشته] */
+/** addons فقط وقتی flow تنظیم شده باشد (XTLS-Vision).
+ *  ⚠️ قالبِ امروزیِ Xray *protobuf* است، نه قالبِ قدیمیِ [نوع=۱][طول][رشته]:
+ *  EncodeHeaderAddons → proto.Marshal(Addons{Flow: ...}) و Addons.Flow فیلدِ ۱
+ *  از نوعِ string است → تگ ۰x۰a + طول + رشته. قالبِ قدیمی را سرورهای امروزی
+ *  به‌عنوانِ protobuf می‌خوانند و «cannot parse invalid wire-format data» می‌دهند
+ *  و اتصال را می‌بندند — علتِ واقعیِ کارنکردنِ کانفیگ‌های xtls-rprx-vision. */
 function vlessAddons(flow) {
   if (!flow) return new Uint8Array(0);
   const f = new TextEncoder().encode(String(flow));
   const out = new Uint8Array(2 + f.length);
-  out[0] = 1;
+  out[0] = 0x0a;                          /* field 1 (Flow)، wire type 2 */
   out[1] = Math.min(255, f.length);
   out.set(f.subarray(0, out[1]), 2);
   return out;
@@ -8060,6 +8315,229 @@ function vlessRequestHeader(srv, addr, port, payload) {
   out.set(pl, i);                                 /* سپس بارِ اولیه */
   return out;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   XTLS-Vision (flow=xtls-rprx-vision) — سمتِ کلاینتِ سرورِ خروجی
+   ───────────────────────────────────────────────────────────────────────────
+   سروری که برای کاربرش flow=xtls-rprx-vision ست شده، کلاینتِ بدونِ flow را
+   رد می‌کند («client flow is empty») و جریانِ بعد از هدرِ VLESS را به‌شکلِ
+   بلوک‌های padding می‌خواند — عیناً XtlsPadding/XtlsUnpaddingِ Xray
+   (proxy/proxy.go):
+     [ UUID(16) — فقط بلوکِ اول ][ command(1) ][ contentLen(2) ][ paddingLen(2) ]
+     [ content ][ padding ]
+   command: 0x00 ادامه، 0x01 پایان، 0x02 مستقیم. سرور در سمتِ برگشت هم همین
+   قالب را می‌فرستد (با UUID در بلوکِ اول) و کلاینت باید بازش کند. بی‌این،
+   ترافیک از کانفیگ‌های vision اصلاً عبور نمی‌کند.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const VISION_FLOW = 'xtls-rprx-vision';
+/* testseed پیش‌فرضِ Xray برای کم‌کردنِ امضای طولیِ بسته‌های کوتاه: [900, 500, 900, 256] */
+const VISION_LONG_LEN = 900;
+const VISION_LONG_JITTER = 500;
+const VISION_SMALL_PAD = 256;
+
+/** بایت‌های UUID کاربر (۱۶) — سرور با همین‌ها می‌فهمد بلوکِ اول از ماست */
+function vlessUuidBytes(uuid) {
+  const hex = String(uuid || '').replace(/-/g, '');
+  const out = new Uint8Array(16);
+  for (let i = 0; i < 16; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16) || 0;
+  return out;
+}
+
+/** یک بلوکِ Vision — ساختارِ دقیقِ XtlsPadding (UUID فقط در بلوکِ اول) */
+function visionPadBlock(content, o) {
+  const c = toU8(content || new Uint8Array(0));
+  const first = !!(o && o.first);
+  const uuid = (o && o.uuid) ? toU8(o.uuid) : null;
+  const longPad = !!(o && o.long);
+  const r = new Uint8Array(2);
+  crypto.getRandomValues(r);
+  let pad;
+  if (longPad && c.length < VISION_LONG_LEN) pad = (r[0] % VISION_LONG_JITTER) + VISION_LONG_LEN - c.length;
+  else pad = r[0] % VISION_SMALL_PAD;
+  const cap = 65536 - 21 - c.length;
+  if (pad > cap) pad = cap > 0 ? cap : 0;
+  const head = (first && uuid) ? 16 : 0;
+  const out = new Uint8Array(head + 5 + c.length + pad);
+  if (head) out.set(uuid, 0);
+  const cmd = (o && o.command) === undefined ? 0 : o.command;
+  out[head] = cmd;
+  out[head + 1] = (c.length >> 8) & 255;
+  out[head + 2] = c.length & 255;
+  out[head + 3] = (pad >> 8) & 255;
+  out[head + 4] = pad & 255;
+  out.set(c, head + 5);
+  if (pad) crypto.getRandomValues(out.subarray(head + 5 + c.length));
+  return out;
+}
+
+/** بازکننده‌ی Vision: بلوک‌ها را از استریم جدا می‌کند.
+ *  مطابقِ Xray: اگر سرآغازِ جریان UUID نباشد، داده دست‌نخورده رد می‌شود
+ *  (سرور قالب‌بندی نکرده است) — پس حالت به «خام» می‌رود و برنمی‌گردد. */
+function visionUnwrap(uuid) {
+  const id = uuid ? toU8(uuid) : null;
+  let mode = 'init';
+  let buf = new Uint8Array(0);
+  let need = 5, curCmd = 0, remContent = 0, remPad = 0;
+  return {
+    feed(chunk) {
+      const c = toU8(chunk);
+      if (c.length) buf = rlConcat(buf, c);
+      const out = [];
+      for (;;) {
+        if (mode === 'raw') {
+          if (buf.length) { out.push(buf); buf = new Uint8Array(0); }
+          break;
+        }
+        if (!buf.length) break;
+        if (mode === 'init') {
+          if (buf.length < 16) break;                 /* UUID ناقص → صبر */
+          if (id && rlEq(buf.slice(0, 16), id)) { buf = buf.slice(16); mode = 'framed'; need = 5; continue; }
+          mode = 'raw';
+          continue;
+        }
+        if (need > 0) {                               /* سرآیندِ بلوک */
+          const take = Math.min(need, buf.length);
+          for (let i = 0; i < take; i++) {
+            const b = buf[i];
+            if (need === 5) curCmd = b;
+            else if (need === 4) remContent = b << 8;
+            else if (need === 3) remContent |= b;
+            else if (need === 2) remPad = b << 8;
+            else remPad |= b;
+            need--;
+          }
+          buf = buf.slice(take);
+          continue;
+        }
+        if (remContent > 0) {                         /* محتوا */
+          const take = Math.min(remContent, buf.length);
+          if (!take) break;
+          out.push(buf.slice(0, take));
+          buf = buf.slice(take);
+          remContent -= take;
+          continue;
+        }
+        if (remPad > 0) {                             /* padding */
+          const skip = Math.min(remPad, buf.length);
+          if (!skip) break;
+          buf = buf.slice(skip);
+          remPad -= skip;
+          continue;
+        }
+        if (curCmd === 0) { need = 5; continue; }      /* بلوکِ بعدی */
+        mode = 'raw';                                 /* ۱/۲ → بقیه خام */
+      }
+      if (!out.length) return new Uint8Array(0);
+      return out.length === 1 ? out[0] : rlConcat(...out);
+    },
+  };
+}
+
+/** پیام‌های handshake را از سرآغازِ جریانِ بالادست می‌بلعد (NewSessionTicket و
+ *  KeyUpdate بعد از هندشیک می‌آیند و داده‌ی کاربر نیستند)؛ null یعنی «ناقص است» */
+function vlessAbsorbHs(buf) {
+  const b = toU8(buf);
+  let off = 0;
+  while (off + 4 <= b.length) {
+    const t = b[off];
+    if (t !== 4 && t !== 24) break;
+    const L = (b[off + 1] << 16) | (b[off + 2] << 8) | b[off + 3];
+    if (L < 0 || L > 1048576) break;
+    if (off + 4 + L > b.length) return null;
+    off += 4 + L;
+  }
+  return b.slice(off);
+}
+
+/** سرآغازِ پاسخ: پیام‌های handshake → هدرِ پاسخِ VLESS ([نسخه][طولِ addons]) → بدنه */
+function vlessResponseParser(o) {
+  const vision = !!(o && o.flow);
+  const un = vision ? visionUnwrap(o && o.uuid) : null;
+  let pre = new Uint8Array(0);
+  let state = 'hs';
+  return {
+    push(chunk) {
+      let data = toU8(chunk);
+      if (state !== 'body') {
+        pre = rlConcat(pre, data);
+        for (;;) {
+          if (state === 'hs') {
+            const rest = vlessAbsorbHs(pre);
+            if (rest === null) return new Uint8Array(0);  /* منتظرِ ادامه‌ی پیام */
+            pre = rest;
+            if (!pre.length) return new Uint8Array(0);
+            state = 'resp';
+          }
+          if (state === 'resp') {
+            if (pre.length < 2) return new Uint8Array(0);
+            const addons = pre[1];
+            if (pre.length < 2 + addons) return new Uint8Array(0);
+            /* ⚠️ این ۲ بایت هدرِ پاسخِ VLESS است و نباید به جریانِ کاربر برود؛
+               قبلاً فقط در یک مسیر با skipLead=2 حذف می‌شد و در بقیه به
+               جریان تزریق می‌شد (ورودیِ TLS کاربر را خراب می‌کرد). */
+            pre = pre.slice(2 + addons);
+            state = 'body';
+          }
+          if (state === 'body') { data = pre; pre = new Uint8Array(0); break; }
+        }
+      }
+      if (!data.length) return data;
+      return vision ? un.feed(data) : data;
+    },
+  };
+}
+
+/** لفافِ کلاینتِ VLESS روی استریمِ انتقال (raw/ws/reality):
+ *  نوشتن: هدرِ VLESS یک‌بار + بلوک‌های Vision (در صورتِ flow).
+ *  خواندن: حذفِ پیام‌های handshake، حذفِ هدرِ پاسخ و بازکردنِ Vision. */
+function vlessClientWrap(pair, o) {
+  const header = toU8((o && o.header) || new Uint8Array(0));
+  const uuid = (o && o.uuid) ? toU8(o.uuid) : null;
+  const vision = !!(o && o.flow);
+  const parser = vlessResponseParser({ flow: vision ? o.flow : '', uuid });
+  let headerSent = false;
+  let firstBlock = true;
+  const reader = pair.readable.getReader();
+  const writer = pair.writable.getWriter();
+  const readable = new ReadableStream({
+    async pull(controller) {
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) { try { controller.close(); } catch (e) {} return; }
+          const out = parser.push(value);
+          if (out && out.length) { controller.enqueue(out); return; }
+        }
+      } catch (e) { try { controller.error(e); } catch (e2) {} }
+    },
+    cancel(reason) { try { reader.cancel(reason); } catch (e) {} },
+  });
+  const writable = new WritableStream({
+    async write(chunk) {
+      const c = toU8(chunk);
+      if (!headerSent) {
+        headerSent = true;
+        const parts = [header];
+        if (c.length) parts.push(vision ? visionPadBlock(c, { first: true, uuid, long: true, command: 0 }) : c);
+        else if (vision) parts.push(visionPadBlock(new Uint8Array(0), { first: true, uuid, long: true, command: 0 }));
+        await writer.write(parts.length === 1 ? parts[0] : rlConcat(...parts));
+        firstBlock = false;
+        return;
+      }
+      if (!c.length) return;
+      await writer.write(vision ? visionPadBlock(c, { first: firstBlock, uuid, long: false, command: 0 }) : c);
+      firstBlock = false;
+    },
+    async abort(reason) { try { await writer.abort(reason); } catch (e) {} },
+    async close() { try { await writer.close(); } catch (e) {} },
+  });
+  return {
+    readable, writable,
+    close: () => { try { if (pair.close) pair.close(); } catch (e) {} },
+    transport: pair.transport, security: pair.security,
+  };
+}
+/* @@VISION_END@@ */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    کدکِ WebSocketِ کلاینت (RFC 6455) — فقط آنچه برای انتقالِ ws لازم است
@@ -8323,23 +8801,26 @@ function rlNonce(iv12, seq) {
   return n;
 }
 /* رمزکردنِ یک رکوردِ TLS 1.3 (seq جدا برای هر جهت، از صفر).
-   ⚠️ RFC 8446 §5.2: هر رکوردِ رمزنگاری‌شده باید در انتهایِ متنِ داخلیِ خود بایتِ
-   «نوعِ محتوا» (۲۳ = application_data) را داشته باشد؛ AEAD آن را هم می‌پوشاند.
-   بایتی که اینجا اضافه می‌شود، در rlOpen برداشته می‌شود. بی‌آن، Finishedِ ما برای
-   سرورِ واقعی ناخوانا بود، flightِ سرور این‌طرف قاب‌بندی‌اش می‌شکست و هر رکوردِ
-   داده یک بایتِ اضافیِ 0x17 به جریانِ VLESS تزریق می‌کرد. */
+   ⚠️ RFC 8446 §5.2: در انتهایِ متنِ داخلیِ هر رکوردِ رمزنگاری‌شده بایتِ «نوعِ
+   محتوا» می‌آید و AEAD آن را هم می‌پوشاند — اما این بایت *نوعِ واقعیِ* محتواست،
+   نه همیشه application_data: رکوردهای رمزشده‌ی handshake (همان‌طور که Go و
+   forkِ reality می‌فرستند: record=append(record, record[0])) بایتِ ۲۲ دارند و
+   فقط داده بایتِ ۲۳. فرضِ «همیشه ۲۳» باعث می‌شد Finished/دادهی سرورِ واقعی
+   رد شود؛ اکنون نوع را صریح می‌دهیم و در rlOpen هم می‌خوانیمش. */
 const RL_CT_APPDATA = 23;
-async function rlSeal(keyObj, plaintext, seq) {
-  const inner = rlConcat(toU8(plaintext), new Uint8Array([RL_CT_APPDATA]));
+const RL_CT_HANDSHAKE = 22;
+const RL_CT_ALERT = 21;
+async function rlSeal(keyObj, plaintext, seq, innerType) {
+  const inner = rlConcat(toU8(plaintext), new Uint8Array([innerType === undefined ? RL_CT_APPDATA : innerType]));
   const L = inner.length + 16;
   const hdr = new Uint8Array([23, 3, 3, (L >> 8) & 255, L & 255]);
-  const ct = new Uint8Array(await crypto.subtle.encrypt(
+  const sealed = new Uint8Array(await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv: rlNonce(keyObj.iv, seq), additionalData: hdr }, keyObj.k, inner));
-  return rlConcat(hdr, ct);
+  return rlConcat(hdr, sealed);
 }
-/* رمزگشاییِ یک رکوردِ کامل (هدر ۵ + بدنه) — برمی‌گرداند {plaintext, total}.
-   بایتِ آخرِ متنِ داخلی نوعِ محتوا است (RFC 8446 §5.2) و از خروجی حذف می‌شود؛
-   نوعی غیر از ۲۳ یعنی جریان به‌هم ریخته است. */
+/* رمزگشاییِ یک رکوردِ کامل (هدر ۵ + بدنه) — برمی‌گرداند {plaintext, total, ct}.
+   بایتِ آخرِ متنِ داخلی نوعِ محتوا است (RFC 8446 §5.2) و از خروجی حذف می‌شود.
+   نوع‌های معتبر: ۲۲ handshake (flight و NewSessionTicket) و ۲۳ data. */
 async function rlOpen(keyObj, record, seq) {
   const r = toU8(record);
   if (r.length < 5 + 16 + 1 || r[0] !== 23) throw new Error('رکوردِ app-data نامعتبر');
@@ -8349,8 +8830,14 @@ async function rlOpen(keyObj, record, seq) {
   const pt = new Uint8Array(await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: rlNonce(keyObj.iv, seq), additionalData: hdr }, keyObj.k, r.slice(5, 5 + L)));
   if (pt.length < 1) throw new Error('متنِ داخلیِ رکورد خالی است');
-  if (pt[pt.length - 1] !== RL_CT_APPDATA) throw new Error('نوعِ محتوایِ رکورد نامعتبر (' + pt[pt.length - 1] + ')');
-  return { plaintext: pt.slice(0, pt.length - 1), total: 5 + L };
+  /* پدینگِ صفرِ TLS 1.3 (RFC 8446 §5.4) *بعد از* بایتِ نوع می‌آید و forkِ
+     reality برای همرنگ‌شدن با طولِ رکوردهای مقصد آن را پر می‌کند — پس بایتِ
+     نوع، آخرین بایتِ *غیرصفرِ* انتهایِ متن است، نه لزوماً آخرین بایت. */
+  let e = pt.length;
+  while (e > 1 && pt[e - 1] === 0) e--;
+  const ct = pt[e - 1];
+  if (ct !== RL_CT_APPDATA && ct !== RL_CT_HANDSHAKE && ct !== RL_CT_ALERT) throw new Error('نوعِ محتوایِ رکورد نامعتبر (' + ct + ')');
+  return { plaintext: pt.slice(0, e - 1), total: 5 + L, ct };
 }
 
 /* ── ClientHello شبیه‌کروم ──
@@ -8380,8 +8867,21 @@ function rlBuildCH(o) {
   crypto.getRandomValues(rnd);
   const gr = rlGrease();
   const cs = rlConcat(rlU16(gr), rlU16(0x1301), rlU16(0x1302), rlU16(0x1303));
+  /* ⚠️ X25519MLKEM768 (گروه 0x11ec = 4588) *پیش از* X25519 می‌آید و بدونِ آن
+     سرورهای امروزیِ reality (Xray ≥ v25.6 با گیتِ ML-KEM) کلاینت را «قدیمی/
+     بیگانه» می‌بینند و اتصال را به مقصدِ واقعی (camouflage) پروکسی می‌کنند —
+     یعنی ترافیک هرگز از سرورِ خروجی عبور نمی‌کند و هندشیک هم بعدش می‌میرد.
+     سرور فقط به *وجود* و *طولِ* این ورودی نگاه می‌کند (1184+32) و رازِ مشترکِ
+     احراز را از ۳۲ بایتِ آخرش (همان X25519 ما) می‌سازد.
+     گروه عمداً در supported_groups نمی‌آید: پس مقصدِ واقعی هم ML-KEM انتخاب
+     نمی‌کند و هندشیکِ TLS همان X25519 خالص می‌ماند (وگرنه رازِ هیبریدی
+     ML-KEM لازم می‌شد که در ورکر عملی نیست). */
+  const mlkemShare = new Uint8Array(1184 + 32);
+  crypto.getRandomValues(mlkemShare.subarray(0, 1184));
+  mlkemShare.set(pub, 1184);
   const ks = rlConcat(
     rlU16(gr), rlU16(1), new Uint8Array([0]),
+    rlU16(0x11ec), rlU16(mlkemShare.length), mlkemShare,
     rlU16(29), rlU16(32), pub,
   );
   const sigAlgs = [0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601, 0x0603];
@@ -8517,7 +9017,11 @@ async function rlAlertDetail(io, timeout) {
 /* ── درایورِ هندشیک ──
    io: { readExact(n, timeoutMs), write(bytes), close() } — تزریق‌پذیر تا هم
    روی سوکتِ واقعی و هم در تست (سرورِ جعلیِ درون‌حافظه) کار کند.
-   برمی‌گرداند { cAp, sAp } (کلیدهای app-data). */
+   برمی‌گرداند { cAp, sAp } (کلیدهای app-data).
+   RL_DBG: آخرین رازهای مشتق‌شده — فقط وقتی srv.dbg روشن است پر می‌شود؛
+   مقایسه‌ی آن با key logِ سرورِ واقعی، عیب‌یابیِ هندشیک را از حدس‌وگمان
+   به یک diffِ دقیق تبدیل می‌کند. */
+let RL_DBG = null;
 async function rlHandshake(io, srv, timeoutMs) {
   const timeout = Math.max(1000, Number(timeoutMs) || 8000);
   const sni = String(srv.sni || '').trim();
@@ -8531,6 +9035,12 @@ async function rlHandshake(io, srv, timeoutMs) {
   const epriv = new Uint8Array(32);
   crypto.getRandomValues(epriv);
   const epub = rlX25519Base(epriv);
+  /* رازِ ۱ — احرازِ reality: X25519(کلیدِ موقت، کلیدِ عمومیِ سرور از لینک).
+     فقط برای AEAD روی session_id؛ هیچ ربطی به کلیدهای TLS ندارد.
+     رازِ ۲ — هندشیکِ TLS: X25519(کلیدِ موقت، key_share داخلِ ServerHello) که
+     پایین‌تر و پس از پارسِ ServerHello حساب می‌شود. قاطی‌کردنِ این دو همان
+     باگی بود که «رمزگشاییِ flight ناموفق» می‌داد: کلیدها از رازِ احراز مشتق
+     می‌شدند و هیچ‌وقت با سرورِ واقعی نمی‌خواندند. */
   const shared = rlX25519(epriv, pbk);
   /* پاسِ اول با sid صفر (برای AAD)، بعد seal و جایگذاریِ ۳۲ بایتِ واقعی */
   const ch0 = rlBuildCH({ sni, sid: new Uint8Array(32), pubkey: epub });
@@ -8608,15 +9118,17 @@ async function rlHandshake(io, srv, timeoutMs) {
     }
   }
 
-  /* مشتقات کلید (RFC 8446 §7.1) */
+  /* مشتقات کلید (RFC 8446 §7.1) — رازِ ECDHE از key_share سرور، نه pbk */
+  const ecdhe = rlX25519(epriv, sh.serverPub);
   const ZERO32 = new Uint8Array(32);
   const early = await rlHmac(ZERO32, ZERO32);
   const emptyHash = await rlSha256(new Uint8Array(0));
   const derived1 = await rlExpandLabel(early, 'derived', emptyHash, 32);
-  const hsSecret = await rlHmac(derived1, shared);
+  const hsSecret = await rlHmac(derived1, ecdhe);
   const chShHash = await rlSha256(trBytes());
   const cHs = await rlDeriveSecret(hsSecret, 'c hs traffic', chShHash);
   const sHs = await rlDeriveSecret(hsSecret, 's hs traffic', chShHash);
+  if (srv.dbg) RL_DBG = { phase: 'hs-keys', ecdhe, chShHash, hsSecret, cHs, sHs };
   const sHsKeys = await rlAesKeyIv(sHs);
   const cHsKeys = await rlAesKeyIv(cHs);
 
@@ -8632,15 +9144,23 @@ async function rlHandshake(io, srv, timeoutMs) {
         sHsKeys.k, rec.body));
     } catch (e) { throw new Error('رمزگشاییِ flight ناموفق — کلیدِ مشترک ساخته نشد'); }
     sSeq++;
-    /* بایتِ نوعِ محتوا در انتهایِ متنِ داخلی است (RFC 8446 §5.2) — اگر جدا نشود
-       قاب‌بندیِ پیام‌های handshake این‌طرف می‌شکند و Finishedِ سرور هرگز پارس نمی‌شود */
-    if (pt.length < 1 || pt[pt.length - 1] !== RL_CT_APPDATA) throw new Error('flightِ سرور بدریخت بود (بایتِ نوعِ محتوا)');
-    hsBuf = rlConcat(hsBuf, pt.slice(0, pt.length - 1));
+    /* بایتِ نوعِ محتوا در انتهایِ متنِ داخلی است (RFC 8446 §5.2) — نوعِ واقعی،
+       یعنی ۲۲ برای پیام‌های handshakeِ رمزشده. اگر جدا نشود قاب‌بندیِ پیام‌های
+       handshake می‌شکند و Finishedِ سرور هرگز پارس نمی‌شود. */
+    if (pt.length < 1) throw new Error('flightِ سرور بدریخت بود (خالی)');
+    let ctEnd = pt.length;
+    while (ctEnd > 1 && pt[ctEnd - 1] === 0) ctEnd--; /* پدینگِ صفرِ §5.4 */
+    const innerCt = pt[ctEnd - 1];
+    if (innerCt !== RL_CT_HANDSHAKE && innerCt !== RL_CT_APPDATA) throw new Error('flightِ سرور بدریخت بود (بایتِ نوعِ محتوا: ' + innerCt + ')');
+    hsBuf = rlConcat(hsBuf, pt.slice(0, ctEnd - 1));
     const msgs = pullHs();
     for (const m of msgs) {
       if (m.type === 20) {
+        /* ⚠️ RFC 8446 §4.4.4: verify_data = HMAC(finished_key, Transcript-Hash(...))
+           — ورودیِ HMAC *هشِ* ترنسکریپت است، نه بایت‌های خامِ آن. HMACِ خام
+           هیچ‌وقت با سرورِ واقعی نمی‌خواند (و تستِ جعلی هم همان باگ را داشت). */
         const fk = await rlExpandLabel(sHs, 'finished', new Uint8Array(0), 32);
-        const vd = (await rlHmac(fk, trBytes())).slice(0, 32);
+        const vd = (await rlHmac(fk, await rlSha256(trBytes()))).slice(0, 32);
         if (!rlEq(vd, m.body)) throw new Error('تأییدِ Finished ناموفق — سرور کلیدِ reality را ندارد');
         transcript.push(m.raw);
         serverDone = true;
@@ -8655,8 +9175,9 @@ async function rlHandshake(io, srv, timeoutMs) {
   /* ۳) Finished ما */
   let hsEndHash;
   {
+    /* مثل سمتِ سرور: HMAC روی *هشِ* ترنسکریپت (§4.4.4) */
     const fk = await rlExpandLabel(cHs, 'finished', new Uint8Array(0), 32);
-    const vd = (await rlHmac(fk, trBytes())).slice(0, 32);
+    const vd = (await rlHmac(fk, await rlSha256(trBytes()))).slice(0, 32);
     /* ⚠️ هشِ transcript برای مشتقاتِ master/app باید تا Finishedِ سرور باشد،
        نه شاملِ Finished خودمان (RFC 8446 §7.1: ...server Finished).
        وگرنه کلیدهای app-data از هر پیاده‌سازیِ درست منحرف می‌شوند و relay
@@ -8664,16 +9185,29 @@ async function rlHandshake(io, srv, timeoutMs) {
     hsEndHash = await rlSha256(trBytes());
     const msg = rlConcat(new Uint8Array([20, 0, 0, 32]), vd);
     transcript.push(msg);
-    await io.write(await rlSeal(cHsKeys, msg, cSeq++));
+    /* Finished یک پیامِ handshake است → بایتِ نوعِ ۲۲ (نه ۲۳)؛ سرورِ واقعی
+       همان را انتظار دارد و وگرنه Finishedِ ما را نمی‌پذیرد. */
+    await io.write(await rlSeal(cHsKeys, msg, cSeq++, RL_CT_HANDSHAKE));
   }
 
-  /* ۴) کلیدهای app-data */
+  /* ۴) کلیدهای app-data
+     ⚠️ RFC 8446 §7.1: در نمودارِ زمان‌بندیِ کلید، هر دو «Derive-Secret(.,
+     "derived", "")» با *هشِ تهی* می‌آیند (HA=Hash())، نه با ترنسکریپتِ جاری.
+     فقط رازهای ترافیک (c ap traffic / s ap traffic) ترنسکریپت تا Finishedِ
+     سرور را می‌گیرند. قبلاً اینجا fullHash به عنوانِ context داده می‌شد و
+     کلیدهای app-data هیچ‌وقت با سرورِ واقعی نمی‌خواندند — هندشیک «موفق»
+     به‌نظر می‌رسید و اولین رکوردِ داده در رمزگشایی می‌مرد. */
   const fullHash = hsEndHash;
-  const derived2 = await rlExpandLabel(hsSecret, 'derived', fullHash, 32);
+  const derived2 = await rlExpandLabel(hsSecret, 'derived', emptyHash, 32);
   const master = await rlHmac(derived2, ZERO32);
   const cApS = await rlDeriveSecret(master, 'c ap traffic', fullHash);
   const sApS = await rlDeriveSecret(master, 's ap traffic', fullHash);
-  return { cAp: await rlAesKeyIv(cApS), sAp: await rlAesKeyIv(sApS) };
+  /* secrets فقط برای تست/عیب‌یابی (srv.dbg) برگردانده می‌شوند تا بتوان رازهای
+     مشتق‌شده را با key logِ سرورِ واقعی مقایسه کرد — بدونِ آن، «هندشیک شکست
+     خورد» فقط یک پیام است، نه یک سرنخ. */
+  if (srv.dbg) RL_DBG = { phase: 'done', ecdhe, chShHash, hsSecret, sHs, cHs, master };
+  const dbg = srv.dbg ? RL_DBG : null;
+  return { cAp: await rlAesKeyIv(cApS), sAp: await rlAesKeyIv(sApS), dbg };
 }
 
 /* ── نادیده‌گرفتنِ ticketهای بعد از هندشیک ──
@@ -8699,7 +9233,7 @@ function rlSkipHsMessages(pt) {
 
 /* ── لفافِ استریم روی رکوردهای reality ── */
 function rlWrapStreams(io, cAp, sAp) {
-  let wSeq = 0, rSeq = 0, relayMode = false;
+  let wSeq = 0, rSeq = 0;
   const readable = new ReadableStream({
     async pull(controller) {
       try {
@@ -8722,19 +9256,33 @@ function rlWrapStreams(io, cAp, sAp) {
              (هدر جزو متنِ رمز حساب می‌شد) و اولین رکوردِ داده همیشه می‌مرد.
              بایتِ نوعِ محتوا هم داخلِ rlOpen جدا می‌شود (RFC 8446 §5.2) وگرنه
              به جریانِ VLESS تزریق می‌شد. */
-          let data;
+          let rec;
           try {
-            data = (await rlOpen(sAp, rlConcat(h, body), rSeq)).plaintext;
+            rec = await rlOpen(sAp, rlConcat(h, body), rSeq);
           } catch (e) { throw new Error('رمزگشاییِ داده ناموفق — ' + String((e && e.message) || e)); }
           rSeq++;
-          if (!relayMode) {
-            const rest = rlSkipHsMessages(data);
-            if (rest === null) continue;
-            relayMode = true;
-            if (rest.length) controller.enqueue(rest);
-            return;
+          if (RL_DBG) { try { (RL_DBG.records = RL_DBG.records || []).push({ ct: rec.ct, n: rec.plaintext.length, head: Array.from(rec.plaintext.slice(0, 10)) }); } catch (e) {} }
+          /* ۰) رکوردهایی که داده‌ی کاربر نیستند دور ریخته می‌شوند:
+             • ct=22 (handshake): NewSessionTicketِ ساختگیِ سرورِ reality که
+               فقط برای شبیه‌شدن به رکوردهای مقصد فرستاده می‌شود و هیچ‌وقت
+               جزءِ ترافیک کاربر نیست.
+             • متنِ خالی: همان ترفندِ [23, 0] + paddingِ صفر.
+             حذفِ هدرِ پاسخِ VLESS و بازکردنِ Vision کارِ vlessClientWrap است. */
+          if (rec.ct === RL_CT_ALERT) {
+            const lv = rec.plaintext[0], ds = rec.plaintext[1];
+            /* close_notify (سطح ۱) = بستنِ مؤدبانه؛ پیش از این مثل خطا
+               رفتار می‌شد و داده‌ای که تازه رسیده بود را هم می‌سوزاند
+               («رمزگشاییِ داده ناموفق» بی‌ربط). هشدارِ fatal (سطح ۲) خطاست
+               و علتش شفاف گفته می‌شود. */
+            if (lv === 1) {
+              try { controller.close(); } catch (e) {}
+              try { io.close(); } catch (e2) {}
+              return;
+            }
+            throw new Error('سرورِ خروجی هشدارِ مرگبار داد (' + rlAlertName(ds) + ' — ' + rlAlertHint(ds) + ')');
           }
-          if (data.length) controller.enqueue(data);
+          if (rec.ct === RL_CT_HANDSHAKE || !rec.plaintext.length) continue;
+          controller.enqueue(rec.plaintext);
           return;
         }
       } catch (e) { try { controller.error(e); } catch (e2) {} }
@@ -8823,18 +9371,31 @@ async function openExitSocket(srv, info, opt) {
     } finally { if (timer) clearTimeout(timer); }
   }
 
-  const header = vlessRequestHeader(srv, info.addr, info.port, info.payload);
+  /* هدرِ VLESS بدونِ بارِ اولیه ساخته می‌شود؛ بارِ اولیه از لفافِ VLESS/Vision
+     (vlessClientWrap) عبور می‌کند تا در حالتِ vision داخلِ بلوکِ اولِ padding
+     بنشیند — همان جایی که سرور انتظار دارد. */
+  const header = vlessRequestHeader(srv, info.addr, info.port, new Uint8Array(0));
+  const wrapOpts = { header, flow: srv.flow, uuid: vlessUuidBytes(srv.uuid) };
+
+  /** لفاف + نوشتنِ بارِ اولیهٔ کاربر (بایت‌هایی که همراهِ اولین فریم آمده بود) */
+  const finishWrap = async (pair) => {
+    const p = vlessClientWrap(pair, wrapOpts);
+    const lead = toU8(info.payload);
+    if (lead.length) {
+      const w = p.writable.getWriter();
+      try { await w.write(lead); } finally { w.releaseLock(); }
+    }
+    return p;
+  };
 
   /* ── انتقالِ raw: هندشیک بلافاصله روی همان TCP نوشته می‌شود ── */
   if (srv.transport === 'raw') {
-    const w = sock.writable.getWriter();
-    try { await w.write(header); } finally { w.releaseLock(); }
-    return {
+    return await finishWrap({
       readable: sock.readable,
       writable: sock.writable,
       close: () => { try { sock.close(); } catch (e) {} },
       transport: 'raw', security,
-    };
+    });
   }
 
   /* ── انتقالِ ws: ارتقای HTTP، سپس هندشیک داخلِ اولین قابِ دودویی ──
@@ -8863,9 +9424,6 @@ async function openExitSocket(srv, info, opt) {
     try { sock.close(); } catch (e) {}
     throw new Error('سرور خروجی ارتقا به وب‌سوکت را نپذیرفت (' + statusLine.trim() + ')');
   }
-  const w2 = sock.writable.getWriter();
-  try { await w2.write(wsFrame(header, 2)); } finally { w2.releaseLock(); }
-
   const unwrap = makeWsUnwrap(rest);
   const reader = sock.readable.getReader();
   const readable = new ReadableStream({
@@ -8893,11 +9451,11 @@ async function openExitSocket(srv, info, opt) {
     async close() { try { await writer.close(); } catch (e) {} },
   });
 
-  return {
+  return await finishWrap({
     readable, writable,
     close: () => { try { sock.close(); } catch (e) {} },
     transport: 'ws', security,
-  };
+  });
 }
 
 /** پارسِ host:port برای تستِ ProxyIP (مثل parseHostPort داخلِ session) */
@@ -8980,17 +9538,21 @@ async function openRealitySocket(srv, info, opt) {
     try { io.close(); } catch (e2) {}
     throw e;
   }
-  /* هدرِ VLESS مقصد — مثل مسیرِ raw، ممکن است برای پورتِ HTTP خطا بدهد */
-  const header = vlessRequestHeader(srv, info.addr, info.port, info.payload);
+  /* هدرِ VLESS مقصد — بدونِ بارِ اولیه؛ بارِ اولیه داخلِ بلوکِ اولِ Vision می‌رود */
+  const header = vlessRequestHeader(srv, info.addr, info.port, new Uint8Array(0));
   const streams = rlWrapStreams(io, hs.cAp, hs.sAp);
-  const w = streams.writable.getWriter();
-  try { await w.write(header); } catch (e) { try { streams.close(); } catch (e2) {} throw e; }
-  finally { w.releaseLock(); }
-  return {
+  const pair = vlessClientWrap({
     readable: streams.readable, writable: streams.writable,
     close: () => { try { streams.close(); } catch (e) {} },
     transport: 'raw', security: 'reality',
-  };
+  }, { header, flow: srv.flow, uuid: vlessUuidBytes(srv.uuid) });
+  const lead = toU8(info.payload);
+  if (lead.length) {
+    const w = pair.writable.getWriter();
+    try { await w.write(lead); } catch (e) { try { pair.close(); } catch (e2) {} throw e; }
+    finally { w.releaseLock(); }
+  }
+  return pair;
 }
 
 /** تستِ اتصالِ یک سرور خروجی — اندازه‌گیریِ واقعی (وصل شدن + هندشیک) */
@@ -9333,7 +9895,10 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
 
   /**
    * پمپ از سوکت ریموت به WebSocket. اگر هیچ داده‌ای نیامد، retry صدا زده می‌شود.
-   * ⚠️ skipLead: بایت‌های اولِ بالادست که نباید به کلاینت برسند.
+   * ⚠️ skipLead: بایت‌های اولِ بالادست که نباید به کلاینت برسند. حذفِ هدرِ
+   * پاسخِ VLESS و بازکردنِ Vision حالا کارِ vlessClientWrap است (لایهٔ
+   * پروتکل)، پس در مسیرِ خروج دیگر skipLead=2 پاس نمی‌شود — دوباره‌کاری
+   * یعنی خوردنِ دو بایتِ واقعی از داده‌ی کاربر.
    * در مسیرِ «سرور خروجی VLESS» بالادست خودش هدرِ پاسخِ VLESSِ دوبایتی
    * ([version, 0]) می‌فرستد؛ کلاینتِ ما فقط هدرِ پاسخِ «ما» را انتظار دارد.
    * اگر هدرِ بالادست هم رد شود دو هدرِ پشت‌سرهم می‌رسد و پروتکل از هم می‌پاشد
@@ -9609,9 +10174,10 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
              در مسیرِ ترافیک منتظر نمی‌ماند و هرگز خطا نمی‌دهد */
           try { ctx.waitUntil(refreshExitIp(env, st, ex.server)); } catch (e2) {}
           /* retry داده نمی‌شود: مسیرِ خروجی با ProxyIP معنا ندارد */
-          /* ⚠️ ۲ بایتِ اولِ بالادست = هدرِ پاسخِ VLESSِ سرور خروجی —
-             نباید به کلاینت برسد (هدرِ پاسخِ خودمان را می‌فرستیم). */
-          remoteToWs(up, respHeader, null, 2);
+          /* ۲ بایتِ اولِ بالادست = هدرِ پاسخِ VLESSِ سرور خروجی — در
+             vlessClientWrap حذف می‌شود (هدرِ پاسخِ خودمان را می‌فرستیم). */
+          /* هدرِ پاسخِ VLESS و Vision داخلِ vlessClientWrap حذف/باز می‌شوند */
+          remoteToWs(up, respHeader, null, 0);
           return;
         } catch (e) {
           EXIT_STATS.fallbacks++;

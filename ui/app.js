@@ -835,7 +835,7 @@
     { g: 'اصلی', items: [['dash', 'نمای کلی', 'fa-gauge-high'], ['users', 'کاربران', 'fa-users']] },
     { g: 'شبکه', items: [['conns', 'اتصال‌های زنده', 'fa-activity'], ['monitor', 'آمار مصرف', 'fa-chart-line']] },
     { g: 'پیکربندی', items: [['config', 'پیکربندی', 'fa-gear'], ['sub', 'لینک ساب', 'fa-link'], ['security', 'امنیت', 'fa-shield-halved'], ['scanner', 'اسکنر آی‌پی', 'fa-magnifying-glass']] },
-    { g: 'سیستم', items: [['logs', 'لاگ', 'fa-list-check'], ['settings', 'پشتیبان', 'fa-database']] },
+    { g: 'سیستم', items: [['logs', 'لاگ', 'fa-list-check'], ['update', 'به‌روزرسانی', 'fa-rotate'], ['settings', 'پشتیبان', 'fa-database']] },
   ];
 
   /* ═══ اسکیمای تنظیمات ═══
@@ -845,6 +845,25 @@
      می‌رسیدند)، برای همین فیلدهایشان در هیچ صفحه‌ای دیده نمی‌شد. تنظیماتی
      که کاربر واقعاً لازم دارد در خودِ configView هستند. */
   const SCHEMA = {
+    /* ═══ فیلدهای به‌روزرسانی — پیش از این هیچ مسیری به این گروه نبود، برای همین
+       کلیدهای upd (مخزن، توکن، حسابِ کلاودفلر، استقرارِ خودکار) در هیچ صفحه‌ای
+       دیده نمی‌شدند و «آپدیت خودکار» عملاً قابل تنظیم نبود. ═══ */
+    update: [
+      { t: 'منبعِ نسخه', icon: 'fa-code-branch', d: 'از همین مخزن؛ بررسی با version.json انجام می‌شود و به سهمیه‌ی GitHub API وابسته نیست', two: 1, f: [
+        { p: 'upd.repo', l: 'مخزن گیت‌هاب', t: 'text', mono: 1, h: 'قالب: owner/repo' },
+        { p: 'upd.branch', l: 'شاخه', t: 'text', mono: 1, h: 'پیش‌فرض: main' },
+        { p: 'upd.token', l: 'توکن گیت‌هاب (اختیاری)', t: 'text', mono: 1, h: 'برای مخزنِ خصوصی یا سهمیه‌ی بالاتر. به‌صورت ماسک ذخیره/نمایش داده می‌شود و ذخیره‌ی خالی مقدارِ قبلی را نگه می‌دارد' },
+        { p: 'upd.interval', l: 'فاصله‌ی بررسیِ خودکار (دقیقه)', t: 'num', h: 'بین ۱۵ تا ۱۴۴۰ دقیقه' },
+        { p: 'upd.auto', l: 'بررسیِ خودکارِ نسخه (اعلان و بنر)', t: 'sw', h: 'هر بازدیدِ پنل، حداکثر هر چند دقیقه یک‌بار در پس‌زمینه بررسی می‌کند و اگر نسخه‌ی تازه باشد اعلان نشان می‌دهد' },
+      ] },
+      { t: 'استقرارِ خودکار روی کلاودفلر', icon: 'fa-cloud-arrow-up', d: 'با Cloudflare API؛ بایندینگ‌ها (D1/DO) از اسکریپتِ فعلی خوانده و حفظ می‌شوند', two: 1, f: [
+        { p: 'upd.script', l: 'نامِ اسکریپتِ ورکر', t: 'text', mono: 1, h: 'همان نامی که در داشبورد کلادفلر می‌بینید' },
+        { p: 'upd.cfAccount', l: 'شناسه‌ی حساب (Account ID)', t: 'text', mono: 1 },
+        { p: 'upd.cfToken', l: 'توکن API کلاودفلر', t: 'text', mono: 1, h: 'توکنِ با مجوزِ Workers Scripts:Edit — ماسک می‌شود' },
+        { p: 'upd.asset', l: 'مسیرِ فایلِ کد در مخزن', t: 'text', mono: 1, h: 'پیش‌فرض: _worker.obf.js' },
+        { p: 'upd.autoDeploy', l: 'استقرارِ خودکار پس از دیدنِ نسخه‌ی تازه', t: 'sw', bad: 1, h: '⚠️ روشن‌کردنش یعنی هر پوش به‌شکلِ خودکار روی ورکرِ شما منتشر می‌شود؛ یک پوشِ خراب می‌تواند پنل را از کار بیندازد' },
+      ] },
+    ],
     security: [
       { t: 'احراز هویت', icon: 'fa-key', d: 'توکن ۲۴ ساعته + 2FA + rate limit', two: 1, f: [
         { p: 'auth.totp', l: '2FA (TOTP / Google Authenticator)', t: 'sw' },
@@ -999,9 +1018,14 @@
       /* ═══ بنرِ به‌روزرسانی خودکار — وقتی نسخه‌ی تازه‌تری در همین ریپو هست ═══ */
       ((d.updateInfo && d.updateInfo.newer)
         ? '<div class="card" style="border-color:var(--warn);margin-bottom:12px"><div class="bd"><div class="row-item">' + icon('fa-arrow-up-right-dots') +
-          '<div class="grow"><b>نسخه‌ی تازه در مخزن هست' + (d.updateInfo.latest ? ' — <span class="mono">' + esc(String(d.updateInfo.latest)).slice(0, 60) + '</span>' : '') + '</b>' +
-          '<div class="cell-sub">مخزن: <span class="mono">' + esc(s.upd.repo || '') + '</span>' + (d.updateInfo.note ? ' • ' + esc(String(d.updateInfo.note)).slice(0, 120) : '') + '</div></div>' +
-          '<button class="btn sm p" data-act="upd-check">' + icon('fa-rotate') + ' بررسی و نصب</button></div></div></div>'
+          '<div class="grow"><b>نسخه‌ی تازه در مخزن هست' + (d.updateInfo.latest ? ' — <span class="mono">' + esc(String(d.updateInfo.latest)).slice(0, 40) + '</span>' : '') + '</b>' +
+          '<div class="cell-sub">مخزن: <span class="mono">' + esc(s.upd.repo || '') + (s.upd.branch ? '@' + esc(s.upd.branch) : '') + '</span>' +
+          (d.updateInfo.note ? ' • ' + esc(String(d.updateInfo.note)).slice(0, 120) : '') +
+          ' • نسخهٔ فعال: <span class="mono">v' + esc(d.version || '') + (d.rev ? ' (' + esc(String(d.rev).slice(0, 7)) + ')' : '') + '</span></div></div>' +
+          ((s.upd.cfToken && s.upd.cfAccount && s.upd.script)
+            ? '<button class="btn sm p" data-act="upd-deploy">' + icon('fa-cloud-arrow-up') + ' استقرارِ خودکار</button>'
+            : '<button class="btn sm" data-act="nav" data-view="update">' + icon('fa-gear') + ' صفحه‌ی به‌روزرسانی</button>') +
+          '</div></div></div>'
         : '') +
       '<div class="grid g4">' +
       '<div class="stat"><div class="lbl">' + icon('fa-users') + ' کل کاربران</div><div class="val">' + fa(us.length) + '</div><div class="sub">' + fa(on) + ' فعال • ' + fa(exp) + ' منقضی</div></div>' +
@@ -1376,25 +1400,61 @@
       '</div></div>';
   }
 
+  /* ══ صفحه‌ی به‌روزرسانی — پیش از این هیچ مسیری به آن نبود (VIEWS.update به
+     configView می‌رفت) و این تابع هم به SCHEMA.update اشاره می‌کرد که تعریف
+     نشده بود؛ یعنی صفحه‌ی آپدیت اصلاً وجود نداشت و هیچ اعلانی هم نمی‌آمد. ══ */
+  function updSourceLabel(src) {
+    return src === 'version.json' ? 'version.json مخزن' : src === 'release' ? 'release گیت‌هاب' : src === 'commit' ? 'کامیتِ شاخه (تقریبی)' : 'نامشخص';
+  }
   function updateView() {
-    const d = S.d, s = d.settings;
-    return '<div class="page-head"><div><h1>سیستم به‌روزرسانی</h1><p>بررسی نسخه از گیت‌هاب، استقرار و بازگشت به نسخه‌ی قبل</p></div></div>' +
+    const d = S.d, s = d.settings, u = s.upd || {};
+    const info = d.updateInfo || {};
+    const ready = !!(u.cfToken && u.cfAccount && u.script);
+    const deployed = !!(info.deployedAt && info.deployOk);
+    const rev = String(d.rev || '');
+    const repoUrl = 'https://github.com/' + String(u.repo || '') + '/blob/' + String(u.branch || 'main') + '/' + String(u.asset || '_worker.obf.js');
+    return '<div class="page-head"><div><h1>سیستم به‌روزرسانی</h1><p>بررسی نسخه از مخزن، استقرار روی کلاودفلر و بازگشت به نسخه‌ی قبل</p></div>' +
+      '<div class="btn-row"><button class="btn s" data-act="upd-check">' + icon('fa-magnifying-glass') + ' بررسیِ تازه</button></div></div>' +
+      ((info.newer && !deployed)
+        ? '<div class="card" style="border-color:var(--warn);margin-bottom:12px"><div class="bd"><div class="row-item">' + icon('fa-arrow-up-right-dots') +
+          '<div class="grow"><b>نسخه‌ی تازه در مخزن هست' + (info.latest ? ' — <span class="mono">' + esc(String(info.latest)).slice(0, 40) + '</span>' : '') + '</b>' +
+          '<div class="cell-sub">' + (info.note ? esc(String(info.note)).slice(0, 120) + ' • ' : '') + 'منبع: ' + esc(updSourceLabel(info.source)) + '</div></div>' +
+          (ready ? '<button class="btn sm p" data-act="upd-deploy">' + icon('fa-cloud-arrow-up') + ' استقرارِ خودکار</button>' : '<button class="btn sm" data-act="nav" data-view="update">' + icon('fa-gear') + ' تنظیمِ استقرار</button>') +
+          '</div></div></div>'
+        : '') +
+      (deployed
+        ? '<div class="card" style="border-color:var(--ok);margin-bottom:12px"><div class="bd">' + icon('fa-circle-check') +
+          ' <b>نسخه‌ی تازه مستقر شد</b> <span class="hint">' + ago(info.deployedAt) + ' — چند ثانیه‌ی دیگر همین صفحه را رفرش کنید تا نسخه‌ی جدید فعال شود</span></div></div>'
+        : '') +
       '<div class="grid g3">' +
-      '<div class="card"><header><span class="ic">' + icon('fa-rotate') + '</span><div><h3>نسخه فعلی</h3></div></header><div class="bd">' +
-      '<div class="kv"><span>نسخه</span><b class="mono">' + esc(d.version) + '</b></div>' +
+      '<div class="card"><header><span class="ic">' + icon('fa-rotate') + '</span><div><h3>نسخه‌ی فعالِ پنل</h3><p>همین ورکری که الان پاسخ می‌دهد</p></div></header><div class="bd">' +
+      '<div class="kv"><span>نسخه</span><b class="mono">v' + esc(d.version || '—') + '</b></div>' +
       '<div class="kv"><span>بیلد</span><b class="mono">' + esc(d.build || '—') + '</b></div>' +
-      '<div class="kv"><span>مخزن</span><b class="mono">' + esc(s.upd.repo) + '</b></div>' +
-      '<div class="kv"><span>آخرین بررسی</span><b>' + ago(d.lastCheck) + '</b></div>' +
-      '<div class="btn-row" style="margin-top:12px"><button class="btn p" data-act="upd-check">' + icon('fa-magnifying-glass') + ' بررسی</button>' +
-      '<button class="btn" data-act="upd-deploy">' + icon('fa-download') + ' نصب</button>' +
-      '<button class="btn d" data-act="upd-rollback">' + icon('fa-rotate-left') + ' بازگشت</button></div></div></div>' +
-      '<div class="card"><header><span class="ic b2">' + icon('fa-network-wired') + '</span><div><h3>انتشار به نودها</h3></div></header><div class="bd">' +
-      ((d.panels || []).map((p) => '<div class="kv"><span>' + esc(p.name) + '</span><span class="badge ' + (p.status === 'online' ? 'ok' : p.status === 'syncing' ? 'warn' : 'bad') + '">' + esc(p.status) + '</span></div>').join('') || '<div class="empty">نودی متصل نیست</div>') +
+      '<div class="kv"><span>اثرِ انگشت (rev)</span><b class="mono">' + esc(rev ? rev.slice(0, 10) + '…' : '—') + '</b></div>' +
+      '<div class="kv"><span>مخزن</span><b class="mono">' + esc(u.repo || '—') + '@' + esc(u.branch || 'main') + '</b></div>' +
+      '<div class="kv"><span>آخرین بررسی</span><b>' + (d.lastCheck ? ago(d.lastCheck) : 'هرگز') + '</b></div>' +
+      '<div class="hint" style="margin-top:8px">هر بیلدِ تازه نسخه و اثرِ انگشت را عوض می‌کند؛ اگر نسخه‌ی مخزن از این بالاتر باشد، بنر و اعلان نشان داده می‌شود.</div>' +
       '</div></div>' +
-      '<div class="card"><header><span class="ic warn">' + icon('fa-list-check') + '</span><div><h3>گزارش آخرین عملیات</h3></div></header><div class="bd">' +
-      ((d.updateLog || []).map((l) => '<div class="log"><span class="dot ' + (l.ok ? 'on' : 'bad') + '"></span><div class="l"><b>' + esc(l.step) + '</b><div class="hint">' + esc(l.note) + '</div></div></div>').join('') || '<div class="empty">گزارشی نیست</div>') +
+      '<div class="card"><header><span class="ic ' + (info.newer ? 'warn' : '') + '">' + icon('fa-code-compare') + '</span><div><h3>نسخه‌ی موجود در مخزن</h3><p>' + esc(updSourceLabel(info.source)) + '</p></div></header><div class="bd">' +
+      '<div class="kv"><span>آخرین نسخه</span><b class="mono">' + esc(String(info.latest || '—')) + '</b></div>' +
+      (info.version ? '<div class="kv"><span>نسخه‌ی مخزن</span><b class="mono">v' + esc(String(info.version)) + '</b></div>' : '') +
+      (info.rev ? '<div class="kv"><span>rev مخزن</span><b class="mono">' + esc(String(info.rev).slice(0, 10)) + '…</b></div>' : '') +
+      (info.sha ? '<div class="kv"><span>کامیت</span><b class="mono">' + esc(String(info.sha).slice(0, 10)) + '</b></div>' : '') +
+      '<div class="kv"><span>وضعیت</span><span class="badge ' + (info.newer ? 'warn' : info.latest ? 'ok' : 'b2') + '">' + (info.newer ? 'نسخه‌ی تازه هست' : info.latest ? 'به‌روز' : 'نامشخص') + '</span></div>' +
+      ((info.notes || []).length ? '<div class="hint" style="margin-top:6px">منبع‌های بررسی‌شده: ' + esc((info.notes || []).join(' • ').slice(0, 200)) + '</div>' : '') +
+      '<div class="hint" style="margin-top:8px">استقرارِ خودکار: ' + (ready ? '<span class="badge ok">آماده</span>' : '<span class="badge warn">اعتبارنامه‌ها ناقص است</span>') +
+      (ready ? '' : ' — نامِ اسکریپت، شناسه‌ی حساب و توکنِ کلاودفلر را پایین همین صفحه پر کنید (یا کد را از گیت‌هاب پیست کنید).') +
+      (u.autoDeploy ? ' • <span class="badge bad">استقرارِ خودکار روشن است</span>' : '') + '</div>' +
+      '<div class="btn-row" style="margin-top:12px;flex-wrap:wrap">' +
+      '<button class="btn" data-act="upd-verify" title="همه‌چیز را بررسی می‌کند ولی چیزی آپلود نمی‌کند">' + icon('fa-vial') + ' اعتبارسنجی</button>' +
+      '<button class="btn p' + (ready ? '' : ' hide') + '" data-act="upd-deploy">' + icon('fa-cloud-arrow-up') + ' استقرارِ اکنون</button>' +
+      '<button class="btn d' + (ready ? '' : ' hide') + '" data-act="upd-rollback">' + icon('fa-rotate-left') + ' بازگشت به نسخه‌ی قبل</button>' +
+      '<a class="btn ghost" href="' + esc(repoUrl) + '" target="_blank" rel="noopener" title="کدِ ساختهٔ‌شده در گیت‌هاب — اگر استقرار را تنظیم نکردید از همین‌جا کپی کنید">' + icon('fa-up-right-from-square') + ' فایلِ کد در گیت‌هاب</a>' +
       '</div></div></div>' +
-      SCHEMA.update.map((g) => group(g, s)).join('') + saveBtn('save-update');
+      '<div class="card"><header><span class="ic warn">' + icon('fa-list-check') + '</span><div><h3>گزارش آخرین عملیات</h3><p>نتیجه‌ی واقعی هر گام</p></div></header><div class="bd">' +
+      ((d.updateLog || []).map((l) => '<div class="log"><span class="dot ' + (l.ok ? 'on' : 'bad') + '"></span><div class="l"><b>' + esc(l.step) + '</b><div class="hint">' + esc(l.note) + '</div></div></div>').join('') || '<div class="empty">هنوز عملیاتی اجرا نشده — «بررسیِ تازه» را بزنید</div>') +
+      '</div></div></div>' +
+      SCHEMA.update.map((g) => group(g, s)).join('') + saveBtn('save-config');
   }
 
   function logsView() {
@@ -2371,7 +2431,7 @@
   const VIEWS = {
     dash: dashView, users: usersView, sub: subView, monitor: monitorView, conns: connsView, logs: logsView, settings: settingsView,
     config: configView, scanner: scannerView,
-    update: () => configView(),
+    update: updateView,
     proto: () => configView(),
     network: () => configView(),
     telegram: () => configView(),
@@ -2465,10 +2525,12 @@
     ['#menuBtn', '#themeBtn', '#panicBtn', '#logoutBtn', '#searchBox'].forEach((x) => $(x).classList.remove('hide'));
     $('#brandName').textContent = s.panel.name;
     $('#brandVer').textContent = 'v' + d.version;
+    $('#brandVer').title = 'نسخه v' + d.version + ' • بیلد ' + (d.build || '—') + (d.rev ? ' • rev ' + String(d.rev).slice(0, 10) : '');
     $('#pageTitle').textContent = s.panel.name;
     $('#sfStore').textContent = d.storage === 'd1' ? 'D1 پایدار' : 'موقت';
     $('#sfUsers').textContent = fa(d.users.length) + ' کاربر';
     $('#sfVer').textContent = d.version;
+    $('#sfVer').title = 'بیلد ' + (d.build || '—');
     const panic = s.auth.panic;
     $('#tbState').textContent = panic ? 'Panic Mode فعال است' : 'سرویس فعال';
     $('#tbState').style.color = panic ? 'var(--bad)' : '';
@@ -2500,7 +2562,18 @@
   async function refresh() {
     if (!S.token) { render(); return; }
     const d = await api('GET', '/api/state');
-    if (d && !d.error) { S.d = d; render(); }
+    if (d && !d.error) {
+      S.d = d;
+      render();
+      /* ═══ اعلانِ نسخه‌ی تازه — پیش از این هیچ پیامی نمی‌آمد؛ حالا یک‌بار
+         برای هر نسخه اعلان می‌شود (تا هر رفرش بهانه‌ی تکراری نباشد) ═══ */
+      const info = d.updateInfo || {};
+      const key = info.latest ? 'updSeen:' + info.latest : '';
+      if (info.newer && key && localStorage.getItem(key) !== '1') {
+        try { localStorage.setItem(key, '1'); } catch (e) {}
+        toast('نسخه‌ی تازه در مخزن هست: ' + String(info.latest).slice(0, 40) + ' — از صفحه‌ی «به‌روزرسانی» نصب کنید', 'info');
+      }
+    }
   }
 
   /* ─────────── جستجوی سراسری ─────────── */
@@ -3049,9 +3122,30 @@
         toast(r.ok ? 'همه‌ی بررسی‌ها سالم بود ✓' : 'مشکلی پیدا شد — جزئیات را ببینید', r.ok ? 'ok' : 'err');
         if (r.error) toast('خطای سرور: ' + r.error, 'err');
       }
-      else if (a === 'upd-check') { busy(t, 'بررسی'); const r = await api('POST', '/api/action', { act: 'update-check' }); free(t); toast(r.msg || 'بررسی شد', 'info'); await refresh(); }
-      else if (a === 'upd-deploy') { busy(t, 'نصب'); const r = await api('POST', '/api/action', { act: 'update-deploy' }); free(t); toast(r.msg || 'نصب شد'); await refresh(); }
-      else if (a === 'upd-rollback') { busy(t, 'بازگشت'); const r = await api('POST', '/api/action', { act: 'update-rollback' }); free(t); toast(r.msg || 'بازگشت انجام شد', 'info'); await refresh(); }
+      else if (a === 'upd-check') { busy(t, 'بررسی'); const r = await api('POST', '/api/action', { act: 'update-check' }); free(t); toast(r.msg || 'بررسی شد', r.newer ? 'info' : 'ok'); await refresh(); }
+      else if (a === 'upd-verify') {
+        busy(t, 'اعتبارسنجی');
+        const r = await api('POST', '/api/action', { act: 'update-verify' });
+        free(t);
+        toast(r.msg || 'اعتبارسنجی انجام شد', r.ok ? 'ok' : 'err');
+        await refresh();
+      }
+      else if (a === 'upd-deploy') {
+        if (!confirm('نسخه‌ی تازه روی ورکر کلادفلر منتشر شود؟\n\nبایندینگ‌ها (D1/DO) از اسکریپتِ فعلی خوانده و حفظ می‌شوند، ولی این یک انتشارِ واقعی است.')) return;
+        busy(t, 'استقرار');
+        const r = await api('POST', '/api/action', { act: 'update-deploy' });
+        free(t);
+        toast(r.msg || 'استقرار انجام شد', r.ok ? 'ok' : 'err');
+        await refresh();
+      }
+      else if (a === 'upd-rollback') {
+        if (!confirm('به نسخه‌ی قبلی برگردیم؟ (آخرین کامیتی که version.json را عوض کرده روی ورکر منتشر می‌شود)')) return;
+        busy(t, 'بازگشت');
+        const r = await api('POST', '/api/action', { act: 'update-rollback' });
+        free(t);
+        toast(r.msg || 'بازگشت انجام شد', r.ok ? 'ok' : 'err');
+        await refresh();
+      }
       else if (a === 'rotate-path') { const r = await api('POST', '/api/action', { act: 'rotate-path' }); toast('مسیر جدید: /' + (r.path || '')); await refresh(); }
       /* ═════════════════════════════════════════════════════════════
          مرحله‌ی ۴ — انتخابگرِ پورت

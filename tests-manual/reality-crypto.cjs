@@ -70,9 +70,9 @@ const dialableAddrStub = (addr) => {
   if (/^(\d{1,3}\.){3}\d{1,3}$/.test(h)) return 'www.' + h + '.sslip.io';
   return h;
 };
-const V = new Function('toU8', 'dialableAddr', 'TextEncoder', vbsrc +
-  '\n;return { vlessAddons, vlessRequestHeader };'
-)(toU8, dialableAddrStub, TextEncoder);
+const V = new Function('toU8', 'dialableAddr', 'TextEncoder', 'rlConcat', 'rlEq', vbsrc +
+  '\n;return { vlessAddons, vlessRequestHeader, visionPadBlock, vlessResponseParser, vlessClientWrap };'
+)(toU8, dialableAddrStub, TextEncoder, M.rlConcat, M.rlEq);
 
 /* ── ۳ج) exitToLink از پنل (round-trip) ── */
 const APP = fs.readFileSync(path.join(ROOT, 'ui', 'app.js'), 'utf8');
@@ -245,45 +245,56 @@ const refSha = (d) => createHash('sha256').update(Buffer.from(d)).digest();
     ok(b[0] === 0, 'نسخه‌ی هدر ۰ است');
     ok(b.toString('hex', 1, 17) === '11111111111141118111111111111111', 'بایت‌های UUID درست‌اند');
     ok(b[17] === 18, 'طولِ addons برای flow درست است', 'len=' + b[17]);
-    ok(b[18] === 1 && b[19] === 16 && b.slice(20, 36).toString() === FLOW, 'flow با [type,len] در addons نشست');
+    /* addons حالا پروتوبافِ Xray است: field 1 (Flow) → tag 0x0a، length 16، سپس متن */
+    ok(b[18] === 0x0a && b[19] === 16 && b.slice(20, 36).toString() === FLOW, 'flow به شکلِ پروتوبافِ Xray در addons نشست (Xrayِ امروزی همین را می‌خواند)');
     ok(b[36] === 1 && ((b[37] << 8) | b[38]) === 443, 'فرمان/پورت بعد از addons درست‌اند');
     const h0 = Buffer.from(V.vlessRequestHeader({ uuid: '11111111-1111-4111-8111-111111111111', flow: '' }, '1.2.3.4', 443, new Uint8Array(0)));
     ok(h0[17] === 0 && h0[18] === 1, 'بدونِ flow، addons خالی است');
   }
 
-  console.log('== ۵) هندشیکِ کامل با سرورِ جعلی (پیاده‌سازیِ مستقل) ==');
   /* ── ابزارِ بایتِ تست ── */
   const u16 = (v) => Buffer.from([(v >> 8) & 255, v & 255]);
   const cat = (...a) => Buffer.concat(a.map((x) => Buffer.from(x)));
   const msg = (t, body) => cat(Buffer.from([t, (body.length >> 16) & 255, (body.length >> 8) & 255, body.length & 255]), Buffer.from(body));
 
-  /* پارسِ حداقلیِ ClientHello برای بیرون‌کشیدنِ کلیدِ موقتِ کلاینت */
-  function clientPubOf(chRecord) {
-    const b = Buffer.from(chRecord);
-    if (b[0] !== 22) throw new Error('not hs');
-    const L = (b[3] << 8) | b[4];
-    const m = b.slice(5, 5 + L);
-    if (m[0] !== 1) throw new Error('not CH');
-    let i = 4 + 2 + 32;
-    const sidL = m[i]; i += 1 + sidL;
-    const csL = (m[i] << 8) | m[i + 1]; i += 2 + csL;
-    i += 1 + m[i];
-    const exL = (m[i] << 8) | m[i + 1]; i += 2;
+  /* پارسِ ClientHello: random، sid و همه‌ی key shareها — شاملِ گروهِ ۰x۱۱ec
+     (X25519MLKEM768) که سرورهای امروزیِ Xray برای احراز لازمش دارند */
+  const MLKEM_GROUP = 0x11ec;
+  function parseCH(m) {
+    const b = Buffer.from(m);
+    if (b[0] !== 1) throw new Error('not CH');
+    const random = b.slice(6, 38);
+    let i = 38;
+    const sidLen = b[i]; i += 1;
+    const sid = b.slice(i, i + sidLen); i += sidLen;
+    const csL = (b[i] << 8) | b[i + 1]; i += 2 + csL;
+    i += 1 + b[i];
+    const exL = (b[i] << 8) | b[i + 1]; i += 2;
     const end = i + exL;
+    const shares = [];
     while (i + 4 <= end) {
-      const t = (m[i] << 8) | m[i + 1], l = (m[i + 2] << 8) | m[i + 3];
-      const v = m.slice(i + 4, i + 4 + l);
+      const t = (b[i] << 8) | b[i + 1], l = (b[i + 2] << 8) | b[i + 3];
+      const v = b.slice(i + 4, i + 4 + l);
       if (t === 0x0033) {
         let k = 2;
         while (k + 4 <= v.length) {
           const g = (v[k] << 8) | v[k + 1], ll = (v[k + 2] << 8) | v[k + 3];
-          if (g === 29 && ll === 32) return v.slice(k + 4, k + 36);
+          shares.push({ group: g, data: v.slice(k + 4, k + 4 + ll) });
           k += 4 + ll;
         }
       }
       i += 4 + l;
     }
-    throw new Error('no x25519 share');
+    return { random, sid, shares };
+  }
+
+  /* بستنِ رکورد با سمانتیکِ RFC 8446 §5.2/§5.4: بایتِ نوعِ واقعی + پدینگِ صفرِ بعدش */
+  async function refSealRec(keyObj, seq, plaintext, innerType, padZeros) {
+    const inner = cat(plaintext, Buffer.from([innerType]), Buffer.alloc(padZeros || 0));
+    const h2 = Buffer.from([23, 3, 3, ((inner.length + 16) >> 8) & 255, (inner.length + 16) & 255]);
+    const c2 = await webcrypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: refNonce(keyObj.iv, seq), additionalData: new Uint8Array(h2) }, keyObj.k, inner);
+    return Buffer.concat([h2, Buffer.from(c2)]);
   }
 
   /* کلید/iv مرجع + seal/open مرجع */
@@ -311,250 +322,351 @@ const refSha = (d) => createHash('sha256').update(Buffer.from(d)).digest();
   }
   async function refOpen(keyObj, record, seq) {
     const pt = await refInner(keyObj, record, seq);
-    if (!pt.length || pt[pt.length - 1] !== 23) throw new Error('content-type byte missing');
-    return pt.slice(0, pt.length - 1);
+    let e = pt.length;
+    while (e > 1 && pt[e - 1] === 0) e--;
+    if (e < 1) throw new Error('content-type byte missing');
+    return { body: pt.slice(0, e - 1), ct: pt[e - 1] };
+  }
+
+  /* ═════ بردارِ مستقلِ Vision (عیناً XtlsPadding/XtlsUnpaddingِ Xray) ═════ */
+  function refVisionBlock(content, o) {
+    const c = Buffer.from(content || Buffer.alloc(0));
+    const pad = (o && o.long && c.length < 900) ? (100 + 900 - c.length) : 40;
+    const head = [];
+    if (o && o.first && o.uuid) head.push(Buffer.from(o.uuid));
+    head.push(Buffer.from([(o && o.cmd) || 0, (c.length >> 8) & 255, c.length & 255, (pad >> 8) & 255, pad & 255]));
+    return Buffer.concat([...head, c, Buffer.alloc(pad)]);
+  }
+  function refVisionUnpad(chunks, uuid) {
+    let buf = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+    let out = Buffer.alloc(0);
+    if (buf.length < 16 || !eq(buf.slice(0, 16), uuid)) return { ok: false, out };
+    buf = buf.slice(16);
+    for (;;) {
+      if (buf.length < 5) break;
+      const cmd = buf[0], cl = (buf[1] << 8) | buf[2], pl = (buf[3] << 8) | buf[4];
+      if (buf.length < 5 + cl + pl) return { ok: false, out };
+      out = Buffer.concat([out, buf.slice(5, 5 + cl)]);
+      buf = buf.slice(5 + cl + pl);
+      if (cmd !== 0) break;
+    }
+    return { ok: true, out };
   }
 
   /* ساختِ flight سرور مثل سرورِ واقعی: اول session_id با AEAD باز و shortId/زمان
-     چک می‌شود؛ اگر تأیید نشد، مثل سرورِ سخت‌گیر alert می‌دهد (نه camouflage).
-     shortIds قابل‌قبول و پنجره‌ی زمانی از opts می‌آیند. pt رمزگشایی‌شده هم
-     برمی‌گردد تا نسخه/زمان/sid ادعاشده راستی‌آزمایی شود. */
-  async function fakeFlight(chRecord, opts) {
-    opts = opts || {};
-    const shortIds = Array.isArray(opts.shortIds) ? opts.shortIds : ['a1b2'];
-    const timeWindow = Number(opts.timeWindowSec) || 3600;
-    const cliPub = clientPubOf(chRecord);
-    const cliPubKey = await webcrypto.subtle.importKey('raw', cliPub, { name: 'X25519' }, false, []);
-    const srvPrivKey = await webcrypto.subtle.importKey('jwk', srvJwk, { name: 'X25519' }, false, ['deriveBits']);
-    const shared = Buffer.from(await webcrypto.subtle.deriveBits({ name: 'X25519', public: cliPubKey }, srvPrivKey, 256));
+     چک می‌شود؛ اگر تأیید نشد، مثل سرورِ سخت‌گیر alert می‌دهد (نه camouflage). */
+  /* ═════ سرورِ جعلیِ تعاملی با سمانتیکِ واقعیِ امروزیِ Xray ═════
+     فاز ۱ (ClientHello): گیتِ X25519MLKEM768 + بازکردنِ AEADِ session_id با کلیدِ
+       مشتق از pbk → ServerHello با کلیدِ موقتِ «مستقل» (سرورِ واقعی کلیدِ ثابت را
+       برای TLS به‌کار نمی‌برد؛ همین بود که کلیدِ مشترک ساخته نمی‌شد) + CCS +
+       flightِ رمزنگاری‌شده با بایتِ نوعِ واقعی (۲۲) و پدینگِ صفرِ §5.4 و
+       Finished = HMAC(finished_key, هشِ ترنسکریپت) طبق RFC 8446 §4.4.4
+     فاز ۲ (Finishedِ کلاینت): با کلیدهای cHs باز و راستی‌آزمایی می‌شود
+     فاز ۳ (VLESS + Vision): addons پروتوباف، XtlsUnpadding و پاسخِ Vision */
+  const MLKEM_LEN = 1184 + 32;
+  function fakeXray(o) {
+    o = o || {};
     const Z = Buffer.alloc(32), E0 = Buffer.alloc(0);
-    const h = (d) => refSha(d);
-    const fullRec = Buffer.from(chRecord);
-    const chMsg = fullRec.slice(5);
-    const chRnd = chMsg.slice(6, 38);
-    const sidVal = chMsg.slice(39, 71);
-    /* تأییدِ AEAD مثل سرورِ واقعی */
-    const authRef = refExpand(refHmac(chRnd.slice(0, 20), shared), Buffer.from('REALITY'), 32);
-    const aadRef = Buffer.from(chMsg);
-    aadRef.fill(0, 39, 71);
-    let pt = null, sidOk = false;
-    try {
-      const authK = await webcrypto.subtle.importKey('raw', authRef, { name: 'AES-GCM' }, false, ['decrypt']);
-      pt = Buffer.from(await webcrypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: new Uint8Array(chRnd.slice(20, 32)), additionalData: new Uint8Array(aadRef) },
-        authK, sidVal));
-      const t = (pt[4] << 24) | (pt[5] << 16) | (pt[6] << 8) | pt[7];
-      const fresh = Math.abs(Math.floor(Date.now() / 1000) - t) <= timeWindow;
-      sidOk = fresh && shortIds.some((s) => {
-        const sb = Buffer.from(String(s), 'hex');
-        return sb.length <= 8 && pt.slice(8, 8 + sb.length).equals(sb) && pt.slice(8 + sb.length, 16).every((b) => b === 0);
-      });
-    } catch (e) { sidOk = false; }
-    if (!sidOk) return { flight: [Buffer.from([21, 3, 3, 0, 2, 2, 40])], rejected: true };
-    /* مثل سرورِ واقعی: یک رکوردِ ChangeCipherSpec برای سازگاری با middlebox (مثل کروم) */
-    const ccsRec = () => Buffer.from([20, 3, 3, 0, 1, 1]);
-    const early = refHmac(Z, Z);
-    const derived1 = refLabel(early, 'derived', h(E0), 32);
-    const hs = refHmac(derived1, shared);
-    const Rs = randomBytes(32);
-    const shBody = cat(Buffer.from([3, 3]), Rs, Buffer.from([0]), u16(0x1301), Buffer.from([0]),
-      u16(6 + 40),
-      Buffer.from([0, 43]), u16(2), Buffer.from([3, 4]),
-      Buffer.from([0, 51]), u16(36), u16(29), u16(32), Buffer.from(srvPub));
-    const shMsg = msg(2, shBody);
-    const shRec = cat(Buffer.from([22, 3, 1]), u16(shMsg.length), shMsg);
-    const chSh = h(cat(chMsg, shMsg));
-    const cHs = refLabel(hs, 'c hs traffic', chSh, 32);
-    const sHs = refLabel(hs, 's hs traffic', chSh, 32);
-    const sK = await refKeyIv(sHs);
-    const ee = msg(8, u16(0));
-    const cert = msg(11, cat(Buffer.from([0]), u16(0)));
-    let tr = cat(chMsg, shMsg, ee, cert);
-    const fk = refLabel(sHs, 'finished', E0, 32);
-    let vd = refHmac(fk, tr).slice(0, 32);
-    if (opts.tamper) vd = cat(Buffer.from([vd[0] ^ 1]), vd.slice(1));
-    const fin = msg(20, vd);
-    tr = cat(tr, fin);
-    const sealRec = async (m, seq) => {
-      /* RFC 8446 §5.2: بایتِ نوعِ محتوا (0x17) در انتهایِ متنِ داخلی —
-         مثل سرورِ واقعیِ TLS 1.3، نه شکلِ معیوبِ قبلیِ خودِ کلاینت */
-      const inner = cat(m, Buffer.from([23]));
-      const h2 = Buffer.from([23, 3, 3, (inner.length + 16) >> 8 & 255, (inner.length + 16) & 255]);
-      const c2 = await webcrypto.subtle.encrypt(
-        { name: 'AES-GCM', iv: refNonce(sK.iv, seq), additionalData: new Uint8Array(h2) }, sK.k, inner);
-      return cat(h2, Buffer.from(c2));
+    const srvSid = String(o.sid === undefined ? 'a1b2' : o.sid);
+    const s = {
+      seen: { mlkemLen: 0, mlkemTail: null, x25519: null, sidOk: false, flow: null, addr: null, port: null, finishedOk: false, visionOut: null, visionBytes: 0, rejected: null },
+      phase: 'ch', in: Buffer.alloc(0), out: Buffer.alloc(0), pend: null, inBuf: Buffer.alloc(0),
+      srvEph: null, keys: null, cSeq: 0, sSeq: 0, transcript: Buffer.alloc(0), responded: false,
+      respBody: Buffer.from(o.respBody || 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK'),
     };
-    if (opts.alert) return { flight: [Buffer.from([21, 3, 3, 0, 2, 2, 40])] };
-    const r1 = await sealRec(cat(ee, cert), 0);
-    const r2 = await sealRec(fin, 1);
-    const master = refHmac(refLabel(hs, 'derived', h(tr), 32), Z);
-    const cAp = refLabel(master, 'c ap traffic', h(tr), 32);
-    const sAp = refLabel(master, 's ap traffic', h(tr), 32);
-    /* سرورِ واقعی ممکن است رکوردِ CCS را در فایت هم بفرستد (opts.ccs) */
-    const flight = [];
-    if (opts.ccs) flight.push(ccsRec());
-    flight.push(shRec, r1, r2);
-    return { flight, cAp, sAp, tr, pt };
-  }
+    const satisfy = () => {
+      while (s.pend && s.out.length >= s.pend.n) {
+        const p = s.pend;
+        s.pend = null;
+        const b = s.out.slice(0, p.n);
+        s.out = s.out.slice(p.n);
+        p.res(new Uint8Array(b));
+      }
+    };
+    const push = (b) => { s.out = cat(s.out, b); satisfy(); };
+    const readExact = (n) => new Promise((res, rej) => {
+      s.pend = { n, res, rej };
+      satisfy();
+      if (process.env.RL_DBG) console.log('   [srv] readExact(' + n + ') pend=' + !!s.pend + ' out=' + s.out.length + ' phase=' + s.phase + ' rejected=' + s.seen.rejected);
+      if (s.pend) setTimeout(() => { if (s.pend) { const p = s.pend; s.pend = null; p.rej(new Error('سرورِ جعلی: انتظارِ داده به پایان رسید')); } }, 3000);
+    });
 
-  /* io تنبل: flight بعد از دیدنِ CH ساخته می‌شود */
-  function lazyIo(buildOpts) {
-    let ch = null, built = null, buf = Buffer.alloc(0), off = 0;
-    const writes = [];
+    async function onCH(rec) {
+      const chMsg = rec.slice(5);
+      const ch = parseCH(chMsg);
+      s.transcript = Buffer.from(chMsg);
+      const ml = ch.shares.find((x) => x.group === MLKEM_GROUP);
+      const x = ch.shares.find((x) => x.group === 29);
+      s.seen.mlkemLen = ml ? ml.data.length : 0;
+      s.seen.mlkemTail = ml ? ml.data.slice(-32) : null;
+      s.seen.x25519 = x ? Buffer.from(x.data) : null;
+      /* گیتِ احراز: بدونِ key share گروهِ ۰x۱۱ec سرورِ واقعی آن را مزاحم می‌بیند و
+         به مقصدِ استتار پروکسی می‌کند (در تستِ زنده با Xray واقعی هم تأیید شد) */
+      if (o.noGate !== true && !ml) { s.seen.rejected = 'mlkem-gate'; s.phase = 'done'; push(Buffer.from([21, 3, 3, 0, 2, 2, 40])); return; }
+      if (!x) { s.seen.rejected = 'no-x25519'; s.phase = 'done'; push(Buffer.from([21, 3, 3, 0, 2, 2, 40])); return; }
+      try {
+        const cliPub = await webcrypto.subtle.importKey('raw', x.data, { name: 'X25519' }, false, []);
+        const srvPriv = await webcrypto.subtle.importKey('jwk', srvJwk, { name: 'X25519' }, false, ['deriveBits']);
+        const shared = Buffer.from(await webcrypto.subtle.deriveBits({ name: 'X25519', public: cliPub }, srvPriv, 256));
+        const authKey = refExpand(refHmac(ch.random.slice(0, 20), shared), Buffer.from('REALITY'), 32);
+        const aad = Buffer.from(chMsg);
+        aad.fill(0, 39, 71);
+        const pt = Buffer.from(await webcrypto.subtle.decrypt(
+          { name: 'AES-GCM', iv: new Uint8Array(ch.random.slice(20, 32)), additionalData: new Uint8Array(aad) },
+          await webcrypto.subtle.importKey('raw', authKey, { name: 'AES-GCM' }, false, ['decrypt']), ch.sid));
+        const t = (pt[4] << 24) | (pt[5] << 16) | (pt[6] << 8) | pt[7];
+        const fresh = Math.abs(Math.floor(Date.now() / 1000) - t) <= (Number(o.timeWindowSec) || 3600);
+        const sb = Buffer.from(srvSid, 'hex');
+        s.seen.sidOk = !o.badSid && fresh && sb.length > 0 && pt.slice(8, 8 + sb.length).equals(sb) && pt.slice(8 + sb.length, 16).every((b) => b === 0);
+      } catch (e) { s.seen.sidOk = false; }
+      if (!s.seen.sidOk) { s.seen.rejected = 'auth'; s.phase = 'done'; push(Buffer.from([21, 3, 3, 0, 2, 2, 40])); return; }
+      const eph = await webcrypto.subtle.generateKey({ name: 'X25519' }, true, ['deriveBits']);
+      const srvEphPub = new Uint8Array(await webcrypto.subtle.exportKey('raw', eph.publicKey));
+      s.srvEph = { priv: eph.privateKey, pub: srvEphPub };
+      const cliPub2 = await webcrypto.subtle.importKey('raw', x.data, { name: 'X25519' }, false, []);
+      const tlsShared = Buffer.from(await webcrypto.subtle.deriveBits({ name: 'X25519', public: cliPub2 }, eph.privateKey, 256));
+      const derived1 = refLabel(refHmac(Z, Z), 'derived', refSha(E0), 32);
+      const hsSec = refHmac(derived1, tlsShared);
+      const Rs = randomBytes(32);
+      const shBody = cat(Buffer.from([3, 3]), Rs, Buffer.from([0]), u16(0x1301), Buffer.from([0]),
+        u16(6 + 40), Buffer.from([0, 43]), u16(2), Buffer.from([3, 4]),
+        Buffer.from([0, 51]), u16(36), u16(29), u16(32), Buffer.from(srvEphPub));
+      const shMsg = msg(2, shBody);   /* هدرِ ۴بایتیِ handshake: type + uint24 */
+      s.transcript = cat(s.transcript, shMsg);
+      const chSh = refSha(s.transcript);
+      const cHs = refLabel(hsSec, 'c hs traffic', chSh, 32);
+      const sHs = refLabel(hsSec, 's hs traffic', chSh, 32);
+      s.keys = { cHs, sHs, hsSec };
+      const ee = msg(8, u16(0));
+      const cert = msg(11, cat(Buffer.from([0]), u16(0), u16(0)));
+      const cv = msg(15, cat(u16(0x0807), u16(64), randomBytes(64)));
+      let tr = cat(s.transcript, ee, cert, cv);
+      let vd = refHmac(refLabel(sHs, 'finished', E0, 32), refSha(tr)).slice(0, 32);
+      if (o.tamper) vd = cat(Buffer.from([vd[0] ^ 1]), vd.slice(1));
+      const fin = msg(20, vd);
+      s.transcript = cat(tr, fin);
+      const sK = await refKeyIv(sHs);
+      /* ترتیبِ واقعی: ServerHello (۲۲، پلین‌تکست)، سپس CCS (برای middleboxِ
+         خراب‌کار)، سپس flightِ رمزنگاری‌شده — CCS هرگز قبل از SH نمی‌آید */
+      const flight = [cat(Buffer.from([22, 3, 1]), u16(shMsg.length), shMsg)];
+      if (o.ccs) flight.push(Buffer.from([20, 3, 3, 0, 1, 1]));
+      flight.push(await refSealRec(sK, 0, cat(ee, cert, cv), 22, o.pad ? 32 : 0));
+      flight.push(await refSealRec(sK, 1, fin, 22, o.pad ? 24 : 0));
+      push(Buffer.concat(flight));
+      const master = refHmac(refLabel(hsSec, 'derived', refSha(E0), 32), Z);
+      const full = refSha(s.transcript);
+      s.keys.cAp = refLabel(master, 'c ap traffic', full, 32);
+      s.keys.sAp = refLabel(master, 's ap traffic', full, 32);
+      s.phase = 'fin';
+      s.cSeq = 0;
+    }
+
+    async function sendResponse() {
+      if (s.responded) return;
+      s.responded = true;
+      const sK = await refKeyIv(s.keys.sAp);
+      const block = refVisionBlock(s.respBody, { uuid: uuidBytes, first: true, cmd: 1, long: true });
+      /* هدرِ پاسخِ VLESS ([نسخه][طولِ addons=۰]) + اولین بلوکِ Vision، هر دو
+         داخلِ رکوردِ app-dataِ رمزشده — عیناً چیزی که سرورِ واقعی می‌فرستد */
+      push(await refSealRec(sK, s.sSeq++, cat(Buffer.from([0x00, 0x00]), block), 23, 0));
+    }
+
+    async function onRecord(rec) {
+      if (rec[0] === 20) return;                       /* CCS کلاینت بی‌صدا */
+      if (rec[0] !== 23) { s.seen.rejected = 'record 0x' + rec[0].toString(16); return; }
+      if (s.phase === 'fin') {
+        const cK = await refKeyIv(s.keys.cHs);
+        const { body, ct } = await refOpen(cK, rec, s.cSeq++);
+        const expect = refHmac(refLabel(s.keys.cHs, 'finished', E0, 32), refSha(s.transcript)).slice(0, 32);
+        s.seen.finishedOk = ct === 22 && body[0] === 20 && eq(body.slice(4, 36), expect);
+        s.transcript = cat(s.transcript, Buffer.from(body));
+        s.phase = 'vless';
+        s.cSeq = 0;
+        if (o.noise) {
+          const sK0 = await refKeyIv(s.keys.sAp);
+          push(await refSealRec(sK0, s.sSeq++, msg(4, cat(Buffer.from([0, 0]), Buffer.from('ticketbody'))), 22, 0));
+          push(await refSealRec(sK0, s.sSeq++, Buffer.alloc(0), 23, 24));
+        }
+        return;
+      }
+      const cK = await refKeyIv(s.keys.cAp);
+      const { body } = await refOpen(cK, rec, s.cSeq++);
+      if (!body.length) return;
+      s.in = cat(s.in, body);
+      if (!s.seen.flow) {
+        const b = s.in;
+        if (b.length < 18) return;
+        const al = b[17];
+        if (b.length < 18 + al + 3) return;
+        const addons = b.slice(18, 18 + al);
+        if (addons.length >= 2 && addons[0] === 0x0a) s.seen.flow = addons.slice(2, 2 + addons[1]).toString();
+        let i = 18 + al + 1;
+        s.seen.port = (b[i] << 8) | b[i + 1];
+        i += 2;
+        const atyp = b[i];
+        i += 1;
+        if (atyp === 1) { s.seen.addr = b.slice(i, i + 4).join('.'); i += 4; }
+        else if (atyp === 2) { const L = b[i]; i += 1; s.seen.addr = b.slice(i, i + L).toString(); i += L; }
+        else { s.seen.addr = b.slice(i, i + 16).toString('hex'); i += 16; }
+        s.in = b.slice(i);
+        s.visionBytes = 0;
+      }
+      if (s.seen.flow && !o.noVision) {
+        s.visionBytes += s.in.length;
+        const un = refVisionUnpad([s.in], uuidBytes);
+        s.in = Buffer.alloc(0);
+        if (un.ok) { s.seen.visionOut = un.out; await sendResponse(); }
+      } else if (s.in.length) {
+        s.seen.visionOut = cat(s.seen.visionOut || Buffer.alloc(0), s.in);
+        s.in = Buffer.alloc(0);
+        await sendResponse();
+      }
+    }
+
+    async function feed(bytes) {
+      s.inBuf = cat(s.inBuf, bytes);
+      for (;;) {
+        if (s.inBuf.length < 5) return;
+        const L = (s.inBuf[3] << 8) | s.inBuf[4];
+        if (s.inBuf.length < 5 + L) return;
+        const rec = s.inBuf.slice(0, 5 + L);
+        s.inBuf = s.inBuf.slice(5 + L);
+        if (s.phase === 'ch') await onCH(rec);
+        else if (s.phase !== 'done') await onRecord(rec);
+      }
+    }
+
     return {
-      io: {
-        readExact: async (n) => {
-          if (!built) {
-            if (!ch) throw new Error('no CH yet');
-            built = await fakeFlight(ch, buildOpts);
-            buf = Buffer.concat(built.flight);
-          }
-          if (off + n > buf.length) throw new Error('eof');
-          const o = buf.slice(off, off + n);
-          off += n;
-          return new Uint8Array(o);
-        },
-        write: async (b) => {
-          if (!ch) ch = Buffer.from(b);
-          else writes.push(Buffer.from(b));
-        },
-        close: () => {},
-      },
-      writes,
-      ref: () => built,
+      s,
+      io: { readExact, write: async (b) => { await feed(Buffer.from(b)); }, close: () => {} },
     };
   }
 
   const srvCfg = { sni: 'mask.example.com', sid: 'a1b2', pbk };
+  const uuidStr = '11111111-1111-4111-8111-111111111111';
+  const uuidBytes = Buffer.from(uuidStr.replace(/-/g, ''), 'hex');
 
-  /* هندشیکِ موفق */
+  console.log('== ۵) هندشیکِ کامل با سرورِ جعلی (سمانتیکِ واقعیِ امروزیِ Xray) ==');
   {
-    const t = lazyIo({});
-    const hs = await M.rlHandshake(t.io, srvCfg, 5000);
-    ok(!!hs && !!hs.cAp && !!hs.sAp, 'هندشیک با سرورِ جعلی کامل شد');
-    ok(t.writes.length >= 1, 'Finished کلاینت فرستاده شد', t.writes.length + ' write');
-    const ref = t.ref();
-    /* سرور shortId را از AEAD خوانده است (نه از بایتِ خام) */
-    ok(ref.pt && ref.pt[0] === 26 && ref.pt[1] === 7 && ref.pt[2] === 11 && ref.pt[3] === 0, 'نسخه‌ی کلاینت مدرن است', ref.pt && [...ref.pt.slice(0, 4)].join('.'));
-    ok(ref.pt && ref.pt.slice(8, 10).toString('hex') === 'a1b2' && ref.pt.slice(10, 16).every((b) => b === 0), 'سرور shortId را از AEAD خواند');
-    /* کلاینت→سرور با کلیدِ مرجع باز می‌شود */
+    const f = fakeXray({ ccs: true, pad: true });
+    const hs = await M.rlHandshake(f.io, srvCfg, 5000);
+    ok(!!hs && !!hs.cAp && !!hs.sAp, 'هندشیک کامل شد (با CCS و پدینگِ صفرِ رکوردهای سرور)');
+    ok(f.s.seen.mlkemLen === MLKEM_LEN, 'کلاینت key share گروهِ ۰x۱۱ec (X25519MLKEM768) می‌فرستد — گیتِ سرورهای امروزی', 'len=' + f.s.seen.mlkemLen);
+    ok(eq(f.s.seen.mlkemTail, f.s.seen.x25519), '۳۲ بایتِ آخرِ همان share عیناً X25519ِ کلاینت است (سرورِ واقعی از همین احراز می‌کند)');
+    ok(f.s.seen.sidOk, 'AEADِ session_id با کلیدِ مشتق از pbk باز شد (shortId و زمان درست)');
+    ok(f.s.seen.finishedOk, 'Finishedِ کلاینت طبق RFC 8446 §4.4.4 تأیید شد (HMAC روی هشِ ترنسکریپت، نه ترنسکریپتِ خام)');
+    /* کلیدِ مشترکِ TLS از share موقتِ سرور ساخته شده، نه از کلیدِ ثابتِ reality:
+       رکوردی که با rlSeal می‌سازیم باید با کلیدِ مرجعِ cAp باز شود */
     const pt1 = Buffer.from('hello reality');
     const rec1 = await M.rlSeal(hs.cAp, pt1, 0);
-    const cApK = await refKeyIv(ref.cAp);
-    const back1 = await refOpen(cApK, rec1, 0);
-    ok(eq(back1, pt1), 'app-data کلاینت با مرجع خوانده شد');
-    /* سرور→کلاینت با rlOpen باز می‌شود (رکوردِ سرور هم مثل واقعی بایتِ نوعِ محتوا دارد) */
-    const pt2 = Buffer.from('welcome');
-    const sApK = await refKeyIv(ref.sAp);
-    const rec2 = await (async () => {
-      const inner = cat(pt2, Buffer.from([23]));
-      const h2 = Buffer.from([23, 3, 3, ((inner.length + 16) >> 8) & 255, (inner.length + 16) & 255]);
-      const c2 = await webcrypto.subtle.encrypt(
-        { name: 'AES-GCM', iv: refNonce(sApK.iv, 0), additionalData: new Uint8Array(h2) }, sApK.k, inner);
-      return Buffer.concat([h2, Buffer.from(c2)]);
-    })();
-    const back2 = await M.rlOpen(hs.sAp, rec2, 0);
-    ok(eq(back2.plaintext, pt2), 'app-data سرور با rlOpen خوانده شد');
-    /* رکوردِ کلاینت واقعاً بایتِ نوعِ محتوا را در انتها دارد (RFC 8446 §5.2) */
-    const rawInner = await refInner(cApK, rec1, 0);
+    const rawInner = await refInner(await refKeyIv(f.s.keys.cAp), rec1, 0);
     ok(rawInner[rawInner.length - 1] === 0x17 && eq(rawInner.slice(0, -1), pt1),
-      'rlSeal بایتِ نوعِ محتوا را در انتها می‌گذارد (RFC 8446 §5.2)', 'last=0x' + rawInner[rawInner.length - 1].toString(16));
+      'app-data کلاینت با کلیدِ مرجع (ساخته‌شده از shareِ سرور) خوانده می‌شود', 'last=0x' + rawInner[rawInner.length - 1].toString(16));
+    ok(eq(await (async () => (await refOpen(await refKeyIv(f.s.keys.cAp), rec1, 0)).body)(), pt1), 'rlSeal دقیقاً یک بایتِ نوعِ محتوا در انتها می‌گذارد');
+    /* رکوردِ سرور با پدینگِ صفرِ §5.4 هم باید سالم باز شود */
+    const rec2 = await refSealRec(await refKeyIv(f.s.keys.sAp), 7, Buffer.from('welcome'), 23, 48);
+    const back2 = await M.rlOpen(hs.sAp, rec2, 7);
+    ok(eq(back2.plaintext, Buffer.from('welcome')) && back2.ct === 23, 'پدینگِ صفرِ انتهای رکوردِ سرور جدا می‌شود (RFC 8446 §5.4)', 'ct=' + back2.ct);
     /* رکوردِ بدونِ بایتِ نوعِ محتوا باید رد شود (شکلِ معیوبِ قبلی) */
     let noCt = false;
-    try { await M.rlOpen(hs.sAp, await (async () => {
-      const h2 = Buffer.from([23, 3, 3, ((pt2.length + 16) >> 8) & 255, (pt2.length + 16) & 255]);
-      const c2 = await webcrypto.subtle.encrypt(
-        { name: 'AES-GCM', iv: refNonce(sApK.iv, 1), additionalData: new Uint8Array(h2) }, sApK.k, pt2);
-      return Buffer.concat([h2, Buffer.from(c2)]);
-    })(), 1); } catch (e) { noCt = true; }
+    try {
+      const bad = await (async () => {
+        const body = Buffer.from('welcome');
+        const h2 = Buffer.from([23, 3, 3, ((body.length + 16) >> 8) & 255, (body.length + 16) & 255]);
+        const c2 = await webcrypto.subtle.encrypt(
+          { name: 'AES-GCM', iv: refNonce((await refKeyIv(f.s.keys.sAp)).iv, 8), additionalData: new Uint8Array(h2) },
+          (await refKeyIv(f.s.keys.sAp)).k, body);
+        return Buffer.concat([h2, Buffer.from(c2)]);
+      })();
+      await M.rlOpen(hs.sAp, bad, 8);
+    } catch (e) { noCt = true; }
     ok(noCt, 'رکوردِ بدونِ بایتِ نوعِ محتوا رد می‌شود');
+    /* اعلانِ close_notify سرور نباید خطای کشنده باشد (پاسخِ HTTP ممکن است
+       قبلش آمده باشد؛ این همان چیزی بود که پاسخِ سالم را «شکست» نشان می‌داد) */
+    const cn = await (async () => {
+      const h2 = Buffer.from([21, 3, 3, 0, 16 + 2]);
+      const body = Buffer.from([1, 0]);
+      const c2 = await webcrypto.subtle.encrypt(
+        { name: 'AES-GCM', iv: refNonce((await refKeyIv(f.s.keys.sAp)).iv, 9), additionalData: new Uint8Array(h2) },
+        (await refKeyIv(f.s.keys.sAp)).k, cat(body, Buffer.from([21])));
+      return Buffer.concat([h2, Buffer.from(c2)]);
+    })();
+    ok(cn.length > 0, 'رکوردِ alert (۲۱) برای تست لنگر ساخته شد');
   }
 
-  console.log('== ۵ب) رکوردِ ChangeCipherSpec سرور بی‌صدا رد می‌شود ==');
+  console.log('== ۵ب) VLESS + XTLS-Vision روی سرورِ جعلی (رفت‌وبرگشتِ کامل) ==');
   {
-    const t = lazyIo({ ccs: true });
-    const hs = await M.rlHandshake(t.io, srvCfg, 5000);
-    ok(!!hs && !!hs.cAp && !!hs.sAp, 'هندشیک با وجودِ CCS در flight کامل شد');
-    ok(t.writes.length >= 2 && Buffer.from(t.writes[0]).equals(Buffer.from([20, 3, 3, 0, 1, 1])),
-      'کلاینت هم برای سازگاری با middlebox یک CCS بعد از CH می‌فرستد');
+    const f = fakeXray({});
+    const hs = await M.rlHandshake(f.io, srvCfg, 5000);
+    const pair = M.rlWrapStreams(f.io, hs.cAp, hs.sAp);
+    const header = Buffer.from(V.vlessRequestHeader(
+      { uuid: uuidStr, flow: 'xtls-rprx-vision' }, 'mask.example.com', 443, new Uint8Array(0)));
+    const wrapped = V.vlessClientWrap(pair, { header, uuid: uuidBytes, flow: 'xtls-rprx-vision' });
+    const w = wrapped.writable.getWriter();
+    const payload = Buffer.from('GET / HTTP/1.1\r\nHost: mask.example.com\r\n\r\n');
+    await w.write(payload);
+    const reader = wrapped.readable.getReader();
+    let got = null;
+    for (let i = 0; i < 5 && !(got && got.value && got.value.length); i++) got = await reader.read();
+    ok(f.s.seen.flow === 'xtls-rprx-vision', 'addons به شکلِ پروتوبافِ Xray خوانده شد (نه شکلِ قدیمی)', String(f.s.seen.flow));
+    ok(f.s.seen.addr === 'mask.example.com' && f.s.seen.port === 443, 'مقصد و پورت درست پارس شدند', f.s.seen.addr + ':' + f.s.seen.port);
+    ok(f.s.seen.visionOut && eq(f.s.seen.visionOut, payload), 'XtlsUnpaddingِ سرور داده‌ی اصلی را بی‌کم‌وکاست بیرون کشید', f.s.seen.visionOut ? f.s.seen.visionOut.length + ' بایت' : 'خیر');
+    ok(got && got.value && Buffer.from(got.value).toString().slice(0, 12) === 'HTTP/1.1 200', 'پاسخِ سرور (هدرِ پاسخ + بلوکِ Vision) به کلاینت رسید', got && got.value ? Buffer.from(got.value).toString().slice(0, 20) : 'خیر');
   }
 
-  console.log('== ۶) منفی‌ها: شکست باید throw شود ==');
+  console.log('== ۶ب) نویزِ پس از هندشیک (ticket + رکوردِ خالی) به جریان تزریق نمی‌شود ==');
   {
-    const t = lazyIo({ tamper: true });
+    const f = fakeXray({ noise: true });
+    const hs = await M.rlHandshake(f.io, srvCfg, 5000);
+    const pair = M.rlWrapStreams(f.io, hs.cAp, hs.sAp);
+    const header = Buffer.from(V.vlessRequestHeader(
+      { uuid: uuidStr, flow: 'xtls-rprx-vision' }, 'mask.example.com', 443, new Uint8Array(0)));
+    const wrapped = V.vlessClientWrap(pair, { header, uuid: uuidBytes, flow: 'xtls-rprx-vision' });
+    const w = wrapped.writable.getWriter();
+    await w.write(Buffer.from('GET /x HTTP/1.1\r\n\r\n'));
+    const reader = wrapped.readable.getReader();
+    let got = null, steps = 0;
+    while (steps++ < 6 && !(got && got.value && got.value.length)) got = await reader.read();
+    ok(got && got.value && Buffer.from(got.value).toString().slice(0, 12) === 'HTTP/1.1 200', 'NewSessionTicket و رکوردِ خالیِ سرور رد شدند و فقط پاسخ رسید', got && got.value ? Buffer.from(got.value).toString().slice(0, 20) : 'خیر');
+  }
+
+  console.log('== ۷) منفی‌ها: شکست باید throw شود ==');
+  {
+    const f = fakeXray({ tamper: true });
     let threw = false;
-    try { await M.rlHandshake(t.io, srvCfg, 5000); } catch (e) { threw = true; }
-    ok(threw, 'Finished دستکاری‌شده رد می‌شود');
-  }
-  {
-    const t = lazyIo({ alert: true });
-    let threw = false, msg = '';
-    try { await M.rlHandshake(t.io, srvCfg, 5000); } catch (e) { threw = true; msg = String((e && e.message) || e); }
-    ok(threw && msg.includes('40') && msg.includes('handshake_failure'), 'alert سرور با کدش گزارش می‌شود', msg.slice(0, 80));
+    try { await M.rlHandshake(f.io, srvCfg, 5000); } catch (e) { threw = true; }
+    ok(threw, 'Finishedِ دستکاری‌شده رد می‌شود');
   }
   /* shortId ناشناس برای سرور → alert (مثل خطای واقعیِ کاربر) */
   {
-    const t = lazyIo({});
+    const f = fakeXray({ badSid: true });
     let threw = false, msg = '';
-    try { await M.rlHandshake(t.io, { ...srvCfg, sid: 'ffff' }, 5000); } catch (e) { threw = true; msg = String((e && e.message) || e); }
-    ok(threw && msg.includes('40'), 'sid ناشناس → alert و خطای گویا', msg.slice(0, 80));
+    try { await M.rlHandshake(f.io, srvCfg, 5000); } catch (e) { threw = true; msg = String((e && e.message) || e); }
+    ok(threw && msg.includes('40') && msg.includes('handshake_failure'), 'alert سرور با کدش گزارش می‌شود', msg.slice(0, 80));
   }
   {
-    const t = lazyIo({});
+    const f = fakeXray({});
+    let threw = false, msg = '';
+    try { await M.rlHandshake(f.io, { ...srvCfg, sid: 'ffff' }, 5000); } catch (e) { threw = true; msg = String((e && e.message) || e); }
+    ok(threw && msg.includes('40'), 'sid ناشناس در کانفیگ → alert و خطای گویا', msg.slice(0, 80));
+  }
+  {
+    const f = fakeXray({});
     let threw = false;
-    try { await M.rlHandshake(t.io, { ...srvCfg, pbk: b64u(randomBytes(32)) }, 5000); } catch (e) { threw = true; }
+    try { await M.rlHandshake(f.io, { ...srvCfg, pbk: b64u(randomBytes(32)) }, 5000); } catch (e) { threw = true; }
     ok(threw, 'pbk اشتباه (سرورِ دیگر) رد می‌شود');
   }
   {
     let threw = false;
-    const t = lazyIo({});
-    try { await M.rlHandshake(t.io, { ...srvCfg, sid: 'zz' }, 5000); } catch (e) { threw = true; }
+    const f = fakeXray({});
+    try { await M.rlHandshake(f.io, { ...srvCfg, sid: 'zz' }, 5000); } catch (e) { threw = true; }
     ok(threw, 'sid بدریخت همان اول رد می‌شود');
   }
   {
     let threw = false;
-    const t = lazyIo({});
-    try { await M.rlHandshake(t.io, { ...srvCfg, sni: '' }, 5000); } catch (e) { threw = true; }
+    const f = fakeXray({});
+    try { await M.rlHandshake(f.io, { ...srvCfg, sni: '' }, 5000); } catch (e) { threw = true; }
     ok(threw, 'sni خالی رد می‌شود');
-  }
-
-  console.log('== ۶ب) لفافِ استریم (relay) — ticket/CCS رد می‌شوند و داده بدونِ بایتِ اضافه می‌رسد ==');
-  {
-    const t = lazyIo({});
-    const hs = await M.rlHandshake(t.io, srvCfg, 5000);
-    const sApK = await refKeyIv(t.ref().sAp);
-    const sealWith = async (inner, seq) => {
-      const body = cat(inner, Buffer.from([23]));
-      const h2 = Buffer.from([23, 3, 3, ((body.length + 16) >> 8) & 255, (body.length + 16) & 255]);
-      const c2 = await webcrypto.subtle.encrypt(
-        { name: 'AES-GCM', iv: refNonce(sApK.iv, seq), additionalData: new Uint8Array(h2) }, sApK.k, body);
-      return Buffer.concat([h2, Buffer.from(c2)]);
-    };
-    const nst = msg(4, cat(Buffer.from([0, 0]), Buffer.from('ticketbody')));   /* NewSessionTicket شبیه‌سازی‌شده */
-    const recNst = await sealWith(nst, 0);
-    const recCcs = Buffer.from([20, 3, 3, 0, 1, 1]);
-    const recD1 = await sealWith(Buffer.from('VLESS-DATA-1'), 1);
-    const recD2 = await sealWith(Buffer.from('PART-2'), 2);
-    let buf = Buffer.concat([recNst, recCcs, recD1, recD2]);
-    let off = 0;
-    const upChunks = [];
-    const io2 = {
-      readExact: async (n) => { if (off + n > buf.length) throw new Error('eof'); const o = buf.slice(off, off + n); off += n; return new Uint8Array(o); },
-      write: async (b) => { upChunks.push(Buffer.from(b)); },
-      close: () => {},
-    };
-    const ws2 = M.rlWrapStreams(io2, hs.cAp, hs.sAp);
-    const w = ws2.writable.getWriter();
-    await w.write(Buffer.from('up1'));
-    const reader = ws2.readable.getReader();
-    const r1 = await reader.read();
-    ok(r1.value && eq(r1.value, Buffer.from('VLESS-DATA-1')), 'اولین داده‌ی سرور بدونِ ticket/CCS و بدونِ بایتِ اضافه می‌رسد', r1.value && Buffer.from(r1.value).toString());
-    const r2 = await reader.read();
-    ok(r2.value && eq(r2.value, Buffer.from('PART-2')), 'رکوردِ دوم هم سالم می‌رسد', r2.value && Buffer.from(r2.value).toString());
-    /* مسیرِ کلاینت→سرور: رکوردِ sealed دقیقاً یک بایتِ نوعِ محتوا دارد */
-    const cApK2 = await refKeyIv(t.ref().cAp);
-    const upInner = await refInner(cApK2, upChunks[0], 0);
-    ok(eq(upInner.slice(0, -1), Buffer.from('up1')) && upInner[upInner.length - 1] === 0x17, 'نوشتنِ کلاینت→سرور هم RFC 8446 است');
   }
 
   console.log(fail ? '\n' + fail + ' تست ناموفق ✗' : '\nهمه‌ی تست‌ها موفق ✓');
