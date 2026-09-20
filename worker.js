@@ -78,7 +78,7 @@ function exitDialHost(srv) {
 }
 
 const VERSION = '3.0.0';
-const BUILD = '2026.09.18';
+const BUILD = '2026.09.20';
 const BOOT = Date.now();
 /* مخزنِ آپدیت خودکارِ پنل (همین ریپو) + کشِ نتیجه‌ی بررسی — سطحِ ماژول تا
    بین درخواست‌های همین isolate بماند و سهمیه‌ی GitHub API تمام نشود */
@@ -1923,6 +1923,8 @@ function normalize(st) {
      تونل هیچ‌وقت منتظرِ یک شناسه‌ی یتیم نماند. */
   if (!s.exits || typeof s.exits !== 'object') s.exits = { enabled: true, defaultMode: 'direct', defaultExit: '', servers: [] };
   s.exits.enabled = s.exits.enabled !== false;
+  /* حالتِ سخت‌گیر — پیش‌فرض: خاموش (سازگار با رفتارِ قبلی)؛ روشن = شکستِ خروجی یعنی بستنِ اتصال */
+  s.exits.strict = s.exits.strict === true;
   if (!Array.isArray(s.exits.servers)) s.exits.servers = [];
   s.exits.servers = s.exits.servers.filter(Boolean).map((x) => normalizeExit(x, x.id));
   s.exits.defaultExit = String(s.exits.defaultExit || '');
@@ -6252,6 +6254,7 @@ async function apiHandler(req, env, url, ctx) {
     return json({
       ok: true,
       enabled: on,
+      strict: ex.strict === true,
       defaultMode: ex.defaultMode,
       defaultExit: ex.defaultExit,
       /* پیش‌فرضِ مؤثر — همان چیزی که مسیر تونل استفاده می‌کند */
@@ -6351,6 +6354,40 @@ async function apiHandler(req, env, url, ctx) {
       });
     }
 
+    /* کلیدِ حالتِ سخت‌گیر: شکستِ سرور خروجی به‌جای بازگشتِ بی‌صدای به مستقیم
+       (نشتِ آی‌پی)، اتصال را شفاف می‌بندد. */
+    if (op === 'strict') {
+      const want = b.enabled === undefined ? !ex.strict : !!b.enabled;
+      const cur = ex.strict === true;
+      if (want === cur) return json({ ok: true, op, strict: cur, msg: 'تغییری لازم نبود' });
+      ex.strict = want;
+      addLog(st, want ? 'success' : 'warn', 'core',
+        want ? 'روشن‌کردن حالتِ سخت‌گیرِ خروجی' : 'خاموش‌کردن حالتِ سخت‌گیرِ خروجی',
+        want ? 'شکستِ سرور خروجی = بستنِ اتصال (بدونِ نشتِ آی‌پی)' : 'شکستِ سرور خروجی = ادامه به مسیر مستقیم');
+      await save(env, st);
+      return json({
+        ok: true, op, strict: want, servers: ex.servers,
+        msg: want
+          ? 'حالتِ سخت‌گیر روشن شد — با خرابیِ سرور خروجی، اتصالِ کاربر بسته می‌شود و آی‌پیِ او هرگز لو نمی‌رود'
+          : 'حالتِ سخت‌گیر خاموش شد — با خرابیِ سرور خروجی، ترافیک به مسیر مستقیم برمی‌گردد',
+      });
+    }
+
+    /* حلِ آی‌پیِ سرور خروجی با DoH — ذخیره روی سرور و نمایش در فهرست */
+    if (op === 'resolve-ip') {
+      const id = String((b && b.id) || '').trim();
+      const srv = exitById(st, id);
+      if (!srv) return json({ ok: false, error: 'سرور خروجی با این شناسه پیدا نشد' }, 404);
+      const ip = await resolveExitIp(srv.address || srv.host, 5000);
+      if (!ip) return json({ ok: false, error: 'حلِ آی‌پی ناموفق بود — دامنه‌ی سرور پاسخِ DNS نداد', id }, 502);
+      srv.resolvedIp = ip;
+      srv.resolvedAt = Date.now();
+      EXIT_IP_LAST.set(srv.id, Date.now());
+      addLog(st, 'info', 'core', 'حلِ آی‌پیِ سرور خروجی', srv.name + ' → ' + ip);
+      await save(env, st);
+      return json({ ok: true, op, id, ip, resolvedAt: srv.resolvedAt, msg: 'آی‌پیِ «' + srv.name + '» حل شد: ' + ip });
+    }
+
     /* کلیدِ سراسری: خروجی‌ها اصلاً در مسیرِ تونل به کار بروند یا نه؟
        خاموش = فهرستِ سرورها دست‌نخورده می‌ماند اما همه‌ی کانفیگ‌ها مستقیم می‌روند. */
     if (op === 'master') {
@@ -6394,7 +6431,7 @@ async function apiHandler(req, env, url, ctx) {
       });
     }
 
-    return json({ ok: false, error: 'عملیات نامعتبر — مجاز: add، update، delete، select' }, 400);
+    return json({ ok: false, error: 'عملیات نامعتبر — مجاز: add، update، delete، toggle، master، strict، select، resolve-ip' }, 400);
   }
 
   /* پیش‌فرضِ سراسری: 'direct' (بدون واسطه) یا شناسه‌ی یکی از سرورها */
@@ -6431,14 +6468,28 @@ async function apiHandler(req, env, url, ctx) {
     const id = String((b && b.id) || '').trim();
     const srv = id ? exitById(st, id) : normalizeExit(b.server || b, '');
     if (!srv) return json({ ok: false, error: 'سرور خروجی با این شناسه پیدا نشد' }, 404);
-    const r = await testExit(srv, b);
+    /* تستِ اتصال و حلِ آی‌پی (DoH) همزمان — حلِ آی‌پی نتیجه‌ی تست را کند نمی‌کند */
+    const [tr, ir] = await Promise.allSettled([
+      testExit(srv, b),
+      resolveExitIp(srv.address || srv.host, 5000),
+    ]);
+    const r = tr.status === 'fulfilled' ? tr.value : { ok: false, ms: null, error: String((tr.reason && tr.reason.message) || tr.reason) };
+    const ip = ir.status === 'fulfilled' ? String(ir.value || '') : '';
+    /* آی‌پیِ حل‌شده روی سرور ذخیره می‌شود تا در فهرست بدونِ تست هم دیده شود */
+    if (ip && id) {
+      srv.resolvedIp = ip;
+      srv.resolvedAt = Date.now();
+      EXIT_IP_LAST.set(srv.id, Date.now());
+    }
     addLog(st, r.ok ? 'success' : 'warn', 'core', 'تست سرور خروجی',
-      srv.name + ' • ' + (r.ok ? fa(r.ms) + ' میلی‌ثانیه' : (r.error || 'ناموفق')));
+      srv.name + ' • ' + (r.ok ? fa(r.ms) + ' میلی‌ثانیه' : (r.error || 'ناموفق')) + (ip ? ' • ' + ip : ''));
     await save(env, st);
     return json({
       ok: true, id: srv.id, name: srv.name,
       reachable: r.ok, ms: r.ms, transport: r.transport, security: r.security,
       error: r.error,
+      ip: ip || srv.resolvedIp || '',
+      resolvedAt: srv.resolvedAt || 0,
       msg: r.ok
         ? 'اتصال به «' + srv.name + '» برقرار شد — زمان پاسخ ' + fa(r.ms) + ' میلی‌ثانیه'
         : 'اتصال به «' + srv.name + '» برقرار نشد: ' + (r.error || 'علت نامشخص'),
@@ -7607,7 +7658,7 @@ const EXIT_TRANSPORTS = ['raw', 'ws', 'grpc'];
 
 /* آخرین خطا و آمار — فقط برای گزارش؛ هیچ تایمری راه نمی‌افتد */
 let EXIT_LAST_ERR = '';
-const EXIT_STATS = { tunnels: 0, fallbacks: 0, lastMs: 0, lastAt: 0 };
+const EXIT_STATS = { tunnels: 0, fallbacks: 0, strictCloses: 0, lastMs: 0, lastAt: 0 };
 const exitNote = (msg) => { EXIT_LAST_ERR = String(msg).slice(0, 300); EXIT_STATS.lastAt = Date.now(); };
 
 /* آمارِ تلاشِ ProxyIP/NAT64 در مسیرِ تونل — فقط برای گزارش در پنل */
@@ -7623,7 +7674,7 @@ const toU8 = (d) => {
 };
 
 const EXIT_FIELDS = ['name', 'label', 'address', 'port', 'uuid', 'flow', 'security', 'transport',
-  'path', 'serviceName', 'sni', 'host', 'enabled', 'pbk', 'sid', 'spx'];
+  'path', 'serviceName', 'sni', 'host', 'enabled', 'pbk', 'sid', 'spx', 'resolvedIp', 'resolvedAt'];
 
 /* اعتبارسنجیِ پارامترهای reality — base64url بدونِ padding، دقیقاً ۳۲ بایت (کلیدِ X25519 سرور) */
 function realityPbkOk(pbk) {
@@ -7689,6 +7740,9 @@ function normalizeExit(raw, keepId) {
     sni: String(o.sni || '').trim(),
     host: String(o.host || '').trim(),
     enabled: o.enabled !== false,
+    /* آی‌پیِ حل‌شده با DoH — فقط ذخیره/نمایش، هرگز از لینک خوانده نمی‌شود */
+    resolvedIp: String(o.resolvedIp || '').trim(),
+    resolvedAt: Math.max(0, Math.round(Number(o.resolvedAt) || 0)),
     params,
   };
 }
@@ -7849,6 +7903,58 @@ function resolveExit(st, u) {
 function exitRoutingEnabled(st) {
   const ex = (st && st.settings && st.settings.exits) || {};
   return ex.enabled !== false;
+}
+
+/* حالتِ سخت‌گیر: اگر سرور خروجی در دسترس نباشد، ترافیک به مستقیم برنمی‌گردد
+   (آی‌پیِ کاربر لو نمی‌رود) — اتصال شفاف بسته می‌شود. پیش‌فرض: خاموش. */
+function exitsStrict(st) {
+  const ex = (st && st.settings && st.settings.exits) || {};
+  return ex.strict === true;
+}
+
+/* ═══ حلِ آی‌پیِ سرور خروجی با DoH ═══
+   هیچ‌جا آی‌پیِ واقعیِ سرورِ خروجی نشان داده نمی‌شد — اینجا با DoH (JSON API)
+   حل، روی خودِ سرور ذخیره (resolvedIp/resolvedAt) و در فهرست و نتیجه‌ی تست
+   نمایش داده می‌شود. برای مقاصدِ IP لخت، همان آی‌پی برمی‌گردد. */
+const EXIT_IP_TTL = 10 * 60 * 1000;                    /* نوسازیِ پس‌زمینه حداکثر هر ۱۰ دقیقه */
+const EXIT_IP_LAST = new Map();                        /* id → آخرین حل (ضدِ طوفانِ نوشتن) */
+async function resolveExitIp(host, timeoutMs) {
+  const h = String(host || '').trim().toLowerCase().replace(/^\[/, '').replace(/\]$/, '');
+  if (!h) return '';
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(h)) return h;   /* IPv4 لخت — نیازی به حل نیست */
+  if (h.indexOf(':') >= 0) return h;                  /* IPv6 لخت — نیازی به حل نیست */
+  const tmo = Math.max(1500, Number(timeoutMs) || 5000);
+  const ask = async (base) => {
+    let timer = null;
+    try {
+      const r = await Promise.race([
+        fetch(base + '?name=' + encodeURIComponent(h) + '&type=A', { headers: { accept: 'application/dns-json' } }),
+        new Promise((_, rj) => { timer = setTimeout(() => rj(new Error('زمانِ DNS تمام شد')), tmo); }),
+      ]);
+      if (!r.ok) throw new Error('dns http ' + r.status);
+      const j = await r.json();
+      const ans = (j && Array.isArray(j.Answer)) ? j.Answer : [];
+      const a = ans.filter((x) => x && Number(x.type) === 1 && x.data).map((x) => String(x.data).trim());
+      return a[0] || '';
+    } finally { clearTimeout(timer); }
+  };
+  try { const ip = await ask('https://cloudflare-dns.com/dns-query'); if (ip) return ip; } catch (e) {}
+  try { return await ask('https://1.1.1.1/dns-query'); } catch (e) { return ''; }
+}
+/* تازه‌سازیِ بی‌صدای آی‌پی در پس‌زمینه (بعد از تونلِ موفق) — در مسیرِ ترافیک منتظر نمی‌ماند */
+async function refreshExitIp(env, st, srv) {
+  try {
+    const host = String((srv && (srv.address || srv.host)) || '').trim();
+    if (!host) return;
+    const last = EXIT_IP_LAST.get(srv.id) || 0;
+    if (Date.now() - last < EXIT_IP_TTL) return;
+    EXIT_IP_LAST.set(srv.id, Date.now());
+    const ip = await resolveExitIp(host, 5000);
+    if (!ip || ip === srv.resolvedIp) return;
+    srv.resolvedIp = ip;
+    srv.resolvedAt = Date.now();
+    await save(env, st);
+  } catch (e) { /* نمایشِ آی‌پی حیاتی نیست — خطا بی‌صدا */ }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -8216,25 +8322,35 @@ function rlNonce(iv12, seq) {
   for (let i = 0; i < 8; i++) n[11 - i] ^= Number((s >> BigInt(i * 8)) & 255n);
   return n;
 }
-/* رمزکردنِ یک رکوردِ app-data (seq جدا برای هر جهت، از صفر) */
+/* رمزکردنِ یک رکوردِ TLS 1.3 (seq جدا برای هر جهت، از صفر).
+   ⚠️ RFC 8446 §5.2: هر رکوردِ رمزنگاری‌شده باید در انتهایِ متنِ داخلیِ خود بایتِ
+   «نوعِ محتوا» (۲۳ = application_data) را داشته باشد؛ AEAD آن را هم می‌پوشاند.
+   بایتی که اینجا اضافه می‌شود، در rlOpen برداشته می‌شود. بی‌آن، Finishedِ ما برای
+   سرورِ واقعی ناخوانا بود، flightِ سرور این‌طرف قاب‌بندی‌اش می‌شکست و هر رکوردِ
+   داده یک بایتِ اضافیِ 0x17 به جریانِ VLESS تزریق می‌کرد. */
+const RL_CT_APPDATA = 23;
 async function rlSeal(keyObj, plaintext, seq) {
-  const pt = toU8(plaintext);
-  const L = pt.length + 16;
+  const inner = rlConcat(toU8(plaintext), new Uint8Array([RL_CT_APPDATA]));
+  const L = inner.length + 16;
   const hdr = new Uint8Array([23, 3, 3, (L >> 8) & 255, L & 255]);
   const ct = new Uint8Array(await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: rlNonce(keyObj.iv, seq), additionalData: hdr }, keyObj.k, pt));
+    { name: 'AES-GCM', iv: rlNonce(keyObj.iv, seq), additionalData: hdr }, keyObj.k, inner));
   return rlConcat(hdr, ct);
 }
-/* رمزگشاییِ یک رکوردِ کامل (هدر ۵ + بدنه) — برمی‌گرداند {plaintext, total} */
+/* رمزگشاییِ یک رکوردِ کامل (هدر ۵ + بدنه) — برمی‌گرداند {plaintext, total}.
+   بایتِ آخرِ متنِ داخلی نوعِ محتوا است (RFC 8446 §5.2) و از خروجی حذف می‌شود؛
+   نوعی غیر از ۲۳ یعنی جریان به‌هم ریخته است. */
 async function rlOpen(keyObj, record, seq) {
   const r = toU8(record);
-  if (r.length < 5 + 16 || r[0] !== 23) throw new Error('رکوردِ app-data نامعتبر');
+  if (r.length < 5 + 16 + 1 || r[0] !== 23) throw new Error('رکوردِ app-data نامعتبر');
   const hdr = r.slice(0, 5);
   const L = (hdr[3] << 8) | hdr[4];
   if (r.length - 5 < L) throw new Error('رکوردِ ناقص');
   const pt = new Uint8Array(await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: rlNonce(keyObj.iv, seq), additionalData: hdr }, keyObj.k, r.slice(5, 5 + L)));
-  return { plaintext: pt, total: 5 + L };
+  if (pt.length < 1) throw new Error('متنِ داخلیِ رکورد خالی است');
+  if (pt[pt.length - 1] !== RL_CT_APPDATA) throw new Error('نوعِ محتوایِ رکورد نامعتبر (' + pt[pt.length - 1] + ')');
+  return { plaintext: pt.slice(0, pt.length - 1), total: 5 + L };
 }
 
 /* ── ClientHello شبیه‌کروم ──
@@ -8424,6 +8540,10 @@ async function rlHandshake(io, srv, timeoutMs) {
   const msg = ch0.msg.slice();
   msg.set(sess.sealed, 39);
   await io.write(record);
+  /* رکوردِ ChangeCipherSpec — مثل کروم و کلاینتِ Xray برای سازگاری با middlebox
+     (RFC 8446 Appx. E.1) بلافاصله بعد از ClientHello فرستاده می‌شود؛ سرورِ
+     TLS 1.3 باید آن را نادیده بگیرد (مثل بقیه‌ی کلاینت‌های واقعی). */
+  await io.write(new Uint8Array([20, 3, 3, 0, 1, 1]));
   const transcript = [msg];
   const trBytes = () => rlConcat(...transcript);
 
@@ -8445,13 +8565,26 @@ async function rlHandshake(io, srv, timeoutMs) {
   /* مرحله‌ی جاری برای پیامِ خطا */
   let rlPhase = 'پاسخِ ServerHello';
   const readRecord = async () => {
-    const h = await io.readExact(5, timeout);
-    if (h[0] === 21) throw new Error('سرور reality هشدار داد [مرحله: ' + rlPhase + ']' + await rlAlertDetail(io, timeout));
-    if (h[0] !== 22 && h[0] !== 23) throw new Error('رکوردِ نامعتبر از سرور (type=' + h[0] + ')');
-    const L = (h[3] << 8) | h[4];
-    if (L <= 0 || L > 262144) throw new Error('طولِ رکوردِ نامعتبر');
-    const body = await io.readExact(L, timeout);
-    return { h, body };
+    /* حلقه‌ی داخلی: رکوردهای ChangeCipherSpec بی‌صدا رد می‌شوند و حلقه تا رسیدن
+       به رکوردِ handshake/app-data ادامه می‌یابد */
+    for (;;) {
+      const h = await io.readExact(5, timeout);
+      if (h[0] === 21) throw new Error('سرور reality هشدار داد [مرحله: ' + rlPhase + ']' + await rlAlertDetail(io, timeout));
+      if (h[0] === 20) {
+        /* ChangeCipherSpec — سرورهای واقعی برای سازگاری با middlebox (RFC 8446
+           Appx. E.1) یک رکوردِ type=20 می‌فرستند؛ TLS 1.3 آن را بی‌اثر کرده و
+           باید بی‌صدا رد شود (بایتِ واحدِ بدنه هم خوانده شود). */
+        const L0 = (h[3] << 8) | h[4];
+        if (L0 < 0 || L0 > 512) throw new Error('رکوردِ ChangeCipherSpec بدریخت');
+        if (L0) await io.readExact(L0, timeout);
+        continue;
+      }
+      if (h[0] !== 22 && h[0] !== 23) throw new Error('رکوردِ نامعتبر از سرور (type=' + h[0] + ')');
+      const L = (h[3] << 8) | h[4];
+      if (L <= 0 || L > 262144) throw new Error('طولِ رکوردِ نامعتبر');
+      const body = await io.readExact(L, timeout);
+      return { h, body };
+    }
   };
 
   /* ۱) ServerHello (تنها رکوردِ plaintext) — alert در این مرحله یعنی سرور
@@ -8499,7 +8632,10 @@ async function rlHandshake(io, srv, timeoutMs) {
         sHsKeys.k, rec.body));
     } catch (e) { throw new Error('رمزگشاییِ flight ناموفق — کلیدِ مشترک ساخته نشد'); }
     sSeq++;
-    hsBuf = rlConcat(hsBuf, pt);
+    /* بایتِ نوعِ محتوا در انتهایِ متنِ داخلی است (RFC 8446 §5.2) — اگر جدا نشود
+       قاب‌بندیِ پیام‌های handshake این‌طرف می‌شکند و Finishedِ سرور هرگز پارس نمی‌شود */
+    if (pt.length < 1 || pt[pt.length - 1] !== RL_CT_APPDATA) throw new Error('flightِ سرور بدریخت بود (بایتِ نوعِ محتوا)');
+    hsBuf = rlConcat(hsBuf, pt.slice(0, pt.length - 1));
     const msgs = pullHs();
     for (const m of msgs) {
       if (m.type === 20) {
@@ -8570,24 +8706,35 @@ function rlWrapStreams(io, cAp, sAp) {
         for (;;) {
           const h = await io.readExact(5);
           if (h[0] === 21) { try { controller.close(); } catch (e) {} try { io.close(); } catch (e2) {} return; }
+          /* ChangeCipherSpec (type 20) بعد از هندشیک هم ممکن است برسد — بی‌صدا رد می‌شود */
+          if (h[0] === 20) {
+            const L0 = (h[3] << 8) | h[4];
+            if (L0 < 0 || L0 > 512) throw new Error('رکوردِ ChangeCipherSpec بدریخت');
+            if (L0) await io.readExact(L0);
+            continue;
+          }
           if (h[0] !== 23) throw new Error('رکوردِ غیرمنتظره از سرور reality');
           const L = (h[3] << 8) | h[4];
           if (L <= 16 || L > 262144) throw new Error('طولِ رکوردِ نامعتبر');
           const body = await io.readExact(L);
-          let pt;
+          /* ⚠️ رمزگشایی با rlOpen: کلِ رکورد (هدر + بدنه) به آن داده می‌شود —
+             گذشته درخواستِ `rlConcat(h, body)` را به‌عنوان ciphertext||tag می‌داد
+             (هدر جزو متنِ رمز حساب می‌شد) و اولین رکوردِ داده همیشه می‌مرد.
+             بایتِ نوعِ محتوا هم داخلِ rlOpen جدا می‌شود (RFC 8446 §5.2) وگرنه
+             به جریانِ VLESS تزریق می‌شد. */
+          let data;
           try {
-            pt = new Uint8Array(await crypto.subtle.decrypt(
-              { name: 'AES-GCM', iv: rlNonce(sAp.iv, BigInt(rSeq)), additionalData: h }, sAp.k, rlConcat(h, body)));
-          } catch (e) { throw new Error('رمزگشاییِ داده ناموفق'); }
+            data = (await rlOpen(sAp, rlConcat(h, body), rSeq)).plaintext;
+          } catch (e) { throw new Error('رمزگشاییِ داده ناموفق — ' + String((e && e.message) || e)); }
           rSeq++;
           if (!relayMode) {
-            const rest = rlSkipHsMessages(pt);
+            const rest = rlSkipHsMessages(data);
             if (rest === null) continue;
             relayMode = true;
             if (rest.length) controller.enqueue(rest);
             return;
           }
-          if (pt.length) controller.enqueue(pt);
+          if (data.length) controller.enqueue(data);
           return;
         }
       } catch (e) { try { controller.error(e); } catch (e2) {} }
@@ -9458,6 +9605,9 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
           sock = up;
           EXIT_STATS.tunnels++;
           EXIT_STATS.lastAt = Date.now();
+          /* تازه‌سازیِ آی‌پیِ حل‌شده‌ی سرور خروجی در پس‌زمینه (DoH) —
+             در مسیرِ ترافیک منتظر نمی‌ماند و هرگز خطا نمی‌دهد */
+          try { ctx.waitUntil(refreshExitIp(env, st, ex.server)); } catch (e2) {}
           /* retry داده نمی‌شود: مسیرِ خروجی با ProxyIP معنا ندارد */
           /* ⚠️ ۲ بایتِ اولِ بالادست = هدرِ پاسخِ VLESSِ سرور خروجی —
              نباید به کلاینت برسد (هدرِ پاسخِ خودمان را می‌فرستیم). */
@@ -9466,10 +9616,24 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
         } catch (e) {
           EXIT_STATS.fallbacks++;
           exitNote('[' + ex.server.name + '] ' + String((e && e.message) || e));
-          try { console.log('[SG] exit failed, falling back to direct:', EXIT_LAST_ERR); } catch (e2) {}
+          try { console.log('[SG] exit failed:', EXIT_LAST_ERR); } catch (e2) {}
           sock = null;
+          if (exitsStrict(st)) {
+            /* حالتِ سخت‌گیر: شکستِ سرور خروجی به مستقیم برنمی‌گردد —
+               اتصال شفاف بسته می‌شود تا آی‌پیِ کاربر هرگز لو نرود */
+            EXIT_STATS.strictCloses++;
+            try { await finish(); } catch (e3) {}
+            return;
+          }
           /* ادامه به مسیر مستقیم — هیچ استثنایی بالا نمی‌رود */
         }
+      } else if (exitsStrict(st) && ex.reason) {
+        /* کانفیگ به سرور خروجی بسته شده ولی سرور در دسترس نیست (غیرفعال/حذف) —
+           حالتِ سخت‌گیر: به‌جای نشتِ بی‌صدای مستقیم، اتصال بسته می‌شود */
+        EXIT_STATS.strictCloses++;
+        exitNote('strict — ' + ex.reason);
+        try { await finish(); } catch (e3) {}
+        return;
       }
     }
 

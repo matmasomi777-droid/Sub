@@ -654,7 +654,8 @@
       '<b>reality</b> هم پذیرفته می‌شود (آزمایشی): فقط روی TCP خام (<span class="mono">type=tcp</span>)، با ' +
       '<span class="mono">sni</span> و <span class="mono">pbk</span>ی معتبر — <span class="mono">flow</span> (مثل ' +
       '<span class="mono">xtls-rprx-vision</span>) هم پشتیبانی می‌شود و در هدر می‌نشیند. ' +
-      'اگر هندشیکِ reality برقرار نشود، ترافیک خودکار از مسیرِ مستقیم می‌رود و علت در تستِ اتصال دیده می‌شود.</div></label>' +
+      'اگر هندشیکِ reality برقرار نشود و حالتِ سخت‌گیر خاموش باشد، ترافیک خودکار از مسیرِ مستقیم می‌رود و علت در تستِ اتصال دیده می‌شود؛ '
+      + 'با حالتِ سخت‌گیر، شکستِ خروجی به‌جای نشتِ آی‌پی اتصال را می‌بندد.</div></label>' +
       '</div>' +
       '<input type="hidden" id="ex_id" value="' + esc(v.id) + '">' +
       '<div class="btn-row" style="margin-top:10px;gap:6px">' +
@@ -669,8 +670,9 @@
     const good = !!r.reachable;
     return '<div class="row-item" style="margin-top:8px">' + icon(good ? 'fa-circle-check' : 'fa-circle-xmark') +
       '<div class="grow"><b>' + esc(r.name) + ' — ' + (good ? 'اتصال برقرار شد' : 'اتصال برقرار نشد') + '</b>' +
-      '<div class="cell-sub">' + (good ? ('زمان پاسخ: ' + fa(Number(r.ms) || 0) + ' میلی‌ثانیه') : ('علت: ' + esc(r.error || 'نامشخص'))) +
-      (r.transport ? ' • ' + esc(r.transport) : '') + (r.security ? ' • ' + esc(r.security) : '') + '</div></div>' +
+      '<div class="cell-sub">' + (good ? ('زمان پاسخ: ' + fa(Number(r.ms) || 0) + ' میلی‌ثانیه') : ('علت: ' + esc(r.error || 'نامشخص')))
+      + (r.ip ? ' • آی‌پیِ خروجی: <span class="mono">' + esc(r.ip) + '</span>' : '')
+      + (r.transport ? ' • ' + esc(r.transport) : '') + (r.security ? ' • ' + esc(r.security) : '') + '</div></div>' +
       '<span class="badge ' + (good ? 'ok' : 'bad') + '">' + (good ? fa(Number(r.ms) || 0) + ' ms' : 'ناموفق') + '</span></div>';
   };
   const exitsHtml = (d) => {
@@ -688,6 +690,14 @@
       '<div class="grow"><b>' + (on ? 'مسیرِ خروجی فعال است' : 'مسیرِ خروجی خاموش است') + '</b>' +
       '<div class="cell-sub">' + (on ? 'فقط کانفیگ‌هایی که این سرور را انتخاب کرده‌اند از آن عبور می‌کنند' : 'همه‌ی کانفیگ‌ها مستقیم می‌روند — فهرستِ سرورها حفظ می‌شود') + '</div></div>' +
       '<button class="btn sm ' + (on ? 'd' : 'p') + '" data-act="exit-master">' + icon('fa-power-off') + ' ' + (on ? 'خاموش‌کردن' : 'فعال‌کردن') + '</button></div>';
+    /* حالتِ سخت‌گیر — ضدِ نشتِ آی‌پی */
+    const strict = d.strict === true;
+    const strictRow = '<div class="row-item" style="margin-bottom:8px">' + icon('fa-shield-halved') +
+      '<div class="grow"><b>' + (strict ? 'حالتِ سخت‌گیر روشن است' : 'حالتِ سخت‌گیر خاموش است') + '</b>' +
+      '<div class="cell-sub">' + (strict
+        ? 'با خرابیِ سرور خروجی، اتصالِ کاربر بسته می‌شود — آی‌پیِ او هرگز لو نمی‌رود'
+        : '⚠️ با خرابیِ سرور خروجی، ترافیک مستقیم می‌رود و آی‌پیِ واقعیِ کاربر لو می‌رود') + '</div></div>' +
+      '<button class="btn sm ' + (strict ? 'd' : 'p') + '" data-act="exit-strict">' + icon('fa-shield-halved') + ' ' + (strict ? 'خاموش‌کردن' : 'روشن‌کردن') + '</button></div>';
     const offNote = on ? '' : '<div class="badge warn" style="margin:0 0 8px">' + icon('fa-circle-info') + ' مسیرِ خروجی خاموش است — همه‌ی کانفیگ‌ها مستقیم می‌روند (خاموش‌کردن، فهرست را پاک نمی‌کند)</div>';
     /* پیش‌فرضِ سراسری */
     const defSel = '<div class="row-item" style="margin-bottom:10px">' + icon('fa-route') +
@@ -705,9 +715,13 @@
           '<span class="dot ' + (s.enabled ? 'on' : 'bad') + '"></span>' +
           '<div class="grow"><b>' + esc(s.name) + '</b> ' +
           '<span class="badge ' + (s.enabled ? 'ok' : 'bad') + '">' + (s.enabled ? 'فعال' : 'غیرفعال') + '</span>' +
-          '<div class="mono cell-sub">' + esc(s.address) + ':' + fa(s.port) + ' • ' + esc(s.security) + '/' + esc(s.transport) + (s.security === 'reality' ? ' • آزمایشی' : '') + '</div></div>' +
+          '<div class="mono cell-sub">' + esc(s.address) + ':' + fa(s.port) + ' • ' + esc(s.security) + '/' + esc(s.transport) + (s.security === 'reality' ? ' • آزمایشی' : '') + '</div>' +
+          (s.resolvedIp
+            ? '<div class="mono cell-sub">' + icon('fa-globe') + ' آی‌پیِ خروجی: ' + esc(s.resolvedIp) + '</div>'
+            : '<div class="cell-sub">آی‌پیِ خروجی: هنوز حل نشده — دکمه‌ی «حل آی‌پی» یا تستِ اتصال</div>') + '</div>' +
           '<button class="btn sm ' + (s.enabled !== false ? 'd' : 'p') + '" data-act="exit-onoff" data-id="' + esc(s.id) + '" title="' + (s.enabled !== false ? 'غیرفعال‌کردن — هیچ کانفیگی دیگر از آن عبور نمی‌کند' : 'فعال‌کردن این سرور') + '">' + icon('fa-power-off') + '</button>' +
           '<button class="btn sm s" data-act="exit-test" data-id="' + esc(s.id) + '" title="تست اتصال">' + icon('fa-stethoscope') + '</button>' +
+          '<button class="btn sm" data-act="exit-ip" data-id="' + esc(s.id) + '" title="حل و نمایش آی‌پی با DoH">' + icon('fa-globe') + '</button>' +
           '<button class="btn sm" data-act="exit-edit" data-id="' + esc(s.id) + '" title="ویرایش">' + icon('fa-pen') + '</button>' +
           '<button class="btn sm d" data-act="exit-del" data-id="' + esc(s.id) + '" title="حذف">' + icon('fa-trash-can') + '</button>' +
           '</div>').join('') + '</div>'
@@ -726,7 +740,7 @@
             : '') +
           '</select></div>').join('') + '</div>'
       : '';
-    return master + offNote + defSel + list + exTestHtml() +
+    return master + strictRow + offNote + defSel + list + exTestHtml() +
       (EX.form ? exitFormHtml(EX.form) : '') + per;
   };
   async function exLoad() {
@@ -3188,6 +3202,21 @@
         free(t);
         if (r && r.ok) { EX.form = null; await exLoad(); toast(r.msg || 'سرور خروجی ذخیره شد', 'ok'); }
         else toast((r && r.error) || 'ذخیره انجام نشد', 'err');
+      }
+      else if (a === 'exit-strict') {
+        busy(t, 'در حال ذخیره');
+        const cur = !!((EX.data || {}).strict);
+        const r = await api('POST', '/api/exits', { op: 'strict', enabled: !cur });
+        free(t);
+        if (r && r.ok) { await exLoad(); toast(r.msg || 'وضعیتِ حالتِ سخت‌گیر ذخیره شد', 'ok'); }
+        else toast((r && r.error) || 'ذخیره انجام نشد', 'err');
+      }
+      else if (a === 'exit-ip') {
+        busy(t, 'در حال حلِ آی‌پی');
+        const r = await api('POST', '/api/exits', { op: 'resolve-ip', id });
+        free(t);
+        if (r && r.ok) { await exLoad(); toast(r.msg || ('آی‌پیِ خروجی: ' + r.ip), 'ok'); }
+        else toast((r && r.error) || 'حلِ آی‌پی انجام نشد', 'err');
       }
       else if (a === 'exit-del') {
         const srv = ((EX.data && EX.data.servers) || []).find((x) => x.id === id);
