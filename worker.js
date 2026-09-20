@@ -82,9 +82,9 @@ function exitDialHost(srv) {
    BUILD: مُهرِ زمانِ بیلد (UTC)
    BUILD_REV: اثرِ انگشتِ sha256 محتوای worker.js + ui — معیارِ دقیقِ «نسخه‌ی
    تازه» در بررسیِ آپدیت است (بدونِ تکیه بر تاریخ؛ چند پوش در یک روز هم دیده می‌شود) */
-const VERSION = '3.0.2';
-const BUILD = '2026.09.20-15:12';
-const BUILD_REV = 'eec1eed7c83aa3a7c427a8ae8e91a59bd21c59c3ae185a020a67ad97ec84c925';
+const VERSION = '3.0.4';
+const BUILD = '2026.09.20-15:44';
+const BUILD_REV = '52ec45f8ebd3b8f07ec341d9d0501ead45d6c7dad8b3b4a57657f5fac157e93e';
 const BOOT = Date.now();
 /* شاخه‌ی پیش‌فرض برای بررسیِ نسخه */
 const UPD_DEFAULT_BRANCH = 'main';
@@ -6514,17 +6514,20 @@ async function apiHandler(req, env, url, ctx) {
       EXIT_IP_LAST.set(srv.id, Date.now());
     }
     addLog(st, r.ok ? 'success' : 'warn', 'core', 'تست سرور خروجی',
-      srv.name + ' • ' + (r.ok ? fa(r.ms) + ' میلی‌ثانیه' : (r.error || 'ناموفق')) + (ip ? ' • ' + ip : ''));
+      srv.name + ' • ' + (r.ok ? fa(r.ms) + ' میلی‌ثانیه (' + fa(r.bytes || 0) + ' بایت از تونل)' : (r.error || 'ناموفق')) + (ip ? ' • ' + ip : ''));
     await save(env, st);
     return json({
       ok: true, id: srv.id, name: srv.name,
-      reachable: r.ok, ms: r.ms, transport: r.transport, security: r.security,
+      reachable: r.ok, ms: r.ms, handshakeMs: r.handshakeMs || 0, bytes: r.bytes || 0, head: r.head || '',
+      phase: r.phase || '', transport: r.transport, security: r.security,
       error: r.error,
       ip: ip || srv.resolvedIp || '',
       resolvedAt: srv.resolvedAt || 0,
       msg: r.ok
-        ? 'اتصال به «' + srv.name + '» برقرار شد — زمان پاسخ ' + fa(r.ms) + ' میلی‌ثانیه'
-        : 'اتصال به «' + srv.name + '» برقرار نشد: ' + (r.error || 'علت نامشخص'),
+        ? '«' + srv.name + '» سالم است — هندشیک و عبورِ داده هر دو در ' + fa(r.ms) + ' میلی‌ثانیه (' + fa(r.bytes || 0) + ' بایت پاسخِ واقعی)'
+        : (r.phase === 'traffic'
+          ? '«' + srv.name + '» هندشیک را رد کرد ولی داده‌ای از تونل عبور نکرد — با این سرور، کانفیگ‌ها وصل نمی‌شوند: ' + (r.error || '')
+          : 'اتصال به «' + srv.name + '» برقرار نشد: ' + (r.error || 'علت نامشخص')),
     });
   }
 
@@ -9555,29 +9558,91 @@ async function openRealitySocket(srv, info, opt) {
   return pair;
 }
 
-/** تستِ اتصالِ یک سرور خروجی — اندازه‌گیریِ واقعی (وصل شدن + هندشیک) */
+/**
+ * تستِ اتصالِ یک سرور خروجی — **واقعی**: هندشیک + یک درخواستِ داده از تونل.
+ *
+ * ⚠️ درسِ گران‌قیمت: نسخه‌ی قبلی فقط سوکت را باز می‌کرد و هندشیک را می‌سنجید و
+ * بعد «سبز» می‌گفت. هر باگی که *بعد* از هندشیک رخ می‌دهد (خطِ لوله‌ی داده،
+ * بلوکِ اولِ Vision، حذفِ هدرِ پاسخِ VLESS، ترتیبِ فریم‌ها) تست را سبز نگه
+ * می‌داشت در حالی که کانفیگِ کاربر با آن سرورِ خروجی کار نمی‌کرد — دقیقاً
+ * همان چیزی که کاربر گزارش کرد: «تستِ پنل کار می‌کند ولی کانفیگ نه».
+ * پس حالا یک درخواستِ HTTP واقعی روی پورتِ ۸۰ (بدونِ TLS، ارزان) از تونل
+ * رد می‌شود و برگشتنِ پاسخِ مقصد شرطِ سبز شدن است.
+ * `opt.noTraffic = true` فقط برای تستِ خودِ هندشیک (بدونِ کاوشِ داده).
+ */
+const EXIT_PROBE_HOST = 'www.cloudflare.com';
+/* ⚠️ پورتِ ۸۰ برای مقصدِ خروجی ممنوع است (connectِ سرورِ خروجیِ روی کلاودفلر به
+   HTTP کار نمی‌کند)، پس کاوش روی ۴۴۳ است. برای اینکه پاسخِ مقصد را ببینیم،
+   یک رکوردِ TLS ناقص می‌فرستیم؛ هر سرورِ TLS به آن با یک alert پاسخ می‌دهد و
+   همین «بایتِ برگشتی» اثباتِ عبورِ داده در هر دو جهت است — بدونِ این‌که لازم
+   باشد هندشیکِ TLS را کامل کنیم. */
+const EXIT_PROBE_TLS = new Uint8Array([0x16, 0x03, 0x01, 0x00, 0x05, 0x01, 0x00, 0x00, 0x01, 0x00]);
 async function testExit(srv, opt) {
   const issues = exitIssues(srv);
   if (issues.length) return { ok: false, ms: null, error: issues[0] };
   const timeoutMs = Math.max(500, Math.min(30000, Number((opt && opt.timeoutMs) || 8000)));
+  const host = String((opt && opt.addr) || EXIT_PROBE_HOST);
+  const port = Number((opt && opt.port) || 443);
+  /* کاوشِ داده از همان مسیرِ ترافیکِ واقعی می‌رود: داخلِ payloadِ بلوکِ اول
+     (برای خروجی‌های vision همین جاست که باگ خودش را نشان می‌دهد) */
   const target = {
-    addr: String((opt && opt.addr) || 'www.cloudflare.com'),
-    port: Number((opt && opt.port) || 443),
-    cmd: 1,
-    payload: new Uint8Array(0),
+    addr: host, port, cmd: 1,
+    payload: (opt && opt.noTraffic) ? new Uint8Array(0) : EXIT_PROBE_TLS,
   };
   const t0 = Date.now();
-  let out = null;
+  let out = null, handshakeMs = 0;
   try {
     out = await openExitSocket(srv, target, { timeoutMs });
-    const ms = Date.now() - t0;
-    EXIT_STATS.lastMs = ms;
-    return { ok: true, ms, transport: srv.transport, security: srv.security, error: null };
+    handshakeMs = Date.now() - t0;
   } catch (e) {
-    return { ok: false, ms: Date.now() - t0, transport: srv.transport, security: srv.security, error: String((e && e.message) || e) };
-  } finally {
-    if (out) { try { out.close(); } catch (e) {} }
+    return { ok: false, ms: Date.now() - t0, transport: srv.transport, security: srv.security, phase: 'handshake', error: String((e && e.message) || e) };
   }
+  /* ── مرحلهٔ داده: پاسخِ مقصد باید از تونل برگردد ── */
+  let trafficOk = false, bytes = 0, head = '', readErr = '';
+  try {
+    if (opt && opt.noTraffic) trafficOk = true;
+    else {
+      const reader = out.readable.getReader();
+      const deadline = Date.now() + Math.max(800, Math.min(timeoutMs, 4000));
+      const acc = [];
+      for (;;) {
+        const left = deadline - Date.now();
+        if (left <= 0) break;
+        const r = await Promise.race([
+          reader.read(),
+          new Promise((res) => { setTimeout(() => res({ timedOut: true }), left); }),
+        ]);
+        if (!r || r.timedOut) break;
+        if (r.done) break;
+        if (!r.value || !r.value.length) continue;
+        bytes += r.value.length;
+        for (let i = 0; i < r.value.length && acc.length < 64; i++) acc.push(r.value[i]);
+        /* ⚠️ «هر بایتی» کافی نیست: با pbk اشتباه، reality عمداً کلاینت را به
+           مقصدِ واقعی (camouflage) پروکسی می‌کند و آنجا هم داده برمی‌گردد.
+           کاوشِ ما یک رکوردِ TLS ناقص است؛ سرورِ مقصد اگر واقعاً درخواستِ ما
+           را گرفته باشد با یک *alert* جواب می‌دهد (15 03 0x). پس شرطِ سبز
+           شدن همان alert است. */
+        for (let i = 0; i + 3 < acc.length; i++) {
+          if (acc[i] === 0x15 && acc[i + 1] === 0x03 && acc[i + 2] <= 0x04) { trafficOk = true; break; }
+        }
+        if (trafficOk || bytes > 4096) break;
+      }
+      head = acc.slice(0, 16).map((b) => b.toString(16).padStart(2, '0')).join(' ');
+      try { reader.releaseLock(); } catch (e2) {}
+    }
+  } catch (e) { readErr = String((e && e.message) || e); }
+  finally { try { out.close(); } catch (e) {} }
+  const ms = Date.now() - t0;
+  EXIT_STATS.lastMs = ms;
+  if (!trafficOk) {
+    return {
+      ok: false, ms, handshakeMs, bytes, transport: srv.transport, security: srv.security, phase: 'traffic',
+      error: 'هندشیک برقرار شد ولی مقصد به کاوشِ داده پاسخ نداد — مسیرِ داده بعد از هندشیک خراب است'
+        + (bytes ? ' (فقط ' + bytes + ' بایت آمد که alertِ مقصد نبود)' : '')
+        + (readErr ? ' • ' + readErr : ''),
+    };
+  }
+  return { ok: true, ms, handshakeMs, bytes, head, transport: srv.transport, security: srv.security, error: null };
 }
 
 async function tunnelHandler(request, env, st, ctx) {

@@ -668,9 +668,14 @@
     const r = EX.test;
     if (!r || !r.name) return '';
     const good = !!r.reachable;
+    /* ⚠️ «سبز» یعنی هندشیک *و* عبورِ داده — نه فقط باز شدنِ سوکت. باگی که
+       ترافیک را عبور نمی‌داد، تست را سبز نگه می‌داشت و همین گمراه‌کننده بود. */
     return '<div class="row-item" style="margin-top:8px">' + icon(good ? 'fa-circle-check' : 'fa-circle-xmark') +
-      '<div class="grow"><b>' + esc(r.name) + ' — ' + (good ? 'اتصال برقرار شد' : 'اتصال برقرار نشد') + '</b>' +
-      '<div class="cell-sub">' + (good ? ('زمان پاسخ: ' + fa(Number(r.ms) || 0) + ' میلی‌ثانیه') : ('علت: ' + esc(r.error || 'نامشخص')))
+      '<div class="grow"><b>' + esc(r.name) + ' — ' + (good ? 'سالم (هندشیک + عبورِ داده)' : (r.phase === 'traffic' ? 'هندشیک شد ولی داده رد نشد' : 'اتصال برقرار نشد')) + '</b>' +
+      '<div class="cell-sub">' + (good ? ('پاسخِ واقعی: ' + fa(Number(r.bytes) || 0) + ' بایت'
+          + (r.head ? ' • <span class="mono">' + esc(r.head) + '</span>' : '')
+          + ' • کل ' + fa(Number(r.ms) || 0) + ' ms' + (r.handshakeMs ? ' (هندشیک ' + fa(Number(r.handshakeMs)) + ' ms)' : ''))
+        : ('علت: ' + esc(r.error || 'نامشخص') + (r.handshakeMs ? ' • هندشیک ' + fa(Number(r.handshakeMs)) + ' ms موفق بود' : '')))
       + (r.ip ? ' • آی‌پیِ خروجی: <span class="mono">' + esc(r.ip) + '</span>' : '')
       + (r.transport ? ' • ' + esc(r.transport) : '') + (r.security ? ' • ' + esc(r.security) : '') + '</div></div>' +
       '<span class="badge ' + (good ? 'ok' : 'bad') + '">' + (good ? fa(Number(r.ms) || 0) + ' ms' : 'ناموفق') + '</span></div>';
@@ -720,7 +725,7 @@
             ? '<div class="mono cell-sub">' + icon('fa-globe') + ' آی‌پیِ خروجی: ' + esc(s.resolvedIp) + '</div>'
             : '<div class="cell-sub">آی‌پیِ خروجی: هنوز حل نشده — دکمه‌ی «حل آی‌پی» یا تستِ اتصال</div>') + '</div>' +
           '<button class="btn sm ' + (s.enabled !== false ? 'd' : 'p') + '" data-act="exit-onoff" data-id="' + esc(s.id) + '" title="' + (s.enabled !== false ? 'غیرفعال‌کردن — هیچ کانفیگی دیگر از آن عبور نمی‌کند' : 'فعال‌کردن این سرور') + '">' + icon('fa-power-off') + '</button>' +
-          '<button class="btn sm s" data-act="exit-test" data-id="' + esc(s.id) + '" title="تست اتصال">' + icon('fa-stethoscope') + '</button>' +
+          '<button class="btn sm s" data-act="exit-test" data-id="' + esc(s.id) + '" title="تستِ واقعی: هندشیک + عبورِ یک درخواستِ داده از تونل">' + icon('fa-stethoscope') + '</button>' +
           '<button class="btn sm" data-act="exit-ip" data-id="' + esc(s.id) + '" title="حل و نمایش آی‌پی با DoH">' + icon('fa-globe') + '</button>' +
           '<button class="btn sm" data-act="exit-edit" data-id="' + esc(s.id) + '" title="ویرایش">' + icon('fa-pen') + '</button>' +
           '<button class="btn sm d" data-act="exit-del" data-id="' + esc(s.id) + '" title="حذف">' + icon('fa-trash-can') + '</button>' +
