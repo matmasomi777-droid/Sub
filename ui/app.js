@@ -775,7 +775,22 @@
       '<div class="cell-sub">تونلِ سالم: <b>' + fa(Number(exSt.tunnels) || 0) + '</b>'
       + ' • بازگشت به مستقیم: ' + fa(Number(exSt.fallbacks) || 0)
       + ' • بستنِ سخت‌گیر: ' + fa(Number(exSt.strictCloses) || 0)
-      + ' • مستقیم (بدونِ خروجی): ' + fa(Number(exSt.direct) || 0) + '</div>'
+      + ' • مستقیم (بدونِ خروجی): ' + fa(Number(exSt.direct) || 0)
+      + ' • سوئیچِ XTLS: ' + fa(Number(exSt.splice) || 0) + '</div>'
+      /* ═══ XTLS «direct copy» (splice) ═══
+         سرورِ خروجیِ reality+vision پس از دیدنِ هندشیکِ TLS 1.3 داخلِ تونل،
+         از یک نقطه به بعد بایت‌های مقصد را *بدونِ* رمزنگاریِ بیرونی می‌فرستد
+         (فلسفهٔ XTLS: حذفِ رمزنگاریِ دوبل). تا امروز ورکر آن بایت‌ها را
+         «رکوردِ رمزشده» فرض می‌کرد، رمزگشایی شکست می‌خورد و نشستِ HTTPS
+         وسطِ کار می‌مرد — دقیقاً «تست سبز، کانفیگِ reality مرده». از این پس
+         تعدادِ نشست‌هایی که این سوئیچ در آن‌ها رخ داده و حجمِ خامِ رد‌شده
+         دیده می‌شود؛ بالا رفتنش یعنی مسیرِ واقعیِ مرورگر از سوئیچ گذشته
+         *و سالم ماند*. */
+      + (Number(exSt.splice)
+        ? '<div class="cell-sub">سوئیچِ XTLS (direct copy) روی ' + fa(Number(exSt.splice)) + ' نشست فعال شد'
+          + (Number(exSt.spliceBytes) ? ' • ' + fa(Math.round(Number(exSt.spliceBytes) / 1024)) + ' کیلوبایت خام بدونِ رمزگشایی رد شد' : '')
+          + (exSt.lastSplice ? ' • آخرین مقصد: <span class="mono">' + esc(exSt.lastSplice) + '</span>' : '') + '</div>'
+        : '')
       /* علتِ «چرا خروجی استفاده نشد» — قبلاً این حالت هیچ رویدادی نمی‌ساخت و
          کارت *کاملاً* خالی می‌ماند؛ حالا دقیقاً همان‌جا نوشته می‌شود. */
       + (exSt.lastDirect ? '<div class="cell-sub">آخرین تصمیمِ مسیر: <b>مستقیم</b> — ' + esc(exSt.lastDirect) + '</div>' : '')

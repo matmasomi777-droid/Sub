@@ -135,9 +135,9 @@ function exitDialHost(srv) {
    BUILD: مُهرِ زمانِ بیلد (UTC)
    BUILD_REV: اثرِ انگشتِ sha256 محتوای worker.js + ui — معیارِ دقیقِ «نسخه‌ی
    تازه» در بررسیِ آپدیت است (بدونِ تکیه بر تاریخ؛ چند پوش در یک روز هم دیده می‌شود) */
-const VERSION = '3.0.11';
-const BUILD = '2026.09.20-18:28';
-const BUILD_REV = '3653bf7b2afa17e3a0053b2169fb65bcacc15099113bcf6ea7fc1790d1a3606a';
+const VERSION = '3.0.13';
+const BUILD = '2026.09.20-19:03';
+const BUILD_REV = '0dbf874c7f6d48bcf29e5348394a23a4d115eeaf8469642a6553fdc932daea9d';
 const BOOT = Date.now();
 /* شاخه‌ی پیش‌فرض برای بررسیِ نسخه */
 const UPD_DEFAULT_BRANCH = 'main';
@@ -8181,6 +8181,17 @@ const EXIT_STATS = {
   /* تشخیصی: چون حالتِ سخت‌گیر شکست را *بی‌صدا* می‌بندد، باید معلوم باشد
      «آخرین اتصالِ کاربر چه مقصدی خواست و کدام سرورِ خروجی شکست خورد» */
   lastDest: '', lastExit: '', lastUser: '', lastFail: '', lastDirect: '',
+  /* ═══ XTLS «direct copy» (splice) ═══
+     سرورِ خروجیِ Xray با flow=xtls-rprx-vision وقتی داخلِ تونل یک هندشیکِ
+     TLS 1.3 کامل ببیند (ClientHello + ServerHello با supported_versions
+     0x0304) پرچمِ EnableXtls را ست می‌کند، در نخستین رکوردِ app-data مقصد
+     بلوکِ Vision با فرمانِ ۲ (CommandPaddingDirect) می‌فرستد و از آن لحظه
+     بایت‌های مقصد را *بدونِ* رمزنگاریِ بیرونی روی سوکت می‌نویسد — فلسفهٔ
+     XTLS: حذفِ رمزنگاریِ دوبل. اگر گیرنده این را نداند و بایت‌های خام را
+     «رکوردِ رمزشده» فرض کند، رمزگشایی شکست می‌خورد و نشست وسطِ کار
+     می‌میرد. این شمارنده‌ها همان رخداد را نشان می‌دهند تا در پنل معلوم
+     باشد مسیرِ واقعیِ مرورگر (HTTPS) تا کجا رفته است. */
+  splice: 0, spliceBytes: 0, lastSplice: '', lastSpliceAt: 0,
 };
 const exitNote = (msg) => { EXIT_LAST_ERR = String(msg).slice(0, 300); EXIT_STATS.lastAt = Date.now(); };
 
@@ -8246,6 +8257,27 @@ function exitLogDirect(env, st, ctx, userName, dest, why) {
     addLog(st, 'warn', 'exit', 'بدونِ سرور خروجی (مسیرِ مستقیم)',
       (userName ? 'کاربر «' + String(userName) + '» • ' : '') + 'مقصد: ' + String(dest || '?')
       + ' • علت: ' + String(why || 'نامشخص').slice(0, 160));
+  } catch (e) {}
+  const p = save(env, st);
+  try { if (ctx && ctx.waitUntil) ctx.waitUntil(p); else p.catch(() => {}); } catch (e) {}
+}
+
+/* ═══ رخدادِ XTLS «direct copy» در لاگِ پایدار ═══════════════════════════════
+   چرا لازم است: تا امروز هر نشستِ HTTPSِ کاربر (مرورگر) از این نقطه به بعد
+   می‌مرد و هیچ‌جا نوشته نمی‌شد که «سرورِ خروجی سوئیچِ splice را روشن کرد».
+   کاربر فقط «کانفیگ کار نمی‌کند» می‌دید، در حالی که تستِ پنل (که چند بایت
+   می‌فرستد) سبز بود. اکنون همین رخداد در لاگِ پنل ثبت می‌شود تا از
+   «شکستِ سرور خروجی» قابلِ تفکیک باشد. ضدِ طوفان: هر خروجی در هر ۶۰ ثانیه. */
+const EXIT_SPLICE_AT = new Map();
+function exitLogSplice(env, st, ctx, srvName, dest) {
+  const key = String(srvName || '?');
+  const now = Date.now();
+  if (now - (EXIT_SPLICE_AT.get(key) || 0) < 60000) return;
+  if (EXIT_SPLICE_AT.size > 200) EXIT_SPLICE_AT.clear();
+  EXIT_SPLICE_AT.set(key, now);
+  try {
+    addLog(st, 'info', 'exit', 'سوئیچِ XTLS روی سرور خروجی فعال شد',
+      '«' + key + '» • مقصد: ' + String(dest || '?') + ' • از این نقطه سرورِ خروجی بایت‌های مقصد را بدونِ رمزنگاریِ بیرونی می‌فرستد (direct copy) و ورکر آن‌ها را خام پاس می‌دهد');
   } catch (e) {}
   const p = save(env, st);
   try { if (ctx && ctx.waitUntil) ctx.waitUntil(p); else p.catch(() => {}); } catch (e) {}
@@ -8444,7 +8476,23 @@ function exitIssues(x) {
     /* نکته: flow (مثل xtls-rprx-vision) پذیرفته می‌شود — در addons هدرِ VLESS
        می‌نشیند (vlessAddons) و relay خام انجام می‌شود. UDP هیچ‌وقت به exit
        نمی‌رسد (فقط TCP)، پس حالت‌های vision-udp هم مثل vision رفتار می‌کنند.
-       اگر سرور flow را نخواهد، هندشیک/relay می‌شکند و سالم به مستقیم برمی‌گردیم. */
+       اگر سرور flow را نخواهد، هندشیک/relay می‌شکند و سالم به مستقیم برمی‌گردیم.
+       ⚠️ و مهم‌تر: سرورِ vision پس از دیدنِ هندشیکِ TLS 1.3 داخلِ تونل
+       سوئیچِ «direct copy» را روشن می‌کند و از آن لحظه بایت‌های مقصد را
+       بدونِ رمزنگاریِ بیرونی می‌فرستد (CommandPaddingDirect). روی TCP خامِ
+       reality ما همان را می‌بینیم و خام پاس می‌دهیم (xtls.on در rlWrapStreams)
+       — روی tls/workerd این ممکن نیست و همان‌جا خطا داده می‌شود. */
+  }
+  /* ⚠️ flow=xtls-rprx-vision روی امنیتِ tls از ورکر *کار نمی‌کند* — و علتش
+     ساختاری است نه یک باگ: لایهٔ TLS را کلاودفلر خاتمه می‌دهد (`connect` با
+     secureTransport='on')، ولی سرورِ Xray پس از دیدنِ هندشیکِ TLS 1.3 داخلِ
+     تونل نوشتنتگرش را به TCP خام سوئیچ می‌کند و بایت‌های مقصد را بدونِ
+     رمزنگاریِ بیرونی می‌فرستد؛ لبهٔ کلاودفلر آن را رکوردِ نامعتبر می‌بیند و
+     اتصال وسطِ کار می‌میرد (فقط HTTPS؛ HTTP سالم است — بدترین نوعِ ابهام:
+     «تست سبز، مرورگر مرده»). یا reality — که کلِ لایه را خودمان می‌سازیم و
+     بایتِ خام را درست پاس می‌دهیم — یا flowِ خالی. */
+  if (x.flow && String(x.security || '').toLowerCase() === 'tls') {
+    e.push('flow=xtls-rprx-vision روی امنیتِ tls از ورکر کار نمی‌کند (لایهٔ TLS را کلاودفلر خاتمه می‌دهد و سرورِ خروجی وسطِ کار بایتِ خام می‌فرستد) — از reality استفاده کنید یا flow را خالی بگذارید');
   }
   return e;
 }
@@ -8735,7 +8783,7 @@ function visionPadBlock(content, o) {
 /** بازکننده‌ی Vision: بلوک‌ها را از استریم جدا می‌کند.
  *  مطابقِ Xray: اگر سرآغازِ جریان UUID نباشد، داده دست‌نخورده رد می‌شود
  *  (سرور قالب‌بندی نکرده است) — پس حالت به «خام» می‌رود و برنمی‌گردد. */
-function visionUnwrap(uuid) {
+function visionUnwrap(uuid, onDirect) {
   const id = uuid ? toU8(uuid) : null;
   let mode = 'init';
   let buf = new Uint8Array(0);
@@ -8769,6 +8817,14 @@ function visionUnwrap(uuid) {
             need--;
           }
           buf = buf.slice(take);
+          /* ⚠️ فرمانِ ۲ (CommandPaddingDirect) تنها فرمانی است که *عمقِ* سوئیچ
+             را عوض می‌کند: فقط قالب‌بندیِ Vision را تمام نمی‌کند (مثلِ ۱),
+             بلکه یعنی «از این لحظه رکوردهای TLSِ مقصد بدونِ رمزنگاریِ بیرونی
+             روی سوکت می‌آیند». تمامِ بایت‌های همین رکورد پس از بلوک (که در
+             حالتِ raw پس داده می‌شوند) دادهٔ کاربر است؛ لایهٔ رکورد باید
+             پیش از *read* بعدی از این رخداد باخبر شود وگرنه بایتِ خام را
+             رمزگشایی می‌کند و نشست می‌میرد. */
+          if (need === 0 && curCmd === 2 && onDirect) onDirect();
           continue;
         }
         if (remContent > 0) {                         /* محتوا */
@@ -8814,7 +8870,7 @@ function vlessAbsorbHs(buf) {
 /** سرآغازِ پاسخ: پیام‌های handshake → هدرِ پاسخِ VLESS ([نسخه][طولِ addons]) → بدنه */
 function vlessResponseParser(o) {
   const vision = !!(o && o.flow);
-  const un = vision ? visionUnwrap(o && o.uuid) : null;
+  const un = vision ? visionUnwrap(o && o.uuid, (o && o.onDirect) || null) : null;
   let pre = new Uint8Array(0);
   let state = 'hs';
   return {
@@ -8856,7 +8912,7 @@ function vlessClientWrap(pair, o) {
   const header = toU8((o && o.header) || new Uint8Array(0));
   const uuid = (o && o.uuid) ? toU8(o.uuid) : null;
   const vision = !!(o && o.flow);
-  const parser = vlessResponseParser({ flow: vision ? o.flow : '', uuid });
+  const parser = vlessResponseParser({ flow: vision ? o.flow : '', uuid, onDirect: (o && o.onDirect) || null });
   let headerSent = false;
   let firstBlock = true;
   const reader = pair.readable.getReader();
@@ -9632,13 +9688,30 @@ function rlSkipHsMessages(pt) {
   return b.slice(off);
 }
 
-/* ── لفافِ استریم روی رکوردهای reality ── */
-function rlWrapStreams(io, cAp, sAp) {
+/* ── لفافِ استریم روی رکوردهای reality ──
+   `xtls` = وضعیتِ مشترک با لایهٔ Vision: وقتی سرورِ خروجی در حالتِ
+   flow=xtls-rprx-vision سوئیچِ «direct copy» را فعال می‌کند (فرمانِ ۲)،
+   دیگر هیچ لایهٔ رمزنگاریِ بیرونی‌ای وجود ندارد و بایت‌های سوکت عیناً
+   رکوردهای TLSِ *مقصد* هستند؛ پس این لایه باید مثلِ یک کابلِ خام پاس
+   بدهد. نادیده‌گرفتنِ آن = رمزگشاییِ بایتِ خام = مرگِ نشستِ HTTPS. */
+function rlWrapStreams(io, cAp, sAp, xtls) {
   let wSeq = 0, rSeq = 0;
   const readable = new ReadableStream({
     async pull(controller) {
       try {
         for (;;) {
+          /* ── حالتِ direct copy: پاس‌دادنِ خامِ بایت‌ها ──
+             (readExact باقیِ بایت‌های خوانده‌شده را در بافرِ io نگه داشته،
+             پس readAny ابتدا همان‌ها را می‌دهد و ترتیب به هم نمی‌ریزد.) */
+          if (xtls && xtls.on) {
+            const chunk = await io.readAny();
+            if (chunk === null) { try { controller.close(); } catch (e) {} try { io.close(); } catch (e2) {} return; }
+            if (!chunk.length) continue;
+            xtls.bytes += chunk.length;
+            EXIT_STATS.spliceBytes += chunk.length;
+            controller.enqueue(chunk);
+            return;
+          }
           const h = await io.readExact(5);
           if (h[0] === 21) { try { controller.close(); } catch (e) {} try { io.close(); } catch (e2) {} return; }
           /* ChangeCipherSpec (type 20) بعد از هندشیک هم ممکن است برسد — بی‌صدا رد می‌شود */
@@ -9725,6 +9798,17 @@ function rlMakeSockIo(sock, timeoutMs) {
       buf = buf.slice(n);
       return o;
     },
+    /* خواندنِ «هر چه هست» — فقط برای حالتِ XTLS direct copy که در آن مرزی
+       برای رکورد وجود ندارد و بایت‌ها باید بی‌کم‌وکاست پاس شوند. اول از
+       بافرِ داخلی می‌خواند تا ترتیبِ بایت‌هایی که قبلاً readExact خوانده
+       حفظ شود؛ null یعنی پایانِ سوکت. */
+    async readAny() {
+      if (buf.length) { const o = buf; buf = new Uint8Array(0); return o; }
+      const r = await reader.read();
+      if (r.done) return null;
+      const v = toU8(r.value);
+      return v.length ? v : new Uint8Array(0);
+    },
     async write(b) {
       const w = sock.writable.getWriter();
       try { await w.write(toU8(b)); } finally { w.releaseLock(); }
@@ -9757,7 +9841,7 @@ async function openExitSocket(srv, info, opt) {
      مستقیم جایگزین می‌شود (اتصالِ کاربر قطع نمی‌شود)؛ علت در تستِ اتصال و
      آمارِ پنل دیده می‌شود. */
   if (security === 'reality') {
-    return await openRealitySocket(srv, info, { timeoutMs: timeout });
+    return await openRealitySocket(srv, info, { timeoutMs: timeout, onDirect: (opt && opt.onDirect) || null });
   }
   /* آدرسِ connect باید دامنه باشد — IP ممنوع است («HTTP-based service»).
      واقعیِ hostِ کلاینت برای هدرِ VLESS حفظ می‌شود تا سمتِ سرورِ خروجی درست
@@ -9947,12 +10031,25 @@ async function openRealitySocket(srv, info, opt) {
   }
   /* هدرِ VLESS مقصد — بدونِ بارِ اولیه؛ بارِ اولیه داخلِ بلوکِ اولِ Vision می‌رود */
   const header = vlessRequestHeader(srv, info.addr, info.port, new Uint8Array(0));
-  const streams = rlWrapStreams(io, hs.cAp, hs.sAp);
+  /* وضعیتِ مشترکِ «direct copy»: لایهٔ رکورد و لایهٔ Vision باید هر دو بدانند
+     چه زمانی سوئیچ رخ داده — اولی از خواندنِ بایتِ خام دست می‌کشد و دومی
+     فریمِ Vision را پایان می‌دهد. جزئیات در visionUnwrap/rlWrapStreams. */
+  const xtls = { on: false, bytes: 0 };
+  const streams = rlWrapStreams(io, hs.cAp, hs.sAp, xtls);
   const pair = vlessClientWrap({
     readable: streams.readable, writable: streams.writable,
     close: () => { try { streams.close(); } catch (e) {} },
     transport: 'raw', security: 'reality',
-  }, { header, flow: srv.flow, uuid: vlessUuidBytes(srv.uuid) });
+  }, {
+    header, flow: srv.flow, uuid: vlessUuidBytes(srv.uuid),
+    onDirect: () => {
+      if (xtls.on) return;
+      xtls.on = true;
+      EXIT_STATS.splice++;
+      EXIT_STATS.lastSpliceAt = Date.now();
+      try { if (opt && opt.onDirect) opt.onDirect(xtls); } catch (e) {}
+    },
+  });
   const lead = toU8(info.payload);
   if (lead.length) {
     const w = pair.writable.getWriter();
@@ -10744,7 +10841,16 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
       if (ex.mode === 'exit' && ex.server) {
         try {
           const exitT0 = Date.now();
-          const up = await openExitSocket(ex.server, info);
+          const up = await openExitSocket(ex.server, info, {
+            /* سوئیچِ XTLS «direct copy» وسطِ نشست رخ می‌دهد (نخستین رکوردِ
+               app-data مقصد پس از دیدنِ هندشیکِ TLS 1.3 داخلِ تونل)؛ بدونِ
+               ثبتِ آن، «کانفیگ کار نمی‌کند» هیچ ردی در پنل نداشت. */
+            onDirect: () => {
+              const d = String(info.addr || '') + ':' + String(info.port || '');
+              EXIT_STATS.lastSplice = d;
+              exitLogSplice(env, st, ctx, ex.server.name, d);
+            },
+          });
           const exitMs = Date.now() - exitT0;
           sock = up;
           EXIT_STATS.tunnels++;

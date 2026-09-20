@@ -26,7 +26,8 @@ const http = require('http');
 const crypto = require('crypto');
 const tls = require('tls');
 const { AsyncLocalStorage } = require('async_hooks');
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
+const https = require('https');
 const { webcrypto, randomBytes } = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 
@@ -35,6 +36,7 @@ const SRC = process.env.WORKER_SRC ? path.resolve(process.env.WORKER_SRC) : path
 const TMP = path.join(ROOT, '.realclient-tmp');
 const EXIT_PORT = 18453;
 const TARGET_PORT = 18089;
+const TLS_PORT = 18090;   /* مقصدِ TLS 1.3 (برای مسیرِ XTLS direct copy) */
 const WS_PORT = 18101;
 const SOCKS_PORT = 18102;
 const SNI = process.env.SNI || 'www.cloudflare.com';
@@ -110,6 +112,52 @@ const targetSrv = http.createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/plain', 'content-length': String(body.length) });
   res.end(body);
 });
+
+/* ── ۱.۵) مقصدِ HTTPS: TLS ۱٫۳ واقعی با پاس‌خِ دو‌تکه
+   ═════════════════════════════════════════════════════════════════════════
+   ⚠️ چرا این مقصد لازم شد — ریشه‌ی «تست سبز، کانفیگِ reality مرده»:
+   سرورِ خروجیِ Xray با flow=xtls-rprx-vision وقتی داخلِ تونل یک هندشیکِ
+   *TLS 1.3* کامل ببیند (ClientHello + ServerHello با supported_versions
+   0x0304) پرچمِ EnableXtls را ست می‌کند و در نخستین رکوردِ app-data مقصد
+   یک بلوکِ Vision با فرمانِ ۲ (CommandPaddingDirect) می‌فرستد و بلافاصله
+   نوشتنتگرِ خود را به NetConn خام سوئیچ می‌کند: از آن لحظه رکوردهای TLSِ
+   مقصد *بدونِ* رمزنگاریِ بیرونی روی سوکت می‌آیند (فلسفه‌ی XTLS: حذفِ
+   رمزنگاریِ دوبل).
+   تست‌های قبلی همه با HTTPِ ساده بودند یا پاسخِ TLS در همان یک بلوکِ
+   padding می‌آمد؛ پس هرگز بایتِ خامِ پس از سوئیچ دیده نمی‌شد. این مقصد
+   پاسخ را در دو نوشتنِ جدا (۴۰۰ms فاصله) می‌فرستد: تکهٔ اول سوئیچ را
+   فعال می‌کند و تکهٔ دوم بی‌قید و شرط *خام* می‌آید. */
+const TLS_BODY = 'TLS-SPLICE-OK';
+/* بدنهٔ بزرگِ پس از سوئیچ: دانلودِ واقعیِ مرورگر روی همان مسیری که دیگر
+   رمزنگاریِ بیرونی ندارد — باید بی‌کم‌وکاست برسد (نه فقط «چند بایتِ اول»). */
+const TLS_BIG = 384 * 1024;
+const tlsBigBody = Buffer.alloc(TLS_BIG, 0x5a);
+let tlsHits = 0;
+function startTlsTarget() {
+  const key = path.join(TMP, 'target-key.pem'), cert = path.join(TMP, 'target-cert.pem');
+  if (!fs.existsSync(key) || !fs.existsSync(cert)) {
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+      '-keyout', key, '-out', cert, '-days', '2', '-subj', '/CN=tls.local'], { stdio: 'ignore' });
+  }
+  const srv = https.createServer({ key: fs.readFileSync(key), cert: fs.readFileSync(cert) }, (req, res) => {
+    tlsHits++;
+    if (req.url === '/big') {
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': String(TLS_BIG) });
+      res.write(tlsBigBody.subarray(0, 128));
+      setTimeout(() => { try { res.end(tlsBigBody.subarray(128)); } catch (e) {} }, 400);
+      return;
+    }
+    const body = TLS_BODY + '•' + req.url;
+    res.writeHead(200, {
+      'content-type': 'text/plain',
+      'content-length': String(body.length * 2),
+    });
+    res.write(body);
+    setTimeout(() => { try { res.end(body); } catch (e) {} }, 400);
+  });
+  srv.keepAliveTimeout = 30000;
+  return srv;
+}
 
 /* ── ۲) سرورِ خروجیِ واقعی: Xray با reality + vision (همان کانفیگِ کاربر) ── */
 const UUID = randomUuid();
@@ -433,6 +481,50 @@ const httpRaw = (sock, reqBuf, timeoutMs) => new Promise((res, rej) => {
 
 const httpGet = (sock, p) => httpRaw(sock, 'GET ' + p + ' HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n');
 
+/* ── اتصالِ TLS ۱٫۳ از داخلِ SOCKS (کلاینتِ واقعی) ── */
+const tlsConnectSocks = async (host, port, timeoutMs) => {
+  const raw = await socksConnect(host, port);
+  const t = tls.connect({ socket: raw, servername: host, rejectUnauthorized: false, ALPNProtocols: ['http/1.1'] });
+  await new Promise((res, rej) => {
+    t.once('secureConnect', res);
+    t.once('error', rej);
+    setTimeout(() => rej(new Error('زمانِ هندشیکِ TLS تمام شد')), timeoutMs);
+  });
+  return t;
+};
+
+/* یک پاسخِ HTTP روی همان سوکتِ TLS — تا کامل‌شدنِ body بر اساسِ Content-Length */
+/* بدنهٔ پاسخ با UTF-8 (متنِ تست نویسه‌های غیر-ASCII دارد؛ latin1 آن را دو
+   بایتی می‌کند و مقایسهٔ رشته‌ای دروغین «شکست» می‌دهد در حالی که داده سالم است) */
+const bodyBufOf = (r) => {
+  const i = r.buf.indexOf('\r\n\r\n');
+  return i < 0 ? Buffer.alloc(0) : r.buf.slice(i + 4);
+};
+const bodyOf = (r) => bodyBufOf(r).toString('utf8');
+
+const tlsHttp = (t, request, timeoutMs) => new Promise((res) => {
+  let buf = Buffer.alloc(0), done = false;
+  const finish = (why) => {
+    if (done) return;
+    done = true;
+    t.removeListener('data', onData);
+    res({ buf, why });
+  };
+  const onData = (d) => {
+    buf = Buffer.concat([buf, d]);
+    const i = buf.indexOf('\r\n\r\n');
+    if (i < 0) return;
+    const head = buf.slice(0, i).toString('latin1');
+    const m = /content-length:\s*(\d+)/i.exec(head);
+    if (m && buf.length - (i + 4) >= Number(m[1])) finish('');
+  };
+  t.on('data', onData);
+  t.on('error', (e) => finish('خطا: ' + String((e && e.message) || e)));
+  t.on('close', () => finish('اتصال بسته شد'));
+  t.write(request);
+  setTimeout(() => finish('زمان تمام شد'), timeoutMs || 15000);
+});
+
 (async () => {
   const XRAY = findXray();
   if (!XRAY) {
@@ -441,8 +533,11 @@ const httpGet = (sock, p) => httpRaw(sock, 'GET ' + p + ' HTTP/1.1\r\nHost: 127.
   }
   fs.mkdirSync(TMP, { recursive: true });
 
+  const tlsTarget = startTlsTarget();
   await new Promise((r) => targetSrv.listen(TARGET_PORT, '127.0.0.1', r));
+  await new Promise((r) => tlsTarget.listen(TLS_PORT, '127.0.0.1', r));
   console.log('  • مقصدِ نهایی: 127.0.0.1:' + TARGET_PORT + '  («' + BODY + '» + بدنهٔ ' + (BIG / 1024) + ' کیلوبایتی)');
+  console.log('  • مقصدِ TLS ۱٫۳ (دو تکه با فاصله): 127.0.0.1:' + TLS_PORT);
 
   const { pbk } = await startExitServer();
   if (!(await waitPort(EXIT_PORT, 12000))) {
@@ -549,10 +644,40 @@ const httpGet = (sock, p) => httpRaw(sock, 'GET ' + p + ' HTTP/1.1\r\nHost: 127.
   results.push(['پاسخِ HTTPSِ مقصد درست بود', /^HTTP\/1\.[01] (200|301|302|403)/.test(tlsRes.head || '')]);
   results.push(['دامنه برای سرورِ خروجی حل شد (SNI/HTTPِ درست)', (tlsRes.head || '').length > 0 && !/^\(?err/.test(String(tlsRes.err || ''))]);
 
+  /* ۶) ═══ مسیرِ XTLS «direct copy» (splice) ═══
+     سرورِ خروجی پس از دیدنِ هندشیکِ TLS 1.3 داخلِ تونل، نوشتنتگرش را به
+     سوکتِ خام سوئیچ می‌کند (فرمانِ ۲ در بلوکِ Vision) و از آن لحظه بایت‌های
+     مقصد بدونِ رمزنگاریِ بیرونی می‌آیند. اگر ورکر آن‌ها را «رکوردِ رمزشده»
+     فرض کند، رمزگشایی شکست می‌خورد و نشست وسطِ کار می‌مرد — همان «کانفیگ
+     پینگ می‌دهد ولی کار نمی‌کند» با مرورگر. تکهٔ دومِ پاسخ (۴۰۰ms بعد)
+     و درخواستِ دومِ keep-alive هر دو *بعد* از سوئیچ می‌آیند. */
+  let spliceErr = '';
+  try {
+    const t = await tlsConnectSocks('127.0.0.1', TLS_PORT, 20000);
+    const a = await tlsHttp(t, 'GET /one HTTP/1.1\r\nHost: tls.local\r\nConnection: keep-alive\r\n\r\n', 12000);
+    const aBody = bodyOf(a);
+    results.push(['TLS 1.3: پاسخِ کاملِ دو‌تکه‌ای پس از سوئیچِ direct copy', aBody === (TLS_BODY + '•/one').repeat(2), a.why || ('body=' + JSON.stringify(aBody.slice(0, 40)))]);
+    const b = await tlsHttp(t, 'GET /two HTTP/1.1\r\nHost: tls.local\r\nConnection: keep-alive\r\n\r\n', 12000);
+    const bBody = bodyOf(b);
+    results.push(['TLS 1.3: درخواستِ دومِ keep-alive روی همان اتصال', bBody === (TLS_BODY + '•/two').repeat(2), b.why || ('body=' + JSON.stringify(bBody.slice(0, 40)))]);
+    /* دانلودِ واقعی روی همان مسیرِ spliced — نباید فقط «بایتِ اول» برسد */
+    const c = await tlsHttp(t, 'GET /big HTTP/1.1\r\nHost: tls.local\r\nConnection: close\r\n\r\n', 25000);
+    const cBody = bodyBufOf(c);
+    const cHashOk = cBody.length === TLS_BIG
+      && crypto.createHash('sha1').update(cBody).digest('hex') === crypto.createHash('sha1').update(tlsBigBody).digest('hex');
+    results.push(['TLS 1.3: بدنهٔ ' + (TLS_BIG / 1024) + ' کیلوبایتی از مسیرِ پس از سوئیچ بی‌کم‌وکاست', cHashOk, c.why || ('bytes=' + cBody.length)]);
+    try { t.destroy(); } catch (e) {}
+  } catch (e) { spliceErr = String((e && e.message) || e); }
+  if (spliceErr) {
+    results.push(['TLS 1.3: پاسخِ کاملِ دو‌تکه‌ای پس از سوئیچِ direct copy', false, spliceErr]);
+    results.push(['TLS 1.3: درخواستِ دومِ keep-alive روی همان اتصال', false, spliceErr]);
+    results.push(['TLS 1.3: بدنهٔ ' + (TLS_BIG / 1024) + ' کیلوبایتی از مسیرِ پس از سوئیچ بی‌کم‌وکاست', false, spliceErr]);
+  }
+
   console.log = realLog;
   const t0 = Date.now();
   await waitFor(() => targetHits >= 5, 5000);
-  for (const [label, good] of results) ok(good, label, good ? '' : 'شکست');
+  for (const [label, good, extra] of results) ok(good, label, good ? '' : (extra || 'شکست'));
   ok(targetHits > 0, 'درخواست‌ها واقعاً به مقصدِ نهایی رسیدند', targetHits + ' درخواست در ' + (Date.now() - t0) + 'ms');
 
   /* ═══ تستِ خودِ پنل — همان دکمه‌ای که کاربر می‌زند ═══
@@ -566,6 +691,10 @@ const httpGet = (sock, p) => httpRaw(sock, 'GET ' + p + ' HTTP/1.1\r\nHost: 127.
   const ex = await (await handler.fetch(new Request('https://panel.test/api/exits', { headers: { authorization: 'Bearer ' + token } }), env, ctx)).json();
   const st = (ex && ex.stats) || {};
   ok(Number(st.tunnels) >= 1, 'شمارندهٔ تونلِ خروجی بالا رفت', JSON.stringify({ tunnels: st.tunnels, fallbacks: st.fallbacks, strictCloses: st.strictCloses, lastError: st.lastError }));
+  /* سوئیچِ XTLS باید *دیده* شود: اگر شمارنده‌اش صفر باشد، این تست مسیرِ
+     واقعیِ مرورگر را نسنجیده و سبز بودنش بی‌معناست. */
+  ok(Number(st.splice) >= 1, 'سوئیچِ XTLS direct copy در ورکر ثبت شد', JSON.stringify({ splice: st.splice, spliceBytes: st.spliceBytes }));
+  ok(Number(st.spliceBytes) > 0, 'بایت‌های مسیرِ پس از سوئیچ خام پاس شدند', JSON.stringify({ spliceBytes: st.spliceBytes }));
   ok(!st.fallbacks && !st.strictCloses, 'هیچ بازگشتی به مسیرِ مستقیم/بستنِ سخت‌گیر رخ نداد');
 
   if (fail) {
@@ -575,10 +704,15 @@ const httpGet = (sock, p) => httpRaw(sock, 'GET ' + p + ' HTTP/1.1\r\nHost: 127.
       console.log('  ── گزارشِ کلاینتِ Xray ──');
       clientLog.split('\n').filter((l) => l.trim()).slice(-25).forEach((l) => console.log('    ' + l));
     }
-    if (process.env.E2E_VERBOSE && exitLog.trim()) {
-      console.log('  ── گزارشِ سرورِ خروجی ──');
-      exitLog.split('\n').filter((l) => l.trim()).slice(-25).forEach((l) => console.log('    ' + l));
-    }
+  }
+  /* ⚠️ گزارشِ سرورِ خروجی حتی در حالتِ سبز هم مفید است: تنها مرجعِ بیرونی برای
+     این‌که بفهمیم Xray واقعاً «padding پایان» یا «direct copy» را فعال کرده یا
+     نه (XtlsPadding/XtlsFilterTls در سطحِ debug لاگ می‌شوند). */
+  if (process.env.E2E_VERBOSE && exitLog.trim()) {
+    console.log('  ── گزارشِ سرورِ خروجی ──');
+    const lines = exitLog.split('\n').filter((l) => l.trim());
+    const keep = lines.filter((l) => /Xtls|Direct|Splice|splice|tls 1\.3|filter|padding/i.test(l));
+    (keep.length ? keep : lines).slice(-25).forEach((l) => console.log('    ' + l));
   }
 
   targetSrv.close(); wsSrv.close();
