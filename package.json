@@ -10,7 +10,8 @@
     "test:e2e": "npm run build && node tests-manual/worker-e2e.cjs",
     "test:exit": "node tests-manual/exit-session-e2e.cjs",
     "test:obf": "node tests-manual/obf-session-e2e.cjs",
-    "test:reality-live": "node tests-manual/reality-live-e2e.cjs"
+    "test:reality-live": "node tests-manual/reality-live-e2e.cjs",
+    "test:real": "node tests-manual/real-client-e2e.cjs"
   },
   "devDependencies": {
     "acorn": "^8.18.0",

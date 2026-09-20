@@ -73,6 +73,8 @@ globalThis.caches = { default: { match: async () => undefined, put: async () => 
 let ghMode = 'none';   /* release | commit | none */
 let rawMode = 'none';  /* ok → version.json و بستهٔ کد از raw سرو می‌شوند */
 let cfMode = 'ok';     /* ok | fail — خواندنِ تنظیماتِ اسکریپت از API کلاودفلر */
+let cfVerify = 'active';  /* پاسخِ /user/tokens/verify برای آزمونِ «بررسیِ توکن» */
+let cfAccounts = [];      /* پاسخِ /accounts (توکنِ محدود به یک حساب → خالی) */
 let verJson = null;    /* بدنهٔ version.json جعلی */
 let rollList = null;   /* پاسخِ commits?path=version.json (برای بازگشت) */
 let uploads = 0;       /* تعدادِ PUT به کلاودفلر */
@@ -103,6 +105,13 @@ globalThis.fetch = async (url, init) => {
     return new Response('x', { status: 404 });
   }
   if (u.includes('api.cloudflare.com')) {
+    /* بررسیِ توکن (دکمه‌ی «بررسیِ توکن» در پنل) */
+    if (u.includes('/user/tokens/verify')) {
+      return new Response(JSON.stringify(cfVerify === 'active'
+        ? { success: true, result: { status: 'active' } }
+        : { success: false, errors: [{ message: 'invalid token' }] }), { status: cfVerify === 'active' ? 200 : 401 });
+    }
+    if (/\/accounts(\?|$)/.test(u)) return new Response(JSON.stringify({ success: true, result: cfAccounts }), { status: 200 });
     if (cfMode === 'fail') return new Response(JSON.stringify({ success: false, errors: [{ message: 'forbidden' }] }), { status: 403 });
     if (init && String(init.method || '').toUpperCase() === 'PUT') {
       uploads++;
@@ -355,6 +364,77 @@ const act = (h, env, token, a) => h.fetch(jreq('https://p.test/api/action', 'POS
       ok(String(meta.version) === VER_MINE, 'نسخهٔ worker.js با version.json یکی است', VER_MINE);
       ok(files.length >= 5, 'اثرِ انگشت روی worker.js + ui + htmlها حساب می‌شود', files.length + ' فایل');
     }
+  }
+
+  /* ── ۱۵) همان باگِ کاربر: «بعد از آپدیت باز هم پیامِ نسخه‌ی تازه می‌آمد» ──
+     بنر از st.updateInfo می‌آمد و آن هم تا بررسیِ بعدی (یک ساعت) دست‌نخورده
+     می‌ماند؛ پس بعد از استقرار باید یا خودِ استقرار پاکش کند یا ورکر بفهمد
+     که اطلاعاتش مربوط به بیلدِ قبلی است. اینجا هر دو مسیر آزموده می‌شود. */
+  console.log('== ۱۵) بعد از استقرار، بنرِ «نسخه‌ی تازه» خودش پاک می‌شود ==');
+  {
+    ghMode = 'none'; rawMode = 'ok'; cfMode = 'ok'; uploads = 0;
+    verJson = freshVer({ rev: 'f'.repeat(64), version: '9.9.9', serial: 99 });
+    const { h, env } = await freshHandler('stale');
+    const token = await tokOf(h, env);
+    await putSettings(h, env, token, { upd: CREDS });
+    const r1 = await act(h, env, token, 'update-check');
+    ok(r1.newer === true, 'قبل از استقرار: نسخه‌ی تازه دیده می‌شود', String(r1.latest));
+    const s1 = await (await h.fetch(jreq('https://p.test/api/state', 'GET', null, token), env, ctx)).json();
+    ok(s1.updateInfo && s1.updateInfo.newer === true, 'بنر روشن است و در state نشسته');
+    ok(s1.updateInfo.buildRev === REV_MINE, 'نتیجه با عکسِ انگشتِ همین بیلد ثبت شد', String(s1.updateInfo.buildRev).slice(0, 10));
+    ok(typeof s1.cfTokenUrl === 'string' && s1.cfTokenUrl.includes('permissionGroupKeys='),
+      'لینکِ ساختِ توکنِ کلاودفلر در state هست (یک‌کلیک)', String(s1.cfTokenUrl).slice(0, 46) + '…');
+    ok(s1.cfTokenUrl.includes('workers_scripts') && s1.cfTokenUrl.includes('edit'),
+      'مجوزِ لازم (Workers Scripts:Edit) از پیش در لینک انتخاب شده');
+
+    const r2 = await act(h, env, token, 'update-deploy');
+    ok(r2.ok === true && uploads === 1, 'استقرارِ نسخه‌ی تازه انجام شد', 'uploads=' + uploads);
+    const s2 = await (await h.fetch(jreq('https://p.test/api/state', 'GET', null, token), env, ctx)).json();
+    ok(s2.updateInfo && s2.updateInfo.newer === false,
+      '★ بعد از استقرار، بنر بدونِ هیچ کلیکی خاموش شد', 'newer=' + (s2.updateInfo || {}).newer);
+
+    /* حالا همان اتفاقی که در واقعیت می‌افتد: بیلدِ تازه (BUILD_REV متفاوت)
+       روی همان نصب بالا می‌آید. اطلاعاتِ ثبت‌شده مربوط به بیلدِ قبلی است و
+       نباید بنر نشان دهد — وگرنه همان «بعد از آپدیت باز هم پیام می‌آید». */
+    const revNew = 'f'.repeat(64);
+    const modB = await import(prepareDir('stale-b', SRC_TEXT.replace(/const BUILD_REV = '[^']*';/, "const BUILD_REV = '" + revNew + "';")));
+    const hB = modB.default || modB;
+    verJson = freshVer({ rev: revNew, version: '9.9.9', serial: 99 });
+    const s3 = await (await hB.fetch(jreq('https://p.test/api/state', 'GET', null, token), env, ctx)).json();
+    ok(s3.updateInfo && s3.updateInfo.newer === false,
+      '★ بیلدِ تازه با مخزنِ برابر: بنر خاموش می‌ماند (مقایسه‌ی بیلدی، نه بررسیِ دستی)',
+      'newer=' + (s3.updateInfo || {}).newer + ' stale=' + (s3.updateInfo || {}).stale);
+  }
+
+  /* ── ۱۶) بررسیِ توکنِ کلاودفلر (ساختِ یک‌کلیکی) ── */
+  console.log('== ۱۶) بررسیِ توکنِ کلاودفلر — پیامِ گویا و ذخیره‌ی خودکار ==');
+  { ghMode = 'none'; rawMode = 'ok'; cfMode = 'ok'; cfVerify = 'active'; cfAccounts = [];
+    const { h, env } = await freshHandler('cfcheck');
+    const token = await tokOf(h, env);
+    const cf = (body) => h.fetch(jreq('https://p.test/api/upd/cfcheck', 'POST', body, token), env, ctx).then((r) => r.json());
+    const none = await cf({});
+    ok(none.ok === false && /توکن/.test(String(none.msg)), 'بدونِ توکن: پیامِ گویا', String(none.msg).slice(0, 60));
+    ok(typeof none.tokenUrl === 'string' && none.tokenUrl.includes('permissionGroupKeys='),
+      'لینکِ ساختِ توکن حتی بدونِ توکن هم داده می‌شود');
+
+    /* توکنِ سالم ولی بدونِ مجوزِ اسکریپت — همان چیزی که کاربر واقعاً دارد */
+    cfMode = 'fail';
+    const bad = await cf({ token: 'cf_readonly', account: 'acct123', script: 'weathered' });
+    ok(bad.tokenOk === true && bad.scriptOk === false, 'توکن معتبر ولی بدونِ دسترسی به اسکریپت تشخیص داده شد',
+      JSON.stringify({ tokenOk: bad.tokenOk, scriptOk: bad.scriptOk }));
+    ok(/Workers Scripts|مجوز/.test(String(bad.msg) + (bad.steps || []).map((s) => s.note).join(' ')),
+      '★ دقیقاً می‌گوید چه مجوزی کم است', String(bad.msg).slice(0, 90));
+
+    /* توکنِ سالم با دسترسیِ کامل → ذخیره و پرکردنِ شناسه‌ی حساب */
+    cfMode = 'ok'; cfAccounts = [{ id: 'acct999', name: 'Main' }];
+    const good = await cf({ token: 'cf_full_token', script: 'weathered' });
+    ok(good.ok === true && good.scriptOk === true, 'توکن با دسترسیِ کامل تأیید شد', String(good.msg).slice(0, 70));
+    ok(good.account === 'acct999' && good.accountAuto === true, 'Account ID از توکن خودکار پر شد', good.account);
+    ok(good.saved === true, 'توکن تأییدشده همان‌جا ذخیره شد (بدونِ دکمه‌ی ذخیره)');
+    const st = await (await h.fetch(jreq('https://p.test/api/state', 'GET', null, token), env, ctx)).json();
+    ok(st.settings.upd.cfToken === '•••••' && st.settings.upd.cfAccount === 'acct999',
+      'اعتبارنامه در تنظیمات نشست و در state ماسک است', st.settings.upd.cfAccount);
+    ok(!!(good.bindings && good.bindings.length), 'بایندینگ‌هایی که حفظ می‌شوند گزارش می‌شوند', JSON.stringify(good.bindings).slice(0, 60));
   }
 
   console.log(fail ? '\n' + fail + ' تست ناموفق ✗' : '\nهمه‌ی تست‌ها موفق ✓');

@@ -559,6 +559,22 @@ const jreq = (url, method, body, token) => new Request(url, {
   ok(st.tunnels >= 1, 'شمارندهٔ تونلِ خروجی بالا رفت', JSON.stringify({ tunnels: st.tunnels, fallbacks: st.fallbacks, strictCloses: st.strictCloses, lastError: st.lastError }));
   ok(!st.fallbacks, 'هیچ fallbackای به مسیرِ مستقیم رخ نداد');
   ok(!!(ex.effective && ex.effective.mode === 'exit'), 'پیش‌فرضِ مؤثرِ پنل = خروجی', JSON.stringify(ex.effective || {}).slice(0, 80));
+  /* ═══ کارتِ تشخیصِ مسیرِ خروجی ═══
+     شمارنده‌ها فقط در حافظه‌ی همین isolate هستند و درخواستِ پنل ممکن است به
+     isolate دیگری برسد (آنجا همه صفر است). پس کارت از ردیفِ پایدارِ لاگ
+     می‌خواند؛ اینجا اثبات می‌شود که آن ردیف واقعاً پر می‌شود. */
+  ok(Array.isArray(ex.trace) && ex.trace.some((l) => l && l.level === 'success'),
+    'ردیفِ پایدارِ تشخیص پر شد (کارت دیگر خالی نمی‌ماند)',
+    JSON.stringify((ex.trace || []).slice(0, 2)).slice(0, 140));
+
+  /* اعمالِ گروهی: بیشترین علتِ «کانفیگ از خروجی رد نمی‌شود» انتخابِ per-config است */
+  await api('/api/exits', { op: 'select', uuid: usr.uuid, mode: 'direct' });
+  const bulk = await api('/api/exits', { op: 'select-all', mode: 'inherit' });
+  ok(bulk.ok === true, 'اعمالِ گروهی روی همه‌ی کانفیگ‌ها کار کرد', String(bulk.msg || '').slice(0, 80));
+  const ex2 = await (await handler.fetch(new Request('https://panel.test/api/exits', { headers: { authorization: 'Bearer ' + token } }), env, ctx)).json();
+  ok((ex2.perConfig || []).every((c) => c.mode === 'inherit' && c.effectiveMode === 'exit'),
+    'پس از اعمالِ گروهی، همه‌ی کانفیگ‌ها از پیش‌فرضِ سراسری (خروجی) پیروی می‌کنند',
+    JSON.stringify((ex2.perConfig || [])[0] || {}).slice(0, 100));
 
   if (fail) {
     console.log('\n  ── گزارشِ ورکر ──');

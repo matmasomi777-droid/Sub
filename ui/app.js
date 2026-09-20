@@ -772,8 +772,28 @@
       + (any === 0
         ? '<div class="cell-sub">هنوز هیچ اتصالی از مسیرِ خروجی رد نشده است — اگر کلاینت وصل نمی‌شود اما اینجا هیچ شکستی نیست، یعنی درخواستِ کاربر به مسیرِ خروجی نمی‌رسد (انتخابِ خروجی برای همان کانفیگ یا روشن‌بودن «مسیرِ خروجی» را بررسی کنید).</div>'
         : (exSt.lastFail ? '<div class="cell-sub">علتِ آخرین شکست: ' + esc(String(exSt.lastFail).slice(0, 200)) + '</div>' : ''))
+      /* ═══ ردیفِ پایدار (از D1) ═══
+         شمارندههای بالا فقط در حافظهی همین isolate هستند؛ درخواستِ پنل
+         ممکن است به isolate دیگری برسد و آنجا صفر باشد — همین باعث می‌شد
+         کارت «هیچ نشان نمی‌دهد». این ردیف از لاگِ پایدار خوانده می‌شود، پس
+         بعد از ری‌استارت هم واقعیت را نشان می‌دهد. */
+      + ((d.trace || []).length
+        ? '<div class="cell-sub" style="margin-top:6px"><b>ردیفِ پایدار (آخرین رویدادهای خروجی):</b></div>'
+          + (d.trace || []).map((l) => '<div class="cell-sub">' + icon(l.level === 'success' ? 'fa-circle-check' : 'fa-triangle-exclamation')
+            + ' <span class="mono" style="font-size:10px">' + new Date(l.ts).toLocaleTimeString('fa-IR') + '</span> ' + esc(String(l.action || ''))
+            + ' — ' + esc(String(l.detail || '').slice(0, 160)) + '</div>').join('')
+        : (any === 0 ? '<div class="cell-sub" style="margin-top:6px">و در لاگِ پایدار هم هیچ رویدادی از مسیرِ خروجی نیست (نه موفق، نه ناموفق) — یعنی واقعاً هیچ اتصالی به مسیرِ خروجی نرسیده است.</div>' : ''))
       + '</div><button class="btn sm" data-act="exit-reload">' + icon('fa-rotate') + ' بارخوانی</button></div>';
-    return master + strictRow + offNote + defSel + diag + list + exTestHtml() +
+    /* ═══ اعمالِ گروهی ═══
+       شایع‌ترین علتِ «هیچ اتصالی از مسیرِ خروجی رد نمی‌شود» انتخابِ per-config
+       است: کانفیگی که یک بار روی «مستقیم» ست شده باشد از پیش‌فرضِ سراسری
+       پیروی نمی‌کند و بی‌صدا مستقیم می‌رود (در محیطِ فیلترشده = کانفیگ کار
+       نمی‌کند). این دو دکمه همان وضعیت را با یک کلیک درست می‌کنند. */
+    const bulk = '<div class="btn-row" style="margin-top:10px;gap:6px;flex-wrap:wrap">' +
+      '<button class="btn sm p" data-act="exit-all" data-v="inherit" title="همه‌ی کانفیگ‌ها از پیش‌فرضِ سراسری پیروی کنند">' + icon('fa-users-gear') + ' همه‌ی کانفیگ‌ها → از پیش‌فرضِ سراسری' + '</button>' +
+      '<button class="btn sm" data-act="exit-all" data-v="direct" title="همه‌ی کانفیگ‌ها بدونِ واسطه">' + icon('fa-route') + ' همه → مستقیم</button>' +
+      '</div>';
+    return master + strictRow + offNote + defSel + diag + bulk + list + exTestHtml() +
       (EX.form ? exitFormHtml(EX.form) : '') + per;
   };
   async function exLoad() {
@@ -1439,6 +1459,22 @@
   function updSourceLabel(src) {
     return src === 'version.json' ? 'version.json مخزن' : src === 'release' ? 'release گیت‌هاب' : src === 'commit' ? 'کامیتِ شاخه (تقریبی)' : 'نامشخص';
   }
+  /* نتیجهٔ آخرین بررسیِ توکنِ کلاودفلر (در حافظهٔ همین صفحه) */
+  let CF = { last: null };
+  const cfOutHtml = (r) => {
+    if (!r) return '';
+    const head = '<div class="badge ' + (r.ok ? 'ok' : 'bad') + '">' + icon(r.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' ' +
+      esc(r.msg || (r.ok ? 'توکن سالم است' : 'بررسی ناموفق')) + '</div>' +
+      (r.account ? '<div class="hint" style="margin-top:6px">شناسهی حساب: <b class="mono">' + esc(String(r.account)) + '</b>' +
+        (r.saved ? ' <span class="badge ok">ذخیره شد</span>' : '') + '</div>' : '');
+    const steps = (r.steps || []).map((s) => '<div class="log"><span class="dot ' + (s.ok ? 'on' : 'bad') + '"></span>' +
+      '<div class="l"><b>' + esc(s.step || '') + '</b><div class="hint">' + esc(String(s.note || '').slice(0, 220)) + '</div></div></div>').join('');
+    const bindings = (r.bindings && r.bindings.length)
+      ? '<div class="hint" style="margin-top:6px">بایندینگهایی که هنگام انتشار حفظ میشوند: ' +
+        esc(r.bindings.map((b) => (b.name || '') + ':' + (b.type || '')).join(' • ').slice(0, 180)) + '</div>'
+      : '';
+    return '<div style="margin-top:10px">' + head + steps + bindings + '</div>';
+  };
   function updateView() {
     const d = S.d, s = d.settings, u = s.upd || {};
     const info = d.updateInfo || {};
@@ -1484,6 +1520,24 @@
       '<button class="btn d' + (ready ? '' : ' hide') + '" data-act="upd-rollback">' + icon('fa-rotate-left') + ' بازگشت به نسخه‌ی قبل</button>' +
       '<a class="btn ghost" href="' + esc(repoUrl) + '" target="_blank" rel="noopener" title="کدِ ساختهٔ‌شده در گیت‌هاب — اگر استقرار را تنظیم نکردید از همین‌جا کپی کنید">' + icon('fa-up-right-from-square') + ' فایلِ کد در گیت‌هاب</a>' +
       '</div></div></div>' +
+      /* ═══ توکنِ کلاودفلر با یک کلیک ═══
+         کاربر نباید بداند مجوزِ لازم اسمش «Workers Scripts:Edit» است یا از کدام
+         منوی داشبورد باید انتخاب شود. با قالبِ رسمیِ کلاودفلر (template URL)
+         فرمِ ساختِ توکن از پیش با همان مجوزها پر می‌شود؛ کاربر فقط تأیید و
+         کپی می‌کند و همین‌جا با یک دکمه بررسی می‌شود (Account ID هم خودکار
+         پر می‌شود) — همان چیزی که «ساختِ دستیِ توکن» را از مسیر خارج می‌کند. */
+      '<div class="card" style="margin-top:12px"><header><span class="ic b2">' + icon('fa-cloud') + '</span><div><h3>توکنِ کلاودفلر (ساختِ یک‌کلیکی)</h3>' +
+      '<p>مجوزهای لازم از پیش انتخاب می‌شوند — فقط تأیید کنید</p></div></header><div class="bd">' +
+      '<div class="hint">۱) دکمه‌ی زیر فرمِ ساختِ توکن را با مجوزهای لازم باز می‌کند (Workers Scripts:Edit برای انتشار، Account Settings:Read برای پرکردنِ خودکار شناسه‌ی حساب). ' +
+      '۲) «Continue to summary» و بعد «Create Token» را بزنید و توکن را کپی کنید. ' +
+      '۳) توکن را در فیلدِ «توکن API کلاودفلر» پایین همین صفحه بچسبانید. ' +
+      '۴) «بررسیِ توکن» را بزنید — پنل خودش اعتبار، شناسه‌ی حساب و دسترسیِ اسکریپت را می‌سنجد و در صورت سالم‌بودن ذخیره می‌کند.</div>' +
+      '<div class="btn-row" style="margin-top:10px;flex-wrap:wrap">' +
+      '<a class="btn p" href="' + esc(d.cfTokenUrl || '#') + '" target="_blank" rel="noopener" title="فرمِ ساختِ توکن با مجوزهای ازپیش‌پر">' + icon('fa-key') + ' ساختِ توکنِ کلاودفلر (مجوزها از پیش انتخاب شده)</a>' +
+      '<button class="btn" data-act="cf-check">' + icon('fa-stethoscope') + ' بررسیِ توکن</button>' +
+      '</div>' + cfOutHtml(CF.last) +
+      ((u.cfToken && u.cfAccount && u.script) ? '<div class="hint" style="margin-top:8px">وضعیت: <span class="badge ok">اعتبارنامه ذخیره شده</span></div>' : '<div class="hint" style="margin-top:8px">وضعیت: <span class="badge warn">هنوز توکن ذخیره نشده</span></div>') +
+      '</div></div>' +
       '<div class="card"><header><span class="ic warn">' + icon('fa-list-check') + '</span><div><h3>گزارش آخرین عملیات</h3><p>نتیجه‌ی واقعی هر گام</p></div></header><div class="bd">' +
       ((d.updateLog || []).map((l) => '<div class="log"><span class="dot ' + (l.ok ? 'on' : 'bad') + '"></span><div class="l"><b>' + esc(l.step) + '</b><div class="hint">' + esc(l.note) + '</div></div></div>').join('') || '<div class="empty">هنوز عملیاتی اجرا نشده — «بررسیِ تازه» را بزنید</div>') +
       '</div></div></div>' +
@@ -3155,7 +3209,7 @@
         toast(r.ok ? 'همه‌ی بررسی‌ها سالم بود ✓' : 'مشکلی پیدا شد — جزئیات را ببینید', r.ok ? 'ok' : 'err');
         if (r.error) toast('خطای سرور: ' + r.error, 'err');
       }
-      else if (a === 'upd-check') { busy(t, 'بررسی'); const r = await api('POST', '/api/action', { act: 'update-check' }); free(t); toast(r.msg || 'بررسی شد', r.newer ? 'info' : 'ok'); await refresh(); }
+      else if (a === 'upd-check') { busy(t, 'بررسی'); const r = await api('POST', '/api/action', { act: 'update-check' }); free(t); toast(r.msg || 'بررسی شد', r.newer ? 'info' : 'ok'); CF.last = null; await refresh(); }
       else if (a === 'upd-verify') {
         busy(t, 'اعتبارسنجی');
         const r = await api('POST', '/api/action', { act: 'update-verify' });
@@ -3163,13 +3217,45 @@
         toast(r.msg || 'اعتبارسنجی انجام شد', r.ok ? 'ok' : 'err');
         await refresh();
       }
+      else if (a === 'cf-check') {
+        busy(t, 'بررسیِ توکن');
+        /* مقدارِ روی صفحه هم فرستاده می‌شود تا کاربر مجبور نباشد اول ذخیره کند */
+        const root0 = $('#view');
+        const vals = root0 ? collect(root0) : {};
+        const r = await api('POST', '/api/upd/cfcheck', {
+          token: vals['upd.cfToken'] || '', account: vals['upd.cfAccount'] || '', script: vals['upd.script'] || '',
+        });
+        free(t);
+        CF.last = r;
+        toast(r.msg || (r.ok ? 'توکن سالم است' : 'بررسی انجام شد'), r.ok ? 'ok' : 'err');
+        await refresh();
+      }
       else if (a === 'upd-deploy') {
         if (!confirm('نسخه‌ی تازه روی ورکر کلادفلر منتشر شود؟\n\nبایندینگ‌ها (D1/DO) از اسکریپتِ فعلی خوانده و حفظ می‌شوند، ولی این یک انتشارِ واقعی است.')) return;
         busy(t, 'استقرار');
+        const revBefore = String(S.d.rev || '');
         const r = await api('POST', '/api/action', { act: 'update-deploy' });
         free(t);
         toast(r.msg || 'استقرار انجام شد', r.ok ? 'ok' : 'err');
         await refresh();
+        /* ⚠️ بعد از استقرار، ورکر چند ثانیه بعد با بیلدِ تازه بالا می‌آید.
+           قبلاً همین‌جا کار تمام می‌شد و بنرِ «نسخه‌ی تازه» تا بررسیِ بعدی
+           (یک ساعت بعد) می‌ماند؛ کاربر فکر می‌کرد آپدیت نشده. حالا تا
+           فعال‌شدنِ بیلدِ تازه دنبال می‌کنیم و نتیجه را صریح می‌گوییم. */
+        if (r.ok) {
+          busy(t, 'انتشار');
+          let live = String(S.d.rev || '') !== revBefore;
+          for (let i = 0; i < 10 && !live; i++) {
+            await new Promise((res) => setTimeout(res, 2500));
+            await refresh();
+            live = String(S.d.rev || '') !== revBefore;
+          }
+          free(t);
+          toast(live
+            ? 'نسخه‌ی فعال اکنون v' + S.d.version + ' است و بنرِ نسخه‌ی تازه پاک شد'
+            : 'انتشار در کلادفلر چند لحظه بیشتر طول کشید — کمی بعد «بررسیِ تازه» را بزنید', live ? 'ok' : 'info');
+          await refresh();
+        }
       }
       else if (a === 'upd-rollback') {
         if (!confirm('به نسخه‌ی قبلی برگردیم؟ (آخرین کامیتی که version.json را عوض کرده روی ورکر منتشر می‌شود)')) return;
@@ -3315,6 +3401,14 @@
       else if (a === 'exit-new') { EX.form = exitBlank(); EX.test = null; exShow(); const nm = $('#ex_link'); if (nm) nm.focus(); }
       else if (a === 'exit-cancel') { EX.form = null; exShow(); }
       else if (a === 'exit-reload') { busy(t, 'بارخوانی'); EX.test = null; await exLoad(); free(t); }
+      else if (a === 'exit-all') {
+        const v = t.dataset.v;
+        busy(t, 'اعمال');
+        const r = await api('POST', '/api/exits', { op: 'select-all', mode: v });
+        free(t);
+        toast(r.msg || 'اعمال شد', r.ok ? 'ok' : 'err');
+        await exLoad();
+      }
       else if (a === 'exit-edit') {
         const srv = ((EX.data && EX.data.servers) || []).find((x) => x.id === id);
         EX.form = srv ? exitRead(srv) : exitBlank();

@@ -135,9 +135,9 @@ function exitDialHost(srv) {
    BUILD: مُهرِ زمانِ بیلد (UTC)
    BUILD_REV: اثرِ انگشتِ sha256 محتوای worker.js + ui — معیارِ دقیقِ «نسخه‌ی
    تازه» در بررسیِ آپدیت است (بدونِ تکیه بر تاریخ؛ چند پوش در یک روز هم دیده می‌شود) */
-const VERSION = '3.0.6';
-const BUILD = '2026.09.20-17:03';
-const BUILD_REV = 'b9981daf7dcf6a207c9d23de93270f68ba3f76529f2bd1cbbca4884e2261ee4b';
+const VERSION = '3.0.9';
+const BUILD = '2026.09.20-17:59';
+const BUILD_REV = '7f7139627cdfb90ecd3ef695784e7a2f8417a938826bf4ec8b8181202a4084e6';
 const BOOT = Date.now();
 /* شاخه‌ی پیش‌فرض برای بررسیِ نسخه */
 const UPD_DEFAULT_BRANCH = 'main';
@@ -6088,6 +6088,98 @@ async function statusPage(env, name, url) {
   return new Response('<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>' + body + '</html>', { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
 }
 
+/* ═══ ساختِ توکنِ کلاودفلر با یک کلیک + بررسیِ همان توکن ═══════════════════════
+   کاربر نباید بداند مجوزِ استقرار اسمش «Workers Scripts:Edit» است یا از کدام
+   منو باید انتخابش کند. با قالبِ رسمیِ کلاودفلر (template URL) فرمِ ساختِ توکن
+   از قبل با همان مجوزهای لازم پر می‌شود و کاربر فقط «Continue to summary» و
+   «Create Token» را می‌زند؛ بعد توکن را اینجا می‌چسباند و پنل خودش بررسی
+   می‌کند که واقعاً کار می‌کند (و Account ID را هم پر می‌کند).
+   مجوزها: Workers Scripts:Edit برای آپلود، Account Settings:Read برای دیدن
+   فهرستِ حساب‌ها (پرکردنِ خودکارِ Account ID). مستندات: API token template URLs */
+const CF_TOKEN_PERMS = [
+  { key: 'workers_scripts', type: 'edit' },
+  { key: 'account_settings', type: 'read' },
+];
+function cfTokenTemplateUrl(acct, name) {
+  return 'https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys='
+    + encodeURIComponent(JSON.stringify(CF_TOKEN_PERMS))
+    + '&accountId=' + encodeURIComponent(String(acct || '*').trim() || '*')
+    + '&zoneId=all'
+    + '&name=' + encodeURIComponent(String(name || 'Sub Panel Deploy').slice(0, 60));
+}
+const cfErrText = (j, status) => (j && Array.isArray(j.errors) && j.errors.length)
+  ? j.errors.map((e) => (e && (e.message || e.code)) || '').filter(Boolean).join('، ').slice(0, 200)
+  : ('HTTP ' + status);
+
+/** بررسیِ توکنِ کلاودفلر: معتبر؟ حساب‌ها؟ اسکریپت خوانده می‌شود؟ */
+async function cfTokenCheck(st, b) {
+  const u = (st && st.settings && st.settings.upd) || {};
+  const tok = String((b && b.token) || u.cfToken || '').trim();
+  let acct = String((b && b.account) || u.cfAccount || '').trim();
+  const script = String((b && b.script) || u.script || '').trim();
+  const steps = [];
+  const out = { ok: false, token: !!tok, tokenOk: false, accounts: [], account: acct, accountOk: false, scriptOk: false, bindings: null, missing: [], steps, tokenUrl: cfTokenTemplateUrl(acct, 'Sub Panel Deploy') };
+  if (!tok) {
+    steps.push({ step: 'توکن', ok: false, note: 'توکنی وارد نشده — دکمه‌ی «ساختِ توکن» را بزنید و توکن را اینجا بچسبانید' });
+    out.msg = 'برای استقرارِ خودکار اول توکنِ کلاودفلر لازم است';
+    return out;
+  }
+  const cfl = { authorization: 'Bearer ' + tok, 'user-agent': 'sub-panel' };
+  /* ۱) اعتبارِ توکن */
+  try {
+    const r = await fetch('https://api.cloudflare.com/client/v4/user/tokens/verify', { headers: cfl });
+    const j = await r.json().catch(() => null);
+    out.tokenOk = !!(j && j.success && j.result && String(j.result.status) === 'active');
+    steps.push(out.tokenOk
+      ? { step: 'اعتبارِ توکن', ok: true, note: 'توکن فعال است' }
+      : { step: 'اعتبارِ توکن', ok: false, note: r.status === 401 ? 'توکن نامعتبر است (401) — دوباره ساخته و کپی کنید' : cfErrText(j, r.status) });
+  } catch (e) {
+    steps.push({ step: 'اعتبارِ توکن', ok: false, note: String((e && e.message) || e).slice(0, 160) });
+  }
+  /* ۲) فهرستِ حساب‌ها — اگر توکن محدود به یک حساب باشد، لیست خالی است و
+        کاربر باید Account ID را از آدرس داشبورد کپی کند */
+  try {
+    const r = await fetch('https://api.cloudflare.com/client/v4/accounts', { headers: cfl });
+    const j = await r.json().catch(() => null);
+    out.accounts = (j && Array.isArray(j.result) ? j.result : []).map((a) => ({ id: String(a.id || ''), name: String(a.name || '') })).filter((a) => a.id);
+    /* یک حساب در دسترس = همان چیزی که توکن به آن محدود شده؛ پس ملاک است و
+       شناسهٔ قبلی (اشتباه/کهنه) را اصلاح می‌کند. با چند حساب، فقط وقتی
+       چیزی وارد نشده باشد پر می‌شود. */
+    if (out.accounts.length === 1 && acct !== out.accounts[0].id) { acct = out.accounts[0].id; out.account = acct; out.accountAuto = true; }
+    else if (!acct && out.accounts.length > 1) { acct = out.accounts[0].id; out.account = acct; out.accountAuto = true; }
+    steps.push(out.accounts.length
+      ? { step: 'حساب‌ها', ok: true, note: out.accounts.length + ' حساب در دسترس' + (out.accountAuto ? ' — شناسه‌ی حساب خودکار پر شد' : '') }
+      : { step: 'حساب‌ها', ok: !!acct, note: acct ? 'توکن به یک حساب محدود است؛ شناسه‌ی واردشده استفاده می‌شود' : 'فهرستِ حساب‌ها خالی بود — شناسهٔ حساب (Account ID) را از آدرس داشبورد کپی و وارد کنید' });
+  } catch (e) {
+    steps.push({ step: 'حساب‌ها', ok: false, note: String((e && e.message) || e).slice(0, 160) });
+  }
+  /* ۳) خواندنِ تنظیماتِ اسکریپت — همان کاری که استقرار قبل از آپلود می‌کند
+        (بایندینگ‌های D1/DO از همین‌جا حفظ می‌شوند) */
+  if (!acct || !script) {
+    steps.push({ step: 'دسترسی به اسکریپت', ok: false, note: 'برای تستِ دسترسی، نامِ اسکریپتِ ورکر (و در صورت نیاز شناسه‌ی حساب) را پر کنید' });
+    out.msg = out.tokenOk ? 'توکن معتبر است؛ نامِ اسکریپت و شناسه‌ی حساب را پر کنید تا دسترسیِ آپلود هم بررسی شود' : 'توکن معتبر نیست';
+    return out;
+  }
+  try {
+    const r = await fetch('https://api.cloudflare.com/client/v4/accounts/' + encodeURIComponent(acct) + '/workers/scripts/' + encodeURIComponent(script) + '/settings', { headers: cfl });
+    const j = await r.json().catch(() => null);
+    const cur = j && j.result ? j.result : null;
+    out.scriptOk = !!cur;
+    out.bindings = cur && Array.isArray(cur.bindings) ? cur.bindings.map((x) => ({ type: x.type, name: x.name })) : null;
+    steps.push(out.scriptOk
+      ? { step: 'دسترسی به اسکریپت', ok: true, note: 'اسکریپت «' + script + '» خوانده شد' + (out.bindings && out.bindings.length ? ' • ' + out.bindings.length + ' بایندینگ حفظ می‌شود' : '') }
+      : { step: 'دسترسی به اسکریپت', ok: false, note: (r.status === 403 ? 'توکن مجوزِ Workers Scripts:Edit ندارد' : r.status === 404 ? 'اسکریپتی با این نام در این حساب نیست' : cfErrText(j, r.status)) + ' — توکن را با دکمه‌ی «ساختِ توکن» بسازید' });
+  } catch (e) {
+    steps.push({ step: 'دسترسی به اسکریپت', ok: false, note: String((e && e.message) || e).slice(0, 160) });
+  }
+  out.accountOk = !!acct && (!out.accounts.length || out.accounts.some((a) => a.id === acct));
+  out.ok = out.tokenOk && out.scriptOk;
+  out.msg = out.ok
+    ? 'توکن سالم است — استقرارِ خودکار آماده است' + (out.bindings && out.bindings.length ? ' (' + out.bindings.length + ' بایندینگ حفظ می‌شود)' : '')
+    : (out.tokenOk ? 'توکن معتبر است ولی دسترسی به اسکریپتِ «' + (script || '?') + '» نداریم: ' + ((steps.find((x) => !x.ok) || {}).note || '') : 'توکن نامعتبر یا بدون مجوز است');
+  return out;
+}
+
 /* ════════════════════════════ API ════════════════════════════ */
 async function apiHandler(req, env, url, ctx) {
   const st = seed(await load(env));
@@ -6190,7 +6282,15 @@ async function apiHandler(req, env, url, ctx) {
        نمی‌کند. نتیجه در st.updateInfo می‌نشیند و بنرِ داشبورد همان را نشان می‌دهد. */
     try {
       const ival = Math.max(15, Math.min(1440, Math.round(Number(st.settings.upd.interval) || 60)));
-      if (st.settings.upd.auto !== false && Date.now() - (st.lastCheck || 0) > ival * 60000 && ctx && ctx.waitUntil) {
+      /* ⚠️ نتیجه‌ی بررسی فقط برای همان بیلدی معتبر است که ثبتش کرده. اگر
+         BUILD_REV عوض شده باشد (یعنی همین حالا مستقر شدیم) اطلاعاتِ ذخیره‌شده
+         کهنه است و بنرِ «نسخه‌ی تازه» نباید بماند — ریشه‌ی «بعد از آپدیت هم
+         پیام می‌آمد و فقط دکمه‌ی بررسیِ تازه آن را پاک می‌کرد». حالا خودِ
+         ورکر می‌فهمد که اطلاعاتش کهنه است و در پس‌زمینه دوباره بررسی می‌کند. */
+      const staleInfo = !!(st.updateInfo && st.updateInfo.rev && st.updateInfo.buildRev !== BUILD_REV);
+      const due = Date.now() - (st.lastCheck || 0) > ival * 60000;
+      const staleDue = staleInfo && Date.now() - (st.lastCheck || 0) > 60000;
+      if (st.settings.upd.auto !== false && (due || staleDue) && ctx && ctx.waitUntil) {
         st.lastCheck = Date.now();
         ctx.waitUntil(doUpdateCheckStore(env, st).catch(() => {}));
         /* ═══ استقرارِ خودکار (اختیاری، پیش‌فرض خاموش) ═══
@@ -6200,7 +6300,13 @@ async function apiHandler(req, env, url, ctx) {
         if (st.settings.upd.autoDeploy === true) ctx.waitUntil(doAutoDeploy(env, st).catch(() => {}));
       }
     } catch (e) {}
-    return json({ ...st, stats: { ...st.stats, ...series }, storage: backendOf(env), limiter: limiterBackend(env), limiterLabel: LIM_LABEL[limiterBackend(env)] || limiterBackend(env), limitEnforced: limiterBackend(env) !== 'mem', limiterIntended: limiterIntended(env), limiterVerified: LIVE_TS > 0 ? LIVE_OK : null, limiterError: LIVE_ERR, limiterDegraded: limiterDegraded(env) || !!LIMITER_DEGRADED, lastLimitError: CONN_LAST_ERR, connCounters: { acquires: CONN_ACQUIRES, denies: CONN_DENIES, evicts: CONN_EVICTS }, version: VERSION, build: BUILD, rev: BUILD_REV, boot: BOOT, settings: { ...st.settings, upd: { ...st.settings.upd, token: st.settings.upd.token ? '•••••' : '', cfToken: st.settings.upd.cfToken ? '•••••' : '' }, auth: { ...st.settings.auth, password: undefined, totpSecret: st.settings.auth.totpSecret ? '•••••' : '' } } });
+    /* اطلاعاتِ کهنه‌ی به‌روزرسانی (متعلق به بیلدِ قبلی) هرگز بنر نشان نمی‌دهد */
+    const updInfo = (() => {
+      const i = (st && st.updateInfo) || {};
+      if (i.rev && i.buildRev !== BUILD_REV) return { ...i, newer: false, stale: true };
+      return i;
+    })();
+    return json({ ...st, updateInfo: updInfo, cfTokenUrl: cfTokenTemplateUrl((st.settings.upd || {}).cfAccount, 'Sub Panel Deploy'), stats: { ...st.stats, ...series }, storage: backendOf(env), limiter: limiterBackend(env), limiterLabel: LIM_LABEL[limiterBackend(env)] || limiterBackend(env), limitEnforced: limiterBackend(env) !== 'mem', limiterIntended: limiterIntended(env), limiterVerified: LIVE_TS > 0 ? LIVE_OK : null, limiterError: LIVE_ERR, limiterDegraded: limiterDegraded(env) || !!LIMITER_DEGRADED, lastLimitError: CONN_LAST_ERR, connCounters: { acquires: CONN_ACQUIRES, denies: CONN_DENIES, evicts: CONN_EVICTS }, version: VERSION, build: BUILD, rev: BUILD_REV, boot: BOOT, settings: { ...st.settings, upd: { ...st.settings.upd, token: st.settings.upd.token ? '•••••' : '', cfToken: st.settings.upd.cfToken ? '•••••' : '' }, auth: { ...st.settings.auth, password: undefined, totpSecret: st.settings.auth.totpSecret ? '•••••' : '' } } });
   }
 
   if (route === 'settings' && (m === 'PUT' || m === 'POST')) {
@@ -6329,6 +6435,35 @@ async function apiHandler(req, env, url, ctx) {
      انتخاب برای هر کانفیگ (کاربر) همین‌جا و با op: 'select' انجام می‌شود.
      ═══════════════════════════════════════════════════════════════════════ */
 
+  /* ساختِ توکنِ کلاودفلر: لینکِ فرمِ ازپیش‌پر + بررسیِ توکنِ چسبانده‌شده.
+     همه‌چیز سمتِ سرور انجام می‌شود تا توکنِ ذخیره‌شده (که در پنل ماسک است)
+     هم قابلِ استفاده باشد. */
+  if (route === 'upd/cfcheck' && m === 'POST') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const b = await req.json().catch(() => ({}));
+    const r = await cfTokenCheck(st, b);
+    /* اگر توکن یا حسابِ تازه‌ای تأیید شد، همان‌جا ذخیره‌اش می‌کنیم (کاربر
+       لازم نیست دوباره دکمه‌ی ذخیره را پیدا کند) */
+    const u = (st.settings && st.settings.upd) || {};
+    let changed = false;
+    if (b && b.token && r.tokenOk && b.token !== u.cfToken) { u.cfToken = String(b.token).trim(); changed = true; }
+    if (r.account && r.account !== u.cfAccount) { u.cfAccount = r.account; changed = true; }
+    r.saved = changed;
+    r.tokenUrl = cfTokenTemplateUrl(r.account || u.cfAccount, 'Sub Panel Deploy');
+    try {
+      addLog(st, r.ok ? 'success' : 'warn', 'system', 'بررسیِ توکنِ کلاودفلر',
+        (changed ? 'اعتبارنامه ذخیره شد • ' : '') + String(r.msg || '').slice(0, 140));
+      await save(env, st);
+    } catch (e) {}
+    return json(r);
+  }
+
+  if (route === 'upd/tokenurl' && m === 'GET') {
+    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const u = (st.settings && st.settings.upd) || {};
+    return json({ ok: true, url: cfTokenTemplateUrl(u.cfAccount, 'Sub Panel Deploy'), permissions: CF_TOKEN_PERMS });
+  }
+
   if (route === 'exits' && m === 'GET') {
     if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
     const ex = exitsOf(st);
@@ -6346,6 +6481,11 @@ async function apiHandler(req, env, url, ctx) {
       effective: (() => { const r = on ? resolveExit(st, null) : { mode: 'direct' }; return { mode: r.mode, id: r.id || '', name: r.name || DIRECT.name }; })(),
       servers: ex.servers.map((x) => ({ ...x })),
       stats: { ...EXIT_STATS, lastError: EXIT_LAST_ERR || null },
+      /* ردیفِ تشخیصیِ پایدار (از لاگِ D1) — مستقل از isolate و ریستارت.
+         کارتِ پنل از همین می‌خواند؛ پس «هیچ نشان نمی‌دهد» فقط وقتی درست است
+         که واقعاً هیچ اتصالی از مسیرِ خروجی رد نشده باشد. */
+      trace: (st.logs || []).filter((l) => l && String(l.actor || '') === 'exit').slice(0, 12)
+        .map((l) => ({ ts: l.ts, level: l.level, action: l.action, detail: l.detail || '' })),
       proxyStats: { attempts: PROXY_STATS.attempts, connects: PROXY_STATS.connects, fails: PROXY_STATS.fails, lastAt: PROXY_STATS.lastAt, lastError: PROXY_STATS.lastError || null },
       /* انتخابِ هر کانفیگ — برای نمایشِ وضعیت در پنل
          reason علتِ «مستقیم‌شدن» را می‌گوید (مثلاً سرور غیرفعال است) تا ادمین
@@ -6538,7 +6678,29 @@ async function apiHandler(req, env, url, ctx) {
       });
     }
 
-    return json({ ok: false, error: 'عملیات نامعتبر — مجاز: add، update، delete، toggle، master، strict، select، resolve-ip' }, 400);
+    /* ═══ اعمالِ گروهی روی همه‌ی کانفیگ‌ها ═══
+       شایع‌ترین علتِ «مسیر خروجی روشن است ولی هیچ اتصالی از آن رد نمی‌شود»
+       انتخابِ per-config است: کانفیگی که یک بار روی «مستقیم» ست شده باشد از
+       پیش‌فرضِ سراسری پیروی نمی‌کند و بی‌صدا مستقیم می‌رود (و در محیطِ فیلترشده
+       یعنی «کانفیگ کار نمی‌کند»). با یک کلیک همه به پیش‌فرضِ سراسری برمی‌گردند. */
+    if (op === 'select-all') {
+      const mode = String((b && b.mode) || 'inherit').toLowerCase();
+      if (!['inherit', 'direct'].includes(mode)) {
+        return json({ ok: false, error: 'حالت باید inherit (پیروی از پیش‌فرضِ سراسری) یا direct (مستقیم) باشد' }, 400);
+      }
+      let n = 0;
+      st.users.forEach((u) => { if (u.exitMode !== mode || u.exitId) n++; u.exitMode = mode; u.exitId = ''; });
+      addLog(st, 'info', 'core', 'خروجیِ همه‌ی کانفیگ‌ها تغییر کرد',
+        mode === 'inherit' ? 'پیروی از پیش‌فرضِ سراسری' : 'مستقیم (بدونِ واسطه)');
+      await save(env, st);
+      return json({
+        ok: true, op, mode, changed: n,
+        effective: (() => { const r = exitsOf(st).enabled !== false ? resolveExit(st, null) : { mode: 'direct', name: 'مستقیم (بدون واسطه)' }; return { mode: r.mode, id: r.id || '', name: r.name }; })(),
+        msg: fa(n) + ' کانفیگ به‌روزرسانی شد — ' + (mode === 'inherit' ? 'حالا از پیش‌فرضِ سراسری پیروی می‌کنند' : 'حالا همه مستقیم می‌روند'),
+      });
+    }
+
+    return json({ ok: false, error: 'عملیات نامعتبر — مجاز: add، update، delete، toggle، master، strict، select، select-all، ipwrap، resolve-ip' }, 400);
   }
 
   /* پیش‌فرضِ سراسری: 'direct' (بدون واسطه) یا شناسه‌ی یکی از سرورها */
@@ -7138,6 +7300,8 @@ async function doUpdateCheckStore(env, st) {
       latest: info.latest, newer: !!info.newer, source: info.source, note: info.note || '',
       at: Date.now(), rev: info.rev || '', serial: info.serial || 0, sha: info.sha || '',
       version: info.version || '', notes: info.notes || [],
+      /* عکسِ انگشتِ بیلدی که این نتیجه برایش معتبر است — برای تشخیصِ کهنه‌بودن */
+      buildRev: BUILD_REV,
     };
     st.lastCheck = Date.now();
     await save(env, st);
@@ -7236,8 +7400,11 @@ async function doAutoDeploy(env, st) {
     st.updateInfo = {
       ...(st.updateInfo || {}), latest: info.latest, source: info.source, note: info.note || '', at: Date.now(),
       rev: info.rev || '', serial: info.serial || 0, sha: info.sha || '',
+      buildRev: BUILD_REV, newer: r.ok ? false : !!info.newer,
       deployOk: !!r.ok, deployedAt: r.ok ? Date.now() : ((st.updateInfo && st.updateInfo.deployedAt) || null),
+      deployedRev: r.ok ? (info.rev || '') : ((st.updateInfo && st.updateInfo.deployedRev) || ''),
     };
+    if (r.ok) st.lastCheck = 0;
     addLog(st, r.ok ? 'info' : 'warn', 'system', 'استقرارِ خودکارِ نسخه', (r.ok ? 'موفق • ' : 'ناموفق • ') + String(info.latest || ''));
     await save(env, st);
   } catch (e) {}
@@ -7288,12 +7455,21 @@ async function updAction(env, st, a) {
     }
   }
   st.updateLog = steps;
+  /* ⚠️ استقرارِ موفق یعنی همان چیزی که مخزن داشت همین حالا آپلود شد؛ پس بنرِ
+     «نسخه‌ی تازه» باید فوراً پاک شود — نه این‌که تا بررسیِ بعدی (یک ساعت)
+     بماند. با lastCheck=0 هم از بررسیِ بعدیِ خودِ ورکر مطمئن می‌شویم. */
+  const justDeployed = deployOk === true;
   st.updateInfo = {
-    latest, newer, source: src, note: info.note || '', at: Date.now(),
+    latest, newer: justDeployed ? false : newer, source: src, note: info.note || '', at: Date.now(),
     rev: info.rev || '', serial: info.serial || 0, sha: info.sha || '', version: info.version || '',
     notes: info.notes || [],
+    buildRev: justDeployed ? (info.rev || BUILD_REV) : BUILD_REV,
     deployOk, deployedAt: deployOk === true ? Date.now() : ((st.updateInfo && st.updateInfo.deployedAt) || null),
+    deployedRev: deployOk === true ? (info.rev || '') : ((st.updateInfo && st.updateInfo.deployedRev) || ''),
   };
+  /* بعد از استقرار، بررسیِ بعدی بلافاصله انجام شود (ورکرِ فعال تازه ری‌استارت
+     می‌شود و نسخه‌اش عوض می‌شود) */
+  if (justDeployed) st.lastCheck = 0;
   const failed = steps.find((x) => x && x.ok === false);
   addLog(st, deployOk === false ? 'warn' : 'info', 'system', 'عملیاتِ به‌روزرسانی', a + (latest ? ' • ' + latest : '') + (deployOk === false ? ' • ناموفق' : ''));
   await save(env, st);
@@ -8014,6 +8190,32 @@ function exitLogFail(env, st, ctx, srvName, dest, err) {
   try {
     addLog(st, 'warn', 'exit', 'شکستِ سرور خروجی',
       '«' + key + '» • مقصدِ درخواستی: ' + String(dest || '?') + ' • علت: ' + String(err || '?').slice(0, 180));
+  } catch (e) {}
+  const p = save(env, st);
+  try { if (ctx && ctx.waitUntil) ctx.waitUntil(p); else p.catch(() => {}); } catch (e) {}
+}
+
+/* ═══ رویدادِ موفقِ خروجی — همان دلیلِ بالا، برعکس ═══════════════════════════
+   کم‌شمارنده‌های EXIT_STATS فقط در حافظه‌ی *همین isolate* هستند؛ درخواستِ پنل
+   معمولاً به isolate دیگری می‌رسد و آنجا همه‌ی شمارنده‌ها صفر است — دقیقاً
+   همان «کارتِ تشخیصِ مسیرِ خروجی چیزی نشان نمی‌دهد». پس رویدادهای موفق هم در
+   لاگِ پنل (D1) می‌نشینند و کارت از آن‌جا می‌خواند. ضدِ طوفانِ نوشتن: اولین
+   عبورِ هر (خروجی، مقصد) در هر ۶۰ ثانیه. */
+const EXIT_OK_AT = new Map();
+function exitLogOk(env, st, ctx, srvName, dest, userName, ms) {
+  const key = String(srvName || '?') + '|' + String(dest || '?');
+  const now = Date.now();
+  /* سه اتصالِ اولِ هر isolate همیشه ثبت می‌شوند (تا کارت از همان ابتدا
+     چیزی برای نشان‌دادن داشته باشد)، بعد از آن حداکثر هر ۶۰ ثانیه برای
+     هر (خروجی، مقصد) — ضدِ طوفانِ نوشتنِ D1. */
+  const firstFew = Number(EXIT_STATS.tunnels) <= 3;
+  if (!firstFew && now - (EXIT_OK_AT.get(key) || 0) < 60000) return;
+  if (EXIT_OK_AT.size > 200) EXIT_OK_AT.clear();
+  EXIT_OK_AT.set(key, now);
+  try {
+    addLog(st, 'success', 'exit', 'عبورِ ترافیک از سرور خروجی',
+      '«' + String(srvName || '?') + '» • مقصدِ درخواستی: ' + String(dest || '?')
+      + (userName ? ' • کاربر: ' + String(userName) : '') + (ms ? ' • ' + fa(Math.round(ms)) + ' میلی‌ثانیه' : ''));
   } catch (e) {}
   const p = save(env, st);
   try { if (ctx && ctx.waitUntil) ctx.waitUntil(p); else p.catch(() => {}); } catch (e) {}
@@ -10379,7 +10581,9 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
       const ex = resolveExit(st, user);
       if (ex.mode === 'exit' && ex.server) {
         try {
+          const exitT0 = Date.now();
           const up = await openExitSocket(ex.server, info);
+          const exitMs = Date.now() - exitT0;
           sock = up;
           EXIT_STATS.tunnels++;
           EXIT_STATS.lastAt = Date.now();
@@ -10389,6 +10593,9 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
           /* تازه‌سازیِ آی‌پیِ حل‌شده‌ی سرور خروجی در پس‌زمینه (DoH) —
              در مسیرِ ترافیک منتظر نمی‌ماند و هرگز خطا نمی‌دهد */
           try { ctx.waitUntil(refreshExitIp(env, st, ex.server)); } catch (e2) {}
+          /* رویدادِ موفق در لاگِ پایدارِ پنل — تا کارتِ تشخیص در هر isolate
+             (و بعد از ریستارت) هم واقعیت را نشان دهد، نه صفر */
+          try { exitLogOk(env, st, ctx, ex.server.name, EXIT_STATS.lastDest, (user && user.name) || '', exitMs); } catch (e2) {}
           /* retry داده نمی‌شود: مسیرِ خروجی با ProxyIP معنا ندارد */
           /* ۲ بایتِ اولِ بالادست = هدرِ پاسخِ VLESSِ سرور خروجی — در
              vlessClientWrap حذف می‌شود (هدرِ پاسخِ خودمان را می‌فرستیم). */
