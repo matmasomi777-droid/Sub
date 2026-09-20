@@ -83,11 +83,69 @@ if (!XRAY) {
 }
 
 /* ── ۱) مقصدِ محلی (Xray به آن وصل می‌شود) ── */
+let targetHits = 0;
 const targetSrv = http.createServer((req, res) => {
+  targetHits++;
   res.writeHead(200, { 'content-type': 'text/plain', 'content-length': String(Buffer.byteLength(BODY)) });
   res.end(BODY);
 });
 targetSrv.on('clientError', (e, sock) => { try { sock.destroy(); } catch (e2) {} });
+
+/* ── ۱ب) «خروجیِ ساده»: یک سرورِ VLESS خامِ بدونِ رمزنگاری (security=none)
+   که هدرِ VLESSِ فرستادهٔ ورکر را *روی سیم* می‌خواند. تنها راهِ اثباتِ این‌که
+   مقصدِ آی‌پی/پورتِ ۸۰ درست کدگذاری می‌شود (در مسیرِ reality همه‌چیز داخلِ TLS
+   است و از بیرون دیده نمی‌شود). این همان گیرندهٔ رگرسیونِ باگِ «آی‌پی مقصد»
+   است: قبلاً IP به www.<ip>.sslip.io تبدیل می‌شد و سرورِ داخلِ ایران نمی‌توانست
+   آن را حل کند → هیچ داده‌ای رد نمی‌شد.
+   سرورِ VLESS فرمت را وضع می‌کند: تمامِ طولانی است، پس یک پارسرِ مستقل اینجا
+   نوشته شده (اگر ورکر فرمت را عوض کند، اینجا قرمز می‌شود). */
+const STUB_PORT = 18099;
+const STUB_UUID = randomUuid();
+/* UUID جدا برای خروجیِ Vision — پنل سرورِ تکراری (uuid+آدرس) را قبول نمی‌کند */
+const STUB_VIS_UUID = randomUuid();
+let stubHdr = null;
+let stubPayload = '';
+function parseStubHeader(buf) {
+  if (buf.length < 19) return null;
+  if (buf[0] !== 0) return null;
+  const addonsLen = buf[17];
+  const p = 18 + addonsLen;
+  if (buf.length < p + 4) return null;
+  const cmd = buf[p];
+  const port = (buf[p + 1] << 8) | buf[p + 2];
+  const atyp = buf[p + 3];
+  let addr = '', end = p + 4;
+  if (atyp === 1) {
+    if (buf.length < end + 4) return null;
+    addr = [buf[end], buf[end + 1], buf[end + 2], buf[end + 3]].join('.');
+    end += 4;
+  } else if (atyp === 2) {
+    if (buf.length < end + 1) return null;
+    const l = buf[end];
+    if (buf.length < end + 1 + l) return null;
+    addr = buf.slice(end + 1, end + 1 + l).toString('latin1');
+    end += 1 + l;
+  } else { return null; }
+  return { cmd, port, atyp, addr, end };
+}
+let stubAfter = Buffer.alloc(0);          /* هرچه بعد از هدرِ VLESS روی سیم آمد */
+const stubSrv = net.createServer((sock) => {
+  let buf = Buffer.alloc(0), done = false;
+  sock.on('error', () => {});
+  sock.on('data', (d) => {
+    if (done) { stubAfter = Buffer.concat([stubAfter, d]); return; }
+    buf = Buffer.concat([buf, d]);
+    const h = parseStubHeader(buf);
+    if (!h) return;
+    done = true;
+    stubHdr = h;
+    stubPayload = buf.slice(h.end).toString('latin1');
+    stubAfter = Buffer.from(buf.slice(h.end));
+    /* پاسخِ VLESS: [نسخه، طولِ addons] + نشانه — دقیقاً همان چیزی که یک
+       سرورِ VLESS روی TCP خام می‌فرستد */
+    try { sock.write(Buffer.concat([Buffer.from([0, 0]), Buffer.from('STUB-OK')])); } catch (e) {}
+  });
+});
 
 /* ── ۲) سرورِ خروجیِ واقعی: Xray با reality + vision ── */
 const UUID = randomUuid();
@@ -192,7 +250,7 @@ function prepareDir() {
 function socketsShim() {
   return [
     "import net from 'node:net';",
-    'const OPEN_PORT = ' + EXIT_PORT + ';',
+    'const OPEN_PORTS = [' + EXIT_PORT + ', ' + STUB_PORT + '];',
     'const blocked = (why) => {',
     '  const opened = Promise.reject(new Error(why)); opened.catch(() => {});',
     '  return {',
@@ -204,7 +262,7 @@ function socketsShim() {
     '};',
     'export const connect = (addr) => {',
     '  const port = Number(addr && addr.port) || 0;',
-    '  if (port !== OPEN_PORT) return blocked("مسیرِ مستقیم در تست بسته است (port=" + port + ")");',
+    '  if (OPEN_PORTS.indexOf(port) < 0) return blocked("مسیرِ مستقیم در تست بسته است (port=" + port + ")");',
     '  const sock = net.connect({ host: "127.0.0.1", port });',
     '  sock.on("error", () => {});',
     '  const opened = new Promise((res, rej) => { sock.once("connect", res); sock.once("error", rej); });',
@@ -218,7 +276,7 @@ function socketsShim() {
     '    cancel() { try { sock.destroy(); } catch (e) {} },',
     '  });',
     '  const writable = new WritableStream({',
-    '    write(chunk) { return new Promise((res, rej) => sock.write(Buffer.from(chunk), (e) => (e ? rej(e) : res()))); },',
+    '    write(chunk) { (globalThis.__shimLog = globalThis.__shimLog || []).push((chunk && chunk.length) || 0); return new Promise((res, rej) => sock.write(Buffer.from(chunk), (e) => (e ? rej(e) : res()))); },',
     '    close() { try { sock.end(); } catch (e) {} },',
     '    abort() { try { sock.destroy(); } catch (e) {} },',
     '  });',
@@ -270,6 +328,8 @@ const jreq = (url, method, body, token) => new Request(url, {
 
   await new Promise((r) => targetSrv.listen(TARGET_PORT, '127.0.0.1', r));
   console.log('  • مقصدِ محلی: 127.0.0.1:' + TARGET_PORT + '  («' + BODY + '»)');
+  await new Promise((r) => stubSrv.listen(STUB_PORT, '127.0.0.1', r));
+  console.log('  • خروجیِ سادهٔ VLESS (بدونِ رمزنگاری): 127.0.0.1:' + STUB_PORT + '  (خواندنِ هدرِ VLESS روی سیم)');
 
   const { pbk } = await startXray();
   const up = await waitPort(EXIT_PORT, 12000);
@@ -315,52 +375,167 @@ const jreq = (url, method, body, token) => new Request(url, {
   ok(!!usr.uuid, 'کاربر ساخته شد', usr.uuid || JSON.stringify(usrRes).slice(0, 120));
   if (!usr.uuid) { if (proc) proc.kill(); process.exit(1); }
 
-  /* ── خودِ نشست: کلاینت VLESS روی WebSocket به مقصدِ محلی ── */
-  const addr = Buffer.from([127, 0, 0, 1]);
-  const target = Buffer.from('127.0.0.1');
-  const header = Buffer.concat([
-    Buffer.from([0]), uuidToBytes(usr.uuid), Buffer.from([0]),          /* نسخه، UUID، addons خالی */
-    Buffer.from([1, (TARGET_PORT >> 8) & 255, TARGET_PORT & 255, 2, target.length]), target,
-  ]);
-  const payload = Buffer.from('GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n');
-
   const logs = [];
   const realLog = console.log;
   console.log = (...a) => { logs.push(a.map((x) => (typeof x === 'string' ? x : String(x))).join(' ')); };
 
-  const chunks = [];
-  const req = new Request('https://panel.test/sg', {
-    headers: {
-      upgrade: 'websocket', connection: 'Upgrade',
-      'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==', 'sec-websocket-version': '13',
-      'user-agent': 'Go-http-client/1.1', host: 'panel.test',
-    },
-  });
-  const fetchP = handler.fetch(req, env, ctx);
-  fetchP.then((r) => { if (r && r.status !== 101) console.log('[TEST] پاسخِ ارتقا: HTTP ' + r.status); }).catch(() => {});
-  const pair = await waitFor(() => globalThis.__wsPair, 3000);
-  let text = '', all = Buffer.alloc(0);
-  if (pair) {
+  /* ── درایورِ نشست: کلاینت VLESS روی WebSocket، هدر در فریمِ اول و داده در
+     فریمِ بعدی — مثل کلاینت‌های واقعی. destAddr می‌تواند آی‌پی یا دامنه باشد؛
+     خودِ کلاینتِ واقعی هم برای اکثرِ ترافیک آی‌پی می‌فرستد (DNS را از تونل
+     گرفته) و همین مسیر با باگِ sslip.io می‌مرد. */
+  const runSession = async (destAddr, destPort, payloadBuf, expectRe) => {
+    const isV4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(destAddr);
+    const ab = isV4 ? Buffer.from(destAddr.split('.').map(Number)) : Buffer.from(destAddr);
+    /* ⚠️ قالبِ VLESS: atyp=1 (IPv4) ⇒ دقیقاً ۴ بایت بدونِ طول؛ atyp=2 (دامنه)
+       ⇒ یک بایتِ طول و بعد نام. اشتباه در همین یک بایت، مقصد را جابه‌جا
+       می‌کرد و کلِ تست بی‌معنا می‌شد. */
+    const addrField = isV4 ? ab : Buffer.concat([Buffer.from([ab.length]), ab]);
+    const header = Buffer.concat([
+      Buffer.from([0]), uuidToBytes(usr.uuid), Buffer.from([0]),
+      Buffer.from([1, (destPort >> 8) & 255, destPort & 255, isV4 ? 1 : 2]), addrField,
+    ]);
+    const chunks = [];
+    globalThis.__wsPair = null;
+    const req = new Request('https://panel.test/sg', {
+      headers: {
+        upgrade: 'websocket', connection: 'Upgrade',
+        'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==', 'sec-websocket-version': '13',
+        'user-agent': 'Go-http-client/1.1', host: 'panel.test',
+      },
+    });
+    const fetchP = handler.fetch(req, env, ctx);
+    fetchP.then((r) => { if (r && r.status !== 101) logs.push('[TEST] پاسخِ ارتقا: HTTP ' + r.status); }).catch(() => {});
+    const pair = await waitFor(() => globalThis.__wsPair, 3000);
+    if (!pair) return { ok: false, all: Buffer.alloc(0), text: '' };
     pair.client.addEventListener('message', (ev) => { chunks.push(Buffer.from(ev.data)); });
     await fetchP.catch(() => {});
-    /* مثل کلاینت‌های واقعی: هدرِ VLESS در فریمِ اول، داده در فریمِ بعدی */
     pair.client.send(new Uint8Array(header));
     await sleep(60);
-    pair.client.send(new Uint8Array(payload));
-    const got = await waitFor(() => {
-      all = Buffer.concat(chunks);
-      return /HTTP\/1\.[01] \d\d\d/.test(all.toString('latin1')) ? true : null;
-    }, 10000);
-    text = all.toString('latin1');
-    ok(got === true, 'پاسخِ HTTP از مسیرِ خروجی برگشت', JSON.stringify((text.split('\r\n')[0] || text.slice(0, 60)).trim()));
-  } else {
-    ok(false, 'وب‌سوکتِ نشست ساخته شد');
-  }
+    if (payloadBuf && payloadBuf.length) pair.client.send(new Uint8Array(payloadBuf));
+    await waitFor(() => expectRe.test(Buffer.concat(chunks).toString('latin1')) ? true : null, 8000);
+    const all = Buffer.concat(chunks);
+    return { ok: expectRe.test(all.toString('latin1')), all, text: all.toString('latin1') };
+  };
+
+  /* ── موردِ اصلی: مقصدِ محلی روی سرور خروجیِ واقعیِ Xray (reality+vision) ── */
+  globalThis.__shimLog = [];
+  const r0 = await runSession('127.0.0.1', TARGET_PORT,
+    Buffer.from('GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n'),
+    /HTTP\/1\.[01] \d\d\d/);
+  const text = r0.text, all = r0.all;
+  ok(r0.ok, 'پاسخِ HTTP از مسیرِ خروجی برگشت', JSON.stringify((text.split('\r\n')[0] || text.slice(0, 60)).trim()));
 
   console.log = realLog;
+  console.log('    بایت‌های نوشته‌شده روی سوکتِ خروجی (ترتیبِ نوشتن): ' + ((globalThis.__shimLog || []).join(', ') || '—'));
+  ok(targetHits > 0, 'درخواستِ کاربر واقعاً به مقصدِ نهایی رسید (سرورِ مقصد آن را دید)',
+    targetHits + ' درخواست • از اینجا معلوم می‌شود فرستادنِ *دادهٔ بعدی* از تونل کار کرد یا نه');
   ok(text.includes(BODY), 'بدنهٔ مقصد بی‌کم‌وکاست رسید', all.length + ' بایت');
   ok(all.length >= 2 && all[0] === 0 && all[1] === 0, 'هدرِ پاسخِ VLESS درست است', 'اولین بایت‌ها: ' + all.slice(0, 4).toString('hex'));
   ok(!text.includes('HTTP/1.1 502'), 'فالبکِ 502 (شکستِ مسیر) رخ نداد');
+
+  /* ═══════════ موردِ دوم: کدگذاریِ مقصد روی سیم ══════════════════════════
+     با یک خروجیِ VLESS خام (security=none) هدری که ورکر برای سرورِ خروجی
+     می‌سازد قابلِ خواندن است. اینجا دقیقاً همان باگی می‌شود که تجربهٔ کاربر را
+     خراب می‌کرد: مقصدِ آی‌پی به www.<ip>.sslip.io تبدیل می‌شد و سرورِ خروجی
+     (واقع در ایران) نمی‌توانست آن دامنه را resolve کند → صفر بایت ترافیک، در
+     حالی که کاوشِ دامنه‌ای پنل سبز بود. */
+  console.log('\n  ── کدگذاریِ مقصد برای سرورِ خروجی ──');
+  const stubLink = 'vless://' + STUB_UUID + '@127.0.0.1:' + STUB_PORT
+    + '?encryption=none&security=none&type=tcp#stub';
+  const addedStub = await api('/api/exits', { op: 'add', link: stubLink });
+  ok(addedStub.ok === true, 'خروجیِ سادهٔ VLESS (بدونِ رمزنگاری) افزوده شد',
+    addedStub.ok ? (addedStub.server.name + ' • ' + addedStub.server.transport + '/' + addedStub.server.security) : JSON.stringify(addedStub));
+  const stubId = addedStub.ok ? addedStub.server.id : '';
+  if (!stubId) { if (proc) proc.kill(); process.exit(1); }
+  await api('/api/exits/default', { mode: 'exit', exitId: stubId });
+
+  stubHdr = null;
+  const rIp = await runSession('9.9.9.9', 443, Buffer.from('PING'), /STUB-OK/);
+  await waitFor(() => stubHdr, 2500);
+  ok(!!stubHdr && stubHdr.atyp === 1 && stubHdr.addr === '9.9.9.9',
+    'مقصدِ آی‌پی به‌صورتِ *آی‌پی* به سرورِ خروجی می‌رود (بدونِ sslip.io)',
+    stubHdr ? ('atyp=' + stubHdr.atyp + ' addr=' + stubHdr.addr) : 'هدری نرسید');
+  ok(rIp.text.includes('STUB-OK'), 'داده از خروجیِ ساده رد شد (هدرِ پاسخ درست)', rIp.all.length + ' بایت');
+
+  stubHdr = null;
+  const rDom = await runSession('example.com', 443, Buffer.from('PING'), /STUB-OK/);
+  await waitFor(() => stubHdr, 2500);
+  ok(!!stubHdr && stubHdr.atyp === 2 && stubHdr.addr === 'example.com',
+    'مقصدِ دامنه‌ای به‌صورتِ دامنه فرستاده می‌شود', stubHdr ? ('atyp=' + stubHdr.atyp + ' addr=' + stubHdr.addr) : 'هدری نرسید');
+  ok(rDom.ok, 'مسیرِ دامنه‌ای هم ترافیک می‌دهد');
+
+  stubHdr = null;
+  const r80 = await runSession('9.9.9.9', 80, Buffer.from('GET / HTTP/1.0\r\n\r\n'), /STUB-OK/);
+  await waitFor(() => stubHdr, 2500);
+  ok(!!stubHdr && stubHdr.port === 80, 'پورت ۸۰ روی سرورِ واقعی رد نمی‌شود (ترافیکِ HTTPِ کاربر زنده می‌ماند)',
+    stubHdr ? ('port=' + stubHdr.port) : 'هدری نرسید');
+  ok(r80.ok, 'ترافیکِ پورت ۸۰ از خروجی عبور می‌کند');
+
+  /* ── سنجشِ قالبِ Vision روی سیم ────────────────────────────────────────
+     مسیرِ reality رمزنگاری‌شده است و از بیرون دیده نمی‌شود؛ با خروجیِ ساده و
+     flow=xtls-rprx-vision بایت‌های واقعیِ بلوک‌ها خوانده می‌شوند. اینجا معلوم
+     شد که در بستهٔ obfuscate‌شدهٔ مستقر روی کلاودفلر، بلوکِ اولِ Vision پدینگِ
+     بلند ندارد (`o.long` در کدِ obfuscate گم می‌شود) — همان چیزی که مسیرِ
+     داده را در نصبِ واقعی می‌کشت. */
+  const visLink = 'vless://' + STUB_VIS_UUID + '@127.0.0.1:' + STUB_PORT
+    + '?encryption=none&security=none&type=tcp&flow=xtls-rprx-vision#stub-vision';
+  const addedVis = await api('/api/exits', { op: 'add', link: visLink });
+  ok(addedVis.ok === true, 'خروجیِ ساده با flow=xtls-rprx-vision افزوده شد', addedVis.ok ? addedVis.server.flow : JSON.stringify(addedVis));
+  const visId = addedVis.ok ? addedVis.server.id : '';
+  if (visId) {
+    await api('/api/exits/default', { mode: 'exit', exitId: visId });
+    stubHdr = null; stubAfter = Buffer.alloc(0);
+    await runSession('9.9.9.9', 443, Buffer.from('GET /v HTTP/1.0\r\n\r\n'), /STUB-OK/);
+    await waitFor(() => stubAfter.length > 40, 2500);
+    const b = stubAfter;
+    /* بلوکِ اول: UUID(16) + cmd(1) + contentLen(2) + paddingLen(2) + content + padding */
+    const b1 = (b.length >= 21) ? { cmd: b[16], cLen: (b[17] << 8) | b[18], pLen: (b[19] << 8) | b[20], at: 21 } : null;
+    const uuidOk = b.length >= 16 && Buffer.from(b.slice(0, 16)).toString('hex') === String((addedVis.server || {}).uuid || '').replace(/-/g, '');
+    ok(uuidOk, 'بلوکِ اولِ Vision با UUIDِ کارفرما شروع می‌شود', b.slice(0, 16).toString('hex'));
+    ok(!!b1 && b1.pLen >= 500, 'بلوکِ اولِ Vision پدینگِ بلند دارد (مطابقِ XtlsPaddingِ Xray)',
+      b1 ? ('cmd=' + b1.cmd + ' contentLen=' + b1.cLen + ' paddingLen=' + b1.pLen) : 'بلوک کامل نرسید');
+    /* محتوا ممکن است داخلِ بلوکِ اول بیاید (وقتی هدر و دادهٔ کلاینت با هم برسند)
+       یا در بلوکِ بعدی — هر دو حالت درست است؛ مهم این است که در جایی از
+       استریمِ Vision دست‌نخورده باشد. */
+    let found = '';
+    if (b1) {
+      const c1 = b.slice(21, 21 + b1.cLen).toString('latin1');
+      if (c1.indexOf('GET /v') === 0) found = c1;
+      let off = b1.at + b1.cLen + b1.pLen;
+      for (let g = 0; g < 6 && off + 5 <= b.length; g++) {
+        const cLen = (b[off + 1] << 8) | b[off + 2], pLen = (b[off + 3] << 8) | b[off + 4];
+        const content = b.slice(off + 5, off + 5 + cLen).toString('latin1');
+        if (content.indexOf('GET /v') === 0) found = content;
+        off += 5 + cLen + pLen;
+      }
+    }
+    ok(!!found, 'دادهٔ کلاینت بی‌کم‌وکاست داخلِ بلوک‌های Vision می‌نشیند',
+      found ? JSON.stringify(found.slice(0, 24)) : ('کلِ بلوک‌ها: ' + b.length + ' بایت'))
+    await api('/api/exits/default', { mode: 'exit', exitId: stubId });
+  }
+
+  const wrapped = await api('/api/exits', { op: 'ipwrap', id: stubId, ipWrap: 'always' });
+  ok(wrapped.ok === true && wrapped.effective === true, 'تنظیمِ دستیِ پوششِ آی‌پی (always) پذیرفته شد', JSON.stringify(wrapped.ipWrap));
+  stubHdr = null;
+  await runSession('9.9.9.9', 443, Buffer.from('PING'), /STUB-OK/);
+  await waitFor(() => stubHdr, 2500);
+  ok(!!stubHdr && stubHdr.atyp === 2 && stubHdr.addr === 'www.9.9.9.9.sslip.io',
+    'با always، پوششِ sslip.io عیناً مثل قبل برمی‌گردد (سازگاری با خروجی‌های قبلی)',
+    stubHdr ? ('atyp=' + stubHdr.atyp + ' addr=' + stubHdr.addr) : 'هدری نرسید');
+  await api('/api/exits', { op: 'ipwrap', id: stubId, ipWrap: 'auto' });
+
+  /* پورتِ HTTP روی خروجیِ *روی کلاودفلر* باید هنوز رد شود (وگرنه آنجا
+     connect() قطعاً شکست می‌خورد و کاربر خطای مبهم می‌گیرد) */
+  const cfTest = await api('/api/exits/test', {
+    server: { name: 'cf-fronted', address: 'example.workers.dev', port: STUB_PORT, uuid: STUB_UUID, transport: 'ws', security: 'tls', sni: 'example.workers.dev' },
+    port: 80,
+  });
+  ok(cfTest.reachable === false && /HTTP/.test(String(cfTest.error || '')),
+    'پورت ۸۰ روی خروجیِ روی کلاودفلر همچنان با پیامِ گویا رد می‌شود',
+    JSON.stringify({ phase: cfTest.phase, error: cfTest.error }).slice(0, 140));
+
+  /* بازگشت به سرورِ خروجیِ واقعی برای ادامهٔ تست‌ها */
+  await api('/api/exits/default', { mode: 'exit', exitId });
 
   /* ── تستِ خودِ پنل: باید هندشیک *و* عبورِ داده را با هم بسنجد ──
      (قبلاً فقط سوکت باز می‌شد و تست سبز می‌ماند در حالی که ترافیک رد نمی‌شد) */
@@ -368,6 +543,8 @@ const jreq = (url, method, body, token) => new Request(url, {
   ok(t1.reachable === true && Number(t1.bytes) > 0, 'تستِ پنل: هندشیک + عبورِ داده',
     'reachable=' + t1.reachable + ' bytes=' + t1.bytes + ' head=' + JSON.stringify(t1.head || ''));
   ok(t1.reachable === true && !t1.phase, 'تستِ پنل بدونِ فازِ خطا سبز شد', String(t1.phase || '—'));
+  ok(t1.ipOk === true, 'تستِ پنل مقصدِ *آی‌پی* را هم می‌سنجد (نه فقط دامنه)',
+    'ipOk=' + t1.ipOk + ' ipBytes=' + t1.ipBytes + ' dest=' + JSON.stringify(t1.dest || ''));
 
   /* آزمونِ منفی: پیکربندیِ ناقصِ reality باید صریحاً «ناموفق» گزارش شود و
      هرگز سبز نشود. (pbk غلط معیارِ خوبی نیست: reality عمداً کلاینت را به

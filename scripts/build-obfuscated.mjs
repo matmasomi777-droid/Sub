@@ -137,6 +137,13 @@ const OBF_OPTIONS = {
   rotateStringArray: true,
   selfDefending: false,
   splitStrings: true,
+  /* ⚠️ transformObjectKeys خاموش شد (تستِ مسیرِ داده با _worker.obf.js):
+     با روشن بودنش، خواندنِ کلیدهای داینامیک (o.long/o.first در visionPadBlock)
+     در بستهٔ obfuscate‌شده زیر برخی شرایط گم می‌شد — یعنی مسیرِ XTLS-Vision
+     بی‌صدا خراب می‌شد (دادهٔ بعدیِ کاربر به سرورِ خروجی نمی‌رسید) در حالی که
+     همان کد از روی worker.js کامل درست کار می‌کرد. این گزینه فقط زیباییِ
+     obfuscation است و ارزشِ شکستنِ مسیرِ ترافیک را ندارد. */
+  transformObjectKeys: false,
   splitStringsChunkLength: 4,
   stringArray: true,
   stringArrayCallsTransform: true,
@@ -149,7 +156,6 @@ const OBF_OPTIONS = {
   stringArrayWrappersParametersMaxCount: 4,
   stringArrayWrappersType: 'function',
   stringArrayThreshold: 1,
-  transformObjectKeys: true,
   unicodeEscapeSequence: true,
 };
 

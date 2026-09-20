@@ -668,16 +668,25 @@
     const r = EX.test;
     if (!r || !r.name) return '';
     const good = !!r.reachable;
-    /* ⚠️ «سبز» یعنی هندشیک *و* عبورِ داده — نه فقط باز شدنِ سوکت. باگی که
-       ترافیک را عبور نمی‌داد، تست را سبز نگه می‌داشت و همین گمراه‌کننده بود. */
+    /* ⚠️ «سبز» یعنی هندشیک *و* عبورِ داده — آن هم با **هر دو شکلِ مقصد**
+       (دامنه و آی‌پی). باگی که ترافیک را عبور نمی‌داد، تست را سبز نگه می‌داشت و
+       همین گمراه‌کننده بود؛ اکنون اختلافِ دامنه/آی‌پی هم صریح نشان داده می‌شود. */
+    const title = good ? 'سالم (هندشیک + عبورِ داده)'
+      : (r.phase === 'traffic-ip' ? 'با مقصدِ دامنه‌ای سالم است ولی با آی‌پی نه — کانفیگ‌ها وصل نمی‌شوند'
+        : (r.phase === 'traffic' ? 'هندشیک شد ولی داده رد نشد' : 'اتصال برقرار نشد'));
+    const ipLine = (r.ipOk === true || r.ipOk === false)
+      ? (' • مقصدِ آی‌پی: ' + (r.ipOk ? 'سالم (' + fa(Number(r.ipBytes) || 0) + ' بایت)' : 'ناموفق'))
+      : '';
     return '<div class="row-item" style="margin-top:8px">' + icon(good ? 'fa-circle-check' : 'fa-circle-xmark') +
-      '<div class="grow"><b>' + esc(r.name) + ' — ' + (good ? 'سالم (هندشیک + عبورِ داده)' : (r.phase === 'traffic' ? 'هندشیک شد ولی داده رد نشد' : 'اتصال برقرار نشد')) + '</b>' +
+      '<div class="grow"><b>' + esc(r.name) + ' — ' + title + '</b>' +
       '<div class="cell-sub">' + (good ? ('پاسخِ واقعی: ' + fa(Number(r.bytes) || 0) + ' بایت'
           + (r.head ? ' • <span class="mono">' + esc(r.head) + '</span>' : '')
+          + ipLine
           + ' • کل ' + fa(Number(r.ms) || 0) + ' ms' + (r.handshakeMs ? ' (هندشیک ' + fa(Number(r.handshakeMs)) + ' ms)' : ''))
-        : ('علت: ' + esc(r.error || 'نامشخص') + (r.handshakeMs ? ' • هندشیک ' + fa(Number(r.handshakeMs)) + ' ms موفق بود' : '')))
+        : ('علت: ' + esc(r.error || 'نامشخص') + ipLine + (r.handshakeMs ? ' • هندشیک ' + fa(Number(r.handshakeMs)) + ' ms موفق بود' : '')))
       + (r.ip ? ' • آی‌پیِ خروجی: <span class="mono">' + esc(r.ip) + '</span>' : '')
-      + (r.transport ? ' • ' + esc(r.transport) : '') + (r.security ? ' • ' + esc(r.security) : '') + '</div></div>' +
+      + (r.transport ? ' • ' + esc(r.transport) : '') + (r.security ? ' • ' + esc(r.security) : '') + '</div>'
+      + (r.note ? '<div class="cell-sub">' + icon('fa-circle-info') + ' ' + esc(r.note) + '</div>' : '') + '</div>' +
       '<span class="badge ' + (good ? 'ok' : 'bad') + '">' + (good ? fa(Number(r.ms) || 0) + ' ms' : 'ناموفق') + '</span></div>';
   };
   const exitsHtml = (d) => {
@@ -745,7 +754,26 @@
             : '') +
           '</select></div>').join('') + '</div>'
       : '';
-    return master + strictRow + offNote + defSel + list + exTestHtml() +
+    /* ═══ تشخیصِ زندهٔ خروجی — «چرا کانفیگِ کاربر وصل نمی‌شود» ═══════════════
+       حالتِ سخت‌گیر شکست را بی‌صدا می‌بندد؛ بدونِ این بخش، کاربر فقط
+       «کانفیگ کار نمی‌کند» می‌دید و هیچ سرنخی در پنل نبود. حالا آخرین مقصدِ
+       درخواستی، سرورِ انتخابی و علتِ شکست همان‌جا نوشته می‌شود. */
+    const exSt = d.stats || {};
+    const any = (Number(exSt.tunnels) || 0) + (Number(exSt.fallbacks) || 0) + (Number(exSt.strictCloses) || 0);
+    const diag = '<div class="row-item" style="margin-top:10px">' + icon('fa-stethoscope') +
+      '<div class="grow"><b>تشخیصِ مسیرِ خروجی (از زمانِ بالا آمدنِ این ورکر)</b>' +
+      '<div class="cell-sub">تونلِ سالم: <b>' + fa(Number(exSt.tunnels) || 0) + '</b>'
+      + ' • بازگشت به مستقیم: ' + fa(Number(exSt.fallbacks) || 0)
+      + ' • بستنِ سخت‌گیر: ' + fa(Number(exSt.strictCloses) || 0) + '</div>'
+      + (exSt.lastDest ? '<div class="cell-sub">آخرین اتصال: مقصد <span class="mono">' + esc(exSt.lastDest) + '</span>'
+          + (exSt.lastExit ? ' • سرور «' + esc(exSt.lastExit) + '»' : '') + (exSt.lastUser ? ' • کاربر ' + esc(exSt.lastUser) : '')
+          + (exSt.tunnels && !exSt.lastFail ? ' • سالم' : '') + '</div>' : '')
+      + (exSt.lastError ? '<div class="cell-sub">آخرین خطا: ' + esc(String(exSt.lastError).slice(0, 200)) + '</div>' : '')
+      + (any === 0
+        ? '<div class="cell-sub">هنوز هیچ اتصالی از مسیرِ خروجی رد نشده است — اگر کلاینت وصل نمی‌شود اما اینجا هیچ شکستی نیست، یعنی درخواستِ کاربر به مسیرِ خروجی نمی‌رسد (انتخابِ خروجی برای همان کانفیگ یا روشن‌بودن «مسیرِ خروجی» را بررسی کنید).</div>'
+        : (exSt.lastFail ? '<div class="cell-sub">علتِ آخرین شکست: ' + esc(String(exSt.lastFail).slice(0, 200)) + '</div>' : ''))
+      + '</div><button class="btn sm" data-act="exit-reload">' + icon('fa-rotate') + ' بارخوانی</button></div>';
+    return master + strictRow + offNote + defSel + diag + list + exTestHtml() +
       (EX.form ? exitFormHtml(EX.form) : '') + per;
   };
   async function exLoad() {

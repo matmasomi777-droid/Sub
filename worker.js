@@ -69,6 +69,59 @@ function dialableAddr(addr) {
   return h;
 }
 
+/* ═══ کدام محدودیت به کدام سرورِ خروجی مربوط است؟ ═══════════════════════════
+   محدودیت‌های connect() کلاودفلر (IP لخت ممنوع • پورتِ ۸۰ ممنوع) مالِ **خودِ
+   سرورِ خروجی** است، نه هر سرورِ خروجی‌ای. اگر آن‌ها را به یک سرورِ واقعی
+   (Xray روی VPS، transport=raw) هم تحمیل کنیم، ترافیک بی‌دلیل می‌میرد:
+     • مقصدِ IP به www.<ip>.sslip.io تبدیل می‌شد، پس سرورِ خروجی مجبور بود
+       sslip.io را resolve کند؛ روی سرورِ داخلِ ایران این دامنه فیلتر/مسدود است
+       و هیچ داده‌ای رد نمی‌شد — در حالی که «تستِ پنل» مقصدش یک دامنه است
+       (www.cloudflare.com) و سبز می‌ماند. یعنی تست سبز، کانفیگ مرده.
+     • پورت ۸۰/۸۰۸۰ صریحاً رد می‌شد، پس کلِ HTTPِ آن کانفیگ می‌مرد.
+   حالا این تبدیل/ممنوعیت فقط برای خروجی‌های «روی کلاودفلر» اعمال می‌شود.
+   ipWrap هر سرور می‌تواند دستی override شود (auto|always|never). */
+const CF_NET_CIDRS = [
+  '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22',
+  '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20',
+  '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+  '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+];
+function cfNum4(s) {
+  const p = String(s || '').split('.').map(Number);
+  if (p.length !== 4 || p.some((x) => !(x >= 0 && x <= 255))) return -1;
+  return (((p[0] * 256 + p[1]) * 256) + p[2]) * 256 + p[3];
+}
+function isCloudflareIp(ip) {
+  const n = cfNum4(ip);
+  if (n < 0) return false;
+  for (const c of CF_NET_CIDRS) {
+    const [base, bitsRaw] = String(c).split('/');
+    const bits = Number(bitsRaw);
+    const b = cfNum4(base);
+    if (b < 0 || !(bits > 0 && bits <= 32)) continue;
+    const mask = bits === 32 ? 0xffffffff : ((0xffffffff << (32 - bits)) >>> 0);
+    if (((n & mask) >>> 0) === ((b & mask) >>> 0)) return true;
+  }
+  return false;
+}
+/* آیا سرورِ خروجی خودش روی کلاودفلر اجرا می‌شود؟ (only این‌ها محدودیت دارند)
+   – ws/xhttp ⇒ سرورِ خروجی یک ورکر است ⇒ بله.
+   – raw/tcp   ⇒ سوکتِ خام به یک سرورِ واقعی (Xray) ⇒ فقط اگر آدرسش روی
+     رنج‌های کلاودفلر باشد (پراکسیِ TCP کلادفلر). */
+function exitCfFronted(srv) {
+  if (!srv) return false;
+  const t = String(srv.transport || 'ws').toLowerCase();
+  if (t === 'raw' || t === 'tcp') return isCloudflareIp(srv.resolvedIp || srv.address);
+  return true;
+}
+/* پوشاندنِ مقصدِ IP با sslip.io؟ auto ⇒ فقط وقتی سرورِ خروجی روی کلاودفلر است */
+function exitIpWrap(srv) {
+  const m = String((srv && srv.ipWrap) || '').toLowerCase();
+  if (m === 'always' || m === 'on' || m === '1' || m === 'true') return true;
+  if (m === 'never' || m === 'off' || m === '0' || m === 'false') return false;
+  return exitCfFronted(srv);
+}
+
 /** آدرسِ سرورِ خروجی برای connect() — باید دامنه باشد؛ IP مستقیم ممنوع است.
  *  IP با sslip.io پوشانده می‌شود تا خطای «HTTP-based service» نگیریم.
  *  (در سمتِ سرورِ خروجی هم این یعنی SNI/Host درست می‌ماند چون آدرسِ واقعی
@@ -82,9 +135,9 @@ function exitDialHost(srv) {
    BUILD: مُهرِ زمانِ بیلد (UTC)
    BUILD_REV: اثرِ انگشتِ sha256 محتوای worker.js + ui — معیارِ دقیقِ «نسخه‌ی
    تازه» در بررسیِ آپدیت است (بدونِ تکیه بر تاریخ؛ چند پوش در یک روز هم دیده می‌شود) */
-const VERSION = '3.0.4';
-const BUILD = '2026.09.20-15:44';
-const BUILD_REV = '52ec45f8ebd3b8f07ec341d9d0501ead45d6c7dad8b3b4a57657f5fac157e93e';
+const VERSION = '3.0.6';
+const BUILD = '2026.09.20-17:03';
+const BUILD_REV = 'b9981daf7dcf6a207c9d23de93270f68ba3f76529f2bd1cbbca4884e2261ee4b';
 const BOOT = Date.now();
 /* شاخه‌ی پیش‌فرض برای بررسیِ نسخه */
 const UPD_DEFAULT_BRANCH = 'main';
@@ -6420,6 +6473,28 @@ async function apiHandler(req, env, url, ctx) {
       return json({ ok: true, op, id, ip, resolvedAt: srv.resolvedAt, msg: 'آی‌پیِ «' + srv.name + '» حل شد: ' + ip });
     }
 
+    /* کنترلِ پوشاندنِ مقصدِ آی‌پی با sslip.io — فقط برای خروجی‌های *روی
+       کلاودفلر* لازم است (connect() آن‌جا IP لخت را رد می‌کند). اعمالش روی یک
+       سرورِ واقعی یعنی سرور مجبور می‌شود sslip.io را resolve کند؛ اگر DNS آن
+       سرور فیلتر باشد هیچ دادۀای رد نمی‌شود — دقیقاً «تست سبز، کانفیگ مرده».
+       پیش‌فرض 'auto' بر اساس تشخیصِ خودکار تصمیم می‌گیرد. */
+    if (op === 'ipwrap') {
+      const id = String((b && b.id) || '').trim();
+      const srv = exitById(st, id);
+      if (!srv) return json({ ok: false, error: 'سرور خروجی با این شناسه پیدا نشد' }, 404);
+      const want = exitIpWrapOf(b.ipWrap);
+      srv.ipWrap = want;
+      const eff = exitIpWrap(srv);
+      addLog(st, 'info', 'core', 'تنظیمِ پوششِ آی‌پیِ مقصدِ خروجی',
+        srv.name + ' → ' + (want || 'auto') + (eff ? ' (sslip.io فعال)' : ' (آی‌پیِ مستقیم)'));
+      await save(env, st);
+      return json({
+        ok: true, op, id, ipWrap: want, effective: eff, cfFronted: exitCfFronted(srv), servers: ex.servers,
+        msg: 'پوششِ مقصدِ آی‌پی برای «' + srv.name + '»: ' + (want || 'auto') + ' → '
+          + (eff ? 'مقصدهای آی‌پی به sslip.io تبدیل می‌شوند' : 'آی‌پی مستقیم به سرورِ خروجی فرستاده می‌شود'),
+      });
+    }
+
     /* کلیدِ سراسری: خروجی‌ها اصلاً در مسیرِ تونل به کار بروند یا نه؟
        خاموش = فهرستِ سرورها دست‌نخورده می‌ماند اما همه‌ی کانفیگ‌ها مستقیم می‌روند. */
     if (op === 'master') {
@@ -6514,20 +6589,26 @@ async function apiHandler(req, env, url, ctx) {
       EXIT_IP_LAST.set(srv.id, Date.now());
     }
     addLog(st, r.ok ? 'success' : 'warn', 'core', 'تست سرور خروجی',
-      srv.name + ' • ' + (r.ok ? fa(r.ms) + ' میلی‌ثانیه (' + fa(r.bytes || 0) + ' بایت از تونل)' : (r.error || 'ناموفق')) + (ip ? ' • ' + ip : ''));
+      srv.name + ' • ' + (r.ok
+        ? fa(r.ms) + ' میلی‌ثانیه (' + fa(r.bytes || 0) + ' بایت از تونل • آی‌پی: ' + (r.ip && r.ip.ok ? 'سالم' : '—') + ')'
+        : (r.error || 'ناموفق')) + (ip ? ' • ' + ip : ''));
     await save(env, st);
     return json({
       ok: true, id: srv.id, name: srv.name,
       reachable: r.ok, ms: r.ms, handshakeMs: r.handshakeMs || 0, bytes: r.bytes || 0, head: r.head || '',
+      dest: r.dest || '', note: r.note || '',
+      ipOk: !!(r.ip && r.ip.ok), ipBytes: (r.ip && r.ip.bytes) || 0, ipHead: (r.ip && r.ip.head) || '',
       phase: r.phase || '', transport: r.transport, security: r.security,
       error: r.error,
       ip: ip || srv.resolvedIp || '',
       resolvedAt: srv.resolvedAt || 0,
       msg: r.ok
-        ? '«' + srv.name + '» سالم است — هندشیک و عبورِ داده هر دو در ' + fa(r.ms) + ' میلی‌ثانیه (' + fa(r.bytes || 0) + ' بایت پاسخِ واقعی)'
-        : (r.phase === 'traffic'
-          ? '«' + srv.name + '» هندشیک را رد کرد ولی داده‌ای از تونل عبور نکرد — با این سرور، کانفیگ‌ها وصل نمی‌شوند: ' + (r.error || '')
-          : 'اتصال به «' + srv.name + '» برقرار نشد: ' + (r.error || 'علت نامشخص')),
+        ? '«' + srv.name + '» سالم است — هندشیک و عبورِ داده هر دو در ' + fa(r.ms) + ' میلی‌ثانیه (' + fa(r.bytes || 0) + ' بایت پاسخِ واقعی، مقصدِ دامنه و آی‌پی)'
+        : (r.phase === 'traffic-ip'
+          ? '«' + srv.name + '» با مقصدِ دامنه‌ای کار می‌کند ولی با مقصدِ آی‌پی نه — کانفیگ‌ها با این سرور وصل نمی‌شوند: ' + (r.error || '')
+          : r.phase === 'traffic'
+            ? '«' + srv.name + '» هندشیک را رد کرد ولی داده‌ای از تونل عبور نکرد — با این سرور، کانفیگ‌ها وصل نمی‌شوند: ' + (r.error || '')
+            : 'اتصال به «' + srv.name + '» برقرار نشد: ' + (r.error || 'علت نامشخص')),
     });
   }
 
@@ -7911,8 +7992,32 @@ const EXIT_TRANSPORTS = ['raw', 'ws', 'grpc'];
 
 /* آخرین خطا و آمار — فقط برای گزارش؛ هیچ تایمری راه نمی‌افتد */
 let EXIT_LAST_ERR = '';
-const EXIT_STATS = { tunnels: 0, fallbacks: 0, strictCloses: 0, lastMs: 0, lastAt: 0 };
+const EXIT_STATS = {
+  tunnels: 0, fallbacks: 0, strictCloses: 0, lastMs: 0, lastAt: 0,
+  /* تشخیصی: چون حالتِ سخت‌گیر شکست را *بی‌صدا* می‌بندد، باید معلوم باشد
+     «آخرین اتصالِ کاربر چه مقصدی خواست و کدام سرورِ خروجی شکست خورد» */
+  lastDest: '', lastExit: '', lastUser: '', lastFail: '',
+};
 const exitNote = (msg) => { EXIT_LAST_ERR = String(msg).slice(0, 300); EXIT_STATS.lastAt = Date.now(); };
+
+/* ═══ ثبتِ شکستِ خروجی در لاگِ پنل ══════════════════════════════════════════
+   قبلاً شکستِ خروجی فقط در console.log و حافظه‌ی isolate می‌ماند؛ کاربر
+   «کانفیگ کار نمی‌کند» می‌دید هود تستِ پنل سبز بود و هیچ‌جا نوشته نمی‌شد چرا.
+   حالا اولین شکستِ هر خروجی در هر ۳۰ ثانیه — با مقصدِ درخواستیِ کاربر و علتِ
+   دقیق — در لاگِ پنل می‌نشیند (ضدِ طوفانِ نوشتنِ D1). */
+const EXIT_FAIL_AT = new Map();
+function exitLogFail(env, st, ctx, srvName, dest, err) {
+  const key = String(srvName || '?');
+  const now = Date.now();
+  if (now - (EXIT_FAIL_AT.get(key) || 0) < 30000) return;
+  EXIT_FAIL_AT.set(key, now);
+  try {
+    addLog(st, 'warn', 'exit', 'شکستِ سرور خروجی',
+      '«' + key + '» • مقصدِ درخواستی: ' + String(dest || '?') + ' • علت: ' + String(err || '?').slice(0, 180));
+  } catch (e) {}
+  const p = save(env, st);
+  try { if (ctx && ctx.waitUntil) ctx.waitUntil(p); else p.catch(() => {}); } catch (e) {}
+}
 
 /* آمارِ تلاشِ ProxyIP/NAT64 در مسیرِ تونل — فقط برای گزارش در پنل */
 const PROXY_STATS = { attempts: 0, connects: 0, fails: 0, lastAt: 0, lastError: '' };
@@ -7927,7 +8032,10 @@ const toU8 = (d) => {
 };
 
 const EXIT_FIELDS = ['name', 'label', 'address', 'port', 'uuid', 'flow', 'security', 'transport',
-  'path', 'serviceName', 'sni', 'host', 'enabled', 'pbk', 'sid', 'spx', 'resolvedIp', 'resolvedAt'];
+  'path', 'serviceName', 'sni', 'host', 'enabled', 'pbk', 'sid', 'spx', 'resolvedIp', 'resolvedAt', 'ipWrap'];
+/* ipWrap: پوشاندنِ مقصدِ IP با sslip.io — 'auto' با تشخیصِ «روی کلاودفلر بودن» */
+const EXIT_IPWRAP = ['', 'auto', 'always', 'never'];
+const exitIpWrapOf = (v) => (EXIT_IPWRAP.includes(String(v || '').trim().toLowerCase()) ? String(v || '').trim().toLowerCase() : '');
 
 /* اعتبارسنجیِ پارامترهای reality — base64url بدونِ padding، دقیقاً ۳۲ بایت (کلیدِ X25519 سرور) */
 function realityPbkOk(pbk) {
@@ -7996,6 +8104,8 @@ function normalizeExit(raw, keepId) {
     /* آی‌پیِ حل‌شده با DoH — فقط ذخیره/نمایش، هرگز از لینک خوانده نمی‌شود */
     resolvedIp: String(o.resolvedIp || '').trim(),
     resolvedAt: Math.max(0, Math.round(Number(o.resolvedAt) || 0)),
+    /* پوشاندنِ مقصدِ IP با sslip.io — '' یعنی خودکار (فقط برای خروجیِ روی کلادفلر) */
+    ipWrap: exitIpWrapOf(o.ipWrap),
     params,
   };
 }
@@ -8269,9 +8379,11 @@ function vlessAddons(flow) {
  *  هم همان است: مقصد ← سرورِ خروجی ← ورکرِ ما ← کاربر. */
 function vlessRequestHeader(srv, addr, port, payload) {
   const p2 = Math.max(0, Math.min(65535, Math.round(Number(port) || 0)));
-  if (p2 === 80 || p2 === 8080) {
-    /* پورت‌های HTTP از داخل ورکرِ کلاودفلر ممنوع‌اند — خطای شفافِ فارسی به‌جای
-       خطای مبهمِ connect؛ مسیرِ مستقیم (fallback) خودش httpFallback دارد. */
+  /* ⚠️ ممنوعیتِ پورتِ HTTP مالِ *سرورِ خروجیِ روی کلاودفلر* است (connect()
+     آنجا به پورتِ ۸۰ اجازه نمی‌دهد). برای یک سرورِ واقعی (Xray روی VPS) این
+     پورت کاملاً مجاز است و ردکردنش یعنی «کلِ HTTPِ کانفیگ می‌مرد، در حالی
+     که تستِ پنل سبز است». */
+  if ((p2 === 80 || p2 === 8080) && exitCfFronted(srv)) {
     throw new Error('پورتِ ' + p2 + ' (HTTP) از سرورِ خروجیِ روی کلاودفلر قابل استفاده نیست — فقط پورت‌های TLS مثل ۴۴۳');
   }
   /* ⚠️ آدرسِ داخلِ هدر باید از «target» ساخته شود نه خودِ addr:
@@ -8279,7 +8391,12 @@ function vlessRequestHeader(srv, addr, port, payload) {
      connect() کند. قبلاً target محاسبه می‌شد ولی هرگز استفاده نمی‌شد و هدر
      با IP لخت (atyp=1) ساخته می‌شد — سرورِ خروجیِ بدونِ wrapper به خطای
      «HTTP-based service» می‌خورد و chain کار نمی‌کرد. */
-  const target = dialableAddr(addr);
+  /* مقصدِ IP فقط برای خروجیِ روی کلاودفلر به sslip.io تبدیل می‌شود؛ برای
+     سرورِ واقعی، خودِ IP می‌رود تا سرور خروجی مستقیم وصل شود (بدونِ وابستگی
+     به DNSِ سومی و بدونِ فیلترشدنِ sslip.io). */
+  const target = exitIpWrap(srv)
+    ? dialableAddr(addr)
+    : String(addr || '').trim().replace(/^\[/, '').replace(/\]$/, '');
   const hex = String(srv.uuid || '').replace(/-/g, '');
   const uuidBytes = new Uint8Array(16);
   for (let i = 0; i < 16; i++) {
@@ -9577,7 +9694,7 @@ const EXIT_PROBE_HOST = 'www.cloudflare.com';
    همین «بایتِ برگشتی» اثباتِ عبورِ داده در هر دو جهت است — بدونِ این‌که لازم
    باشد هندشیکِ TLS را کامل کنیم. */
 const EXIT_PROBE_TLS = new Uint8Array([0x16, 0x03, 0x01, 0x00, 0x05, 0x01, 0x00, 0x00, 0x01, 0x00]);
-async function testExit(srv, opt) {
+async function probeExit(srv, opt) {
   const issues = exitIssues(srv);
   if (issues.length) return { ok: false, ms: null, error: issues[0] };
   const timeoutMs = Math.max(500, Math.min(30000, Number((opt && opt.timeoutMs) || 8000)));
@@ -9636,13 +9753,44 @@ async function testExit(srv, opt) {
   EXIT_STATS.lastMs = ms;
   if (!trafficOk) {
     return {
-      ok: false, ms, handshakeMs, bytes, transport: srv.transport, security: srv.security, phase: 'traffic',
+      ok: false, ms, handshakeMs, bytes, dest: host, transport: srv.transport, security: srv.security, phase: 'traffic',
       error: 'هندشیک برقرار شد ولی مقصد به کاوشِ داده پاسخ نداد — مسیرِ داده بعد از هندشیک خراب است'
         + (bytes ? ' (فقط ' + bytes + ' بایت آمد که alertِ مقصد نبود)' : '')
         + (readErr ? ' • ' + readErr : ''),
     };
   }
-  return { ok: true, ms, handshakeMs, bytes, head, transport: srv.transport, security: srv.security, error: null };
+  return { ok: true, ms, handshakeMs, bytes, head, dest: host, transport: srv.transport, security: srv.security, error: null };
+}
+
+/* ⚠️ کاوشِ دومی با مقصدِ **آی‌پی** لازم است: کلاینت‌های واقعی اکثرِ ترافیک را با
+   IP می‌فرستند (DNSِ خودشان از تونل رفته و آی‌پی گرفته)، و همان مسیر بود که با
+   پوششِ نادرستِ sslip.io می‌شکست در حالی که کاوشِ دامنه‌ای (www.cloudflare.com)
+   سبز می‌ماند — یعنی «تستِ پنل سبز، کانفیگِ کاربر مرده». از این پس دامنه *و*
+   آی‌پی هر دو سنجیده می‌شوند و اختلافشان صریح گزارش می‌شود. */
+const EXIT_PROBE_IP = '1.1.1.1';
+function exitCfNote(srv) {
+  return exitCfFronted(srv)
+    ? 'سرورِ خروجی روی کلاودفلر شناسایی شد (محدودیت‌های آی‌پی/پورت اعمال می‌شود)'
+    : 'سرورِ خروجی یک سرورِ واقعی است (بدونِ محدودیتِ آی‌پی/پورتِ کلاودفلر)';
+}
+async function testExit(srv, opt) {
+  const o = opt || {};
+  const custom = !!(o.addr || o.port);
+  const main = await probeExit(srv, o);
+  const out = { ...main };
+  if (o.noTraffic || custom) return out;
+  const ip = await probeExit(srv, { addr: EXIT_PROBE_IP, port: 443, timeoutMs: o.timeoutMs });
+  out.ip = { ok: !!ip.ok, bytes: ip.bytes || 0, head: ip.head || '', phase: ip.phase || '', error: ip.error || '' };
+  out.note = exitCfNote(srv);
+  if (main.ok && !ip.ok) {
+    return {
+      ...out,
+      ok: false,
+      phase: 'traffic-ip',
+      error: 'مقصدِ دامنه‌ای سالم است ولی مقصدِ آی‌پی نه — کانفیگ‌های واقعی (که DNS را از تونل می‌گیرند و با آی‌پی وصل می‌شوند) کار نمی‌کنند: ' + (ip.error || ''),
+    };
+  }
+  return out;
 }
 
 async function tunnelHandler(request, env, st, ctx) {
@@ -10235,6 +10383,9 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
           sock = up;
           EXIT_STATS.tunnels++;
           EXIT_STATS.lastAt = Date.now();
+          EXIT_STATS.lastDest = String(info.addr || '') + ':' + String(info.port || '');
+          EXIT_STATS.lastExit = ex.server.name || ex.server.id || '';
+          EXIT_STATS.lastUser = (user && user.name) || '';
           /* تازه‌سازیِ آی‌پیِ حل‌شده‌ی سرور خروجی در پس‌زمینه (DoH) —
              در مسیرِ ترافیک منتظر نمی‌ماند و هرگز خطا نمی‌دهد */
           try { ctx.waitUntil(refreshExitIp(env, st, ex.server)); } catch (e2) {}
@@ -10246,8 +10397,16 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
           return;
         } catch (e) {
           EXIT_STATS.fallbacks++;
-          exitNote('[' + ex.server.name + '] ' + String((e && e.message) || e));
-          try { console.log('[SG] exit failed:', EXIT_LAST_ERR); } catch (e2) {}
+          const reason = String((e && e.message) || e);
+          const dest = String(info.addr || '') + ':' + String(info.port || '');
+          exitNote('[' + ex.server.name + '] ' + reason);
+          EXIT_STATS.lastDest = dest;
+          EXIT_STATS.lastExit = ex.server.name || ex.server.id || '';
+          EXIT_STATS.lastUser = (user && user.name) || '';
+          EXIT_STATS.lastFail = reason.slice(0, 200);
+          /* شکست در لاگِ پنل — وگرنه حالتِ سخت‌گیر بی‌صدا اتصال را می‌بندد */
+          exitLogFail(env, st, ctx, ex.server.name, dest, reason);
+          try { console.log('[SG] exit failed:', dest, ex.server.name, reason); } catch (e2) {}
           sock = null;
           if (exitsStrict(st)) {
             /* حالتِ سخت‌گیر: شکستِ سرور خروجی به مستقیم برنمی‌گردد —
@@ -10262,7 +10421,10 @@ async function session(ws, early, st, env, ctx, clientIp, boot, selfHost, connMe
         /* کانفیگ به سرور خروجی بسته شده ولی سرور در دسترس نیست (غیرفعال/حذف) —
            حالتِ سخت‌گیر: به‌جای نشتِ بی‌صدای مستقیم، اتصال بسته می‌شود */
         EXIT_STATS.strictCloses++;
+        EXIT_STATS.lastDest = String(info.addr || '') + ':' + String(info.port || '');
+        EXIT_STATS.lastFail = 'strict — ' + ex.reason;
         exitNote('strict — ' + ex.reason);
+        exitLogFail(env, st, ctx, 'strict', EXIT_STATS.lastDest, ex.reason);
         try { await finish(); } catch (e3) {}
         return;
       }

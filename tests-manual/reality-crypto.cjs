@@ -70,8 +70,16 @@ const dialableAddrStub = (addr) => {
   if (/^(\d{1,3}\.){3}\d{1,3}$/.test(h)) return 'www.' + h + '.sslip.io';
   return h;
 };
-const V = new Function('toU8', 'dialableAddr', 'TextEncoder', 'rlConcat', 'rlEq', vbsrc +
-  '\n;return { vlessAddons, vlessRequestHeader, visionPadBlock, vlessResponseParser, vlessClientWrap };'
+/* ── ۳ب-۲) محدودیت‌های «خروجیِ روی کلاودفلر» — همان کدِ ورکر (نه کپی):
+   isCloudflareIp / exitCfFronted / exitIpWrap. vlessRequestHeader به این‌ها
+   تکیه دارد تا مقصدِ آی‌پی و پورتِ ۸۰ را فقط برای خروجی‌های روی کلاودفلر
+   محدود کند (روی سرورِ واقعی این محدودیت‌ها ترافیک را می‌کشتند). */
+const CW0 = SRC.indexOf('const CF_NET_CIDRS = [');
+const CW1 = SRC.indexOf('/** آدرسِ سرورِ خروجی برای connect()');
+if (CW0 < 0 || CW1 < CW0) { console.error('FATAL: بلوکِ تشخیصِ خروجیِ کلاودفلر پیدا نشد'); process.exit(1); }
+const cfwrapSrc = SRC.slice(CW0, CW1);
+const V = new Function('toU8', 'dialableAddr', 'TextEncoder', 'rlConcat', 'rlEq', cfwrapSrc + vbsrc +
+  '\n;return { vlessAddons, vlessRequestHeader, visionPadBlock, vlessResponseParser, vlessClientWrap, exitCfFronted, exitIpWrap, isCloudflareIp };'
 )(toU8, dialableAddrStub, TextEncoder, M.rlConcat, M.rlEq);
 
 /* ── ۳ج) exitToLink از پنل (round-trip) ── */
@@ -250,6 +258,38 @@ const refSha = (d) => createHash('sha256').update(Buffer.from(d)).digest();
     ok(b[36] === 1 && ((b[37] << 8) | b[38]) === 443, 'فرمان/پورت بعد از addons درست‌اند');
     const h0 = Buffer.from(V.vlessRequestHeader({ uuid: '11111111-1111-4111-8111-111111111111', flow: '' }, '1.2.3.4', 443, new Uint8Array(0)));
     ok(h0[17] === 0 && h0[18] === 1, 'بدونِ flow، addons خالی است');
+  }
+
+  /* ═══ ۴پ) محدودیت‌ها فقط مالِ خروجیِ «روی کلاودفلر» ═══════════════════════
+     این بخش جلوی رگرسیونِ گران‌قیمتی را می‌گیرد: اعمالِ محدودیتِ connect()
+     کلاودفلر روی یک سرورِ واقعی (Xray روی VPS) یعنی مقصدِ آی‌پی به
+     www.<ip>.sslip.io تبدیل می‌شود و سرور مجبور است sslip.io را resolve کند
+     (روی سرورِ داخل ایران معمولاً فیلتر) → هیچ داده‌ای رد نمی‌شود در حالی که
+     کاوشِ دامنه‌ای پنل سبز می‌ماند: «تست سبز، کانفیگ مرده». */
+  console.log('== ۴پ) محدودیتِ IP/پورت فقط برای خروجیِ روی کلاودفلر ==');
+  {
+    const realSrv = { uuid: '11111111-1111-4111-8111-111111111111', flow: '', transport: 'raw', security: 'reality', resolvedIp: '23.191.200.206' };
+    const cfSrv = { uuid: '11111111-1111-4111-8111-111111111111', flow: '', transport: 'ws', security: 'tls', resolvedIp: '' };
+    ok(V.isCloudflareIp('104.16.1.5') === true && V.isCloudflareIp('23.191.200.206') === false, 'تشخیصِ آی‌پیِ کلاودفلر درست است');
+    ok(V.exitCfFronted(realSrv) === false, 'خروجیِ raw روی سرورِ واقعی ⇒ محدودیت‌ها اعمال نمی‌شود');
+    ok(V.exitCfFronted(cfSrv) === true, 'خروجیِ ws ⇒ روی کلاودفلر شناسایی می‌شود');
+    ok(V.exitCfFronted({ transport: 'raw', resolvedIp: '104.17.1.1' }) === true, 'خروجیِ raw روی رنجِ کلاودفلر هم محدود می‌شود');
+    ok(V.exitIpWrap(realSrv) === false, 'پیش‌فرض (auto) برای سرورِ واقعی: بدونِ sslip');
+    ok(V.exitIpWrap({ ...realSrv, ipWrap: 'always' }) === true, 'override دستی: always');
+    ok(V.exitIpWrap({ ...cfSrv, ipWrap: 'never' }) === false, 'override دستی: never');
+    const hr = Buffer.from(V.vlessRequestHeader(realSrv, '1.2.3.4', 443, new Uint8Array(0)));
+    const iAt = 18;                                    /* addons خالی → فرمان در ۱۸ */
+    ok(hr[iAt] === 1 && hr[iAt + 3] === 1, 'مقصدِ آی‌پی برای سرورِ واقعی با atyp=1 فرستاده می‌شود');
+    ok(hr.slice(iAt + 4, iAt + 8).toString('hex') === '01020304', 'خودِ بایت‌های IP می‌رود (بدونِ sslip.io)', hr.slice(iAt + 3, iAt + 8).toString('hex'));
+    const hc = Buffer.from(V.vlessRequestHeader(cfSrv, '1.2.3.4', 443, new Uint8Array(0)));
+    const dom = hc.slice(iAt + 5, iAt + 5 + hc[iAt + 4]).toString();
+    ok(hc[iAt + 3] === 2 && dom === 'www.1.2.3.4.sslip.io', 'برای خروجیِ روی کلاودفلر همچنان sslip.io پوشیده می‌شود', dom);
+    let rawPort80 = '';
+    try { V.vlessRequestHeader(realSrv, '1.2.3.4', 80, new Uint8Array(0)); } catch (e) { rawPort80 = String(e.message); }
+    ok(rawPort80 === '', 'پورت ۸۰ روی سرورِ واقعی رد نمی‌شود');
+    let cfPort80 = '';
+    try { V.vlessRequestHeader(cfSrv, '1.2.3.4', 80, new Uint8Array(0)); } catch (e) { cfPort80 = String(e.message); }
+    ok(/HTTP/.test(cfPort80), 'پورت ۸۰ روی خروجیِ کلاودفلر همچنان رد می‌شود');
   }
 
   /* ── ابزارِ بایتِ تست ── */
