@@ -6,14 +6,16 @@
   "description": "Build pipeline: obfuscate worker.js before pasting into the Cloudflare dashboard (anti-1101 scanner hardening, like byJoey/cfnew)",
   "scripts": {
     "build": "node scripts/build-obfuscated.mjs",
-    "test": "node tests-manual/tunnel-limit.cjs && node tests-manual/ip-limit.cjs && node tests-manual/reality-crypto.cjs && node tests-manual/update-check.cjs && node tests-manual/obf-budget.cjs && node tests-manual/scanner-engine.cjs && node tests-manual/panel-scanner.cjs && node tests-manual/fixes-smoke.cjs && node tests-manual/boot-panel.cjs && node tests-manual/boot-expiry.cjs && node tests-manual/boot-sub.cjs && node tests-manual/html-syntax-check.cjs ui/user.html new-subscription.html",
+    "test": "node tests-manual/tunnel-limit.cjs && node tests-manual/ip-limit.cjs && node tests-manual/reality-crypto.cjs && node tests-manual/update-check.cjs && node tests-manual/obf-budget.cjs && node tests-manual/scanner-engine.cjs && node tests-manual/panel-scanner.cjs && node tests-manual/fixes-smoke.cjs && node tests-manual/api-routes.cjs && node tests-manual/boot-panel.cjs && node tests-manual/boot-expiry.cjs && node tests-manual/boot-sub.cjs && node tests-manual/html-syntax-check.cjs ui/user.html new-subscription.html",
+    "test:api": "node tests-manual/api-routes.cjs",
     "test:obf-budget": "node tests-manual/obf-budget.cjs",
     "bench:cpu": "node tests-manual/cpu-bench.cjs",
     "test:e2e": "npm run build && node tests-manual/worker-e2e.cjs",
     "test:exit": "node tests-manual/exit-session-e2e.cjs",
     "test:obf": "node tests-manual/obf-session-e2e.cjs",
     "test:reality-live": "node tests-manual/reality-live-e2e.cjs",
-    "test:real": "node tests-manual/real-client-e2e.cjs"
+    "test:real": "node tests-manual/real-client-e2e.cjs",
+    "test:api:obf": "npm run build && node tests-manual/api-routes.cjs _worker.obf.js"
   },
   "devDependencies": {
     "acorn": "^8.18.0",

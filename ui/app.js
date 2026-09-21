@@ -81,6 +81,27 @@
      انتخاب‌اند تا پیش‌نمایش از همان ابتدا چیزی نشان بدهد. */
   const NM = { pat: '', sel: {}, init: false };
   const nmShow = () => { const o = $('#nmPreview'); if (o) o.innerHTML = nmPreviewHtml(); };
+  /* ═══ ساختِ کلیدِ API ═══
+     نام و دسترسی را خودِ ادمین انتخاب می‌کند. پیش‌فرض «دسترسی کامل» است تا
+     کلیدِ تازه بلافاصله کار کند؛ «فقط‌خواندنی» برای ربات/مانیتورینگ است و
+     سرور هر نوشتنِ آن را با ۴۰۳ رد می‌کند. */
+  const keyShow = () => {
+    const n = (((S.d && S.d.keys) || []).length + 1);
+    modal(
+      '<header><span class="ic">' + icon('fa-key') + '</span>' +
+      '<div><h3>کلید API جدید</h3><p>برای اسکریپت، ربات یا مانیتورینگ</p></div>' +
+      '<div class="acts"><button class="btn sm ghost" data-act="close" title="بستن">' + icon('fa-xmark') + '</button></div></header>' +
+      '<div class="bd">' +
+      '<label style="display:block"><span class="hint">نام کلید (برای شناختنش در فهرست)</span>' +
+      '<input id="keyName" type="text" class="mono" value="key-' + fa(n) + '" style="width:100%;margin-top:4px"></label>' +
+      '<label style="display:flex;gap:8px;align-items:center;margin:14px 0 6px">' +
+      '<input id="keyRo" type="checkbox"><span>فقط‌خواندنی</span></label>' +
+      '<div class="hint">فقط‌خواندنی → تنها مسیرهای خواندنی (state، connections، backup، exits) کار می‌کنند. ' +
+      'هر دو نوعِ کلید نمی‌توانند کلیدِ تازه بسازند، رمزِ مدیر را عوض کنند یا ریستِ کارخانه‌ای/بازیابی بزنند — این‌ها فقط از همین پنل انجام می‌شوند.</div>' +
+      '<div class="acts" style="margin-top:14px"><button class="btn sm s" data-act="key-save">' + icon('fa-floppy-disk') + ' ساختِ کلید</button>' +
+      '<button class="btn sm ghost" data-act="close">' + icon('fa-xmark') + ' انصراف</button></div>' +
+      '</div>');
+  };
 
   /* ═══════ رندرِ گزارشِ «بررسی سلامت شمارش مصرف» ═══════
      این تابع در هر بار بازسازیِ صفحه صدا زده می‌شود (نه فقط هنگام کلیک)،
@@ -1590,10 +1611,19 @@
     const d = S.d, s = d.settings;
     return '<div class="page-head"><div><h1>تنظیمات و پشتیبان</h1><p>کلیدهای API، پشتیبان‌گیری و بازنشانی</p></div></div>' +
       '<div class="grid g2">' +
-      '<div class="card"><header><span class="ic">' + icon('fa-key') + '</span><div><h3>کلیدهای API</h3><p>حداکثر ۱۰ کلید</p></div><div class="acts"><button class="btn sm s" data-act="key-new">' + icon('fa-plus') + ' کلید جدید</button></div></header>' +
-      '<div class="bd"><div class="list">' + ((d.keys || []).map((k) => '<div class="row-item"><div class="grow"><b class="mono" style="font-size:11px">' + esc(k.key) + '</b><div class="cell-sub">' + esc(k.name) + ' • ' + (k.ro ? 'فقط‌خواندنی' : 'دسترسی کامل') + '</div></div>' +
-        '<button class="btn sm ghost" data-act="copy" data-v="' + esc(k.key) + '">' + icon('fa-copy') + '</button>' +
-        '<button class="btn sm d" data-act="key-del" data-id="' + esc(k.id) + '">' + icon('fa-trash-can') + '</button></div>').join('') || '<div class="empty">کلیدی ساخته نشده</div>') + '</div></div></div>' +
+      /* ═══ کلیدهای API ═══
+         هر ردیف: خودِ کلید + دسترسی + آخرین استفاده. «آخرین استفاده» مهم است —
+         تا ادمین ببیند کلید واقعاً کار می‌کند (قبلاً کلید در هیچ مسیری پذیرفته
+         نمی‌شد و بی‌فایده بود) و کدام کلید را باید باطل کند. */
+      '<div class="card"><header><span class="ic">' + icon('fa-key') + '</span><div><h3>کلیدهای API</h3><p>حداکثر ۱۰ کلید — برای اسکریپت، ربات یا مانیتورینگ</p></div><div class="acts"><button class="btn sm s" data-act="key-new">' + icon('fa-plus') + ' کلید جدید</button></div></header>' +
+      '<div class="bd"><div class="list">' + ((d.keys || []).map((k) => '<div class="row-item"><div class="grow"><b class="mono" style="font-size:11px">' + esc(k.key) + '</b><div class="cell-sub">' + esc(k.name) + ' • ' + (k.ro ? 'فقط‌خواندنی' : 'دسترسی کامل') + ' • ' + (k.lastUsedAt ? 'آخرین استفاده: ' + ago(k.lastUsedAt) + (k.uses ? ' (' + fa(k.uses) + ' بار)' : '') : 'هنوز استفاده نشده') + '</div></div>' +
+        '<button class="btn sm ghost" data-act="copy" data-v="' + esc(k.key) + '" title="کپی کلید">' + icon('fa-copy') + '</button>' +
+        '<button class="btn sm ghost" data-act="key-scope" data-id="' + esc(k.id) + '" data-v="' + (k.ro ? '0' : '1') + '" title="' + (k.ro ? 'تبدیل به دسترسیِ کامل' : 'تبدیل به فقط‌خواندنی') + '">' + icon(k.ro ? 'fa-eye' : 'fa-eye-slash') + '</button>' +
+        '<button class="btn sm d" data-act="key-del" data-id="' + esc(k.id) + '" title="حذف کلید">' + icon('fa-trash-can') + '</button></div>').join('') || '<div class="empty">کلیدی ساخته نشده</div>') + '</div>' +
+      '<div class="hint" style="margin-top:10px">استفاده: هدرِ <b class="mono">Authorization: Bearer sk_…</b> (یا <b class="mono">x-api-key</b> یا <b class="mono">?key=</b>) — ' +
+      'مثال: <span class="mono">curl -H "Authorization: Bearer ' + esc((((d.keys || [])[0] || {}).key) || 'sk_…') + '" https://' + esc((typeof location !== 'undefined' ? location.host : 'panel')) + '/api/state</span><br>' +
+      'کلیدِ فقط‌خواندنی فقط مسیرهای خواندنی (state، connections، backup، exits) را می‌تواند صدا بزند؛ نوشتن با ۴۰۳ رد می‌شود. ساخت و حذفِ کلید و تغییرِ رمز فقط از همین پنل انجام می‌شود.</div>' +
+      '</div></div></div>' +
       /* ═══ پشتیبان و بازیابی با کشیدن و رها کردن ═══
          جایگزینِ دو مسیرِ قدیمی شد: دکمه‌ی «دریافت پشتیبان» که فایل را در
          مرورگر از state می‌ساخت (و همیشه با سرور یکی نبود) و inputِ پنهانِ
@@ -3126,7 +3156,37 @@
       }
       else if (a === 'regen') { const inp = $('#mbox [data-p="uuid"]'); if (inp) { inp.value = crypto.randomUUID(); toast('UUID جدید ساخته شد', 'info'); } }
       else if (a === 'close') closeM();
-      else if (a === 'key-new') { const r = await api('POST', '/api/keys', {}); if (r.ok) { toast('کلید ساخته شد'); await refresh(); } else toast(r.error || 'خطا', 'err'); }
+      /* ═══ کلیدهای API ═══
+         قبلاً دکمه بدونِ هیچ پرسشی کلید می‌ساخت و دسترسی‌اش را سرور از روی
+         «زوج/فرد بودنِ شماره» تعیین می‌کرد — یعنی کلید می‌توانست بی‌خواستِ ادمین
+         فقط‌خواندنی از آب دربیاید و «کار نکند». حالا نام و دسترسی را خودِ ادمین
+         انتخاب می‌کند و کلید ساخته‌شده همان‌جا در کلیپ‌بورد کپی می‌شود. */
+      else if (a === 'key-new') {
+        if (((S.d && S.d.keys) || []).length >= 10) { toast('حداکثر ۱۰ کلید — اول یکی را حذف کنید', 'err'); return; }
+        keyShow();
+      }
+      else if (a === 'key-save') {
+        const nmEl = $('#keyName'), roEl = $('#keyRo');
+        const name = (nmEl && nmEl.value || '').trim();
+        busy(t, 'در حال ساخت');
+        const r = await api('POST', '/api/keys', { name, ro: !!(roEl && roEl.checked) });
+        free(t);
+        if (r && r.ok) {
+          closeM();
+          await refresh();
+          const k = (r.key && r.key.key) || '';
+          if (k) copy(k);                      // کلید فقط یک بار نشان داده می‌شود — همان‌جا کپی می‌شود
+          toast('کلید «' + ((r.key && r.key.name) || name) + '» ساخته شد' + (r.key && r.key.ro ? ' (فقط‌خواندنی)' : ' (دسترسی کامل)'));
+        } else toast((r && (r.msg || r.error)) || 'ساخته نشد', 'err');
+      }
+      else if (a === 'key-scope') {
+        const k = ((S.d && S.d.keys) || []).find((x) => x.id === id);
+        busy(t, 'در حال تغییر');
+        const r = await api('POST', '/api/keys', { id, ro: t.dataset.v === '1' });
+        free(t);
+        if (r && r.ok) { await refresh(); toast('«' + ((k && k.name) || 'کلید') + '» ' + (r.ro ? 'فقط‌خواندنی شد' : 'دسترسی کامل گرفت')); }
+        else toast((r && (r.msg || r.error)) || 'تغییر نکرد', 'err');
+      }
       else if (a === 'key-del') { const r = await api('DELETE', '/api/keys?id=' + id); if (r.ok) { toast('کلید حذف شد', 'err'); await refresh(); } }
       else if (a === 'panel-new') { const name = prompt('نام پنل:'); const url = prompt('آدرس ورکر:'); if (name && url) { await api('POST', '/api/panels', { name, url }); toast('پنل لینک شد'); await refresh(); } }
       else if (a === 'panel-del') { await api('DELETE', '/api/panels?id=' + id); toast('حذف شد', 'err'); await refresh(); }

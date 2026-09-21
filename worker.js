@@ -150,9 +150,9 @@ function exitDialHost(srv) {
    BUILD: مُهرِ زمانِ بیلد (UTC)
    BUILD_REV: اثرِ انگشتِ sha256 محتوای worker.js + ui — معیارِ دقیقِ «نسخه‌ی
    تازه» در بررسیِ آپدیت است (بدونِ تکیه بر تاریخ؛ چند پوش در یک روز هم دیده می‌شود) */
-const VERSION = '3.0.17';
-const BUILD = '2026.09.20-19:39';
-const BUILD_REV = 'b9927a73030e8749de828d9a66ec8cfcce5dd7c980024e358fdd2d6214d68bf5';
+const VERSION = '3.0.18';
+const BUILD = '2026.09.21-10:32';
+const BUILD_REV = '2e5a307126795a2fa7fa9ae71d5c53ec5b6b1a6d69afaaa0e1d24c08ac8a3a07';
 const BOOT = Date.now();
 /* شاخه‌ی پیش‌فرض برای بررسیِ نسخه */
 const UPD_DEFAULT_BRANCH = 'main';
@@ -1628,6 +1628,84 @@ async function sessionsOf(env, uuid) {
   return [...out.values()].sort((a, b) => (b.conns || 0) - (a.conns || 0));
 }
 
+/**
+ * نشست‌های زنده‌ی *همه‌ی* کاربران با یک رفت‌وبرگشت — برای GET /api/state.
+ *
+ * ⚠️ چرا لازم شد: /api/state یک حلقه روی کاربران داشت و برای هر کاربر
+ * `await sessionsOf()` صدا می‌زد؛ هر فراخوانی هم سه پرس‌وجوی پشت‌سرهم به D1
+ * می‌زد (liveEnsure + liveSweep + SELECT). با ۳۰ کانفیگ یعنی حدود ۹۰ پرس‌وجوی
+ * زنجیره‌ای: پاسخِ state از ۱۵ ثانیه‌ی timeout مرورگر رد می‌شد و پنل
+ * «سرور پاسخ نداد» نشان می‌داد — و مصرفِ read روزانه‌ی D1 هم چند برابرِ لازم
+ * بود (ریشه‌ی «در بخشی از روز API جواب نمی‌دهد»).
+ *
+ * خروجی: Map<uuid, [{ ip, conns, last_active }]> — همان شکلی که پنل مصرف
+ * می‌کند؛ منبع هم مثل sessionsOf اولویت‌دار است: DO ← D1 ← KV ← حافظه.
+ */
+async function sessionsByUuid(env) {
+  const now = Date.now();
+  const acc = new Map();                     // uuid -> Map<ip, {conns,last_active}>
+  const push = (uuid, ip, conns, last) => {
+    const id = String(uuid || ''); if (!id) return;
+    const ipk = String(ip || '');
+    let m = acc.get(id); if (!m) { m = new Map(); acc.set(id, m); }
+    const cur = m.get(ipk);
+    if (cur) {
+      cur.conns = Math.max(cur.conns, Number(conns) || 0);
+      cur.last_active = Math.max(cur.last_active || 0, Number(last) || 0);
+    } else m.set(ipk, { ip: ipk, conns: Number(conns) || 0, last_active: Number(last) || 0 });
+  };
+
+  if (env && env.LIMITER) {
+    try {
+      const r = await limiterRpc(env, '/dump', { now });
+      const agg = new Map();                 // 'uuid|ip' -> تعداد
+      for (const x of ((r && r.rows) || [])) {
+        const k = String(x.uuid) + '\u0000' + String(x.ip);
+        const cur = agg.get(k) || { conns: 0, last: 0 };
+        cur.conns++;
+        cur.last = Math.max(cur.last, Number(x.last_ts) || 0);
+        agg.set(k, cur);
+      }
+      agg.forEach((v, k) => { const p = k.split('\u0000'); push(p[0], p[1], v.conns, v.last); });
+    } catch (e) { connErr('DO-dump', e); }
+  } else if (env && env.DB) {
+    try {
+      if (await liveEnsure(env)) {
+        await liveSweep(env, null);          // یک‌بار برای همه، نه یک‌بار به‌ازای هر کاربر
+        const r = await env.DB.prepare(
+          'SELECT uuid, ip, COUNT(*) AS n, MAX(last_ts) AS t FROM conns GROUP BY uuid, ip').all();
+        for (const row of ((r && r.results) || [])) push(row.uuid, row.ip, row.n, row.t);
+      }
+    } catch (e) { connErr('D1-list-all', e); }
+  } else if (env && env.KV) {
+    try {
+      const list = await env.KV.list({ prefix: 'c:' });
+      const agg = new Map();                 // 'uuid|ip' -> تعداد
+      for (const k of ((list && list.keys) || [])) {
+        const p = String(k.name).split(':');
+        if (p.length < 4) continue;
+        const key = p[1] + '\u0000' + p[2];
+        agg.set(key, (agg.get(key) || 0) + 1);
+      }
+      agg.forEach((n, k) => { const p = k.split('\u0000'); push(p[0], p[1], n, now); });
+    } catch (e) { connErr('KV', e); }
+  } else {
+    CONNS.forEach((um, uuid) => {
+      if (!um) return;
+      um.forEach((m, ip) => {
+        if (!m) return;
+        let conns = 0, last = 0;
+        m.forEach((ts) => { conns++; if (ts > last) last = ts; });
+        push(uuid, ip, conns, last);
+      });
+    });
+  }
+
+  const out = new Map();
+  acc.forEach((m, uuid) => out.set(uuid, [...m.values()].sort((a, b) => b.conns - a.conns)));
+  return out;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    تست واقعی ترافیک — «از مرورگرِ همان کسی که دکمه را می‌زند»
 
@@ -2145,14 +2223,83 @@ async function mkToken(st, env) {
   const p = b64u(JSON.stringify({ iat: Math.floor(Date.now() / 1000), exp, idle: st.settings.auth.sessionMin }));
   return p + '.' + (await hmac(masterKey(st, env), p));
 }
-async function authOk(req, env, st) {
+/* ═══════════ احرازِ هویتِ درخواست‌های API — نشستِ پنل یا کلیدِ API ═══════════
+   ⚠️ باگی که «کلیدِ API» را کاملاً بی‌فایده کرده بود: مسیرِ /api/keys کلیدها را
+   می‌ساخت و پنل هم نشانشان می‌داد، ولی هیچ‌جای کد `st.keys` بررسی نمی‌شد؛
+   پس هر درخواست با `Authorization: Bearer sk_...` همیشه ۴۰۱ می‌گرفت و تنها
+   راهِ کار با API، توکنِ یک‌روزه‌ی ورودِ پنل بود.
+
+   حالا سه شکلِ اعتبارنامه پذیرفته می‌شود:
+     ۱) توکنِ نشستِ پنل (ورود)                 → دسترسیِ کامل
+     ۲) کلیدِ API با دسترسیِ کامل                → دسترسیِ کامل
+     ۳) کلیدِ API فقط‌خواندنی                   → فقط مسیرهای خواندنی؛
+        هر نوشتن ۴۰۳ می‌گیرد (نه ۴۰۱، تا کلاینت بفهمد کلید معتبر است ولی اجازه ندارد)
+
+   محلِ خواندنِ کلید (به ترتیب): هدرِ `Authorization: Bearer`، پارامترِ
+   `?key=`/`?token=` و هدرِ `x-api-key`؛ تا با curl و هر کلاینتی بشود سنجید. */
+async function authOf(req, env, st) {
+  let url = null; try { url = new URL(req.url); } catch (e) { url = null; }
   const h = req.headers.get('authorization') || '';
-  const t = h.replace(/^Bearer\s+/i, '') || new URL(req.url).searchParams.get('token');
-  if (!t || !t.includes('.')) return false;
+  const t = String(h.replace(/^Bearer\s+/i, '')
+    || (url ? (url.searchParams.get('key') || url.searchParams.get('token')) : '')
+    || req.headers.get('x-api-key') || '').trim();
+  if (!t) return { ok: false, kind: '' };
+
+  /* ۱) کلیدِ API — هر کلیدی که با sk_ شروع شود در فهرستِ کلیدهای ذخیره‌شده
+     جست‌وجو می‌شود. کلیدِ نامعتبر هم مثل بی‌اعتبارنامه رد می‌شود. */
+  if (t.startsWith('sk_')) {
+    const keys = Array.isArray(st && st.keys) ? st.keys : [];
+    const key = keys.find((k) => k && String(k.key) === t);
+    if (!key) return { ok: false, kind: 'key' };
+    /* آخرین استفاده — در پنل نشان می‌دهد کلید واقعاً کار می‌کند.
+       حداکثر یک نوشتن در دقیقه، تا مسیرهای پرترافیک کند نشوند. */
+    if (!key.lastUsedAt || Date.now() - Number(key.lastUsedAt) > 60000) {
+      key.lastUsedAt = Date.now();
+      key.uses = (Number(key.uses) || 0) + 1;
+      try { save(env, st).catch(() => {}); } catch (e) {}
+    }
+    return { ok: true, kind: 'key', ro: !!key.ro, id: key.id || '', name: key.name || '' };
+  }
+
+  /* ۲) توکنِ نشست (امضای HMAC روی همان رمزِ مدیر) */
+  if (!t.includes('.')) return { ok: false, kind: '' };
   const [p, sig] = t.split('.');
-  if ((await hmac(masterKey(st, env), p)) !== sig) return false;
-  try { if (JSON.parse(atob(p)).exp * 1000 < Date.now()) return false; } catch (e) { return false; }
-  return true;
+  if ((await hmac(masterKey(st, env), p)) !== sig) return { ok: false, kind: '' };
+  try { if (JSON.parse(atob(p)).exp * 1000 < Date.now()) return { ok: false, kind: '' }; } catch (e) { return { ok: false, kind: '' }; }
+  return { ok: true, kind: 'session', ro: false };
+}
+/* بررسیِ سادهٔ «آیا این درخواست مجاز است؟» — مسیرهای خواندنی */
+async function authOk(req, env, st) {
+  const a = await authOf(req, env, st);
+  return a.ok;
+}
+/** حفاظتِ مسیرهای نوشتنی — کلیدِ فقط‌خواندنی این‌جا رد می‌شود.
+ *  خروجی: null یعنی مجاز؛ وگرنه { error, status } که باید همان برگردانده شود. */
+async function authWrite(req, env, st) {
+  const a = await authOf(req, env, st);
+  if (!a.ok) return { error: 'unauthorized', status: 401, msg: 'اعتبارنامه نامعتبر است — توکنِ ورود یا کلیدِ API بفرستید' };
+  if (a.ro) {
+    return {
+      error: 'read-only key', readOnly: true, status: 403,
+      msg: 'این کلیدِ API فقط‌خواندنی است و اجازهٔ تغییر ندارد — برای نوشتن از کلیدِ «دسترسی کامل» یا ورودِ پنل استفاده کنید',
+    };
+  }
+  return null;
+}
+/** مسیرهای حساس (مدیریتِ کلیدها، رمزِ مدیر، ریستِ کارخانه‌ای، بازیابیِ کلِ پنل)
+ *  فقط با *ورودِ پنل* انجام می‌شوند، نه با کلیدِ API — وگرنه یک کلیدِ لو‌رفته
+ *  می‌توانست برای خودش کلیدِ تازه بسازد یا رمزِ مدیر را عوض کند و دسترسیِ
+ *  ادمین را برای همیشه قفل کند. */
+async function authSession(req, env, st) {
+  const a = await authOf(req, env, st);
+  if (!a.ok) return { error: 'unauthorized', status: 401, msg: 'اعتبارنامه نامعتبر است — توکنِ ورود یا کلیدِ API بفرستید' };
+  if (a.kind !== 'session') {
+    return {
+      error: 'session required', sessionOnly: true, status: 403,
+      msg: 'این کار فقط با ورودِ پنل انجام می‌شود (نه با کلیدِ API) — کلیدها، رمزِ مدیر، ریستِ کارخانه‌ای و بازیابی از راهِ نشستِ پنل مدیریت می‌شوند',
+    };
+  }
+  return null;
 }
 function rateOk(key, max, winMs) {
   const now = Date.now(), rec = RATE.get(key) || { n: 0, t: now };
@@ -6265,10 +6412,13 @@ async function apiHandler(req, env, url, ctx) {
     if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
     /* مصرف و IPهای فعال از جداول خوانده می‌شوند */
     const usage = await usageRead(env);
+    /* ⚠️ یک پرس‌وجو برای همه‌ی کاربران (قبلاً به‌ازای هر کاربر سه پرس‌وجوی
+       زنجیره‌ای به D1 می‌رفت و با چند ده کانفیگ، state از timeout رد می‌شد) */
+    const sessionsAll = await sessionsByUuid(env);
     const usersWithUsage = [];
     for (const u of st.users) {
       const row = usage.get(u.uuid);
-      const sessions = await sessionsOf(env, u.uuid);
+      const sessions = sessionsAll.get(u.uuid) || [];
       const totalConns = sessions.reduce((a, s) => a + (s.conns || 0), 0);
       usersWithUsage.push({
         ...u,
@@ -6325,7 +6475,7 @@ async function apiHandler(req, env, url, ctx) {
   }
 
   if (route === 'settings' && (m === 'PUT' || m === 'POST')) {
-    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const ag = await authWrite(req, env, st); if (ag) return json(ag, ag.status || 401);
     const b = await req.json().catch(() => ({}));
     if (b.settings) {
       /* ماسکِ توکن‌ها = «تغییر نده»؛ وگرنه یک ذخیرهٔ ساده توکن را پاک می‌کرد */
@@ -6344,7 +6494,7 @@ async function apiHandler(req, env, url, ctx) {
   }
 
   if (route === 'users' && m === 'POST') {
-    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const ag = await authWrite(req, env, st); if (ag) return json(ag, ag.status || 401);
     const b = await req.json().catch(() => ({}));
     if (b.id && b.op) {
       const u = st.users.find((x) => x.id === b.id); if (!u) return json({ error: 'not found' }, 404);
@@ -6424,11 +6574,37 @@ async function apiHandler(req, env, url, ctx) {
     return json({ ok: true, user: u, subscription: `${url.origin}/${s.sub.path}/${u.uuid}` }, 201);
   }
 
+  /* ═══════════════ ثبتِ مصرف — /api/usage ═══════════════
+     دو ایرادِ واقعیِ این مسیر که «API کار نمی‌کند» را می‌ساخت:
+       ۱) بدونِ هیچ احرازِ هویتی باز بود؛ هر کسی با دانستنِ uuid می‌توانست
+          مصرفِ کاربر را دستکاری کند — حتی منفی بفرستد تا سهمیه بی‌اثر شود.
+       ۲) فقط فیلدهای blob (u.up/u.down) را زیاد می‌کرد، در حالی که پنل و
+          سهمیه‌سنجی از جدولِ usage می‌خوانند؛ پس گزارشِ «موفق» هیچ‌جای پنل
+          دیده نمی‌شد. حالا از همان usageDelta استفاده می‌شود که مسیرِ تونل
+          هم می‌نویسد (کش هم بی‌اعتبار می‌شود، پس در همان لحظه دیده می‌شود). */
   if (route === 'usage' && m === 'POST') {
+    const ag = await authWrite(req, env, st); if (ag) return json(ag, ag.status || 401);
     const b = await req.json().catch(() => ({}));
-    const u = st.users.find((x) => x.uuid === b.uuid || x.secret === b.uuid); if (!u) return json({ error: 'not found' }, 404);
-    u.up = (u.up || 0) + Number(b.up || 0); u.down = (u.down || 0) + Number(b.down || 0); u.lastSeen = Date.now();
-    await save(env, st); return json({ ok: true, up: u.up, down: u.down });
+    const u = st.users.find((x) => x.uuid === b.uuid || x.secret === b.uuid);
+    if (!u) return json({ error: 'not found', msg: 'کانفیگی با این uuid/secret پیدا نشد' }, 404);
+    /* مقدارها: عددِ نامنفی و متناهی — «منفی» به‌معنای کم‌کردنِ مصرف بود */
+    const num = (v) => { const n = Math.floor(Number(v)); return (isFinite(n) && n >= 0) ? n : null; };
+    const up = num(b.up || 0), down = num(b.down || 0);
+    if (up === null || down === null) {
+      return json({ error: 'bad value', msg: 'مقدارِ up/down باید عددی نامنفی باشد' }, 400);
+    }
+    const recorded = await usageDelta(env, u.uuid, up, down, 1);
+    /* آینه در blob — سازگاری با نسخه‌های قبلی و نمایشِ خلاصه */
+    u.up = (u.up || 0) + up; u.down = (u.down || 0) + down;
+    u.totalReq = (u.totalReq || 0) + 1; u.lastSeen = Date.now();
+    await save(env, st);
+    return json({
+      ok: true, recorded: recorded !== false, up: u.up, down: u.down,
+      dayUp: up, dayDown: down,
+      msg: recorded === false
+        ? 'مصرف در حافظه ثبت شد ولی نوشتن در پایگاه‌داده ناموفق بود — وضعیتِ ذخیره‌سازی را در بخش سلامت بررسی کنید'
+        : 'مصرف ثبت شد (همان جدولی که پنل و سهمیه از آن می‌خوانند)',
+    });
   }
 
   /* ═══════════════════════════════════════════════════════════════════════
@@ -6454,7 +6630,7 @@ async function apiHandler(req, env, url, ctx) {
      همه‌چیز سمتِ سرور انجام می‌شود تا توکنِ ذخیره‌شده (که در پنل ماسک است)
      هم قابلِ استفاده باشد. */
   if (route === 'upd/cfcheck' && m === 'POST') {
-    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const ag = await authWrite(req, env, st); if (ag) return json(ag, ag.status || 401);
     const b = await req.json().catch(() => ({}));
     const r = await cfTokenCheck(st, b);
     /* اگر توکن یا حسابِ تازه‌ای تأیید شد، همان‌جا ذخیره‌اش می‌کنیم (کاربر
@@ -6513,7 +6689,7 @@ async function apiHandler(req, env, url, ctx) {
   }
 
   if (route === 'exits' && m === 'POST') {
-    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const ag = await authWrite(req, env, st); if (ag) return json(ag, ag.status || 401);
     const b = await req.json().catch(() => ({}));
     const op = String((b && b.op) || 'add').toLowerCase();
     const ex = exitsOf(st);
@@ -6720,7 +6896,7 @@ async function apiHandler(req, env, url, ctx) {
 
   /* پیش‌فرضِ سراسری: 'direct' (بدون واسطه) یا شناسه‌ی یکی از سرورها */
   if (route === 'exits/default' && m === 'POST') {
-    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const ag = await authWrite(req, env, st); if (ag) return json(ag, ag.status || 401);
     const b = await req.json().catch(() => ({}));
     const ex = exitsOf(st);
     const mode = String((b && b.mode) || 'exit').toLowerCase();
@@ -6747,7 +6923,7 @@ async function apiHandler(req, env, url, ctx) {
   /* تستِ اتصالِ یک سرور خروجی — گزارشِ موفق/ناموفق و زمانِ پاسخ واقعی.
      اگر id داده نشود، سرور از خودِ درخواست (بدون ذخیره شدن) تست می‌شود. */
   if (route === 'exits/test' && m === 'POST') {
-    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const ag = await authWrite(req, env, st); if (ag) return json(ag, ag.status || 401);
     const b = await req.json().catch(() => ({}));
     const id = String((b && b.id) || '').trim();
     const srv = id ? exitById(st, id) : normalizeExit(b.server || b, '');
@@ -6802,7 +6978,7 @@ async function apiHandler(req, env, url, ctx) {
      یا متغیرِ محیطی MASTER_KEY اگر بایند شده باشد). تأییدِ رمزِ فعلی اجباری
      است؛ بدون آن هیچ تغییری نوشته نمی‌شود. */
   if (route === 'password' && m === 'POST') {
-    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const ag = await authSession(req, env, st); if (ag) return json(ag, ag.status || 401);
     const b = await req.json().catch(() => ({}));
     const current = String((b && b.current) || '');
     const next = String((b && (b.newPassword !== undefined ? b.newPassword : b['new'])) || '');
@@ -6830,7 +7006,7 @@ async function apiHandler(req, env, url, ctx) {
      ببیند کدام Proxy IP از شبکه‌ی کلادفلر زنده است — و آیا اصلاً در مسیر
      تونل تلاش شده یا نه (stats.attempts). */
   if (route === 'proxyips/test' && m === 'POST') {
-    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const ag = await authWrite(req, env, st); if (ag) return json(ag, ag.status || 401);
     const b = await req.json().catch(() => ({}));
     const all = (st.settings.proxyIPs || []).map((x) => String(x).trim()).filter(Boolean);
     const list = (Array.isArray(b.list) && b.list.length)
@@ -6872,7 +7048,7 @@ async function apiHandler(req, env, url, ctx) {
   }
 
   if (route === 'restore' && m === 'POST') {
-    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const ag = await authSession(req, env, st); if (ag) return json(ag, ag.status || 401);
     const b = await req.json().catch(() => ({}));
     /* هم { data: {...} } را می‌پذیریم و هم خودِ فایلِ پشتیبان را */
     const data = (b && b.data !== undefined) ? b.data : b;
@@ -6899,15 +7075,74 @@ async function apiHandler(req, env, url, ctx) {
         : 'فایل پشتیبان در تنظیماتِ فعلی ادغام شد',
     });
   }
+  /* ═══════════════ کلیدهای API ═══════════════
+     ساخت/حذف فقط با ورودِ پنل (کلیدِ API نباید بتواند برای خودش کلیدِ تازه
+     بسازد و از پس از باطل‌شدن زنده بماند)؛ خواندنِ فهرست با هر اعتبارنامه‌ای. */
   if (route === 'keys') {
-    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
-    if (m === 'POST') { if (st.keys.length >= 10) return json({ error: 'حداکثر ۱۰ کلید' }, 400); const k = { id: randTok(5), name: 'key-' + (st.keys.length + 1), key: 'sk_' + randTok(24), ro: st.keys.length % 2 === 1 }; st.keys.push(k); addLog(st, 'success', 'auth', 'کلید API ساخته شد', k.name); await save(env, st); return json({ ok: true, keys: st.keys }, 201); }
-    if (m === 'DELETE') { const id = url.searchParams.get('id'); st.keys = st.keys.filter((k) => k.id !== id); await save(env, st); return json({ ok: true, keys: st.keys }); }
-    return json({ keys: st.keys });
+    if (m === 'POST' || m === 'DELETE') { const ag = await authSession(req, env, st); if (ag) return json(ag, ag.status || 401); }
+    else if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    const keys = Array.isArray(st.keys) ? st.keys : (st.keys = []);
+    if (m === 'POST') {
+      const b = await req.json().catch(() => ({}));
+      /* ═══ تغییرِ دسترسیِ کلیدِ موجود: { id, ro } ═══
+         بدونِ این، تنها راهِ عوض‌کردنِ دسترسیِ یک کلید، حذف و ساختِ کلیدِ
+         تازه بود — یعنی خودِ کلید عوض می‌شد و باید همه‌ی اسکریپت‌ها
+         به‌روزرسانی می‌شدند. */
+      if (b && b.id) {
+        const k = keys.find((x) => x.id === String(b.id));
+        if (!k) return json({ error: 'not found', msg: 'کلیدی با این شناسه پیدا نشد' }, 404);
+        const ro = (b.ro === undefined ? !!k.ro : !!b.ro);
+        if (ro === !!k.ro) {
+          return json({ ok: true, key: k, keys, ro: !!k.ro, msg: 'دسترسیِ «' + k.name + '» تغییری نکرد' });
+        }
+        k.ro = ro;
+        addLog(st, 'info', 'auth', 'دسترسیِ کلید API تغییر کرد', k.name + ' → ' + (ro ? 'فقط‌خواندنی' : 'دسترسی کامل'));
+        await save(env, st);
+        return json({
+          ok: true, key: k, keys, ro,
+          msg: 'دسترسیِ «' + k.name + '» به ' + (ro ? 'فقط‌خواندنی' : 'دسترسی کامل') + ' تغییر کرد',
+        });
+      }
+      if (keys.length >= 10) return json({ error: 'حداکثر ۱۰ کلید', msg: 'برای ساختِ کلیدِ تازه یکی از کلیدهای قبلی را حذف کنید' }, 400);
+      const name = String((b && b.name) || '').trim().slice(0, 40) || 'key-' + (keys.length + 1);
+      /* ⚠️ `ro` قبلاً از روی شماره‌ی کلید ساخته می‌شد (زوج/فرد!) — یعنی کلیدی
+         که ادمین می‌ساخت بی‌آنکه بخواهد فقط‌خواندنی از آب درمی‌آمد و
+         «کار نمی‌کرد». حالا دسترسی را خودِ درخواست تعیین می‌کند و
+         پیش‌فرض «دسترسی کامل» است (روی حدس و گمان نیست). */
+      const k = {
+        id: randTok(5), name, key: 'sk_' + randTok(24),
+        ro: !!(b && (b.ro === true || b.readOnly === true)), createdAt: Date.now(), lastUsedAt: 0, uses: 0,
+      };
+      keys.push(k);
+      addLog(st, 'success', 'auth', 'کلید API ساخته شد', k.name + (k.ro ? ' • فقط‌خواندنی' : ' • دسترسی کامل'));
+      await save(env, st);
+      return json({
+        ok: true, key: k, keys,
+        usage: {
+          header: 'Authorization: Bearer ' + k.key,
+          example: 'curl -H "Authorization: Bearer ' + k.key + '" ' + url.origin + '/api/state',
+        },
+        msg: 'کلید «' + k.name + '» ساخته شد — ' + (k.ro
+          ? 'فقط می‌تواند بخواند (state/connections/backup/exits)'
+          : 'دسترسی کامل دارد به‌جز مدیریتِ کلیدها و رمزِ مدیر'),
+      }, 201);
+    }
+    if (m === 'DELETE') {
+      const id = String(url.searchParams.get('id') || '').trim();
+      if (!id) return json({ error: 'id لازم است', msg: 'شناسهٔ کلید را در پارامتر id بفرستید' }, 400);
+      const before = keys.length;
+      st.keys = keys.filter((k) => k.id !== id);
+      if (st.keys.length === before) return json({ error: 'not found', msg: 'کلیدی با این شناسه پیدا نشد' }, 404);
+      addLog(st, 'warn', 'auth', 'کلید API حذف شد', id);
+      await save(env, st);
+      return json({ ok: true, removed: before - st.keys.length, keys: st.keys });
+    }
+    return json({ ok: true, keys: st.keys });
   }
 
   if (route === 'panels') {
-    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
+    if (m === 'POST' || m === 'DELETE') { const ag = await authWrite(req, env, st); if (ag) return json(ag, ag.status || 401); }
+    else if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
     if (m === 'POST') {
       const b = await req.json().catch(() => ({}));
       if (b.id && b.op === 'sync') { st.panels = st.panels.map((p) => (p.id === b.id ? { ...p, status: 'online', lastSync: Date.now() } : p)); addLog(st, 'info', 'network', 'پنل همگام شد', b.id); }
@@ -6919,8 +7154,14 @@ async function apiHandler(req, env, url, ctx) {
   }
 
   if (route === 'action' && m === 'POST') {
-    if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
     const b = await req.json().catch(() => ({})), a = b.act;
+    /* کلیدِ API شبیه": دسترسیِ کامل = همهٔ اقدام‌ها به‌جز اقدام‌های حساسِ امنیتی
+       (تغییرِ رمز، کلیدها، ریستِ کارخانه‌ای، بازیابی) که فقط با نشستِ پنل
+       انجام می‌شوند؛ کلیدِ فقط‌خواندنی = هیچ اقدامی (۴۰۳). */
+    const ag = ['pw-change', 'factory', 'restore', '2fa-secret'].includes(String(a))
+      ? await authSession(req, env, st)
+      : await authWrite(req, env, st);
+    if (ag) return json(ag, ag.status || 401);
     if (a === 'panic') { s.auth.panic = !s.auth.panic; addLog(st, s.auth.panic ? 'warn' : 'success', 'system', s.auth.panic ? 'Panic Mode فعال شد' : 'Panic Mode خاموش شد', ''); await save(env, st); return json({ ok: true, panic: s.auth.panic }); }
     if (a === 'rotate-path') { s.auth.path = randTok(8).toLowerCase(); addLog(st, 'warn', 'auth', 'مسیر ورود چرخش یافت', '/' + s.auth.path); await save(env, st); return json({ ok: true, path: s.auth.path }); }
     if (a === '2fa-secret') { const sec = b32enc(crypto.getRandomValues(new Uint8Array(20))); s.auth.totp = true; s.auth.totpSecret = sec; await save(env, st); return json({ ok: true, secret: sec, url: `otpauth://totp/${encodeURIComponent(s.panel.name)}?secret=${sec}&issuer=Panel` }); }
@@ -7529,6 +7770,12 @@ async function updAction(env, st, a) {
          کاربر را گمراه می‌کرد. `liveEnsure` نتیجه را ۳۰ ثانیه کش می‌کند، پس
          این آزمون در هر کلیک هزینه‌ی D1 ندارد. */
       if (limiterIntended(env) === 'd1') await liveEnsure(env);
+      /* ⚠️ جدول‌های مصرف/نشست‌ها این‌جا (قبل از خواندن‌ها) ساخته می‌شوند.
+         قبلاً این آزمون جدول‌ها را *قبل از ساختنشان* می‌خواند، پس روی یک
+         نصبِ تازه (که هنوز هیچ ترافیکی نداشته و جدول‌ها با اولین ترافیک
+         ساخته می‌شوند) کارتِ سلامت «خواندن جدول مصرف ✗ / no such table»
+         می‌داد — یک هشدارِ دروغ که کلِ پاسخ ok:false می‌شد. */
+      await usageEnsure(env);
       const lim = limiterBackend(env);
       const out = { ok: true, storage: kind, limiter: lim, limiterLabel: LIM_LABEL[lim] || lim, limitEnforced: lim !== 'mem', limiterIntended: limiterIntended(env), limiterVerified: LIVE_TS > 0 ? LIVE_OK : null, limiterError: LIVE_ERR, limiterFailures: LIVE_FAILS, limiterDegraded: limiterDegraded(env) || !!LIMITER_DEGRADED, lastLimitError: CONN_LAST_ERR, db: { bound: !!env.DB, kv: !!env.KV, do: !!env.LIMITER, storage: kind }, checks: [], users: [] };
       const chk = (name, ok, note) => { out.checks.push({ name, ok: !!ok, note: String(note || '') }); if (!ok) out.ok = false; };
@@ -7852,11 +8099,21 @@ async function updAction(env, st, a) {
     return json({ error: 'unknown action' }, 400);
   }
 
+  /* ⚠️ این فهرست عمداً کامل است: قبلاً نیمی از مسیرهای واقعی را نداشت و
+     کسی که از بیرون با API کار می‌کرد از وجودِ /api/exits و /api/usage
+     باخبر نمی‌شد. با یک درخواست به مسیرِ ناشناخته، خروجی خودش مستندات می‌شود. */
   return json({
     error: 'not found',
-    routes: ['/api/login', '/api/health', '/api/state', '/api/settings', '/api/users', '/api/keys', '/api/panels', '/api/action',
+    routes: ['/api/login', '/api/health', '/api/state', '/api/settings', '/api/users', '/api/usage',
+      '/api/keys', '/api/panels', '/api/action', '/api/password', '/api/backup', '/api/restore',
       '/api/connections', /* فقط خواندنی — عملیات روی نشستِ زنده حذف شده است */
-      '/api/password', '/api/backup', '/api/restore'],
+      '/api/exits', '/api/exits/test', '/api/exits/default',
+      '/api/proxyips/test', '/api/upd/cfcheck', '/api/upd/tokenurl'],
+    auth: {
+      session: 'Authorization: Bearer <توکنِ /api/login>',
+      apiKey: 'Authorization: Bearer sk_... (یا هدر x-api-key یا پارامتر ?key=)',
+      readOnlyKeys: 'کلیدِ فقط‌خواندنی فقط مسیرهای خواندنی را می‌تواند صدا بزند',
+    },
   }, 404);
 }
 async function tgSend(s, text) {

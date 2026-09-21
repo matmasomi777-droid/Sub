@@ -269,7 +269,7 @@ https://panel.<account>.workers.dev/status/<username>
 **به‌روزرسانی** | بررسی واقعی از GitHub Releases • مقایسه نسخه • استقرار • rollback • انتشار به نودها
 **چندپنلی** | Hub & Spoke • کلید per-node • همگام‌سازی • login signal
 **امنیت پنل** | توکن JWT-مانند (HMAC-SHA256، ۲۴ ساعت) • 2FA واقعی (TOTP) • rate limit ۵ در ۱۰ دقیقه • چرخش مسیر ورود • Disguise با ۴ سایت پوششی • CSP/XFO/nosniff/CORS • Panic Mode • Kill Switch
-**سیستمی** | کلیدهای API (تا ۱۰) • لاگ ۵۰ رویدادی • Backup/Restore • ریست کارخانه‌ای • health check دامنه
+**سیستمی** | کلیدهای API (تا ۱۰، دسترسیِ کامل/فقط‌خواندنی، قابلِ استفاده به‌عنوان Bearer با نمایشِ آخرین استفاده) • لاگ ۵۰ رویدادی • Backup/Restore • ریست کارخانه‌ای • health check دامنه
 
 ---
 
@@ -461,8 +461,8 @@ node tests-manual/fixes-smoke.cjs     # توابعِ خالص (کانفیگ فی
 `GET` | `/api/state` | وضعیت کامل (هدر `Authorization: Bearer`)
 `PUT` | `/api/settings` | ذخیره‌ی تنظیمات (merge عمیق)
 `POST` | `/api/users` | ساخت کاربر یا `{id, op: "update\|toggle\|reset\|delete"}`
-`POST` | `/api/usage` | ثبت مصرف `{"uuid","up","down"}`
-`GET/POST/DELETE` | `/api/keys` | مدیریت کلیدهای API
+`POST` | `/api/usage` | ثبت مصرف `{"uuid","up","down"}` — نیازمند اعتبارنامه؛ مقدارها باید عددِ نامنفی باشند (همان جدولِ مصرف که پنل و سهمیه از آن می‌خوانند)
+`GET/POST/DELETE` | `/api/keys` | مدیریت کلیدهای API — کلیدِ ساخته‌شده (`sk_…`) خودش اعتبارنامه است؛ `POST {id, ro}` دسترسیِ کلیدِ موجود را عوض می‌کند
 `GET/POST/DELETE` | `/api/panels` | پنل‌های لینک‌شده
 `POST` | `/api/action` | `panic`، `rotate-path`، `2fa-secret`، `pw-change`، `ui-refresh`، `domain-health`، `tg-test`، `update-check/deploy/rollback`، `factory`، `restore`
 `GET` | `/sub/<uuid>` | اشتراک
@@ -476,6 +476,39 @@ curl https://panel.<account>.workers.dev/health
 curl -X POST https://panel.<account>.workers.dev/api/login \
   -H "content-type: application/json" -d '{"password":"simorgh"}'
 ```
+
+### 🔑 کلیدهای API
+
+کلیدها در «تنظیمات → کلیدهای API» ساخته می‌شوند (تا ۱۰ عدد) و **جای توکنِ ورود**
+به کار می‌روند؛ لازم نیست اسکریپت هر ۲۴ ساعت دوباره رمز بفرستد.
+
+سه شکلِ فرستادنِ کلید پذیرفته می‌شود:
+
+```bash
+# ۱) هدرِ استاندارد
+curl -H "Authorization: Bearer sk_xxxxxxxx" https://panel.<account>.workers.dev/api/state
+
+# ۲) هدرِ x-api-key
+curl -H "x-api-key: sk_xxxxxxxx" https://panel.<account>.workers.dev/api/state
+
+# ۳) پارامترِ آدرس (فقط برای ابزارهای ساده؛ در هدر امن‌تر است)
+curl "https://panel.<account>.workers.dev/api/state?key=sk_xxxxxxxx"
+```
+
+دو نوع کلید وجود دارد:
+
+| نوع | اجازه دارد | نمونه‌کاربرد |
+|---|---|---|
+**دسترسی کامل** | همه‌ی مسیرها به‌جز مدیریتِ کلیدها، رمزِ مدیر، ریستِ کارخانه‌ای و بازیابی | ربات/اسکریپتِ مدیریتی |
+**فقط‌خواندنی** | فقط خواندن: `state`، `connections`، `backup`، `exits` — هر نوشتن با ۴۰۳ رد می‌شود | مانیتورینگ و داشبوردِ خودی |
+
+نکته‌ها:
+- کارهای حساس (ساخت/حذفِ کلید، تغییرِ رمز، 2FA، ریستِ کارخانه‌ای، بازیابی) فقط با **ورودِ پنل**
+  انجام می‌شوند — یک کلیدِ لو‌رفته باید بی‌خطر بماند و نتواند برای خودش کلیدِ تازه بسازد.
+- کلید در فهرستِ پنل «آخرین استفاده» و تعدادِ استفاده را نشان می‌دهد؛ حذفِ کلید **بلافاصله**
+  اثر می‌کند (کلیدِ حذف‌شده بلافاصله ۴۰۱ می‌گیرد).
+- درخواستِ بدون اعتبارنامه همیشه ۴۰۱ می‌گیرد؛ یک درخواست به مسیرِ ناشناخته،
+  فهرستِ کاملِ مسیرهای موجود را در پاسخ برمی‌گرداند.
 
 ---
 

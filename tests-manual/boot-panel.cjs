@@ -24,7 +24,8 @@ const dom = new JSDOM(out, {
     const state = {
       version: '2.0.0', build: 'test', storage: 'd1', boot: Date.now() - 60000, lastCheck: Date.now(),
       users: [{ id: 'u1', name: 'test', uuid: '11111111-1111-1111-1111-111111111111', secret: 'abcd', enabled: true, note: '', quotaGB: 50, dailyQuotaMB: 0, expiryAt: Date.now() + 30 * 86400000, deviceLimit: 3, ipLimit: 0, maxConfigs: 0, speedLimit: 0, mode: 'inherit', ports: '', cleanIPs: [], proxyIPs: [], nodes: [], nat64: '', panelUrl: '', blockAdult: false, blockAds: true, fakes: [], fakeMode: 'inherit', up: 1e9, down: 2e9, totalReq: 12, lastSeen: Date.now(), createdAt: Date.now() }],
-      keys: [], panels: [], logs: [], updateLog: [],
+      keys: [{ id: 'k1', name: 'monitor', key: 'sk_test_0123456789', ro: true, lastUsedAt: Date.now() - 3600000, uses: 12 }],
+      panels: [], logs: [], updateLog: [],
       stats: { requests: 42, connections: 0, daily: [1, 2, 3], monthly: [4, 5], yearly: [7] },
       settings: {
         panel: { name: 'پنل تست', url: '' }, mode: 'both', tls: true, transport: 'ws', sni: '', host: '',
@@ -62,6 +63,20 @@ setTimeout(async () => {
     const newErrs = errors.slice(before);
     console.log('view', v, '→', newErrs.length ? 'ERRORS: ' + newErrs.join(' | ') : 'OK');
   }
+  /* ═══ مودالِ ساختِ کلیدِ API — فقط رندر (بدونِ شبکه) ═══
+     دکمه‌ی «کلید جدید» باید نام و دسترسی را از ادمین بپرسد؛ اگر مودال رندر
+     نشود یا #keyName نباشد، key-save نمی‌تواند چیزی بسازد و کلید بی‌دسترسی
+     ساخته می‌شود — همان باگی که کلیدِ API را بی‌فایده کرده بود. */
+  click('[data-view="settings"]');
+  await new Promise((r) => setTimeout(r, 250));
+  click('[data-act="key-new"]');
+  await new Promise((r) => setTimeout(r, 150));
+  const kn = d.querySelector('#keyName'), kscope = d.querySelector('#keyRo'), ksave = d.querySelector('[data-act="key-save"]');
+  console.log('مودالِ کلیدِ API:', kn ? 'OK (نام=' + kn.value + ' • چک‌باکسِ فقط‌خواندنی=' + !!kscope + ' • دکمهٔ ساخت=' + !!ksave + ')' : 'MISSING');
+  if (!kn || !kscope || !ksave) errors.push('مودالِ کلیدِ API کامل رندر نشد');
+  const krow = d.querySelector('[data-act="key-scope"]');
+  if (!krow) errors.push('دکمهٔ تغییرِ دسترسیِ کلید رندر نشد');
+
   console.log('--- all errors ---');
   errors.forEach((e) => console.log(e));
   if (!errors.length) console.log('(none)');
