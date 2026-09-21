@@ -1594,16 +1594,46 @@
       SCHEMA.update.map((g) => group(g, s)).join('') + saveBtn('save-config');
   }
 
+  /* ═══ نمایِ API — لاگِ رکوردبه‌رکوردِ درخواست‌ها + شمارندهٔ هر مسیر ═══
+     `apiLog` رکوردِ خامِ هر درخواست است (روش، مسیر، کدِ وضعیت، زمانِ پاسخ،
+     آی‌پی و این‌که با نشست آمده یا با کلیدِ API) و `apiStats` شمارندهٔ همهٔ
+     فراخوانی‌ها — حتی pollهایی که عمداً رکورد نمی‌گیرند تا رینگ پر نشود. */
+  function apiLogsView(apiLog, apiStats) {
+    const dot = (s) => ((s || 0) >= 400 ? 'bad' : (s || 0) >= 300 ? 'warn' : 'on');
+    const rows = (apiLog || []).map((e) => '<div class="log"><span class="dot ' + dot(e.st) + '"></span>' +
+      '<div class="l"><b class="mono">' + esc(e.m || '') + ' ' + esc(e.p || '') + '</b> ' +
+      '<span class="badge ' + ((e.st || 0) >= 400 ? 'bad' : 'ok') + '">' + fa(e.st || 0) + '</span> ' +
+      '<span class="badge">' + esc(e.who || '') + '</span>' + ((e.n || 1) > 1 ? ' <span class="badge b2">×' + fa(e.n) + '</span>' : '') +
+      '<div class="hint">' + esc(e.ip || '—') + ' • ' + fa(e.ms || 0) + ' میلی‌ثانیه' + (e.note ? ' • ' + esc(e.note) : '') + '</div></div>' +
+      '<span class="hint mono" style="font-size:10px">' + new Date(e.ts).toLocaleString('fa-IR') + '</span></div>').join('') ||
+      '<div class="empty">هنوز درخواستی به API ثبت نشده</div>';
+    const stats = Object.keys(apiStats || {})
+      .sort((a, b) => ((apiStats[b] || {}).n || 0) - ((apiStats[a] || {}).n || 0))
+      .slice(0, 12)
+      .map((k) => {
+        const r = apiStats[k] || {};
+        return '<div class="kv"><span class="mono">' + esc(k) + '</span><b>' + fa(r.n || 0) + ' فراخوان' +
+          (r.err ? ' <span class="badge bad">' + fa(r.err) + ' خطا</span>' : '') +
+          ' <span class="hint">' + fa(r.lastMs || 0) + 'ms' + (r.ip ? ' • ' + esc(r.ip) : '') + '</span></b></div>';
+      }).join('') || '<div class="empty">هنوز فراخوانی‌ای ثبت نشده</div>';
+    return '<div class="page-head"><div><h1>لاگ درخواست‌های API</h1><p>' + fa((apiLog || []).length) + ' رکوردِ خام • ' +
+      fa(Object.keys(apiStats || {}).length) + ' مسیر • هر نوشتن، خطا و کلیدِ API یک رکورد می‌گیرد</p></div>' +
+      '<div class="seg">' + '<button data-act="loglv" data-v="all">همهٔ رویدادها</button><button data-act="loglv" data-v="api" class="on">API</button></div></div>' +
+      '<div class="card"><header><span class="ic">' + icon('fa-list-check') + '</span><div><h3>شمارندهٔ مسیرهای API</h3><p>هر مسیر چند بار صدا زده شده و چند خطا داده — همین‌جا معلوم می‌شود کدام کلید مشغولِ کار است</p></div></header><div class="bd">' + stats + '</div></div>' +
+      '<div class="card"><div class="bd">' + rows + '</div></div>';
+  }
   function logsView() {
     const logs = S.d.logs || [], lv = S.tab.log || 'all';
+    /* نمایِ API جداست: رکوردهای خام + شمارندهٔ مسیرها */
+    if (lv === 'api') return apiLogsView(S.d.apiLog, S.d.apiStats);
     /* فیلترِ «رادار» هم کنار سطوح — اسکنر صفحه‌ی کاربر اینجا لاگ می‌گذارد */
     const list = logs.filter((l) => lv === 'all' || (lv === 'radar' ? l.actor === 'radar' : l.level === lv));
     return '<div class="page-head"><div><h1>لاگ فعالیت</h1><p>' + fa(logs.length) + ' رویداد • audit trail تغییرات ادمین</p></div>' +
-      '<div class="seg">' + [['all', 'همه'], ['radar', 'رادار'], ['success', 'موفق'], ['info', 'اطلاعات'], ['warn', 'هشدار'], ['error', 'خطا']].map(([k, l]) => '<button data-act="loglv" data-v="' + k + '" class="' + (lv === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div></div>' +
+      '<div class="seg">' + [['all', 'همه'], ['radar', 'رادار'], ['success', 'موفق'], ['info', 'اطلاعات'], ['warn', 'هشدار'], ['error', 'خطا'], ['api', 'API']].map(([k, l]) => '<button data-act="loglv" data-v="' + k + '" class="' + (lv === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div></div>' +
       '<div class="card"><div class="bd">' +
       (list.map((l) => '<div class="log"><span class="dot ' + (l.level === 'success' ? 'on' : l.level === 'error' ? 'bad' : 'warn') + '"></span>' +
         '<div class="l"><b>' + esc(l.action) + '</b> <span class="badge">' + esc(l.actor) + '</span> <span class="badge ' + (l.level === 'error' ? 'bad' : l.level === 'success' ? 'ok' : 'b2') + '">' + esc(l.level) + '</span>' +
-        '<div class="hint">' + esc(l.detail || '') + '</div></div><span class="hint mono" style="font-size:10px">' + new Date(l.ts).toLocaleString('fa-IR') + '</span></div>').join('') || '<div class="empty">رویدادی ثبت نشده</div>') +
+        '<div class="hint">' + esc(l.detail || '') + '</div>' + ((l.ip || l.path) ? '<div class="hint mono" style="font-size:10px">' + esc((l.method || '') + ' ' + (l.path || '')) + (l.ip ? ' • ' + esc(l.ip) : '') + (l.status ? ' • HTTP ' + fa(l.status) : '') + (l.who ? ' • ' + esc(l.who) : '') + '</div>' : '') + '</div><span class="hint mono" style="font-size:10px">' + new Date(l.ts).toLocaleString('fa-IR') + '</span></div>').join('') || '<div class="empty">رویدادی ثبت نشده</div>') +
       '</div></div>';
   }
 

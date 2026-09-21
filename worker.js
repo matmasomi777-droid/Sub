@@ -150,9 +150,9 @@ function exitDialHost(srv) {
    BUILD: مُهرِ زمانِ بیلد (UTC)
    BUILD_REV: اثرِ انگشتِ sha256 محتوای worker.js + ui — معیارِ دقیقِ «نسخه‌ی
    تازه» در بررسیِ آپدیت است (بدونِ تکیه بر تاریخ؛ چند پوش در یک روز هم دیده می‌شود) */
-const VERSION = '3.0.18';
-const BUILD = '2026.09.21-10:32';
-const BUILD_REV = '2e5a307126795a2fa7fa9ae71d5c53ec5b6b1a6d69afaaa0e1d24c08ac8a3a07';
+const VERSION = '3.0.20';
+const BUILD = '2026.09.21-14:14';
+const BUILD_REV = '7ddd443edde597221d99748366f10600522c54ef940fc68b4ca20fb0c688e7e7';
 const BOOT = Date.now();
 /* شاخه‌ی پیش‌فرض برای بررسیِ نسخه */
 const UPD_DEFAULT_BRANCH = 'main';
@@ -259,6 +259,13 @@ const DEF = () => ({
   },
   users: [],
   logs: [],
+  /* لاگِ رکوردبه‌رکوردِ درخواست‌های API — روش، مسیر، کدِ وضعیت، زمانِ پاسخ،
+     آی‌پی و نوعِ اعتبارنامه؛ چیزی که «چه کسی چه چیزی صدا زد و چه گرفت»
+     را دقیق می‌گوید (لاگِ فعالیت فقط رویدادهای معناییِ دستی را دارد). */
+  apiLog: [],
+  /* شمارندهٔ هر مسیرِ API — خواندن‌های موفقِ تکراری (pollِ هر ۵ ثانیه) این‌جا
+     جمع می‌شوند تا هم دیده شوند و هم رینگِ لاگ را پر نکنند. */
+  apiStats: {},
   keys: [],
   panels: [],
   updateLog: [],
@@ -353,6 +360,8 @@ let LAST_WRITE = 0;                   // زمان آخرین نوشتن در D1
 let WRITING = false;                  // جلوگیری از نوشتن همزمان
 let WRITE_COUNT = { day: '', n: 0 };  // شمارنده‌ی روزانه
 let DB_READY = false;                 // جدول D1 ساخته شده است
+let DB_WRITE_FAILS = 0;               // شمارِ شکست‌های نوشتن در D1 (قبلاً بی‌صدا بود)
+let DB_FAIL_LOGGED = 0;               // آخرین‌بار که شکستِ نوشتن در لاگ نشست
 
 /** نوشتن در D1 — یک خط SQL (با افتادن خودکار روی KV اگر D1 بایند نشده باشد) */
 async function d1Write(env, json) {
@@ -2053,6 +2062,20 @@ async function save(env, st) {
     const today = new Date().toISOString().slice(0, 10);
     if (WRITE_COUNT.day !== today) WRITE_COUNT = { day: today, n: 0 };
     WRITE_COUNT.n++;
+  } else {
+    /* ⚠️ شکستِ نوشتن نباید بی‌صدا باشد: قبلاً save() فقط false برمی‌گرداند و
+       هیچ‌جا نوشته نمی‌شد — یعنی لاگ‌ها و تغییراتِ همان لحظه «بی‌دلیل» غیب
+       می‌شدند. حالا شمرده می‌شود (/health → db.writeFails) و یک رویداد هم
+       در لاگ می‌نشیند (حداکثر هر ۵ دقیقه، وگرنه خودش طوفانِ نوشتن می‌شد). */
+    DB_WRITE_FAILS++;
+    if (Date.now() - DB_FAIL_LOGGED > 300000) {
+      DB_FAIL_LOGGED = Date.now();
+      try {
+        addLog(st, 'error', 'system', 'نوشتنِ پایگاه‌داده ناموفق بود',
+          'تغییر فقط در حافظهٔ همین isolate ماند — /health → db.writeFails را ببینید');
+        DIRTY = st;                            /* تلاشِ بعدی همان را دوباره می‌نویسد */
+      } catch (e) {}
+    }
   }
   return st;
 }
@@ -2146,8 +2169,8 @@ function normalize(st) {
    پیش از هر نوشتنی رد می‌شود — تا چیزی نیمه‌کاره ذخیره نشود.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const BACKUP_ROOT_KEYS = ['settings', 'users', 'keys', 'panels', 'logs', 'stats', 'updateLog', 'lastCheck', 'uiLoaded'];
-const BACKUP_ARRAY_KEYS = ['users', 'keys', 'panels', 'logs'];
+const BACKUP_ROOT_KEYS = ['settings', 'users', 'keys', 'panels', 'logs', 'apiLog', 'apiStats', 'stats', 'updateLog', 'lastCheck', 'uiLoaded'];
+const BACKUP_ARRAY_KEYS = ['users', 'keys', 'panels', 'logs', 'apiLog'];
 const SETTING_KEYS = Object.keys(DEF().settings);
 
 /** اعتبارسنجی — برمی‌گرداند { ok, errors }؛ هیچ چیزی تغییر نمی‌دهد */
@@ -2200,7 +2223,179 @@ function applyBackup(st, data, mode) {
   return seed(normalize(st));
 }
 
-function addLog(st, level, actor, action, detail = '') { st.logs = st.logs || []; st.logs.unshift({ id: randTok(8), ts: Date.now(), level, actor, action, detail }); st.logs = st.logs.slice(0, 50); }
+/* ═══════════════ لاگِ فعالیت (audit) + لاگِ دقیقِ API ═══════════════
+   رکوردهای لاگ با بافتِ درخواست ذخیره می‌شوند (آی‌پی، روش، مسیر، کد، و نوعِ
+   اعتبارنامه) — قبلاً یک ردیفِ لاگ فقط «چه رویدادی» را می‌گفت و نمی‌شد فهمید
+   از کدام آی‌پی و با کدام کلید آمده است. توکن/کلیدِ خام هرگز ذخیره نمی‌شود،
+   فقط برچسبِ نوعش (session / key:… / bad-key / anon).
+   سقفِ رینگ هم دوگانه است (تعداد + حجمِ تخمینی) تا blob بی‌حساب بزرگ نشود. */
+const LOG_MAX = 150;              /* قبلاً ۵۰ بود — رویدادهای مهم زودتر از بازشدنِ پنل بیرون می‌افتادند */
+const LOG_DETAIL_MAX = 240;
+const LOG_BUDGET = 48000;         /* سقفِ تخمینیِ حجمِ لاگِ فعالیت (بایت) */
+const API_LOG_MAX = 80;
+const API_NOTE_MAX = 160;
+const API_STATS_MAX = 40;
+const API_LOG_BUDGET = 24000;     /* سقفِ تخمینیِ حجمِ apiLog (بایت) */
+const API_LOG_AT = new Map();     /* ضدِ طوفانِ نوشتن: آخرین ثبتِ هر کلیدِ یکسان */
+const API_ERR_AT = new Map();     /* ضدِ طوفانِ نگاشتِ خطاها در لاگِ فعالیت */
+
+/** شناسهٔ اعتبارنامهٔ هر درخواست — در authOf پر و در apiTrace خوانده می‌شود.
+ *  WeakMap روی خودِ شیءِ Request است، پس با همزمانیِ درخواست‌ها در یک isolate
+ *  قاطی نمی‌شود (متغیرِ سراسری این‌جا قطعاً قاطی می‌شد: هر await نقطهٔ تعویض است). */
+const API_META = new WeakMap();
+
+/** تخمینِ ارزانِ حجمِ یک رکورد — بدونِ JSON.stringify در مسیرِ داغ */
+const logSize = (e) => String(e.action || '').length + String(e.detail || '').length + String(e.note || '').length + 90;
+
+/** کوتاه‌کردنِ رینگ: هم بر اساس تعداد، هم بر اساس حجم */
+function trimLogs(arr, max, budget = 0) {
+  const out = Array.isArray(arr) ? arr.slice(0, max) : [];
+  if (!budget) return out;
+  let n = 0;
+  for (let i = 0; i < out.length; i++) {
+    n += logSize(out[i]);
+    if (n > budget) return out.slice(0, i);
+  }
+  return out;
+}
+
+/** بافتِ درخواست برای رکوردهای لاگ — «چه کسی، از کجا، روی کدام مسیر» */
+function reqMeta(req, url, extra = null) {
+  let path = '';
+  try { path = String((url && url.pathname) || new URL(req.url).pathname || ''); } catch (e) { path = ''; }
+  return { ip: ipOf(req), method: String((req && req.method) || 'GET').toUpperCase(), path, ...(extra || {}) };
+}
+
+function addLog(st, level, actor, action, detail = '', meta = null) {
+  st.logs = st.logs || [];
+  const e = { id: randTok(8), ts: Date.now(), level, actor, action, detail: String(detail || '').slice(0, LOG_DETAIL_MAX) };
+  if (meta && typeof meta === 'object') {
+    if (meta.ip) e.ip = String(meta.ip).slice(0, 45);
+    if (meta.method) e.method = String(meta.method).slice(0, 8);
+    if (meta.path) e.path = String(meta.path).slice(0, 120);
+    if (meta.status) e.status = Number(meta.status) || 0;
+    if (meta.who) e.who = String(meta.who).slice(0, 40);
+  }
+  st.logs.unshift(e);
+  st.logs = trimLogs(st.logs, LOG_MAX, LOG_BUDGET);
+  return e;
+}
+
+/* ═══════════════ لاگِ دقیقِ درخواست‌های API ═══════════════
+   چرا لازم شد: تا امروز فقط مسیرهای نوشتنی — و آن هم دستی — چیزی ثبت می‌کردند؛
+   درخواستِ بدونِ اعتبارنامه، کلیدِ نامعتبر، کلیدِ فقط‌خواندنی که نوشتن خواسته،
+   مسیرِ ناشناخته و خطای داخلیِ ۵۰۰ کاملاً بی‌صدا بودند. یعنی ادمین نمی‌توانست
+   بفهمد «چه کسی، با چه اعتبارنامه‌ای، چه چیزی صدا زد و چه گرفت» و هیچ ابزاری
+   برای دیدنِ یک اسکن/حملهٔ API نداشت.
+   حالا پوششِ apiHandler (پایین) هر پاسخِ /api/* را ثبت می‌کند.
+   ضدِ طوفانِ نوشتن (پنل هر ۵ ثانیه state می‌خواند):
+     • خواندنِ موفقِ معمولی فقط در شمارندهٔ همان مسیر می‌نشیند (apiStats)
+     • نوشتن‌ها، خطاها و درخواست‌های با کلیدِ API رکورد می‌گیرند، ولی تکرارِ
+       عیناً یکسان در ۶۰ ثانیه در همان رکورد جمع می‌شود (n = تعداد)
+   ⚠️ query string هرگز لاگ نمی‌شود: ?key= و ?token= خودِ اعتبارنامه‌اند و
+      نباید در لاگ/پشتیبان/UI بنشینند. */
+function whoLabel(a) {
+  if (!a) return 'anon';
+  if (a.ok) return a.kind === 'key' ? ('key:' + (a.ro ? 'ro:' : '') + (String(a.name || '').slice(0, 24) || '?')) : 'session';
+  if (a.expired) return 'expired-session';
+  if (a.kind === 'key') return 'bad-key';
+  return a.kind ? 'bad-token' : 'anon';
+}
+
+/** برچسبِ اعتبارنامهٔ همین درخواست — برای رکوردهای لاگِ فعالیت */
+const whoOf = (req) => whoLabel(API_META.get(req));
+
+/** شمارندهٔ هر مسیر (روش + مسیر) — برمی‌گرداند: آیا مسیرِ تازه‌ای بود؟ */
+function recordApiStat(st, m, p, status, ms, ip) {
+  if (!st || !st.settings) return false;
+  if (!st.apiStats || typeof st.apiStats !== 'object' || Array.isArray(st.apiStats)) st.apiStats = {};
+  const k = m + ' ' + p;
+  const isNew = !st.apiStats[k];
+  const row = st.apiStats[k] || (st.apiStats[k] = { n: 0, ok: 0, err: 0, ms: 0, lastMs: 0, last: 0, status: 0, ip: '' });
+  row.n++;
+  if (status >= 400) row.err++; else row.ok++;
+  row.ms += ms; row.lastMs = ms; row.last = Date.now(); row.status = status;
+  if (ip) row.ip = String(ip).slice(0, 45);
+  if (isNew && Object.keys(st.apiStats).length > API_STATS_MAX) {
+    /* نگاشت محدود بماند — قدیمی‌ترین‌ها (بر اساس آخرین استفاده) حذف می‌شوند */
+    const keys = Object.keys(st.apiStats);
+    keys.sort((a, b) => (st.apiStats[a].last || 0) - (st.apiStats[b].last || 0));
+    keys.slice(0, keys.length - API_STATS_MAX).forEach((x) => delete st.apiStats[x]);
+  }
+  return isNew;
+}
+
+function apiLogPush(st, e) {
+  st.apiLog = Array.isArray(st.apiLog) ? st.apiLog : [];
+  st.apiLog.unshift(e);
+  st.apiLog = trimLogs(st.apiLog, API_LOG_MAX, API_LOG_BUDGET);
+}
+
+/** خطاهای API در «لاگ فعالیت» هم می‌نشینند (هر ترکیب حداکثر یک‌بار در دقیقه) */
+function mirrorApiErr(st, m, p, status, who, ip, detail) {
+  if (!st || !st.settings) return false;
+  if (p === '/api/login') return false;                 /* ورود، لاگِ دقیقِ خودش را دارد */
+  if (status !== 401 && status !== 403 && status !== 404 && status !== 429) return false;
+  const k = status + '|' + p + '|' + ip;
+  const now = Date.now();
+  /* ⚠️ سقفِ زمانی تنها کافی نیست: اگر رینگ پاک شود (logs-clear) یا رکورد بیرون
+     بیفتد، «تکرار» بودنِ درخواست دیگر به‌معنای «قبلاً ثبت شده» نیست — پس
+     وجودِ همان رکورد در رینگِ فعلی هم شرط می‌شود، وگرنه لاگ یک رخدادِ تازه
+     را بی‌دلیل قایم می‌کرد. */
+  const present = (st.logs || []).some((l) => l && l.actor === 'api' && l.path === p && l.status === status && l.ip === ip);
+  if (present && now - (API_ERR_AT.get(k) || 0) < 60000) return false;
+  if (API_ERR_AT.size > 300) API_ERR_AT.clear();
+  API_ERR_AT.set(k, now);
+  const label = status === 401 ? 'اعتبارنامه نامعتبر — درخواست رد شد'
+    : status === 403 ? 'دسترسیِ ناکافی — درخواست رد شد'
+      : status === 429 ? 'محدودیتِ نرخ — درخواست رد شد'
+        : 'مسیرِ ناشناختهٔ API';
+  addLog(st, status === 404 ? 'info' : 'warn', 'api', label,
+    m + ' ' + p + ' • ' + who + (detail ? ' • ' + String(detail).slice(0, 120) : ''),
+    { ip, method: m, path: p, status, who });
+  return true;
+}
+
+/** ثبتِ یک درخواستِ API — از پوششِ apiHandler صدا زده می‌شود (پایین) */
+function apiTrace(env, ctx, req, url, status, ms, err) {
+  const m = String((req && req.method) || 'GET').toUpperCase();
+  let p = '';
+  try { p = String((url && url.pathname) || new URL(req.url).pathname || ''); } catch (e) { p = ''; }
+  if (!p) return;
+  const ip = ipOf(req);
+  const a = API_META.get(req) || { ok: false, kind: '' };
+  const who = whoLabel(a);
+  const fail = status >= 400 || !!err;
+  /* «جالب» = نوشتن، خطا، یا درخواستی که با کلیدِ API آمده (کارِ اسکریپت/بات) */
+  const interesting = fail || m !== 'GET' || (a.ok === true && a.kind === 'key');
+  const apply = (st) => {
+    if (!st || !st.settings) return;
+    const newPath = recordApiStat(st, m, p, status, ms, ip);
+    let changed = newPath;
+    if (interesting) {
+      const now = Date.now();
+      const k = (fail ? 'f' : 'r') + '|' + m + '|' + p + '|' + who + '|' + status;
+      const head = (st.apiLog || [])[0];
+      if (head && head.k === k && now - (API_LOG_AT.get(k) || 0) < 60000) {
+        head.n = (head.n || 1) + 1; head.ts = now; head.ms = ms;   /* همان درخواستِ تکراری */
+      } else {
+        if (API_LOG_AT.size > 300) API_LOG_AT.clear();
+        API_LOG_AT.set(k, now);
+        apiLogPush(st, { id: randTok(6), ts: now, ms, ip, who, k, m, p, st: status, n: 1, note: String(err || '').slice(0, API_NOTE_MAX) });
+        changed = true;
+      }
+      if (fail && mirrorApiErr(st, m, p, status, who, ip, err)) changed = true;
+    }
+    if (changed) {
+      const pr = save(env, st);
+      try { if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(pr); else pr.catch(() => {}); } catch (e) {}
+    }
+  };
+  if (MEM && MEM.settings) { apply(MEM); return; }
+  /* isolateِ سرد: حالت تازه خوانده می‌شود — پاسخِ درخواست منتظرِ این نوشتن نمی‌ماند */
+  const pr = load(env).then(apply).catch(() => {});
+  try { if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(pr); else pr.catch(() => {}); } catch (e) {}
+}
 function seed(st) {
   try { normalize(st); } catch (e) {} // Anti-1101 round2: canonicalize stored shape on read, like save() does on write
   if (!st || !st.settings) return st;
@@ -2243,14 +2438,14 @@ async function authOf(req, env, st) {
   const t = String(h.replace(/^Bearer\s+/i, '')
     || (url ? (url.searchParams.get('key') || url.searchParams.get('token')) : '')
     || req.headers.get('x-api-key') || '').trim();
-  if (!t) return { ok: false, kind: '' };
+  if (!t) { API_META.set(req, { ok: false, kind: '' }); return { ok: false, kind: '' }; }
 
   /* ۱) کلیدِ API — هر کلیدی که با sk_ شروع شود در فهرستِ کلیدهای ذخیره‌شده
      جست‌وجو می‌شود. کلیدِ نامعتبر هم مثل بی‌اعتبارنامه رد می‌شود. */
   if (t.startsWith('sk_')) {
     const keys = Array.isArray(st && st.keys) ? st.keys : [];
     const key = keys.find((k) => k && String(k.key) === t);
-    if (!key) return { ok: false, kind: 'key' };
+    if (!key) { API_META.set(req, { ok: false, kind: 'key' }); return { ok: false, kind: 'key' }; }
     /* آخرین استفاده — در پنل نشان می‌دهد کلید واقعاً کار می‌کند.
        حداکثر یک نوشتن در دقیقه، تا مسیرهای پرترافیک کند نشوند. */
     if (!key.lastUsedAt || Date.now() - Number(key.lastUsedAt) > 60000) {
@@ -2258,15 +2453,20 @@ async function authOf(req, env, st) {
       key.uses = (Number(key.uses) || 0) + 1;
       try { save(env, st).catch(() => {}); } catch (e) {}
     }
-    return { ok: true, kind: 'key', ro: !!key.ro, id: key.id || '', name: key.name || '' };
+    const ident = { ok: true, kind: 'key', ro: !!key.ro, id: key.id || '', name: key.name || '' };
+    /* نوعِ اعتبارنامه برای لاگِ API — خودِ کلید هرگز ذخیره نمی‌شود، فقط برچسب */
+    API_META.set(req, ident);
+    return ident;
   }
 
   /* ۲) توکنِ نشست (امضای HMAC روی همان رمزِ مدیر) */
-  if (!t.includes('.')) return { ok: false, kind: '' };
+  if (!t.includes('.')) { API_META.set(req, { ok: false, kind: 'token' }); return { ok: false, kind: 'token' }; }
   const [p, sig] = t.split('.');
-  if ((await hmac(masterKey(st, env), p)) !== sig) return { ok: false, kind: '' };
-  try { if (JSON.parse(atob(p)).exp * 1000 < Date.now()) return { ok: false, kind: '' }; } catch (e) { return { ok: false, kind: '' }; }
-  return { ok: true, kind: 'session', ro: false };
+  if ((await hmac(masterKey(st, env), p)) !== sig) { API_META.set(req, { ok: false, kind: 'token' }); return { ok: false, kind: 'token' }; }
+  try { if (JSON.parse(atob(p)).exp * 1000 < Date.now()) { API_META.set(req, { ok: false, kind: 'token', expired: true }); return { ok: false, kind: 'token', expired: true }; } } catch (e) { API_META.set(req, { ok: false, kind: 'token' }); return { ok: false, kind: 'token' }; }
+  const sess = { ok: true, kind: 'session', ro: false };
+  API_META.set(req, sess);
+  return sess;
 }
 /* بررسیِ سادهٔ «آیا این درخواست مجاز است؟» — مسیرهای خواندنی */
 async function authOk(req, env, st) {
@@ -6343,7 +6543,30 @@ async function cfTokenCheck(st, b) {
 }
 
 /* ════════════════════════════ API ════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   پوششِ لاگ — هر پاسخِ /api/* را با کدِ وضعیت و زمانِ واقعی ثبت می‌کند
+   ───────────────────────────────────────────────────────────────────────────
+   تابعِ اصلی به apiRoute تغییرِ نام داد تا این پوشش بتواند: کدِ وضعیت را
+   ببیند (حتی ۴۰۱/۴۰۳ و ۴۰۴)، زمانِ پاسخ را بسنجد و خطای ۵۰۰ را هم ثبت کند.
+   ✅ رفتار عوض نمیشود: خطا با همان پیام به fetch بیرونی پرتاب می‌شود و آن‌جا
+      (مثل قبل) به ۵۰۰ JSON تبدیل می‌شود؛ فقط حالا در لاگ هم می‌نشیند. */
 async function apiHandler(req, env, url, ctx) {
+  const t0 = Date.now();
+  let status = 500, err = '';
+  try {
+    const res = await apiRoute(req, env, url, ctx);
+    status = res && res.status ? res.status : 0;
+    return res;
+  } catch (e) {
+    err = String((e && e.message) || e);
+    throw e;
+  } finally {
+    /* ثبت هرگز پاسخ را نمی‌بلعد و هرگز تأخیر نمی‌دهد (نوشتن در waitUntil) */
+    try { apiTrace(env, ctx, req, url, status, Date.now() - t0, err); } catch (e) {}
+  }
+}
+
+async function apiRoute(req, env, url, ctx) {
   const st = seed(await load(env));
   /* ⚠️ مسیرِ سلامت دو شکلِ مستندشده دارد: /api/health (استاندارد) و /health
      (که روترِ اصلی در `isHealth` صریحاً آزاد می‌گذارد و README هم همان را
@@ -6355,15 +6578,15 @@ async function apiHandler(req, env, url, ctx) {
 
   if (route === 'login' && m === 'POST') {
     const ip = ipOf(req);
-    if (!rateOk('login:' + ip, 5, 600000)) { addLog(st, 'warn', 'auth', 'تلاش ورود بیش از حد', ip); await save(env, st); return json({ error: 'تعداد تلاش‌ها زیاد بود — ۱۰ دقیقه صبر کنید' }, 429); }
+    if (!rateOk('login:' + ip, 5, 600000)) { addLog(st, 'warn', 'auth', 'تلاش ورود بیش از حد', ip, reqMeta(req, url, { status: 429, who: 'anon' })); await save(env, st); return json({ error: 'تعداد تلاش‌ها زیاد بود — ۱۰ دقیقه صبر کنید' }, 429); }
     const b = await req.json().catch(() => ({}));
     const want = masterKey(st, env);
-    if (b.password !== want) { addLog(st, 'warn', 'auth', 'ورود ناموفق', ip); await save(env, st); return json({ error: 'رمز عبور نادرست است' }, 401); }
+    if (b.password !== want) { addLog(st, 'warn', 'auth', 'ورود ناموفق', ip, reqMeta(req, url, { status: 401, who: 'anon' })); await save(env, st); return json({ error: 'رمز عبور نادرست است' }, 401); }
     if (s.auth.totp && s.auth.totpSecret) {
       const code = await totp(s.auth.totpSecret);
-      if (b.totp !== code) { addLog(st, 'warn', 'auth', 'کد 2FA نامعتبر', ip); await save(env, st); return json({ error: 'کد دو مرحله‌ای نامعتبر یا منقضی است' }, 401); }
+      if (b.totp !== code) { addLog(st, 'warn', 'auth', 'کد 2FA نامعتبر', ip, reqMeta(req, url, { status: 401, who: 'anon' })); await save(env, st); return json({ error: 'کد دو مرحله‌ای نامعتبر یا منقضی است' }, 401); }
     }
-    addLog(st, 'success', 'auth', 'ورود موفق', ip + (s.tg.loginAlert ? ' • اعلان تلگرام ارسال شد' : ''));
+    addLog(st, 'success', 'auth', 'ورود موفق', ip + (s.tg.loginAlert ? ' • اعلان تلگرام ارسال شد' : ''), reqMeta(req, url, { status: 200, who: 'login' }));
     if (s.tg.enabled && s.tg.loginAlert && s.tg.token) fetch(`https://api.telegram.org/bot${s.tg.token}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: s.tg.adminId || s.tg.chatId, text: `🔑 ورود جدید از ${ip}` }) }).catch(() => {});
     await save(env, st);
     return json({ ok: true, token: await mkToken(st, env), expiresAt: Date.now() + 86400000, idleMin: s.auth.sessionMin });
@@ -6404,6 +6627,10 @@ async function apiHandler(req, env, url, ctx) {
       do: !!env.LIMITER,
       pending: !!DIRTY,
       lastWrite: LAST_WRITE ? Math.floor((Date.now() - LAST_WRITE) / 1000) + 's ago' : 'never',
+      /* ⚠️ شکستِ نوشتن تا امروز بی‌صدا بود: وضعیت فقط در حافظه می‌ماند و
+         لاگ/تنظیمات «بی‌دلیل» غیب می‌شدند. حالا از بیرون هم دیده می‌شود. */
+      writeFails: DB_WRITE_FAILS,
+      lastFail: DB_FAIL_LOGGED ? Math.floor((Date.now() - DB_FAIL_LOGGED) / 1000) + 's ago' : 'never',
     },
     });
   }
@@ -6488,7 +6715,7 @@ async function apiHandler(req, env, url, ctx) {
       }
       merge(s, b.settings);
     }
-    addLog(st, 'info', 'panel', 'تنظیمات ذخیره شد', Object.keys(b.settings || {}).join(', '));
+    addLog(st, 'info', 'panel', 'تنظیمات ذخیره شد', Object.keys(b.settings || {}).join(', '), reqMeta(req, url, { status: 200, who: whoOf(req) }));
     await save(env, st);
     return json({ ok: true, storage: backendOf(env) });
   }
@@ -6564,11 +6791,11 @@ async function apiHandler(req, env, url, ctx) {
         }
         merge(u, p);
       }
-      addLog(st, b.op === 'delete' ? 'warn' : 'info', 'user', 'کاربر: ' + b.op, u.name || '');
+      addLog(st, b.op === 'delete' ? 'warn' : 'info', 'user', 'کاربر: ' + b.op, u.name || '', reqMeta(req, url, { status: 200, who: whoOf(req) }));
       await save(env, st); return json({ ok: true, users: st.users });
     }
     const u = { id: randTok(6), name: b.name || 'کاربر ' + (st.users.length + 1), uuid: b.uuid || crypto.randomUUID(), secret: b.secret || randTok(12), enabled: true, note: b.note || '', quotaGB: Number(b.quotaGB) || 0, dailyQuotaMB: Number(b.dailyQuotaMB) || 0, expiryAt: b.expiryDays ? Date.now() + b.expiryDays * 86400000 : (b.expiryHours ? Date.now() + b.expiryHours * 3600000 : null), expiryFirstUse: !!b.expiryFirstUse, expiryArmed: !b.expiryFirstUse, deviceLimit: 3, ipLimit: 0, maxConfigs: 0, speedLimit: 0, mode: 'inherit', ports: '', cleanIPs: [], proxyIPs: [], nodes: [], nat64: '', panelUrl: '', blockAdult: false, blockAds: true, fakes: [], fakeMode: 'inherit', up: 0, down: 0, totalReq: 0, lastSeen: null, createdAt: Date.now() };
-    st.users.unshift(u); addLog(st, 'success', 'user', 'کاربر جدید ساخته شد', u.name);
+    st.users.unshift(u); addLog(st, 'success', 'user', 'کاربر جدید ساخته شد', u.name, reqMeta(req, url, { status: 201, who: whoOf(req) }));
     if (s.tg.enabled && s.tg.notify.user) tgSend(s, `👤 کاربر جدید: ${u.name}\n🔗 ${url.origin}/${s.sub.path}/${u.uuid}`);
     await save(env, st);
     return json({ ok: true, user: u, subscription: `${url.origin}/${s.sub.path}/${u.uuid}` }, 201);
@@ -6643,7 +6870,7 @@ async function apiHandler(req, env, url, ctx) {
     r.tokenUrl = cfTokenTemplateUrl(r.account || u.cfAccount, 'Sub Panel Deploy');
     try {
       addLog(st, r.ok ? 'success' : 'warn', 'system', 'بررسیِ توکنِ کلاودفلر',
-        (changed ? 'اعتبارنامه ذخیره شد • ' : '') + String(r.msg || '').slice(0, 140));
+        (changed ? 'اعتبارنامه ذخیره شد • ' : '') + String(r.msg || '').slice(0, 140), reqMeta(req, url, { status: 200, who: whoOf(req) }));
       await save(env, st);
     } catch (e) {}
     return json(r);
@@ -6707,7 +6934,7 @@ async function apiHandler(req, env, url, ctx) {
         return json({ ok: false, error: 'این سرور خروجی قبلاً افزوده شده است' }, 409);
       }
       ex.servers.push(srv);
-      addLog(st, 'success', 'core', 'افزودن سرور خروجی', srv.name + ' • ' + srv.address + ':' + srv.port);
+      addLog(st, 'success', 'core', 'افزودن سرور خروجی', srv.name + ' • ' + srv.address + ':' + srv.port, reqMeta(req, url, { status: 201, who: whoOf(req) }));
       await save(env, st);
       return json({
         ok: true, op, server: srv, servers: ex.servers,
@@ -6726,7 +6953,7 @@ async function apiHandler(req, env, url, ctx) {
       const issues = exitIssues(srv);
       if (issues.length) return json({ ok: false, error: issues[0], issues }, 400);
       ex.servers[i] = srv;
-      addLog(st, 'info', 'core', 'ویرایش سرور خروجی', srv.name);
+      addLog(st, 'info', 'core', 'ویرایش سرور خروجی', srv.name, reqMeta(req, url, { status: 200, who: whoOf(req) }));
       await save(env, st);
       return json({ ok: true, op, server: srv, servers: ex.servers, msg: 'سرور خروجی «' + srv.name + '» به‌روزرسانی شد' });
     }
@@ -6738,7 +6965,7 @@ async function apiHandler(req, env, url, ctx) {
       if (ex.servers.length === before) return json({ ok: false, error: 'سرور خروجی با این شناسه پیدا نشد' }, 404);
       if (ex.defaultExit === id) { ex.defaultExit = ''; ex.defaultMode = 'direct'; }
       st.users.forEach((u) => { if (u.exitId === id) { u.exitId = ''; u.exitMode = 'direct'; } });
-      addLog(st, 'warn', 'core', 'حذف سرور خروجی', id);
+      addLog(st, 'warn', 'core', 'حذف سرور خروجی', id, reqMeta(req, url, { status: 200, who: whoOf(req) }));
       await save(env, st);
       return json({ ok: true, op, servers: ex.servers, msg: 'سرور خروجی حذف شد — کانفیگ‌هایی که به آن وابسته بودند مستقیم شدند' });
     }
@@ -6760,7 +6987,7 @@ async function apiHandler(req, env, url, ctx) {
       srv.enabled = want;
       addLog(st, want ? 'success' : 'warn', 'core',
         want ? 'فعال‌کردن سرور خروجی' : 'غیرفعال‌کردن سرور خروجی',
-        srv.name + ' — انتخابِ کانفیگ‌ها حفظ شد');
+        srv.name + ' — انتخابِ کانفیگ‌ها حفظ شد', reqMeta(req, url, { status: 200, who: whoOf(req) }));
       await save(env, st);
       return json({
         ok: true, op, id, enabled: want, servers: ex.servers, defaultMode: ex.defaultMode, defaultExit: ex.defaultExit,
@@ -6779,7 +7006,7 @@ async function apiHandler(req, env, url, ctx) {
       ex.strict = want;
       addLog(st, want ? 'success' : 'warn', 'core',
         want ? 'روشن‌کردن حالتِ سخت‌گیرِ خروجی' : 'خاموش‌کردن حالتِ سخت‌گیرِ خروجی',
-        want ? 'شکستِ سرور خروجی = بستنِ اتصال (بدونِ نشتِ آی‌پی)' : 'شکستِ سرور خروجی = ادامه به مسیر مستقیم');
+        want ? 'شکستِ سرور خروجی = بستنِ اتصال (بدونِ نشتِ آی‌پی)' : 'شکستِ سرور خروجی = ادامه به مسیر مستقیم', reqMeta(req, url, { status: 200, who: whoOf(req) }));
       await save(env, st);
       return json({
         ok: true, op, strict: want, servers: ex.servers,
@@ -6799,7 +7026,7 @@ async function apiHandler(req, env, url, ctx) {
       srv.resolvedIp = ip;
       srv.resolvedAt = Date.now();
       EXIT_IP_LAST.set(srv.id, Date.now());
-      addLog(st, 'info', 'core', 'حلِ آی‌پیِ سرور خروجی', srv.name + ' → ' + ip);
+      addLog(st, 'info', 'core', 'حلِ آی‌پیِ سرور خروجی', srv.name + ' → ' + ip, reqMeta(req, url, { status: 200, who: whoOf(req) }));
       await save(env, st);
       return json({ ok: true, op, id, ip, resolvedAt: srv.resolvedAt, msg: 'آی‌پیِ «' + srv.name + '» حل شد: ' + ip });
     }
@@ -6817,7 +7044,7 @@ async function apiHandler(req, env, url, ctx) {
       srv.ipWrap = want;
       const eff = exitIpWrap(srv);
       addLog(st, 'info', 'core', 'تنظیمِ پوششِ آی‌پیِ مقصدِ خروجی',
-        srv.name + ' → ' + (want || 'auto') + (eff ? ' (sslip.io فعال)' : ' (آی‌پیِ مستقیم)'));
+        srv.name + ' → ' + (want || 'auto') + (eff ? ' (sslip.io فعال)' : ' (آی‌پیِ مستقیم)'), reqMeta(req, url, { status: 200, who: whoOf(req) }));
       await save(env, st);
       return json({
         ok: true, op, id, ipWrap: want, effective: eff, cfFronted: exitCfFronted(srv), servers: ex.servers,
@@ -6836,7 +7063,7 @@ async function apiHandler(req, env, url, ctx) {
       ex.enabled = want;
       addLog(st, want ? 'success' : 'warn', 'core',
         want ? 'فعال‌سازی مسیر خروجی' : 'خاموش‌کردن مسیر خروجی',
-        want ? 'سرورهای خروجی در تونل به کار می‌روند' : 'همه‌ی کانفیگ‌ها مستقیم می‌روند (فهرستِ سرورها حفظ شد)');
+        want ? 'سرورهای خروجی در تونل به کار می‌روند' : 'همه‌ی کانفیگ‌ها مستقیم می‌روند (فهرستِ سرورها حفظ شد)', reqMeta(req, url, { status: 200, who: whoOf(req) }));
       await save(env, st);
       return json({ ok: true, op, enabled: want, msg: want ? 'مسیر خروجی فعال شد' : 'مسیر خروجی خاموش شد — همه‌ی کانفیگ‌ها مستقیم می‌روند' });
     }
@@ -6860,7 +7087,7 @@ async function apiHandler(req, env, url, ctx) {
       } else if (mode === 'direct') { u.exitMode = 'direct'; u.exitId = ''; }
       else { u.exitMode = 'inherit'; u.exitId = ''; }
       const r = resolveExit(st, u);
-      addLog(st, 'info', 'core', 'تغییر خروجیِ کانفیگ', u.name + ' • ' + r.name);
+      addLog(st, 'info', 'core', 'تغییر خروجیِ کانفیگ', u.name + ' • ' + r.name, reqMeta(req, url, { status: 200, who: whoOf(req) }));
       await save(env, st);
       return json({
         ok: true, op, uuid: u.uuid, mode: u.exitMode, exitId: u.exitId,
@@ -6882,7 +7109,7 @@ async function apiHandler(req, env, url, ctx) {
       let n = 0;
       st.users.forEach((u) => { if (u.exitMode !== mode || u.exitId) n++; u.exitMode = mode; u.exitId = ''; });
       addLog(st, 'info', 'core', 'خروجیِ همه‌ی کانفیگ‌ها تغییر کرد',
-        mode === 'inherit' ? 'پیروی از پیش‌فرضِ سراسری' : 'مستقیم (بدونِ واسطه)');
+        mode === 'inherit' ? 'پیروی از پیش‌فرضِ سراسری' : 'مستقیم (بدونِ واسطه)', reqMeta(req, url, { status: 200, who: whoOf(req) }));
       await save(env, st);
       return json({
         ok: true, op, mode, changed: n,
@@ -6902,7 +7129,7 @@ async function apiHandler(req, env, url, ctx) {
     const mode = String((b && b.mode) || 'exit').toLowerCase();
     if (mode === 'direct') {
       ex.defaultMode = 'direct'; ex.defaultExit = '';
-      addLog(st, 'info', 'core', 'پیش‌فرضِ سراسریِ خروجی', 'مستقیم (بدون واسطه)');
+      addLog(st, 'info', 'core', 'پیش‌فرضِ سراسریِ خروجی', 'مستقیم (بدون واسطه)', reqMeta(req, url, { status: 200, who: whoOf(req) }));
       await save(env, st);
       return json({ ok: true, defaultMode: 'direct', defaultExit: '', msg: 'خروجیِ پیش‌فرضِ سراسری برابر با «مستقیم (بدون واسطه)» شد' });
     }
@@ -6912,7 +7139,7 @@ async function apiHandler(req, env, url, ctx) {
       return json({ ok: false, error: 'سرور خروجی «' + srv.name + '» غیرفعال است — اول آن را فعال کنید', issues: ['exit-disabled'] }, 400);
     }
     ex.defaultMode = 'exit'; ex.defaultExit = srv.id;
-    addLog(st, 'info', 'core', 'پیش‌فرضِ سراسریِ خروجی', srv.name);
+    addLog(st, 'info', 'core', 'پیش‌فرضِ سراسریِ خروجی', srv.name, reqMeta(req, url, { status: 200, who: whoOf(req) }));
     await save(env, st);
     return json({
       ok: true, defaultMode: 'exit', defaultExit: srv.id, server: srv,
@@ -6944,7 +7171,7 @@ async function apiHandler(req, env, url, ctx) {
     addLog(st, r.ok ? 'success' : 'warn', 'core', 'تست سرور خروجی',
       srv.name + ' • ' + (r.ok
         ? fa(r.ms) + ' میلی‌ثانیه (' + fa(r.bytes || 0) + ' بایت از تونل • آی‌پی: ' + (r.ip && r.ip.ok ? 'سالم' : '—') + ')'
-        : (r.error || 'ناموفق')) + (ip ? ' • ' + ip : ''));
+        : (r.error || 'ناموفق')) + (ip ? ' • ' + ip : ''), reqMeta(req, url, { status: 200, who: whoOf(req) }));
     await save(env, st);
     return json({
       ok: true, id: srv.id, name: srv.name,
@@ -6992,7 +7219,7 @@ async function apiHandler(req, env, url, ctx) {
       return json({ error: 'رمز عبور از متغیر محیطی MASTER_KEY خوانده می‌شود؛ برای تغییرِ آن باید خودِ این متغیر را در تنظیماتِ ورکر عوض کنید' }, 409);
     }
     s.auth.password = next;
-    addLog(st, 'warn', 'auth', 'رمز عبور پنل تغییر کرد', 'از ' + ipOf(req));
+    addLog(st, 'warn', 'auth', 'رمز عبور پنل تغییر کرد', 'از ' + ipOf(req), reqMeta(req, url, { status: 200, who: whoOf(req) }));
     await save(env, st);
     /* نشستِ فعلی با رمزِ قبلی امضا شده — بعد از تغییر نامعتبر است */
     return json({
@@ -7023,7 +7250,10 @@ async function apiHandler(req, env, url, ctx) {
     }
     const okN = results.filter((r) => r.ok).length;
     addLog(st, okN ? 'success' : 'warn', 'core', 'تست Proxy IPها',
-      fa(okN) + ' از ' + fa(results.length) + ' مورد در دسترس');
+      fa(okN) + ' از ' + fa(results.length) + ' مورد در دسترس', reqMeta(req, url, { status: 200, who: whoOf(req) }));
+    /* ⚠️ این رویداد تا امروز ذخیره نمی‌شد: addLog فقط حافظه را عوض می‌کرد و
+       بدونِ save، رینگِ لاگ در D1 هیچ‌وقت نمی‌نشست («لاگ ثبت نمی‌شود»). */
+    await save(env, st);
     return json({
       ok: true, total: results.length, reachable: okN, results,
       stats: { attempts: PROXY_STATS.attempts, connects: PROXY_STATS.connects, fails: PROXY_STATS.fails, lastAt: PROXY_STATS.lastAt, lastError: PROXY_STATS.lastError || null },
@@ -7096,7 +7326,7 @@ async function apiHandler(req, env, url, ctx) {
           return json({ ok: true, key: k, keys, ro: !!k.ro, msg: 'دسترسیِ «' + k.name + '» تغییری نکرد' });
         }
         k.ro = ro;
-        addLog(st, 'info', 'auth', 'دسترسیِ کلید API تغییر کرد', k.name + ' → ' + (ro ? 'فقط‌خواندنی' : 'دسترسی کامل'));
+        addLog(st, 'info', 'auth', 'دسترسیِ کلید API تغییر کرد', k.name + ' → ' + (ro ? 'فقط‌خواندنی' : 'دسترسی کامل'), reqMeta(req, url, { status: 200, who: whoOf(req) }));
         await save(env, st);
         return json({
           ok: true, key: k, keys, ro,
@@ -7114,7 +7344,7 @@ async function apiHandler(req, env, url, ctx) {
         ro: !!(b && (b.ro === true || b.readOnly === true)), createdAt: Date.now(), lastUsedAt: 0, uses: 0,
       };
       keys.push(k);
-      addLog(st, 'success', 'auth', 'کلید API ساخته شد', k.name + (k.ro ? ' • فقط‌خواندنی' : ' • دسترسی کامل'));
+      addLog(st, 'success', 'auth', 'کلید API ساخته شد', k.name + (k.ro ? ' • فقط‌خواندنی' : ' • دسترسی کامل'), reqMeta(req, url, { status: 201, who: whoOf(req) }));
       await save(env, st);
       return json({
         ok: true, key: k, keys,
@@ -7133,7 +7363,7 @@ async function apiHandler(req, env, url, ctx) {
       const before = keys.length;
       st.keys = keys.filter((k) => k.id !== id);
       if (st.keys.length === before) return json({ error: 'not found', msg: 'کلیدی با این شناسه پیدا نشد' }, 404);
-      addLog(st, 'warn', 'auth', 'کلید API حذف شد', id);
+      addLog(st, 'warn', 'auth', 'کلید API حذف شد', id, reqMeta(req, url, { status: 200, who: whoOf(req) }));
       await save(env, st);
       return json({ ok: true, removed: before - st.keys.length, keys: st.keys });
     }
@@ -7145,11 +7375,20 @@ async function apiHandler(req, env, url, ctx) {
     else if (!(await authOk(req, env, st))) return json({ error: 'unauthorized' }, 401);
     if (m === 'POST') {
       const b = await req.json().catch(() => ({}));
-      if (b.id && b.op === 'sync') { st.panels = st.panels.map((p) => (p.id === b.id ? { ...p, status: 'online', lastSync: Date.now() } : p)); addLog(st, 'info', 'network', 'پنل همگام شد', b.id); }
-      else if (b.name && b.url) { st.panels.push({ id: randTok(5), name: b.name, url: b.url, role: 'spoke', status: 'online', lastSync: Date.now(), key: 'node_' + randTok(10) }); addLog(st, 'success', 'network', 'پنل لینک شد', b.name); }
+      if (b.id && b.op === 'sync') { st.panels = st.panels.map((p) => (p.id === b.id ? { ...p, status: 'online', lastSync: Date.now() } : p)); addLog(st, 'info', 'network', 'پنل همگام شد', b.id, reqMeta(req, url, { status: 200, who: whoOf(req) })); }
+      else if (b.name && b.url) { st.panels.push({ id: randTok(5), name: b.name, url: b.url, role: 'spoke', status: 'online', lastSync: Date.now(), key: 'node_' + randTok(10) }); addLog(st, 'success', 'network', 'پنل لینک شد', b.name, reqMeta(req, url, { status: 200, who: whoOf(req) })); }
       await save(env, st); return json({ ok: true, panels: st.panels });
     }
-    if (m === 'DELETE') { st.panels = st.panels.filter((p) => p.id !== url.searchParams.get('id')); await save(env, st); return json({ ok: true, panels: st.panels }); }
+    /* ⚠️ حذفِ پنلِ لینک‌شده قبلاً هیچ ردی در لاگ نمی‌گذاشت — یعنی ادمین
+       نمی‌فهمید «پنل چرا از فهرست رفت». حالا هم رویداد دارد، هم بافتِ درخواست. */
+    if (m === 'DELETE') {
+      const pid = String(url.searchParams.get('id') || '');
+      const before = st.panels.length;
+      const gone = (st.panels.find((p) => p.id === pid) || {}).name || pid;
+      st.panels = st.panels.filter((p) => p.id !== pid);
+      if (st.panels.length !== before) addLog(st, 'warn', 'network', 'پنلِ لینک‌شده حذف شد', gone, reqMeta(req, url, { status: 200, who: whoOf(req) }));
+      await save(env, st); return json({ ok: true, panels: st.panels });
+    }
     return json({ panels: st.panels });
   }
 
@@ -7162,10 +7401,12 @@ async function apiHandler(req, env, url, ctx) {
       ? await authSession(req, env, st)
       : await authWrite(req, env, st);
     if (ag) return json(ag, ag.status || 401);
-    if (a === 'panic') { s.auth.panic = !s.auth.panic; addLog(st, s.auth.panic ? 'warn' : 'success', 'system', s.auth.panic ? 'Panic Mode فعال شد' : 'Panic Mode خاموش شد', ''); await save(env, st); return json({ ok: true, panic: s.auth.panic }); }
-    if (a === 'rotate-path') { s.auth.path = randTok(8).toLowerCase(); addLog(st, 'warn', 'auth', 'مسیر ورود چرخش یافت', '/' + s.auth.path); await save(env, st); return json({ ok: true, path: s.auth.path }); }
-    if (a === '2fa-secret') { const sec = b32enc(crypto.getRandomValues(new Uint8Array(20))); s.auth.totp = true; s.auth.totpSecret = sec; await save(env, st); return json({ ok: true, secret: sec, url: `otpauth://totp/${encodeURIComponent(s.panel.name)}?secret=${sec}&issuer=Panel` }); }
-    if (a === 'pw-change') { if (b.old !== masterKey(st, env)) return json({ error: 'رمز فعلی نادرست است' }, 400); if (!b.nw || b.nw.length < 5) return json({ error: 'رمز جدید خیلی کوتاه است' }, 400); s.auth.password = b.nw; addLog(st, 'warn', 'auth', 'رمز تغییر کرد', ''); await save(env, st); return json({ ok: true }); }
+    if (a === 'panic') { s.auth.panic = !s.auth.panic; addLog(st, s.auth.panic ? 'warn' : 'success', 'system', s.auth.panic ? 'Panic Mode فعال شد' : 'Panic Mode خاموش شد', '', reqMeta(req, url, { status: 200, who: whoOf(req) })); await save(env, st); return json({ ok: true, panic: s.auth.panic }); }
+    if (a === 'rotate-path') { s.auth.path = randTok(8).toLowerCase(); addLog(st, 'warn', 'auth', 'مسیر ورود چرخش یافت', '/' + s.auth.path, reqMeta(req, url, { status: 200, who: whoOf(req) })); await save(env, st); return json({ ok: true, path: s.auth.path }); }
+    /* ⚠️ ساختِ کلیدِ دو مرحله‌ای (فعلاً غیرفعال است) هیچ لاگی نداشت در حالی که
+       یک تغییرِ امنیتیِ مهم است؛ حالا ثبت می‌شود و راهنمای فعال‌سازی هم می‌آید. */
+    if (a === '2fa-secret') { const sec = b32enc(crypto.getRandomValues(new Uint8Array(20))); s.auth.totp = true; s.auth.totpSecret = sec; addLog(st, 'warn', 'auth', 'کلیدِ دو مرحله‌ای ساخته شد (غیرفعال)', 'برای فعال‌سازی، کدِ ۶ رقمیِ همان لحظه را در فیلدِ 2FA ذخیره کنید', reqMeta(req, url, { status: 200, who: whoOf(req) })); await save(env, st); return json({ ok: true, secret: sec, url: `otpauth://totp/${encodeURIComponent(s.panel.name)}?secret=${sec}&issuer=Panel` }); }
+    if (a === 'pw-change') { if (b.old !== masterKey(st, env)) return json({ error: 'رمز فعلی نادرست است' }, 400); if (!b.nw || b.nw.length < 5) return json({ error: 'رمز جدید خیلی کوتاه است' }, 400); s.auth.password = b.nw; addLog(st, 'warn', 'auth', 'رمز تغییر کرد', '', reqMeta(req, url, { status: 200, who: whoOf(req) })); await save(env, st); return json({ ok: true }); }
     if (a === 'ui-refresh') { const h = await loadUI(env, true); return json({ ok: !!h && h !== FALLBACK, size: h ? h.length : 0, userPage: !!USER_HTML }); }
     if (a === 'decoy-test') {
       const target = decoyTarget(s);
@@ -7183,13 +7424,15 @@ async function apiHandler(req, env, url, ctx) {
         sample: t.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 220),
       });
     }
-    if (a === 'logs-clear') { st.logs = []; await save(env, st); return json({ ok: true }); }
+    /* پاک‌سازیِ لاگ: یک ردیف باقی می‌ماند تا معلوم باشد «چه چیزی پاک شد و توسط
+       کی» — وگرنه لاگِ خالی هیچ چیزی از خودش نمی‌گفت. رکوردش هم در apiLog می‌ماند. */
+    if (a === 'logs-clear') { st.logs = []; addLog(st, 'warn', 'system', 'لاگِ فعالیت پاک شد', '', reqMeta(req, url, { status: 200, who: whoOf(req) })); await save(env, st); return json({ ok: true }); }
     if (a === 'factory') {
       const fresh = DEF();
       fresh.settings.auth.password = masterKey(st, env);
       MEM = fresh;
       if (env.DB) { try { await d1Write(env, JSON.stringify(fresh)); } catch (e) {} }
-      addLog(fresh, 'warn', 'system', 'ریست کارخانه‌ای', '');
+      addLog(fresh, 'warn', 'system', 'ریست کارخانه‌ای', '', reqMeta(req, url, { status: 200, who: whoOf(req) }));
       return json({ ok: true });
     }
     /* ⚠️ بازیابی از همان اعتبارسنجیِ /api/restore می‌گذرد. قبلاً هر JSONی که
@@ -7207,7 +7450,7 @@ async function apiHandler(req, env, url, ctx) {
         }, 400);
       }
       const next = applyBackup(st, data, mode);
-      addLog(next, 'warn', 'system', 'بازیابی از پشتیبان', mode === 'replace' ? 'جایگزینی کامل' : 'ادغام');
+      addLog(next, 'warn', 'system', 'بازیابی از پشتیبان', mode === 'replace' ? 'جایگزینی کامل' : 'ادغام', reqMeta(req, url, { status: 200, who: whoOf(req) }));
       await save(env, next);
       return json({ ok: true, mode, users: (next.users || []).length });
     }
@@ -7220,7 +7463,7 @@ async function apiHandler(req, env, url, ctx) {
       checks.push({ name: 'مسیر پنل', ok: true, note: '/' + s.auth.path });
       await save(env, st); return json({ ok: true, checks });
     }
-    if (a === 'tg-test') { const r = await tgSend(s, '✅ پیام تست از ' + url.hostname); addLog(st, r ? 'success' : 'error', 'telegram', r ? 'پیام تست ارسال شد' : 'ارسال پیام تست ناموفق', ''); await save(env, st); return json({ ok: r }); }
+    if (a === 'tg-test') { const r = await tgSend(s, '✅ پیام تست از ' + url.hostname); addLog(st, r ? 'success' : 'error', 'telegram', r ? 'پیام تست ارسال شد' : 'ارسال پیام تست ناموفق', '', reqMeta(req, url, { status: 200, who: whoOf(req) })); await save(env, st); return json({ ok: r }); }
     if (a === 'tunnel-test') {
       /* هر بررسی در پوشش ایمن — هیچ استثنایی نمی‌تواند پاسخ JSON را خراب کند */
       const checks = [];
@@ -7441,7 +7684,7 @@ async function apiHandler(req, env, url, ctx) {
         checks.push({ name: 'کانفیگ نمونه', ok: false, note: 'خطا در تولید: ' + String((e && e.message) || e) });
       }
 
-      addLog(st, 'info', 'core', 'تست تونل اجرا شد', checks.filter((c) => c.ok).length + '/' + checks.length + ' سالم');
+      addLog(st, 'info', 'core', 'تست تونل اجرا شد', checks.filter((c) => c.ok).length + '/' + checks.length + ' سالم', reqMeta(req, url, { status: 200, who: whoOf(req) }));
       await save(env, st);
       return json({ ok: checks.every((c) => c.ok), checks });
     }
@@ -7682,7 +7925,7 @@ async function doAutoDeploy(env, st) {
    deploy  : استقرارِ واقعی روی کلاودفلر (بایندینگ‌ها حفظ می‌شوند)
    rollback: استقرارِ نسخه‌ی قبلی (آخرین کامیتی که version.json را عوض کرده)
    ═══════════════════════════════════════════════════════════════════════════ */
-async function updAction(env, st, a) {
+async function updAction(env, st, a, meta = null) {
   const s = st.settings;
   const info = await checkRepoUpdate(s, { force: true });
   const latest = info.latest, newer = !!info.newer;
@@ -7735,7 +7978,7 @@ async function updAction(env, st, a) {
      می‌شود و نسخه‌اش عوض می‌شود) */
   if (justDeployed) st.lastCheck = 0;
   const failed = steps.find((x) => x && x.ok === false);
-  addLog(st, deployOk === false ? 'warn' : 'info', 'system', 'عملیاتِ به‌روزرسانی', a + (latest ? ' • ' + latest : '') + (deployOk === false ? ' • ناموفق' : ''));
+  addLog(st, deployOk === false ? 'warn' : 'info', 'system', 'عملیاتِ به‌روزرسانی', a + (latest ? ' • ' + latest : '') + (deployOk === false ? ' • ناموفق' : ''), meta);
   await save(env, st);
   const msg = a === 'update-check'
     ? (newer ? 'نسخه‌ی تازه در مخزن هست: ' + latest : latest ? 'در آخرین نسخه هستید (' + cur + ')' : 'مخزن در دسترس نیست — upd.repo/شاخه/توکن را بررسی کنید')
@@ -7751,7 +7994,7 @@ async function updAction(env, st, a) {
   });
 }
     if (a === 'update-check' || a === 'update-deploy' || a === 'update-rollback' || a === 'update-verify') {
-      return await updAction(env, st, a);
+      return await updAction(env, st, a, reqMeta(req, url, { status: 200, who: whoOf(req) }));
     }
 
     /* ═══ نمای زنده‌ی اتصال‌ها — «چه کسی، از کدام آی‌پی، چند اتصال» ═══
@@ -8083,7 +8326,7 @@ async function updAction(env, st, a) {
       const user = st.users.find((u) => u.uuid === rec.uuid);
       TRAFFIC.delete(sid);
       addLog(st, ok ? 'success' : 'warn', 'core', 'تست ترافیک',
-        fa(Math.round(measured / 1048576 * 100) / 100) + ' مگابایت • انتظار ' + fa(Math.round(expect / 1048576 * 100) / 100));
+        fa(Math.round(measured / 1048576 * 100) / 100) + ' مگابایت • انتظار ' + fa(Math.round(expect / 1048576 * 100) / 100), reqMeta(req, url, { status: 200, who: whoOf(req) }));
       await save(env, st);
       let host = '';
       try { host = new URL(req.url).hostname; } catch (e) { host = ''; }
@@ -8096,7 +8339,11 @@ async function updAction(env, st, a) {
         url: '/__speedtest?bytes=' + expect,
       });
     }
-    return json({ error: 'unknown action' }, 400);
+    /* اقدامِ ناشناخته: با نامِ خودش ثبت می‌شود — قبلاً فقط یک ۴۰۰ خام برمی‌گشت
+       و هیچ‌جا نمی‌نشست که «چه چیزی درخواست شده بود». */
+    addLog(st, 'warn', 'api', 'عملیاتِ ناشناخته در /api/action', 'act=' + String((b && b.act) || '?').slice(0, 60), reqMeta(req, url, { status: 400, who: whoOf(req) }));
+    await save(env, st);
+    return json({ error: 'unknown action', act: String((b && b.act) || '') }, 400);
   }
 
   /* ⚠️ این فهرست عمداً کامل است: قبلاً نیمی از مسیرهای واقعی را نداشت و

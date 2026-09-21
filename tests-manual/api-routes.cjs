@@ -411,6 +411,108 @@ const PW = 'simorgh';                     // رمزِ پیش‌فرضِ ورکر
     ok(stAfter.status === 200, 'پنل بعد از ریستِ کارخانه‌ای بالا می‌آید');
   }
 
+  /* ═══════════════════════════════════════════════════════════════════════
+     بخشِ ۷ — لاگِ دقیقِ API
+     ───────────────────────────────────────────────────────────────────────
+     چرا: تا امروز لاگِ پنل فقط رویدادهای «دستی» را داشت؛ درخواستِ بدونِ
+     اعتبارنامه، کلیدِ نامعتبر، کلیدِ فقط‌خواندنی که نوشتن خواسته، مسیرِ
+     ناشناخته و اقدامِ ناشناخته هیچ‌جا نمی‌نشستند و ادمین نمی‌توانست بفهمد
+     «چه کسی، از کجا، با کدام اعتبارنامه چه چیزی صدا زد و چه گرفت».
+     این بخش همان چیزها را می‌سنجد — و این‌که هیچ اعتبارنامه‌ای داخلِ لاگ نمی‌نشیند.
+     ═══════════════════════════════════════════════════════════════════════ */
+  section('۷) لاگِ دقیقِ API — چه کسی، از کجا، با کدام اعتبارنامه، و چه گرفت');
+  {
+    const tok = ((await call('/api/login', 'POST', { password: PW })).j || {}).token || '';
+    ok(!!tok, 'ورودِ تازه برای بخشِ لاگ');
+    const readState = async () => ((await call('/api/state', 'GET', null, bearer(tok))).j) || {};
+
+    /* ۱) درخواستِ بدونِ اعتبارنامه — قبلاً کاملاً بی‌صدا بود */
+    const anon = await call('/api/settings', 'PUT', { settings: { tls: true } });
+    ok(anon.status === 401, 'نوشتنِ بدونِ اعتبارنامه → ۴۰۱', 'status=' + anon.status);
+
+    /* ۲) کلیدِ نامعتبر و مسیرِ ناشناخته */
+    const badKey = await call('/api/state', 'GET', null, bearer('sk_deadbeef'));
+    ok(badKey.status === 401, 'کلیدِ نامعتبر → ۴۰۱', 'status=' + badKey.status);
+    const nf = await call('/api/nope-route');
+    ok(nf.status === 404, 'مسیرِ ناشناخته → ۴۰۴', 'status=' + nf.status);
+
+    /* ۳) کلیدِ فقط‌خواندنی که نوشتن خواسته */
+    const roCreate = await call('/api/keys', 'POST', { name: 'لاگ‌رو', ro: true }, bearer(tok));
+    const roKey2 = (((roCreate.j || {}).key) || {}).key || '';
+    const roWrite = await call('/api/settings', 'PUT', { settings: { tls: true } }, bearer(roKey2));
+    ok(roWrite.status === 403 && !!roKey2, 'کلیدِ فقط‌خواندنی: نوشتن → ۴۰۳', 'status=' + roWrite.status);
+
+    /* ۴) کلیدِ کامل: سه پرس‌وجوی یکسان → باید یک رکورد با شمارنده باشد */
+    const fullCreate = await call('/api/keys', 'POST', { name: 'لاگ‌بات' }, bearer(tok));
+    const fk = (((fullCreate.j || {}).key) || {}).key || '';
+    ok(/^sk_/.test(fk), 'کلیدِ کامل برای سنجشِ لاگِ بات', fk.slice(0, 10) + '…');
+    for (let i = 0; i < 3; i++) await call('/api/state', 'GET', null, bearer(fk));
+
+    /* ۵) اقدامِ ناشناخته */
+    const uk = await call('/api/action', 'POST', { act: 'zzz-unknown' }, bearer(tok));
+    ok(uk.status === 400, 'اقدامِ ناشناخته → ۴۰۰', 'status=' + uk.status);
+
+    const d = await readState();
+    const logs = d.logs || [], apiLog = d.apiLog || [], apiStats = d.apiStats || {};
+    const find = (list, f) => list.filter(f)[0] || null;
+    ok(apiLog.length > 0, 'apiLog در /api/state برمی‌گردد', 'رکورد=' + apiLog.length);
+
+    const badRows = apiLog.filter((e) => !e || !e.ip || !e.m || !e.p || !e.st || typeof e.ms !== 'number' || !e.who);
+    ok(badRows.length === 0, 'هر رکوردِ apiLog آی‌پی + روش + مسیر + کد + زمانِ پاسخ + اعتبارنامه دارد',
+      badRows.length ? JSON.stringify(badRows[0]) : apiLog.length + ' رکوردِ کامل');
+
+    const a = find(apiLog, (e) => e.p === '/api/settings' && e.m === 'PUT' && e.st === 401);
+    ok(!!a && a.who === 'anon' && a.ip === '203.0.113.7', 'ردِ درخواستِ بی‌اعتبارنامه با آی‌پی و برچسبِ anon', a ? 'who=' + a.who + ' ip=' + a.ip : 'ثبت نشده');
+
+    const bk = find(apiLog, (e) => e.who === 'bad-key');
+    ok(!!bk && bk.st === 401, 'کلیدِ نامعتبر با برچسبِ bad-key ثبت می‌شود', bk ? bk.m + ' ' + bk.p : 'ثبت نشده');
+
+    const rf = find(apiLog, (e) => e.p === '/api/nope-route' && e.st === 404);
+    ok(!!rf, 'مسیرِ ناشناخته در apiLog ثبت شده', rf ? rf.m + ' ' + rf.p : 'ثبت نشده');
+
+    const ro = find(apiLog, (e) => /^key:ro:/.test(e.who || ''));
+    ok(!!ro && ro.st === 403, 'کلیدِ فقط‌خواندنی با برچسبِ key:ro:… ثبت می‌شود', ro ? ro.who : 'ثبت نشده');
+
+    const pol = apiLog.filter((e) => e.p === '/api/state' && /^key:/.test(e.who || ''));
+    ok(pol.length === 1 && (pol[0].n || 0) >= 3, 'سه پرس‌وجوی یکسان با کلید = یک رکورد با شمارنده (×n)',
+      pol.length ? 'رکورد=' + pol.length + ' n=' + pol[0].n : 'رکوردی نیست');
+    ok(!apiLog.some((e) => e.p === '/api/state' && e.who === 'session'), 'pollِ موفقِ نشست، رینگِ apiLog را پر نمی‌کند');
+    ok(!!(apiStats['GET /api/state'] || {}).n, 'شمارندهٔ هر مسیر در apiStats هست',
+      apiStats['GET /api/state'] ? 'GET /api/state: n=' + apiStats['GET /api/state'].n + ' ok=' + apiStats['GET /api/state'].ok : '—');
+    ok(((apiStats['PUT /api/settings'] || {}).err || 0) >= 1, 'خطاها در شمارندهٔ همان مسیر هم می‌نشینند',
+      apiStats['PUT /api/settings'] ? 'err=' + apiStats['PUT /api/settings'].err : '—');
+
+    /* ۶) لاگِ فعالیت: ردیف‌های امنیتی با بافتِ کامل */
+    const denied = find(logs, (l) => l.actor === 'api' && l.status === 401 && l.path === '/api/settings');
+    ok(!!denied && denied.ip === '203.0.113.7' && denied.path === '/api/settings',
+      'ردِ درخواستِ بی‌اعتبارنامه در لاگِ فعالیت با آی‌پی + مسیر',
+      denied ? denied.method + ' ' + denied.path + ' • ' + denied.ip : 'ثبت نشده');
+    const unk = find(logs, (l) => l.actor === 'api' && l.status === 404);
+    ok(!!unk, 'مسیرِ ناشناخته در لاگِ فعالیت هم هست', unk ? unk.detail : 'ثبت نشده');
+    const act400 = find(logs, (l) => l.actor === 'api' && /ناشناخته/.test(l.action || ''));
+    ok(!!act400 && /zzz-unknown/.test(act400.detail || ''), 'اقدامِ ناشناخته با نامِ خودش ثبت شده', act400 ? act400.detail : 'ثبت نشده');
+    const keyLog = find(logs, (l) => /کلید API ساخته شد/.test(l.action || ''));
+    ok(!!keyLog && keyLog.path === '/api/keys' && keyLog.who === 'session' && !!keyLog.ip,
+      'هر رویدادِ نوشتنی بافتِ درخواست (مسیر + اعتبارنامه + آی‌پی) دارد',
+      keyLog ? keyLog.method + ' ' + keyLog.path + ' • ' + keyLog.who + ' • ' + keyLog.ip : 'ثبت نشده');
+
+    /* ۷) هیچ اعتبارنامه‌ای داخلِ لاگ نمی‌نشیند (?key=/?token= نباید لاگ شوند) */
+    await call('/api/state?key=' + encodeURIComponent(fk));
+    await call('/api/state?token=' + encodeURIComponent(tok));
+    const d2 = await readState();
+    const dump = JSON.stringify({ logs: d2.logs, apiLog: d2.apiLog, apiStats: d2.apiStats });
+    ok(!dump.includes(fk) && !dump.includes('sk_') && !dump.includes('key=') && !dump.includes('token='),
+      'هیچ کلید/توکن/query داخلِ لاگ‌ها نیست', 'طولِ dump=' + dump.length);
+
+    /* ۸) پاک‌کردنِ لاگ خودش را ثبت می‌کند و apiLog را پاک نمی‌کند */
+    const before = (d2.apiLog || []).length;
+    const lc = await call('/api/action', 'POST', { act: 'logs-clear' }, bearer(tok));
+    const d3 = await readState();
+    ok(lc.status === 200 && (d3.logs || []).length === 1 && /پاک شد/.test(((d3.logs[0] || {}).action) || ''),
+      'لاگِ فعالیت پاک شد ولی یک ردیفِ توضیحی باقی می‌ماند', ((d3.logs[0] || {}).action) || '—');
+    ok((d3.apiLog || []).length >= before && before > 0, 'apiLog بعد از پاک‌کردنِ لاگِ فعالیت باقی می‌ماند', before + ' → ' + (d3.apiLog || []).length);
+  }
+
   fs.rmSync(TMP, { recursive: true, force: true });
   console.log('\n' + (fail ? 'FAILED: ' + fail + ' از ' + (pass + fail) : 'ALL ' + pass + ' API TESTS PASSED (' + TARGET + ')'));
   process.exit(fail ? 1 : 0);

@@ -1,10 +1,10 @@
 {
   "name": "sub-panel",
-  "version": "3.0.18",
-  "serial": 18,
-  "build": "2026.09.21-10:32",
-  "rev": "2e5a307126795a2fa7fa9ae71d5c53ec5b6b1a6d69afaaa0e1d24c08ac8a3a07",
-  "at": "2026-09-21T10:32:03.442Z",
-  "sha": "f7f20a8",
-  "note": "کامیت f7f20a8"
+  "version": "3.0.20",
+  "serial": 20,
+  "build": "2026.09.21-14:14",
+  "rev": "7ddd443edde597221d99748366f10600522c54ef940fc68b4ca20fb0c688e7e7",
+  "at": "2026-09-21T14:14:30.866Z",
+  "sha": "c198dc5",
+  "note": "کامیت c198dc5"
 }
