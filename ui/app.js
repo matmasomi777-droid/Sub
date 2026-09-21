@@ -81,6 +81,27 @@
      انتخاب‌اند تا پیش‌نمایش از همان ابتدا چیزی نشان بدهد. */
   const NM = { pat: '', sel: {}, init: false };
   const nmShow = () => { const o = $('#nmPreview'); if (o) o.innerHTML = nmPreviewHtml(); };
+  /* ═══ ساختِ کلیدِ API ═══
+     نام و دسترسی را خودِ ادمین انتخاب می‌کند. پیش‌فرض «دسترسی کامل» است تا
+     کلیدِ تازه بلافاصله کار کند؛ «فقط‌خواندنی» برای ربات/مانیتورینگ است و
+     سرور هر نوشتنِ آن را با ۴۰۳ رد می‌کند. */
+  const keyShow = () => {
+    const n = (((S.d && S.d.keys) || []).length + 1);
+    modal(
+      '<header><span class="ic">' + icon('fa-key') + '</span>' +
+      '<div><h3>کلید API جدید</h3><p>برای اسکریپت، ربات یا مانیتورینگ</p></div>' +
+      '<div class="acts"><button class="btn sm ghost" data-act="close" title="بستن">' + icon('fa-xmark') + '</button></div></header>' +
+      '<div class="bd">' +
+      '<label style="display:block"><span class="hint">نام کلید (برای شناختنش در فهرست)</span>' +
+      '<input id="keyName" type="text" class="mono" value="key-' + fa(n) + '" style="width:100%;margin-top:4px"></label>' +
+      '<label style="display:flex;gap:8px;align-items:center;margin:14px 0 6px">' +
+      '<input id="keyRo" type="checkbox"><span>فقط‌خواندنی</span></label>' +
+      '<div class="hint">فقط‌خواندنی → تنها مسیرهای خواندنی (state، connections، backup، exits) کار می‌کنند. ' +
+      'هر دو نوعِ کلید نمی‌توانند کلیدِ تازه بسازند، رمزِ مدیر را عوض کنند یا ریستِ کارخانه‌ای/بازیابی بزنند — این‌ها فقط از همین پنل انجام می‌شوند.</div>' +
+      '<div class="acts" style="margin-top:14px"><button class="btn sm s" data-act="key-save">' + icon('fa-floppy-disk') + ' ساختِ کلید</button>' +
+      '<button class="btn sm ghost" data-act="close">' + icon('fa-xmark') + ' انصراف</button></div>' +
+      '</div>');
+  };
 
   /* ═══════ رندرِ گزارشِ «بررسی سلامت شمارش مصرف» ═══════
      این تابع در هر بار بازسازیِ صفحه صدا زده می‌شود (نه فقط هنگام کلیک)،
@@ -115,9 +136,20 @@
     return head +
       '<div style="margin-bottom:10px">' + limBadge + '</div>' +
       diagHtml +
-      (lim !== 'do' && lim !== 'd1'
-        ? '<div class="hint" style="margin-bottom:10px">هیچ مرجعِ مشترکی بین isolateها ندارید: هر isolate شمارنده‌ی خودش را دارد و محدودیت عملاً اعمال نمی‌شود. در Settings → Variables یک پایگاه D1 با نام <span class="mono">DB</span> ببندید (در داشبورد کلاودفلر هم می‌توان ساخت).</div>'
-        : '') +
+      /* ⚠️ شرط قبلاً «lim !== 'do' && lim !== 'd1'» بود که KV را هم شامل
+         می‌شد؛ ولی KV یک مرجعِ مشترک است (فقط تقریبی)، پس هشدارِ «اعمال
+         نمی‌شود» برایش نادرست بود. فقط 'mem' یعنی واقعاً بی‌اثر. */
+      (lim === 'mem'
+        ? '<div class="card" style="border-color:var(--bad);margin-bottom:10px"><div class="bd" style="display:flex;gap:10px;align-items:flex-start">' +
+          '<span class="ic bad" style="flex:none">' + icon('fa-triangle-exclamation') + '</span>' +
+          '<div><b style="color:var(--bad)">محدودیت آی‌پی اعمال نمی‌شود</b>' +
+          '<div class="hint" style="margin-top:6px">هیچ مرجعِ مشترکی بین isolateها بایند نیست: هر isolate شمارنده‌ی خودش را دارد، ' +
+          'پس اتصالِ سوم به isolate تازه می‌افتد و از صفر شمرده می‌شود. ' +
+          'رفع: Settings → Bindings → Add → <b>D1 database</b> با Variable name برابر <span class="mono">DB</span> ' +
+          '(یا <b>Durable Object namespace</b> با نام <span class="mono">LIMITER</span>).</div></div></div></div>'
+        : lim === 'kv'
+          ? '<div class="hint" style="margin-bottom:10px">مرجعِ شما <b>KV</b> است: بین isolateها مشترک ولی eventually-consistent — زیرِ بارِ سنگین ممکن است سقف با تأخیر اعمال شود. برای دقتِ کامل یک D1 با نام <span class="mono">DB</span> ببندید.</div>'
+          : '') +
       (r.checks || []).map((c) => '<div class="kv"><span>' + icon(c.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' ' + esc(c.name) + '</span><b class="mono" style="color:' + (c.ok ? 'var(--ok)' : 'var(--bad)') + '">' + esc(c.note || '') + '</b></div>').join('') +
       /* ═══ اتصال‌های زنده — اگر چیزی گیر کرده باشد اینجا دیده می‌شود ═══ */
       '<div class="hint" style="margin-top:12px"><b>اتصال‌های زنده (مبنای محدودیت آی‌پی):</b> ' +
@@ -294,7 +326,9 @@
   }
   const toast = (msg, kind = 'ok') => { const d = document.createElement('div'); d.className = 'toast ' + kind; const ic = kind === 'err' ? 'fa-circle-xmark' : kind === 'info' ? 'fa-circle-info' : 'fa-circle-check'; d.innerHTML = icon(ic) + '<span>' + esc(msg) + '</span>'; $('#toastRoot').appendChild(d); setTimeout(() => d.remove(), 3400); };
   const copy = (t) => { (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('در کلیپ‌بورد کپی شد')).catch(() => toast('کپی نشد', 'err')); };
-  const modal = (html, wide) => { const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = '<div class="box' + (wide ? ' wide' : '') + '" id="mbox">' + html + '</div>'; m.onmousedown = (e) => { if (e.target === m) m.remove(); }; $('#modalRoot').appendChild(m); return m; };
+  /* مودال تکی: قبل از بازکردن، مودال‌های قبلی پاک می‌شوند — دوبارِ بازکردن
+     (کلیک روی ردیف + دکمه‌ی ویرایش) دیگر مودال‌های روی‌هم نمی‌سازد */
+  const modal = (html, wide) => { $('#modalRoot').innerHTML = ''; const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = '<div class="box' + (wide ? ' wide' : '') + '" id="mbox">' + html + '</div>'; m.onmousedown = (e) => { if (e.target === m) m.remove(); }; $('#modalRoot').appendChild(m); return m; };
   const closeM = () => { $('#modalRoot').innerHTML = ''; };
   const busy = (el, label) => { if (el) { el.disabled = true; el.dataset.old = el.innerHTML; el.innerHTML = icon('fa-spinner fa-spin') + ' ' + label; } };
   const free = (el) => { if (el && el.dataset.old) { el.disabled = false; el.innerHTML = el.dataset.old; delete el.dataset.old; } };
@@ -603,13 +637,17 @@
     put('encryption', params.encryption);
     put('security', v.security || 'tls');
     put('sni', v.sni);
-    put('type', v.transport || 'ws');
+    put('type', v.transport === 'raw' && v.security === 'reality' ? 'tcp' : (v.transport || 'ws'));
     put('host', v.host);
     put('path', v.path);
     put('serviceName', v.serviceName);
     put('flow', v.flow);
+    /* پارامترهای reality — فیلدِ اول‌کلاس‌اند و سر جایشان برمی‌گردند */
+    put('pbk', v.pbk);
+    put('sid', v.sid);
+    put('spx', v.spx);
     /* هر پارامترِ ناشناخته‌ای که ورکر نگه داشته (alpn، fp، …) دست‌نخورده برمی‌گردد */
-    Object.keys(params).forEach((k) => { if (k !== 'encryption') put(k, params[k]); });
+    Object.keys(params).forEach((k) => { if (k !== 'encryption' && k !== 'pbk' && k !== 'sid' && k !== 'shortId' && k !== 'spx') put(k, params[k]); });
     const name = String(v.name || '').trim();
     return 'vless://' + encodeURIComponent(String(v.uuid || '')) + '@' + String(v.address || '') +
       ':' + (Number(v.port) || 443) + '?' + q.toString() + (name ? '#' + encodeURIComponent(name) : '');
@@ -633,7 +671,12 @@
       esc(v.link) + '</textarea>' +
       '<div class="hint" style="margin-top:5px">فقط لینک را اینجا بچسبانید — چیزِ دیگری لازم نیست. ' +
       'نام از بخشِ بعد از <span class="mono">#</span> خوانده می‌شود و بقیه (آدرس، پورت، یو‌یو‌آی‌دی، امنیت، ' +
-      'انتقال، مسیر، SNI و…) از خودِ لینک.</div></label>' +
+      'انتقال، مسیر، SNI، و پارامترهای reality مثل <span class="mono">pbk/sid</span>) از خودِ لینک. ' +
+      '<b>reality</b> هم پذیرفته می‌شود (آزمایشی): فقط روی TCP خام (<span class="mono">type=tcp</span>)، با ' +
+      '<span class="mono">sni</span> و <span class="mono">pbk</span>ی معتبر — <span class="mono">flow</span> (مثل ' +
+      '<span class="mono">xtls-rprx-vision</span>) هم پشتیبانی می‌شود و در هدر می‌نشیند. ' +
+      'اگر هندشیکِ reality برقرار نشود و حالتِ سخت‌گیر خاموش باشد، ترافیک خودکار از مسیرِ مستقیم می‌رود و علت در تستِ اتصال دیده می‌شود؛ '
+      + 'با حالتِ سخت‌گیر، شکستِ خروجی به‌جای نشتِ آی‌پی اتصال را می‌بندد.</div></label>' +
       '</div>' +
       '<input type="hidden" id="ex_id" value="' + esc(v.id) + '">' +
       '<div class="btn-row" style="margin-top:10px;gap:6px">' +
@@ -646,10 +689,35 @@
     const r = EX.test;
     if (!r || !r.name) return '';
     const good = !!r.reachable;
+    /* ⚠️ «سبز» یعنی هندشیک *و* عبورِ داده — آن هم با **هر دو شکلِ مقصد**
+       (دامنه و آی‌پی). باگی که ترافیک را عبور نمی‌داد، تست را سبز نگه می‌داشت و
+       همین گمراه‌کننده بود؛ اکنون اختلافِ دامنه/آی‌پی هم صریح نشان داده می‌شود. */
+    const title = good ? 'سالم (هندشیک + عبورِ داده)'
+      : (r.phase === 'traffic-ip' ? 'با مقصدِ دامنه‌ای سالم است ولی با آی‌پی نه — کانفیگ‌ها وصل نمی‌شوند'
+        : (r.phase === 'traffic' ? 'هندشیک شد ولی داده رد نشد' : 'اتصال برقرار نشد'));
+    const ipLine = (r.ipOk === true || r.ipOk === false)
+      ? (' • مقصدِ آی‌پی: ' + (r.ipOk ? 'سالم (' + fa(Number(r.ipBytes) || 0) + ' بایت)' : 'ناموفق'))
+      : '';
+    /* کاوشِ حجمی — تا پیش از این، تست فقط چند بایت می‌فرستاد و ترافیکِ پرحجم
+       (آپلود/دانلود در حجمِ واقعی) هرگز سنجیده نمی‌شد: همان جایی که تونلِ
+       vision می‌مرد و کاربر «کانفیگ کار نمی‌کند» می‌دید در حالی که تست سبز بود. */
+    const volLine = r.volumeSkipped
+      ? ' • حجم: انجام نشد (خروجیِ روی کلاودفلر)'
+      : (r.volumeOk === true || r.volumeOk === false)
+        ? (' • حجم ' + fa(Math.round((Number(r.volumeUpload) || 0) / 1024)) + 'KB: ' + (r.volumeOk
+            ? 'سالم (' + fa(Number(r.volumeBytes) || 0) + ' بایت • ' + esc(String(r.volumeStatus || '').slice(0, 24)) + ')'
+            : 'ناموفق'))
+        : '';
     return '<div class="row-item" style="margin-top:8px">' + icon(good ? 'fa-circle-check' : 'fa-circle-xmark') +
-      '<div class="grow"><b>' + esc(r.name) + ' — ' + (good ? 'اتصال برقرار شد' : 'اتصال برقرار نشد') + '</b>' +
-      '<div class="cell-sub">' + (good ? ('زمان پاسخ: ' + fa(Number(r.ms) || 0) + ' میلی‌ثانیه') : ('علت: ' + esc(r.error || 'نامشخص'))) +
-      (r.transport ? ' • ' + esc(r.transport) : '') + (r.security ? ' • ' + esc(r.security) : '') + '</div></div>' +
+      '<div class="grow"><b>' + esc(r.name) + ' — ' + title + '</b>' +
+      '<div class="cell-sub">' + (good ? ('پاسخِ واقعی: ' + fa(Number(r.bytes) || 0) + ' بایت'
+          + (r.head ? ' • <span class="mono">' + esc(r.head) + '</span>' : '')
+          + ipLine + volLine
+          + ' • کل ' + fa(Number(r.ms) || 0) + ' ms' + (r.handshakeMs ? ' (هندشیک ' + fa(Number(r.handshakeMs)) + ' ms)' : ''))
+        : ('علت: ' + esc(r.error || 'نامشخص') + ipLine + volLine + (r.handshakeMs ? ' • هندشیک ' + fa(Number(r.handshakeMs)) + ' ms موفق بود' : '')))
+      + (r.ip ? ' • آی‌پیِ خروجی: <span class="mono">' + esc(r.ip) + '</span>' : '')
+      + (r.transport ? ' • ' + esc(r.transport) : '') + (r.security ? ' • ' + esc(r.security) : '') + '</div>'
+      + (r.note ? '<div class="cell-sub">' + icon('fa-circle-info') + ' ' + esc(r.note) + '</div>' : '') + '</div>' +
       '<span class="badge ' + (good ? 'ok' : 'bad') + '">' + (good ? fa(Number(r.ms) || 0) + ' ms' : 'ناموفق') + '</span></div>';
   };
   const exitsHtml = (d) => {
@@ -659,12 +727,32 @@
     }
     if (!d || !d.servers) return '<div class="empty">در حال دریافتِ فهرستِ سرورهای خروجی…</div>';
     const servers = d.servers || [];
+    /* حالتِ سراسری — خروجی‌ها اصلاً در تونل به کار بروند؟ */
+    const on = d.enabled !== false;
+    /* فقط سرورهای فعال انتخاب‌پذیرند */
+    const act = servers.filter((x) => x.enabled !== false);
+    const master = '<div class="row-item" style="margin-bottom:8px">' + icon('fa-power-off') +
+      '<div class="grow"><b>' + (on ? 'مسیرِ خروجی فعال است' : 'مسیرِ خروجی خاموش است') + '</b>' +
+      '<div class="cell-sub">' + (on ? 'فقط کانفیگ‌هایی که این سرور را انتخاب کرده‌اند از آن عبور می‌کنند' : 'همه‌ی کانفیگ‌ها مستقیم می‌روند — فهرستِ سرورها حفظ می‌شود') + '</div></div>' +
+      '<button class="btn sm ' + (on ? 'd' : 'p') + '" data-act="exit-master">' + icon('fa-power-off') + ' ' + (on ? 'خاموش‌کردن' : 'فعال‌کردن') + '</button></div>';
+    /* حالتِ سخت‌گیر — ضدِ نشتِ آی‌پی */
+    const strict = d.strict === true;
+    const strictRow = '<div class="row-item" style="margin-bottom:8px">' + icon('fa-shield-halved') +
+      '<div class="grow"><b>' + (strict ? 'حالتِ سخت‌گیر روشن است' : 'حالتِ سخت‌گیر خاموش است') + '</b>' +
+      '<div class="cell-sub">' + (strict
+        ? 'با خرابیِ سرور خروجی، اتصالِ کاربر بسته می‌شود — آی‌پیِ او هرگز لو نمی‌رود'
+        : '⚠️ با خرابیِ سرور خروجی، ترافیک مستقیم می‌رود و آی‌پیِ واقعیِ کاربر لو می‌رود') + '</div></div>' +
+      '<button class="btn sm ' + (strict ? 'd' : 'p') + '" data-act="exit-strict">' + icon('fa-shield-halved') + ' ' + (strict ? 'خاموش‌کردن' : 'روشن‌کردن') + '</button></div>';
+    const offNote = on ? '' : '<div class="badge warn" style="margin:0 0 8px">' + icon('fa-circle-info') + ' مسیرِ خروجی خاموش است — همه‌ی کانفیگ‌ها مستقیم می‌روند (خاموش‌کردن، فهرست را پاک نمی‌کند)</div>';
     /* پیش‌فرضِ سراسری */
     const defSel = '<div class="row-item" style="margin-bottom:10px">' + icon('fa-route') +
       '<div class="grow"><b>پیش‌فرضِ سراسری</b><div class="cell-sub">کانفیگ‌هایی که روی «پیروی از پیش‌فرض» هستند از این مسیر می‌روند' +
       '<br>مؤثر در حال حاضر: <b>' + esc(((d.effective || {}).name) || 'مستقیم') + '</b></div></div>' +
-      '<select id="exDefault" style="max-width:200px"><option value="">مستقیم (بدون واسطه)</option>' +
-      servers.map((s) => '<option value="' + esc(s.id) + '"' + (d.defaultMode === 'exit' && d.defaultExit === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') +
+      '<select id="exDefault" style="max-width:200px"' + (on ? '' : ' disabled') + '><option value="">مستقیم (بدون واسطه)</option>' +
+      act.map((s) => '<option value="' + esc(s.id) + '"' + (d.defaultMode === 'exit' && d.defaultExit === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') +
+      ((d.defaultMode === 'exit' && d.defaultExit && !servers.some((x) => x.id === d.defaultExit && x.enabled !== false))
+        ? '<option value="' + esc(d.defaultExit) + '" selected disabled>' + esc(((servers.find((x) => x.id === d.defaultExit) || {}).name) || 'سرور') + ' (غیرفعال)' + '</option>'
+        : '') +
       '</select><button class="btn sm p" data-act="exit-default">' + icon('fa-floppy-disk') + ' ذخیره</button></div>';
     /* فهرستِ سرورها */
     const list = servers.length
@@ -672,8 +760,13 @@
           '<span class="dot ' + (s.enabled ? 'on' : 'bad') + '"></span>' +
           '<div class="grow"><b>' + esc(s.name) + '</b> ' +
           '<span class="badge ' + (s.enabled ? 'ok' : 'bad') + '">' + (s.enabled ? 'فعال' : 'غیرفعال') + '</span>' +
-          '<div class="mono cell-sub">' + esc(s.address) + ':' + fa(s.port) + ' • ' + esc(s.security) + '/' + esc(s.transport) + '</div></div>' +
-          '<button class="btn sm s" data-act="exit-test" data-id="' + esc(s.id) + '" title="تست اتصال">' + icon('fa-stethoscope') + '</button>' +
+          '<div class="mono cell-sub">' + esc(s.address) + ':' + fa(s.port) + ' • ' + esc(s.security) + '/' + esc(s.transport) + (s.security === 'reality' ? ' • آزمایشی' : '') + '</div>' +
+          (s.resolvedIp
+            ? '<div class="mono cell-sub">' + icon('fa-globe') + ' آی‌پیِ خروجی: ' + esc(s.resolvedIp) + '</div>'
+            : '<div class="cell-sub">آی‌پیِ خروجی: هنوز حل نشده — دکمه‌ی «حل آی‌پی» یا تستِ اتصال</div>') + '</div>' +
+          '<button class="btn sm ' + (s.enabled !== false ? 'd' : 'p') + '" data-act="exit-onoff" data-id="' + esc(s.id) + '" title="' + (s.enabled !== false ? 'غیرفعال‌کردن — هیچ کانفیگی دیگر از آن عبور نمی‌کند' : 'فعال‌کردن این سرور') + '">' + icon('fa-power-off') + '</button>' +
+          '<button class="btn sm s" data-act="exit-test" data-id="' + esc(s.id) + '" title="تستِ واقعی: هندشیک + عبورِ یک درخواستِ داده از تونل">' + icon('fa-stethoscope') + '</button>' +
+          '<button class="btn sm" data-act="exit-ip" data-id="' + esc(s.id) + '" title="حل و نمایش آی‌پی با DoH">' + icon('fa-globe') + '</button>' +
           '<button class="btn sm" data-act="exit-edit" data-id="' + esc(s.id) + '" title="ویرایش">' + icon('fa-pen') + '</button>' +
           '<button class="btn sm d" data-act="exit-del" data-id="' + esc(s.id) + '" title="حذف">' + icon('fa-trash-can') + '</button>' +
           '</div>').join('') + '</div>'
@@ -682,14 +775,75 @@
     const per = (d.perConfig || []).length
       ? '<div class="hint" style="margin:12px 0 6px"><b>انتخاب برای هر کانفیگ</b> — بر پیش‌فرضِ سراسری مقدم است:</div>' +
         '<div class="list">' + d.perConfig.map((c) => '<div class="row-item">' + icon('fa-user') +
-          '<div class="grow"><b>' + esc(c.name) + '</b><div class="cell-sub">مؤثر: ' + esc(c.effectiveId ? ((servers.find((s) => s.id === c.effectiveId) || {}).name || c.effectiveMode) : 'مستقیم') + '</div></div>' +
-          '<select id="exSel-' + esc(c.id) + '" style="max-width:200px">' +
+          '<div class="grow"><b>' + esc(c.name) + '</b><div class="cell-sub">مؤثر: ' + esc(c.effectiveName || (c.effectiveId ? ((servers.find((s) => s.id === c.effectiveId) || {}).name || c.effectiveMode) : 'مستقیم')) + (c.reason ? ' <span class="badge bad">' + esc(c.reason) + '</span>' : '') + '</div></div>' +
+          '<select id="exSel-' + esc(c.id) + '" style="max-width:200px"' + (on ? '' : ' disabled') + '>' +
           '<option value="inherit"' + (c.mode === 'inherit' ? ' selected' : '') + '>پیروی از پیش‌فرضِ سراسری</option>' +
           '<option value="direct"' + (c.mode === 'direct' ? ' selected' : '') + '>مستقیم (بدون واسطه)</option>' +
-          servers.map((s) => '<option value="' + esc(s.id) + '"' + (c.mode === 'exit' && c.exitId === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') +
+          act.map((s) => '<option value="' + esc(s.id) + '"' + (c.mode === 'exit' && c.exitId === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') +
+          ((c.mode === 'exit' && c.exitId && !servers.some((x) => x.id === c.exitId && x.enabled !== false))
+            ? '<option value="' + esc(c.exitId) + '" selected disabled>' + esc(((servers.find((x) => x.id === c.exitId) || {}).name) || 'سرور') + ' (غیرفعال)' + '</option>'
+            : '') +
           '</select></div>').join('') + '</div>'
       : '';
-    return defSel + list + exTestHtml() +
+    /* ═══ تشخیصِ زندهٔ خروجی — «چرا کانفیگِ کاربر وصل نمی‌شود» ═══════════════
+       حالتِ سخت‌گیر شکست را بی‌صدا می‌بندد؛ بدونِ این بخش، کاربر فقط
+       «کانفیگ کار نمی‌کند» می‌دید و هیچ سرنخی در پنل نبود. حالا آخرین مقصدِ
+       درخواستی، سرورِ انتخابی و علتِ شکست همان‌جا نوشته می‌شود. */
+    const exSt = d.stats || {};
+    const any = (Number(exSt.tunnels) || 0) + (Number(exSt.fallbacks) || 0) + (Number(exSt.strictCloses) || 0);
+    const diag = '<div class="row-item" style="margin-top:10px">' + icon('fa-stethoscope') +
+      '<div class="grow"><b>تشخیصِ مسیرِ خروجی (از زمانِ بالا آمدنِ این ورکر)</b>' +
+      '<div class="cell-sub">تونلِ سالم: <b>' + fa(Number(exSt.tunnels) || 0) + '</b>'
+      + ' • بازگشت به مستقیم: ' + fa(Number(exSt.fallbacks) || 0)
+      + ' • بستنِ سخت‌گیر: ' + fa(Number(exSt.strictCloses) || 0)
+      + ' • مستقیم (بدونِ خروجی): ' + fa(Number(exSt.direct) || 0)
+      + ' • سوئیچِ XTLS: ' + fa(Number(exSt.splice) || 0) + '</div>'
+      /* ═══ XTLS «direct copy» (splice) ═══
+         سرورِ خروجیِ reality+vision پس از دیدنِ هندشیکِ TLS 1.3 داخلِ تونل،
+         از یک نقطه به بعد بایت‌های مقصد را *بدونِ* رمزنگاریِ بیرونی می‌فرستد
+         (فلسفهٔ XTLS: حذفِ رمزنگاریِ دوبل). تا امروز ورکر آن بایت‌ها را
+         «رکوردِ رمزشده» فرض می‌کرد، رمزگشایی شکست می‌خورد و نشستِ HTTPS
+         وسطِ کار می‌مرد — دقیقاً «تست سبز، کانفیگِ reality مرده». از این پس
+         تعدادِ نشست‌هایی که این سوئیچ در آن‌ها رخ داده و حجمِ خامِ رد‌شده
+         دیده می‌شود؛ بالا رفتنش یعنی مسیرِ واقعیِ مرورگر از سوئیچ گذشته
+         *و سالم ماند*. */
+      + (Number(exSt.splice)
+        ? '<div class="cell-sub">سوئیچِ XTLS (direct copy) روی ' + fa(Number(exSt.splice)) + ' نشست فعال شد'
+          + (Number(exSt.spliceBytes) ? ' • ' + fa(Math.round(Number(exSt.spliceBytes) / 1024)) + ' کیلوبایت خام بدونِ رمزگشایی رد شد' : '')
+          + (exSt.lastSplice ? ' • آخرین مقصد: <span class="mono">' + esc(exSt.lastSplice) + '</span>' : '') + '</div>'
+        : '')
+      /* علتِ «چرا خروجی استفاده نشد» — قبلاً این حالت هیچ رویدادی نمی‌ساخت و
+         کارت *کاملاً* خالی می‌ماند؛ حالا دقیقاً همان‌جا نوشته می‌شود. */
+      + (exSt.lastDirect ? '<div class="cell-sub">آخرین تصمیمِ مسیر: <b>مستقیم</b> — ' + esc(exSt.lastDirect) + '</div>' : '')
+      + (exSt.lastDest ? '<div class="cell-sub">آخرین اتصال: مقصد <span class="mono">' + esc(exSt.lastDest) + '</span>'
+          + (exSt.lastExit ? ' • سرور «' + esc(exSt.lastExit) + '»' : '') + (exSt.lastUser ? ' • کاربر ' + esc(exSt.lastUser) : '')
+          + (exSt.tunnels && !exSt.lastFail ? ' • سالم' : '') + '</div>' : '')
+      + (exSt.lastError ? '<div class="cell-sub">آخرین خطا: ' + esc(String(exSt.lastError).slice(0, 200)) + '</div>' : '')
+      + (any === 0
+        ? '<div class="cell-sub">هنوز هیچ اتصالی از مسیرِ خروجی رد نشده است — اگر کلاینت وصل نمی‌شود اما اینجا هیچ شکستی نیست، یعنی درخواستِ کاربر به مسیرِ خروجی نمی‌رسد (انتخابِ خروجی برای همان کانفیگ یا روشن‌بودن «مسیرِ خروجی» را بررسی کنید).</div>'
+        : (exSt.lastFail ? '<div class="cell-sub">علتِ آخرین شکست: ' + esc(String(exSt.lastFail).slice(0, 200)) + '</div>' : ''))
+      /* ═══ ردیفِ پایدار (از D1) ═══
+         شمارندههای بالا فقط در حافظهی همین isolate هستند؛ درخواستِ پنل
+         ممکن است به isolate دیگری برسد و آنجا صفر باشد — همین باعث می‌شد
+         کارت «هیچ نشان نمی‌دهد». این ردیف از لاگِ پایدار خوانده می‌شود، پس
+         بعد از ری‌استارت هم واقعیت را نشان می‌دهد. */
+      + ((d.trace || []).length
+        ? '<div class="cell-sub" style="margin-top:6px"><b>ردیفِ پایدار (آخرین رویدادهای خروجی):</b></div>'
+          + (d.trace || []).map((l) => '<div class="cell-sub">' + icon(l.level === 'success' ? 'fa-circle-check' : 'fa-triangle-exclamation')
+            + ' <span class="mono" style="font-size:10px">' + new Date(l.ts).toLocaleTimeString('fa-IR') + '</span> ' + esc(String(l.action || ''))
+            + ' — ' + esc(String(l.detail || '').slice(0, 160)) + '</div>').join('')
+        : (any === 0 ? '<div class="cell-sub" style="margin-top:6px">و در لاگِ پایدار هم هیچ رویدادی از مسیرِ خروجی نیست (نه موفق، نه ناموفق) — یعنی واقعاً هیچ اتصالی به مسیرِ خروجی نرسیده است.</div>' : ''))
+      + '</div><button class="btn sm" data-act="exit-reload">' + icon('fa-rotate') + ' بارخوانی</button></div>';
+    /* ═══ اعمالِ گروهی ═══
+       شایع‌ترین علتِ «هیچ اتصالی از مسیرِ خروجی رد نمی‌شود» انتخابِ per-config
+       است: کانفیگی که یک بار روی «مستقیم» ست شده باشد از پیش‌فرضِ سراسری
+       پیروی نمی‌کند و بی‌صدا مستقیم می‌رود (در محیطِ فیلترشده = کانفیگ کار
+       نمی‌کند). این دو دکمه همان وضعیت را با یک کلیک درست می‌کنند. */
+    const bulk = '<div class="btn-row" style="margin-top:10px;gap:6px;flex-wrap:wrap">' +
+      '<button class="btn sm p" data-act="exit-all" data-v="inherit" title="همه‌ی کانفیگ‌ها از پیش‌فرضِ سراسری پیروی کنند">' + icon('fa-users-gear') + ' همه‌ی کانفیگ‌ها → از پیش‌فرضِ سراسری' + '</button>' +
+      '<button class="btn sm" data-act="exit-all" data-v="direct" title="همه‌ی کانفیگ‌ها بدونِ واسطه">' + icon('fa-route') + ' همه → مستقیم</button>' +
+      '</div>';
+    return master + strictRow + offNote + defSel + diag + bulk + list + exTestHtml() +
       (EX.form ? exitFormHtml(EX.form) : '') + per;
   };
   async function exLoad() {
@@ -783,8 +937,8 @@
   const NAV = [
     { g: 'اصلی', items: [['dash', 'نمای کلی', 'fa-gauge-high'], ['users', 'کاربران', 'fa-users']] },
     { g: 'شبکه', items: [['conns', 'اتصال‌های زنده', 'fa-activity'], ['monitor', 'آمار مصرف', 'fa-chart-line']] },
-    { g: 'پیکربندی', items: [['config', 'پیکربندی', 'fa-gear'], ['sub', 'لینک ساب', 'fa-link'], ['security', 'امنیت', 'fa-shield-halved']] },
-    { g: 'سیستم', items: [['logs', 'لاگ', 'fa-list-check'], ['settings', 'پشتیبان', 'fa-database']] },
+    { g: 'پیکربندی', items: [['config', 'پیکربندی', 'fa-gear'], ['sub', 'لینک ساب', 'fa-link'], ['security', 'امنیت', 'fa-shield-halved'], ['scanner', 'اسکنر آی‌پی', 'fa-magnifying-glass']] },
+    { g: 'سیستم', items: [['logs', 'لاگ', 'fa-list-check'], ['update', 'به‌روزرسانی', 'fa-rotate'], ['settings', 'پشتیبان', 'fa-database']] },
   ];
 
   /* ═══ اسکیمای تنظیمات ═══
@@ -794,6 +948,25 @@
      می‌رسیدند)، برای همین فیلدهایشان در هیچ صفحه‌ای دیده نمی‌شد. تنظیماتی
      که کاربر واقعاً لازم دارد در خودِ configView هستند. */
   const SCHEMA = {
+    /* ═══ فیلدهای به‌روزرسانی — پیش از این هیچ مسیری به این گروه نبود، برای همین
+       کلیدهای upd (مخزن، توکن، حسابِ کلاودفلر، استقرارِ خودکار) در هیچ صفحه‌ای
+       دیده نمی‌شدند و «آپدیت خودکار» عملاً قابل تنظیم نبود. ═══ */
+    update: [
+      { t: 'منبعِ نسخه', icon: 'fa-code-branch', d: 'از همین مخزن؛ بررسی با version.json انجام می‌شود و به سهمیه‌ی GitHub API وابسته نیست', two: 1, f: [
+        { p: 'upd.repo', l: 'مخزن گیت‌هاب', t: 'text', mono: 1, h: 'قالب: owner/repo' },
+        { p: 'upd.branch', l: 'شاخه', t: 'text', mono: 1, h: 'پیش‌فرض: main' },
+        { p: 'upd.token', l: 'توکن گیت‌هاب (اختیاری)', t: 'text', mono: 1, h: 'برای مخزنِ خصوصی یا سهمیه‌ی بالاتر. به‌صورت ماسک ذخیره/نمایش داده می‌شود و ذخیره‌ی خالی مقدارِ قبلی را نگه می‌دارد' },
+        { p: 'upd.interval', l: 'فاصله‌ی بررسیِ خودکار (دقیقه)', t: 'num', h: 'بین ۱۵ تا ۱۴۴۰ دقیقه' },
+        { p: 'upd.auto', l: 'بررسیِ خودکارِ نسخه (اعلان و بنر)', t: 'sw', h: 'هر بازدیدِ پنل، حداکثر هر چند دقیقه یک‌بار در پس‌زمینه بررسی می‌کند و اگر نسخه‌ی تازه باشد اعلان نشان می‌دهد' },
+      ] },
+      { t: 'استقرارِ خودکار روی کلاودفلر', icon: 'fa-cloud-arrow-up', d: 'با Cloudflare API؛ بایندینگ‌ها (D1/DO) از اسکریپتِ فعلی خوانده و حفظ می‌شوند', two: 1, f: [
+        { p: 'upd.script', l: 'نامِ اسکریپتِ ورکر', t: 'text', mono: 1, h: 'همان نامی که در داشبورد کلادفلر می‌بینید' },
+        { p: 'upd.cfAccount', l: 'شناسه‌ی حساب (Account ID)', t: 'text', mono: 1 },
+        { p: 'upd.cfToken', l: 'توکن API کلاودفلر', t: 'text', mono: 1, h: 'توکنِ با مجوزِ Workers Scripts:Edit — ماسک می‌شود' },
+        { p: 'upd.asset', l: 'مسیرِ فایلِ کد در مخزن', t: 'text', mono: 1, h: 'پیش‌فرض: _worker.obf.js' },
+        { p: 'upd.autoDeploy', l: 'استقرارِ خودکار پس از دیدنِ نسخه‌ی تازه', t: 'sw', bad: 1, h: '⚠️ روشن‌کردنش یعنی هر پوش به‌شکلِ خودکار روی ورکرِ شما منتشر می‌شود؛ یک پوشِ خراب می‌تواند پنل را از کار بیندازد' },
+      ] },
+    ],
     security: [
       { t: 'احراز هویت', icon: 'fa-key', d: 'توکن ۲۴ ساعته + 2FA + rate limit', two: 1, f: [
         { p: 'auth.totp', l: '2FA (TOTP / Google Authenticator)', t: 'sw' },
@@ -813,7 +986,7 @@
         { p: 'auth.pathRotate', l: 'چرخش خودکار مسیر', t: 'sw' },
         { p: 'auth.panic', l: 'Panic mode', t: 'sw', bad: 1, h: 'پنل و لینک ساب (صفحه‌ی کاربر) هم پشتِ سایت پوششی پنهان می‌شوند. /health و /api باز می‌مانند تا بتوانید آن را دوباره خاموش کنید' },
         { p: 'sec.killSwitch', l: 'Kill Switch', t: 'sw', bad: 1 },
-        { p: 'sec.ipConnLimit', l: 'سقف IP همزمان هر کاربر (پیش‌فرض سراسری)', t: 'num', h: '۰ = نامحدود • بیشینه‌ی تعداد IPهایی که همزمان می‌توانند با یک حساب وصل شوند (مدل Nova-Proxy). مقدار هر کاربر بر این اولویت دارد' },
+        { p: 'sec.ipConnLimit', l: 'سقف IP همزمان هر کاربر (پیش‌فرض سراسری)', t: 'num', h: '۰ = نامحدود • بیشینه‌ی تعداد IPهایی که همزمان می‌توانند با یک حساب وصل شوند (مدل Nova-Proxy). مقدار هر کاربر بر این اولویت دارد. اتصالِ باز ولی بی‌ترافیک هم سهمیه‌اش را نگه می‌دارد (سهمیه فقط با بسته شدنِ اتصال آزاد می‌شود).' },
         { p: 'sec.speedTestUrl', l: 'نشانی فایل تست ترافیک', t: 'text', h: 'پیش‌فرض: speed.cloudflare.com/__down • باید یک نشانی «خارجی» باشد (ورکر نمی‌تواند خودش را صدا بزند)' },
         { p: 'sec.cors', l: 'هدرهای CORS', t: 'sw' },
         { p: 'sec.csp', l: 'Security headers (CSP/XFO/nosniff)', t: 'sw' },
@@ -850,7 +1023,7 @@
     { p: 'dailyQuotaMB', l: 'سهمیه روزانه (MB)', t: 'num' },
     { p: 'expiryDays', l: 'انقضا (روز از امروز) — ۰ = نامحدود', t: 'num' },
     /* ⚠️ محدودیت دستگاهی (deviceLimit) کاملاً حذف شد — فقط IP واقعی کلاینت */
-    { p: 'ipLimit', l: 'سقف IP همزمان', t: 'num', h: '۰ = پیش‌فرض سراسری • بیشینه‌ی تعداد IPهای همزمان این کاربر (اتصال‌های بیشتر از همان IP مجاز است)' },
+    { p: 'ipLimit', l: 'سقف IP همزمان', t: 'num', h: '۰ = پیش‌فرض سراسری • بیشینه‌ی تعداد IPهای همزمان این کاربر (اتصال‌های بیشتر از همان IP مجاز است). اتصالِ باز ولی بی‌ترافیک هم شمرده می‌شود؛ IPv6 روی پیشوندِ /64 یک نقطه‌ی اتصال حساب می‌شود (معادلِ NAT برای IPv4)' },
     { p: 'maxConfigs', l: 'سقف کانفیگ', t: 'num' },
     { p: 'speedLimit', l: 'Speed limit (Mbps)', t: 'num' },
     { p: 'mode', l: 'حالت اختصاصی', t: 'sel', o: ['inherit', 'alpha', 'beta', 'both'], lbls: { inherit: 'از تنظیمات عمومی', alpha: 'Alpha — VLESS', beta: 'Beta — Trojan', both: 'Both' } },
@@ -879,13 +1052,62 @@
       '</div></div></div>';
   }
 
+  /* ═══════════ کنترل‌های نمودار: بازه‌ی زمانی + واحد GB/MB ═══════════
+     انتخاب‌ها در localStorage ذخیره می‌شوند تا با رفرش پنل پاک نشوند.
+     سری‌های دمِ دست: روزانه (۳۰ روز از تاریخچه)، ماهانه، سالانه.
+     بازه‌ی کوتاه‌تر از انتهای همان سری بریده می‌شود؛ بازه‌ی ۹۰ روزه اگر
+     تاریخچه کمتر داشته باشد، همان مقدار موجود را نشان می‌دهد. */
+  const DASH_CHART_KEY = 'sg_dash_chart';
+  /* ⚠️ یک واحد برای همه‌ی نمودارها — باگِ قبلی: داشبورد واحد را از
+     sg_dash_chart می‌خواند ولی تبدیلِ سری از sg_mon_unit؛ دو کلید از هم جدا
+     می‌افتادند و «مگابایت» انتخاب می‌شد ولی نمودار گیگ نشان می‌داد. */
+  const MON_UNIT_KEY = 'sg_mon_unit';
+  const tryGet = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } };
+  const trySet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  const DASH_RANGES = [['7', '۷ روز'], ['14', '۱۴ روز'], ['30', '۳۰ روز'], ['90', '۹۰ روز']];
+  function dashChartCfg() {
+    const raw = tryGet(DASH_CHART_KEY, '');
+    const p = raw.split('|');
+    return { range: DASH_RANGES.some(([k]) => k === p[0]) ? p[0] : '30', unit: chartUnitKey() };
+  }
+  const dashChartSave = (c) => { trySet(DASH_CHART_KEY, c.range + '|' + chartUnitKey()); trySet(MON_UNIT_KEY, chartUnitKey()); };
+  const chartUnitKey = () => (tryGet(MON_UNIT_KEY, 'GB') === 'MB' ? 'MB' : 'GB');
+  const chartUnit = () => (chartUnitKey() === 'MB' ? ' MB' : ' GB');
+  /* گیگابایت → واحد انتخابی */
+  const convSeries = (arr) => chartUnitKey() === 'MB' ? (arr || []).map((x) => (Number(x) || 0) * 1024) : (arr || []);
+  function chartSeries(d, which) {
+    const st = (d && d.stats) || {};
+    let arr;
+    if (which === 'dsh') {
+      const days = Number(dashChartCfg().range) || 30;
+      const full = (st.daily || []).slice(-Math.min(days, (st.daily || []).length || days));
+      arr = full.length ? full : [0];
+    } else {
+      const r = S.range;
+      arr = (r === 'm' ? st.monthly : r === 'y' ? st.yearly : st.daily) || st.daily || [0];
+    }
+    return convSeries(arr);
+  }
+  function chartCtlHtml(prefix) {
+    const c = dashChartCfg();
+    return '<div class="chart-ctl" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:0 14px;margin-top:4px">' +
+      '<div class="seg">' + DASH_RANGES.map(([k, l]) => '<button data-act="dash-range" data-v="' + k + '" class="' + (c.range === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
+      '<div class="seg">' + [['GB', 'گیگابایت'], ['MB', 'مگابایت']].map(([k, l]) => '<button data-act="dash-unit" data-v="' + k + '" class="' + (chartUnitKey() === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
+      '</div>';
+  }
+
   function dashView() {
     const d = S.d, us = d.users, s = d.settings;
     const used = us.reduce((a, u) => a + (u.up || 0) + (u.down || 0), 0);
     const quota = us.reduce((a, u) => a + (u.quotaGB || 0) * 1073741824, 0);
     const on = us.filter((u) => u.enabled).length, exp = us.filter((u) => u.expiryAt && u.expiryAt < Date.now()).length;
+    const panic = !!(s.auth && s.auth.panic);
+    const activeConns = us.reduce((a, u) => a + (u.activeConns || 0), 0);
     const top = [...us].sort((a, b) => (b.up + b.down) - (a.up + a.down)).slice(0, 6);
-    const ser = (d.stats && d.stats.trafficSeries) || Array(24).fill(.2);
+    /* ── انتخاب بازه و واحد نمودار داشبورد — بین رفرش‌ها حفظ می‌شود ── */
+    const CD = dashChartCfg();
+    const cLabel = CD.range === '90' ? '۹۰ روز اخیر' : CD.range === '30' ? '۳۰ روز اخیر' : CD.range === '14' ? '۱۴ روز اخیر' : '۷ روز اخیر';
+    const cUnitL = CD.unit === 'MB' ? 'مگابایت' : 'گیگابایت';
     const p = (s.auth && s.auth.path) || 'panel';
     return '<div class="page-head"><div><h1>نمای کلی</h1><p>' + esc(s.panel.name) + ' • ' + esc(location.hostname) + ' • نسخه ' + esc(d.version) + '</p></div>' +
       '<div class="btn-row">' +
@@ -896,6 +1118,18 @@
       '<span class="badge b2">' + icon('fa-link') + ' /' + esc(s.sub.path) + '</span>' +
       '<span class="badge">' + icon('fa-mask') + ' /' + esc(p) + '</span>' +
       '</div></div>' +
+      /* ═══ بنرِ به‌روزرسانی خودکار — وقتی نسخه‌ی تازه‌تری در همین ریپو هست ═══ */
+      ((d.updateInfo && d.updateInfo.newer)
+        ? '<div class="card" style="border-color:var(--warn);margin-bottom:12px"><div class="bd"><div class="row-item">' + icon('fa-arrow-up-right-dots') +
+          '<div class="grow"><b>نسخه‌ی تازه در مخزن هست' + (d.updateInfo.latest ? ' — <span class="mono">' + esc(String(d.updateInfo.latest)).slice(0, 40) + '</span>' : '') + '</b>' +
+          '<div class="cell-sub">مخزن: <span class="mono">' + esc(s.upd.repo || '') + (s.upd.branch ? '@' + esc(s.upd.branch) : '') + '</span>' +
+          (d.updateInfo.note ? ' • ' + esc(String(d.updateInfo.note)).slice(0, 120) : '') +
+          ' • نسخهٔ فعال: <span class="mono">v' + esc(d.version || '') + (d.rev ? ' (' + esc(String(d.rev).slice(0, 7)) + ')' : '') + '</span></div></div>' +
+          ((s.upd.cfToken && s.upd.cfAccount && s.upd.script)
+            ? '<button class="btn sm p" data-act="upd-deploy">' + icon('fa-cloud-arrow-up') + ' استقرارِ خودکار</button>'
+            : '<button class="btn sm" data-act="nav" data-view="update">' + icon('fa-gear') + ' صفحه‌ی به‌روزرسانی</button>') +
+          '</div></div></div>'
+        : '') +
       '<div class="grid g4">' +
       '<div class="stat"><div class="lbl">' + icon('fa-users') + ' کل کاربران</div><div class="val">' + fa(us.length) + '</div><div class="sub">' + fa(on) + ' فعال • ' + fa(exp) + ' منقضی</div></div>' +
       '<div class="stat"><div class="lbl">' + icon('fa-hard-drive') + ' مصرف کل</div><div class="val">' + bytes(used) + '</div><div class="sub">' + (quota ? fa((used / quota * 100).toFixed(0)) + '٪ از سهمیه' : 'بدون سقف') + '</div><div class="bar" style="margin-top:8px"><i style="width:' + (quota ? used / quota * 100 : 0) + '%"></i></div></div>' +
@@ -903,7 +1137,9 @@
       '<div class="stat"><div class="lbl">' + icon('fa-tower-broadcast') + ' گره‌ها</div><div class="val">' + fa(s.cleanIPs.length) + '</div><div class="sub">' + fa(s.ports.length) + ' پورت • ' + fa(s.proxyIPs.length) + ' پروکسی</div></div>' +
       '</div>' +
       '<div class="grid g2" style="margin-top:12px">' +
-      '<div class="card"><header><span class="ic">' + icon('fa-chart-line') + '</span><div><h3>جریان ترافیک</h3><p>۲۴ روز اخیر (گیگابایت) — موس را روی نمودار ببرید</p></div></header><div class="bd" id="chartWrap">' + area(ser, { unit: ' GB' }) + '</div></div>' +
+      '<div class="card"><header><span class="ic">' + icon('fa-chart-line') + '</span><div><h3>جریان ترافیک</h3><p>' + cLabel + ' (' + cUnitL + ') — موس را روی نمودار ببرید</p></div></header>' +
+      chartCtlHtml('dsh') +
+      '<div class="bd" id="chartWrap">' + area(chartSeries(d, 'dsh'), { unit: chartUnit() }) + '</div></div>' +
       '<div class="card"><header><span class="ic b2">' + icon('fa-ranking-star') + '</span><div><h3>بیشترین مصرف‌کنندگان</h3><p>۶ کاربر اول</p></div></header><div class="bd">' +
       (top.map((u) => { const q = (u.quotaGB || 0) * 1073741824, pc = q ? (u.up + u.down) / q * 100 : 0; return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' +
         '<span class="dot ' + (u.enabled ? 'on' : 'bad') + '"></span>' +
@@ -918,12 +1154,30 @@
       '<div class="kv"><span>fingerprint</span><b class="mono">' + esc(s.fingerprint) + '</b></div>' +
       '<div class="kv"><span>Trojan hash</span><b class="mono">' + esc(s.trojanHash) + '</b></div>' +
       '<div class="kv"><span>مسیر تونل</span><b class="mono">' + esc(s.path) + '</b></div></div></div>' +
-      '<div class="card"><header><span class="ic b2">' + icon('fa-gauge-high') + '</span><div><h3>سهمیه‌ی مصرف</h3></div></header><div class="bd" style="display:flex;justify-content:space-around;gap:12px;flex-wrap:wrap">' +
-      ring(quota ? used / quota * 100 : 0, 'سهمیه') + ring(quota ? 100 - used / quota * 100 : 100, 'باقیمانده', 'var(--ac2)') +
+      /* ═══ وضعیت زنده — جایگزین کارت معیوب «سهمیه‌ی مصرف» ═══
+         (آن کارت همیشه ۰٪ نشان می‌داد؛ رینگ‌ها به داده‌ی واقعی متصل نبودند.
+         این کارت وضعیت واقعیِ همین لحظه را نشان می‌دهد.) */
+      '<div class="card"><header><span class="ic b2">' + icon('fa-gauge-high') + '</span><div><h3>وضعیت زنده</h3><p>داده‌ی واقعیِ همین لحظه</p></div></header><div class="bd">' +
+      '<div class="status-row">' + icon('fa-database') + ' ذخیره‌سازی<b>' + (d.storage === 'd1' ? 'D1 پایدار' : 'موقت') + '</b></div>' +
+      '<div class="status-row">' + icon('fa-plug-circle-check') + ' کاربران فعال<b>' + fa(on) + ' از ' + fa(us.length) + '</b></div>' +
+      '<div class="status-row">' + icon('fa-clock') + ' اشتراک منقضی<b>' + fa(exp) + '</b></div>' +
+      '<div class="status-row">' + icon('fa-globe') + ' اتصال‌های زنده<b>' + fa(activeConns) + '</b></div>' +
+      '<div class="status-row">' + icon('fa-arrow-up-right-dots') + ' درخواست‌ها<b>' + n((d.stats && d.stats.requests) || 0) + '</b></div>' +
+      '<div class="status-row">' + icon('fa-shield-halved') + ' وضعیت سرویس<b style="color:' + (panic ? 'var(--bad)' : 'var(--ok, #2ee6a8)') + '">' + (panic ? 'Panic فعال' : 'فعال') + '</b></div>' +
       '</div></div>' +
       '</div></div>';
   }
 
+  /* ═══ متنِ زمانیِ انقضا — ساعت‌وار اگر کمتر از ۴۸ ساعت مانده باشد ═══
+     کاربرانی که انقضای ساعتی دارند (مثلاً ۲ ساعت) قبلاً «۱ روز» نشان داده می‌شد.
+     hours < 48  → «۲ ساعت و ۱۵ دقیقه» / «۴۵ دقیقه»  •  >= 48  → روز */
+  function expTxt(ms) {
+    const m = Math.ceil(ms / 60000);
+    if (m < 60) return fa(m) + ' دقیقه';
+    const h = Math.floor(m / 60);
+    if (m < 48 * 60) return fa(h) + ' ساعت' + (m % 60 ? ' و ' + fa(m % 60) + ' دقیقه' : '');
+    return fa(Math.ceil(m / 1440)) + ' روز';
+  }
   function usersView() {
     const us = S.d.users;
     const searchHits = (u) => {
@@ -939,12 +1193,19 @@
       (us.map((u) => {
         const q2 = (u.quotaGB || 0) * 1073741824, pc = q2 ? (u.up + u.down) / q2 * 100 : 0;
         const dl = u.expiryAt ? Math.ceil((u.expiryAt - Date.now()) / 86400000) : null;
+        /* انقضای ساعتی‌وار: وقتی کمتر از ۴۸ ساعت مانده، ساعت/دقیقه نشان داده می‌شود */
+        const expCell = u.expiryAt === null ? '<span class="badge ok">نامحدود</span>'
+          : (u.expiryFirstUse && !u.expiryArmed) ? '<span class="badge ac">' + icon('fa-hourglass-start') + ' منتظر اولین اتصال</span>'
+          : u.expiryAt < Date.now() ? '<span class="badge bad">منقضی</span>'
+          : (u.expiryAt - Date.now() < 48 * 3600000
+            ? '<span class="badge' + (u.expiryAt - Date.now() < 2 * 3600000 ? ' bad' : ' warn') + '">' + expTxt(u.expiryAt - Date.now()) + '</span>'
+            : '<span class="badge' + (dl <= 7 ? ' warn' : '') + '">' + fa(dl) + ' روز</span>');
         const own = [(u.mode && u.mode !== 'inherit') ? 'mode' : '', u.ports ? 'ports' : '', (u.cleanIPs || []).length ? 'ips' : '', u.panelUrl ? 'url' : '', u.speedLimit ? 'speed' : ''].filter(Boolean);
         return '<tr data-hit="' + searchHits(u) + '" data-uid="' + esc(u.id) + '"><td><div style="display:flex;align-items:center;gap:8px"><span class="dot ' + (u.enabled ? 'on' : 'bad') + '"></span><span class="cell-main">' + esc(u.name) + '</span></div><div class="cell-sub">' + esc(u.note || '—') + '</div></td>' +
           '<td><div class="mono" style="font-size:10.5px">' + esc(String(u.uuid).slice(0, 13)) + '…</div><button class="btn sm ghost" data-act="copy" data-v="' + esc(u.uuid) + '">' + icon('fa-copy') + ' کپی</button></td>' +
           '<td><b class="mono" style="font-size:11px">' + bytes(u.up + u.down) + '</b><div class="bar ' + (pc > 90 ? 'bad' : pc > 70 ? 'warn' : '') + '" style="margin-top:5px"><i style="width:' + pc + '%"></i></div><div class="cell-sub">↓' + bytes(u.down) + ' ↑' + bytes(u.up) + '</div></td>' +
           '<td class="mono">' + (u.quotaGB ? fa(u.quotaGB) + ' GB' : '∞') + '<div class="cell-sub">' + (u.dailyQuotaMB ? fa(u.dailyQuotaMB) + ' MB/روز' : '—') + '</div></td>' +
-          '<td>' + (dl === null ? '<span class="badge ok">نامحدود</span>' : dl < 0 ? '<span class="badge bad">منقضی</span>' : '<span class="badge' + (dl <= 7 ? ' warn' : '') + '">' + fa(dl) + ' روز</span>') + '</td>' +
+          '<td>' + expCell + '</td>' +
           '<td><span class="badge ' + (u.mode === 'both' ? 'ac' : 'b2') + '">' + esc(u.mode || 'inherit') + '</span></td>' +
           '<td>' + (own.length ? own.map((o) => '<span class="badge ac">' + esc(o) + '</span>').join(' ') : '<span class="cell-sub">—</span>') + '</td>' +
           '<td class="cell-sub">' + ago(u.lastSeen) +
@@ -1011,7 +1272,7 @@
       '<div class="sub-stats">' +
         '<div class="sub-stat"><span>مصرف</span><b>' + bytes(used) + '</b><i>از ' + (q ? fa(u.quotaGB) + ' GB' : 'نامحدود') + '</i></div>' +
         '<div class="sub-stat"><span>باقیمانده</span><b>' + (q ? bytes(Math.max(0, q - used)) : '∞') + '</b><i>' + (q ? fa(pct.toFixed(0)) + '٪ مصرف شده' : 'بدون سقف') + '</i></div>' +
-        '<div class="sub-stat"><span>انقضا</span><b>' + (dl === null ? 'نامحدود' : dl < 0 ? 'منقضی' : fa(dl) + ' روز') + '</b><i>' + (dl === null ? '—' : dl < 0 ? 'غیرفعال' : 'تا ' + new Date(u.expiryAt).toLocaleDateString('fa-IR')) + '</i></div>' +
+        '<div class="sub-stat"><span>انقضا</span><b>' + (u.expiryAt ? (u.expiryAt < Date.now() ? 'منقضی' : expTxt(u.expiryAt - Date.now())) : 'نامحدود') + '</b><i>' + (u.expiryAt ? 'تا ' + new Date(u.expiryAt).toLocaleString('fa-IR') : '—') + '</i></div>' +
         '<div class="sub-stat"><span>وضعیت</span><b>' + (u.enabled ? 'فعال' : 'غیرفعال') + '</b><i>' + fa(u.totalReq || 0) + ' اتصال</i></div>' +
       '</div>' +
       (q ? '<div class="bar' + (pct > 90 ? ' bad' : pct > 70 ? ' warn' : '') + '" style="margin-top:10px"><i style="width:' + pct + '%"></i></div>' : '') +
@@ -1201,9 +1462,12 @@
 
   function monitorView() {
     const st = S.d.stats || {}, u = S.d.users, r = S.range;
-    const ser = (r === 'm' ? st.monthly : r === 'y' ? st.yearly : st.daily) || st.daily || Array(14).fill(.3);
+    const cUnitL = chartUnitKey() === 'MB' ? 'مگابایت' : 'گیگابایت';
     return '<div class="page-head"><div><h1>مانیتورینگ و آمار</h1><p>مصرف روزانه/ماهانه/سالانه، اتصال‌های فعال و سلامت سرویس</p></div>' +
-      '<div class="seg">' + [['d', 'روزانه'], ['m', 'ماهانه'], ['y', 'سالانه']].map(([k, l]) => '<button data-act="range" data-v="' + k + '" class="' + (r === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div></div>' +
+      '<div class="btn-row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+      '<div class="seg">' + [['d', 'روزانه'], ['m', 'ماهانه'], ['y', 'سالانه']].map(([k, l]) => '<button data-act="range" data-v="' + k + '" class="' + (r === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
+      '<div class="seg">' + [['GB', 'گیگابایت'], ['MB', 'مگابایت']].map(([k, l]) => '<button data-act="chart-unit" data-v="' + k + '" class="' + (chartUnitKey() === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
+      '</div></div>' +
       '<div class="grid g4">' +
       '<div class="stat"><div class="lbl">آپلود کل</div><div class="val">' + bytes(u.reduce((a, x) => a + (x.up || 0), 0)) + '</div><div class="sub">' + fa(u.length) + ' کاربر</div></div>' +
       '<div class="stat"><div class="lbl">دانلود کل</div><div class="val">' + bytes(u.reduce((a, x) => a + (x.down || 0), 0)) + '</div><div class="sub">اتصال فعال: ' + fa(st.connections || 0) + '</div></div>' +
@@ -1211,8 +1475,8 @@
       '<div class="stat"><div class="lbl">نسخه / بیلد</div><div class="val" style="font-size:15px">' + esc(S.d.version) + '</div><div class="sub">' + esc(S.d.build || '—') + '</div></div>' +
       '</div>' +
       '<div class="grid g2" style="margin-top:12px">' +
-      '<div class="card"><header><span class="ic">' + icon('fa-chart-area') + '</span><div><h3>مصرف ' + (r === 'd' ? 'روزانه' : r === 'm' ? 'ماهانه' : 'سالانه') + '</h3><p>گیگابایت در هر بازه</p></div></header><div class="bd" id="chartWrap">' + area(ser, { color: 'var(--ac2)', color2: 'var(--ac)', unit: ' GB' }) + '</div></div>' +
-      '<div class="card"><header><span class="ic b2">' + icon('fa-chart-column') + '</span><div><h3>توزیع مصرف کاربران</h3><p>گیگابایت</p></div></header><div class="bd">' + bars(u.slice(0, 14).map((x) => (x.up + x.down) / 1073741824 || .01), 'GB') + '</div></div></div>' +
+      '<div class="card"><header><span class="ic">' + icon('fa-chart-area') + '</span><div><h3>مصرف ' + (r === 'd' ? 'روزانه' : r === 'm' ? 'ماهانه' : 'سالانه') + '</h3><p>' + cUnitL + ' در هر بازه</p></div></header><div class="bd" id="chartWrap">' + area(chartSeries(S.d, 'mon'), { color: 'var(--ac2)', color2: 'var(--ac)', unit: chartUnit() }) + '</div></div>' +
+      '<div class="card"><header><span class="ic b2">' + icon('fa-chart-column') + '</span><div><h3>توزیع مصرف کاربران</h3><p>' + cUnitL + '</p></div></header><div class="bd">' + bars(convSeries(u.slice(0, 14).map((x) => (x.up + x.down) / 1073741824 || .01)), chartUnit()) + '</div></div></div>' +
       '<div class="card"><header><span class="ic">' + icon('fa-users') + '</span><div><h3>مصرف به تفکیک کاربر</h3><p>با درصد پیشرفت</p></div></header><div class="bd" style="padding:0"><div class="tbl-wrap"><table>' +
       '<thead><tr><th>کاربر</th><th>آپلود</th><th>دانلود</th><th>کل</th><th>درصد سهمیه</th><th>درخواست</th></tr></thead><tbody>' +
       u.map((x) => { const q = (x.quotaGB || 0) * 1073741824, p = q ? (x.up + x.down) / q * 100 : 0; return '<tr><td class="cell-main">' + esc(x.name) + '</td><td class="mono">' + bytes(x.up) + '</td><td class="mono">' + bytes(x.down) + '</td><td class="mono"><b>' + bytes(x.up + x.down) + '</b></td>' +
@@ -1239,36 +1503,137 @@
       '</div></div>';
   }
 
+  /* ══ صفحه‌ی به‌روزرسانی — پیش از این هیچ مسیری به آن نبود (VIEWS.update به
+     configView می‌رفت) و این تابع هم به SCHEMA.update اشاره می‌کرد که تعریف
+     نشده بود؛ یعنی صفحه‌ی آپدیت اصلاً وجود نداشت و هیچ اعلانی هم نمی‌آمد. ══ */
+  function updSourceLabel(src) {
+    return src === 'version.json' ? 'version.json مخزن' : src === 'release' ? 'release گیت‌هاب' : src === 'commit' ? 'کامیتِ شاخه (تقریبی)' : 'نامشخص';
+  }
+  /* نتیجهٔ آخرین بررسیِ توکنِ کلاودفلر (در حافظهٔ همین صفحه) */
+  let CF = { last: null };
+  const cfOutHtml = (r) => {
+    if (!r) return '';
+    const head = '<div class="badge ' + (r.ok ? 'ok' : 'bad') + '">' + icon(r.ok ? 'fa-circle-check' : 'fa-circle-xmark') + ' ' +
+      esc(r.msg || (r.ok ? 'توکن سالم است' : 'بررسی ناموفق')) + '</div>' +
+      (r.account ? '<div class="hint" style="margin-top:6px">شناسهی حساب: <b class="mono">' + esc(String(r.account)) + '</b>' +
+        (r.saved ? ' <span class="badge ok">ذخیره شد</span>' : '') + '</div>' : '');
+    const steps = (r.steps || []).map((s) => '<div class="log"><span class="dot ' + (s.ok ? 'on' : 'bad') + '"></span>' +
+      '<div class="l"><b>' + esc(s.step || '') + '</b><div class="hint">' + esc(String(s.note || '').slice(0, 220)) + '</div></div></div>').join('');
+    const bindings = (r.bindings && r.bindings.length)
+      ? '<div class="hint" style="margin-top:6px">بایندینگهایی که هنگام انتشار حفظ میشوند: ' +
+        esc(r.bindings.map((b) => (b.name || '') + ':' + (b.type || '')).join(' • ').slice(0, 180)) + '</div>'
+      : '';
+    return '<div style="margin-top:10px">' + head + steps + bindings + '</div>';
+  };
   function updateView() {
-    const d = S.d, s = d.settings;
-    return '<div class="page-head"><div><h1>سیستم به‌روزرسانی</h1><p>بررسی نسخه از گیت‌هاب، استقرار و بازگشت به نسخه‌ی قبل</p></div></div>' +
+    const d = S.d, s = d.settings, u = s.upd || {};
+    const info = d.updateInfo || {};
+    const ready = !!(u.cfToken && u.cfAccount && u.script);
+    const deployed = !!(info.deployedAt && info.deployOk);
+    const rev = String(d.rev || '');
+    const repoUrl = 'https://github.com/' + String(u.repo || '') + '/blob/' + String(u.branch || 'main') + '/' + String(u.asset || '_worker.obf.js');
+    return '<div class="page-head"><div><h1>سیستم به‌روزرسانی</h1><p>بررسی نسخه از مخزن، استقرار روی کلاودفلر و بازگشت به نسخه‌ی قبل</p></div>' +
+      '<div class="btn-row"><button class="btn s" data-act="upd-check">' + icon('fa-magnifying-glass') + ' بررسیِ تازه</button></div></div>' +
+      ((info.newer && !deployed)
+        ? '<div class="card" style="border-color:var(--warn);margin-bottom:12px"><div class="bd"><div class="row-item">' + icon('fa-arrow-up-right-dots') +
+          '<div class="grow"><b>نسخه‌ی تازه در مخزن هست' + (info.latest ? ' — <span class="mono">' + esc(String(info.latest)).slice(0, 40) + '</span>' : '') + '</b>' +
+          '<div class="cell-sub">' + (info.note ? esc(String(info.note)).slice(0, 120) + ' • ' : '') + 'منبع: ' + esc(updSourceLabel(info.source)) + '</div></div>' +
+          (ready ? '<button class="btn sm p" data-act="upd-deploy">' + icon('fa-cloud-arrow-up') + ' استقرارِ خودکار</button>' : '<button class="btn sm" data-act="nav" data-view="update">' + icon('fa-gear') + ' تنظیمِ استقرار</button>') +
+          '</div></div></div>'
+        : '') +
+      (deployed
+        ? '<div class="card" style="border-color:var(--ok);margin-bottom:12px"><div class="bd">' + icon('fa-circle-check') +
+          ' <b>نسخه‌ی تازه مستقر شد</b> <span class="hint">' + ago(info.deployedAt) + ' — چند ثانیه‌ی دیگر همین صفحه را رفرش کنید تا نسخه‌ی جدید فعال شود</span></div></div>'
+        : '') +
       '<div class="grid g3">' +
-      '<div class="card"><header><span class="ic">' + icon('fa-rotate') + '</span><div><h3>نسخه فعلی</h3></div></header><div class="bd">' +
-      '<div class="kv"><span>نسخه</span><b class="mono">' + esc(d.version) + '</b></div>' +
+      '<div class="card"><header><span class="ic">' + icon('fa-rotate') + '</span><div><h3>نسخه‌ی فعالِ پنل</h3><p>همین ورکری که الان پاسخ می‌دهد</p></div></header><div class="bd">' +
+      '<div class="kv"><span>نسخه</span><b class="mono">v' + esc(d.version || '—') + '</b></div>' +
       '<div class="kv"><span>بیلد</span><b class="mono">' + esc(d.build || '—') + '</b></div>' +
-      '<div class="kv"><span>مخزن</span><b class="mono">' + esc(s.upd.repo) + '</b></div>' +
-      '<div class="kv"><span>آخرین بررسی</span><b>' + ago(d.lastCheck) + '</b></div>' +
-      '<div class="btn-row" style="margin-top:12px"><button class="btn p" data-act="upd-check">' + icon('fa-magnifying-glass') + ' بررسی</button>' +
-      '<button class="btn" data-act="upd-deploy">' + icon('fa-download') + ' نصب</button>' +
-      '<button class="btn d" data-act="upd-rollback">' + icon('fa-rotate-left') + ' بازگشت</button></div></div></div>' +
-      '<div class="card"><header><span class="ic b2">' + icon('fa-network-wired') + '</span><div><h3>انتشار به نودها</h3></div></header><div class="bd">' +
-      ((d.panels || []).map((p) => '<div class="kv"><span>' + esc(p.name) + '</span><span class="badge ' + (p.status === 'online' ? 'ok' : p.status === 'syncing' ? 'warn' : 'bad') + '">' + esc(p.status) + '</span></div>').join('') || '<div class="empty">نودی متصل نیست</div>') +
+      '<div class="kv"><span>اثرِ انگشت (rev)</span><b class="mono">' + esc(rev ? rev.slice(0, 10) + '…' : '—') + '</b></div>' +
+      '<div class="kv"><span>مخزن</span><b class="mono">' + esc(u.repo || '—') + '@' + esc(u.branch || 'main') + '</b></div>' +
+      '<div class="kv"><span>آخرین بررسی</span><b>' + (d.lastCheck ? ago(d.lastCheck) : 'هرگز') + '</b></div>' +
+      '<div class="hint" style="margin-top:8px">هر بیلدِ تازه نسخه و اثرِ انگشت را عوض می‌کند؛ اگر نسخه‌ی مخزن از این بالاتر باشد، بنر و اعلان نشان داده می‌شود.</div>' +
       '</div></div>' +
-      '<div class="card"><header><span class="ic warn">' + icon('fa-list-check') + '</span><div><h3>گزارش آخرین عملیات</h3></div></header><div class="bd">' +
-      ((d.updateLog || []).map((l) => '<div class="log"><span class="dot ' + (l.ok ? 'on' : 'bad') + '"></span><div class="l"><b>' + esc(l.step) + '</b><div class="hint">' + esc(l.note) + '</div></div></div>').join('') || '<div class="empty">گزارشی نیست</div>') +
+      '<div class="card"><header><span class="ic ' + (info.newer ? 'warn' : '') + '">' + icon('fa-code-compare') + '</span><div><h3>نسخه‌ی موجود در مخزن</h3><p>' + esc(updSourceLabel(info.source)) + '</p></div></header><div class="bd">' +
+      '<div class="kv"><span>آخرین نسخه</span><b class="mono">' + esc(String(info.latest || '—')) + '</b></div>' +
+      (info.version ? '<div class="kv"><span>نسخه‌ی مخزن</span><b class="mono">v' + esc(String(info.version)) + '</b></div>' : '') +
+      (info.rev ? '<div class="kv"><span>rev مخزن</span><b class="mono">' + esc(String(info.rev).slice(0, 10)) + '…</b></div>' : '') +
+      (info.sha ? '<div class="kv"><span>کامیت</span><b class="mono">' + esc(String(info.sha).slice(0, 10)) + '</b></div>' : '') +
+      '<div class="kv"><span>وضعیت</span><span class="badge ' + (info.newer ? 'warn' : info.latest ? 'ok' : 'b2') + '">' + (info.newer ? 'نسخه‌ی تازه هست' : info.latest ? 'به‌روز' : 'نامشخص') + '</span></div>' +
+      ((info.notes || []).length ? '<div class="hint" style="margin-top:6px">منبع‌های بررسی‌شده: ' + esc((info.notes || []).join(' • ').slice(0, 200)) + '</div>' : '') +
+      '<div class="hint" style="margin-top:8px">استقرارِ خودکار: ' + (ready ? '<span class="badge ok">آماده</span>' : '<span class="badge warn">اعتبارنامه‌ها ناقص است</span>') +
+      (ready ? '' : ' — نامِ اسکریپت، شناسه‌ی حساب و توکنِ کلاودفلر را پایین همین صفحه پر کنید (یا کد را از گیت‌هاب پیست کنید).') +
+      (u.autoDeploy ? ' • <span class="badge bad">استقرارِ خودکار روشن است</span>' : '') + '</div>' +
+      '<div class="btn-row" style="margin-top:12px;flex-wrap:wrap">' +
+      '<button class="btn" data-act="upd-verify" title="همه‌چیز را بررسی می‌کند ولی چیزی آپلود نمی‌کند">' + icon('fa-vial') + ' اعتبارسنجی</button>' +
+      '<button class="btn p' + (ready ? '' : ' hide') + '" data-act="upd-deploy">' + icon('fa-cloud-arrow-up') + ' استقرارِ اکنون</button>' +
+      '<button class="btn d' + (ready ? '' : ' hide') + '" data-act="upd-rollback">' + icon('fa-rotate-left') + ' بازگشت به نسخه‌ی قبل</button>' +
+      '<a class="btn ghost" href="' + esc(repoUrl) + '" target="_blank" rel="noopener" title="کدِ ساختهٔ‌شده در گیت‌هاب — اگر استقرار را تنظیم نکردید از همین‌جا کپی کنید">' + icon('fa-up-right-from-square') + ' فایلِ کد در گیت‌هاب</a>' +
       '</div></div></div>' +
-      SCHEMA.update.map((g) => group(g, s)).join('') + saveBtn('save-update');
+      /* ═══ توکنِ کلاودفلر با یک کلیک ═══
+         کاربر نباید بداند مجوزِ لازم اسمش «Workers Scripts:Edit» است یا از کدام
+         منوی داشبورد باید انتخاب شود. با قالبِ رسمیِ کلاودفلر (template URL)
+         فرمِ ساختِ توکن از پیش با همان مجوزها پر می‌شود؛ کاربر فقط تأیید و
+         کپی می‌کند و همین‌جا با یک دکمه بررسی می‌شود (Account ID هم خودکار
+         پر می‌شود) — همان چیزی که «ساختِ دستیِ توکن» را از مسیر خارج می‌کند. */
+      '<div class="card" style="margin-top:12px"><header><span class="ic b2">' + icon('fa-cloud') + '</span><div><h3>توکنِ کلاودفلر (ساختِ یک‌کلیکی)</h3>' +
+      '<p>مجوزهای لازم از پیش انتخاب می‌شوند — فقط تأیید کنید</p></div></header><div class="bd">' +
+      '<div class="hint">۱) دکمه‌ی زیر فرمِ ساختِ توکن را با مجوزهای لازم باز می‌کند (Workers Scripts:Edit برای انتشار، Account Settings:Read برای پرکردنِ خودکار شناسه‌ی حساب). ' +
+      '۲) «Continue to summary» و بعد «Create Token» را بزنید و توکن را کپی کنید. ' +
+      '۳) توکن را در فیلدِ «توکن API کلاودفلر» پایین همین صفحه بچسبانید. ' +
+      '۴) «بررسیِ توکن» را بزنید — پنل خودش اعتبار، شناسه‌ی حساب و دسترسیِ اسکریپت را می‌سنجد و در صورت سالم‌بودن ذخیره می‌کند.</div>' +
+      '<div class="btn-row" style="margin-top:10px;flex-wrap:wrap">' +
+      '<a class="btn p" href="' + esc(d.cfTokenUrl || '#') + '" target="_blank" rel="noopener" title="فرمِ ساختِ توکن با مجوزهای ازپیش‌پر">' + icon('fa-key') + ' ساختِ توکنِ کلاودفلر (مجوزها از پیش انتخاب شده)</a>' +
+      '<button class="btn" data-act="cf-check">' + icon('fa-stethoscope') + ' بررسیِ توکن</button>' +
+      '</div>' + cfOutHtml(CF.last) +
+      ((u.cfToken && u.cfAccount && u.script) ? '<div class="hint" style="margin-top:8px">وضعیت: <span class="badge ok">اعتبارنامه ذخیره شده</span></div>' : '<div class="hint" style="margin-top:8px">وضعیت: <span class="badge warn">هنوز توکن ذخیره نشده</span></div>') +
+      '</div></div>' +
+      '<div class="card"><header><span class="ic warn">' + icon('fa-list-check') + '</span><div><h3>گزارش آخرین عملیات</h3><p>نتیجه‌ی واقعی هر گام</p></div></header><div class="bd">' +
+      ((d.updateLog || []).map((l) => '<div class="log"><span class="dot ' + (l.ok ? 'on' : 'bad') + '"></span><div class="l"><b>' + esc(l.step) + '</b><div class="hint">' + esc(l.note) + '</div></div></div>').join('') || '<div class="empty">هنوز عملیاتی اجرا نشده — «بررسیِ تازه» را بزنید</div>') +
+      '</div></div></div>' +
+      SCHEMA.update.map((g) => group(g, s)).join('') + saveBtn('save-config');
   }
 
+  /* ═══ نمایِ API — لاگِ رکوردبه‌رکوردِ درخواست‌ها + شمارندهٔ هر مسیر ═══
+     `apiLog` رکوردِ خامِ هر درخواست است (روش، مسیر، کدِ وضعیت، زمانِ پاسخ،
+     آی‌پی و این‌که با نشست آمده یا با کلیدِ API) و `apiStats` شمارندهٔ همهٔ
+     فراخوانی‌ها — حتی pollهایی که عمداً رکورد نمی‌گیرند تا رینگ پر نشود. */
+  function apiLogsView(apiLog, apiStats) {
+    const dot = (s) => ((s || 0) >= 400 ? 'bad' : (s || 0) >= 300 ? 'warn' : 'on');
+    const rows = (apiLog || []).map((e) => '<div class="log"><span class="dot ' + dot(e.st) + '"></span>' +
+      '<div class="l"><b class="mono">' + esc(e.m || '') + ' ' + esc(e.p || '') + '</b> ' +
+      '<span class="badge ' + ((e.st || 0) >= 400 ? 'bad' : 'ok') + '">' + fa(e.st || 0) + '</span> ' +
+      '<span class="badge">' + esc(e.who || '') + '</span>' + ((e.n || 1) > 1 ? ' <span class="badge b2">×' + fa(e.n) + '</span>' : '') +
+      '<div class="hint">' + esc(e.ip || '—') + ' • ' + fa(e.ms || 0) + ' میلی‌ثانیه' + (e.note ? ' • ' + esc(e.note) : '') + '</div></div>' +
+      '<span class="hint mono" style="font-size:10px">' + new Date(e.ts).toLocaleString('fa-IR') + '</span></div>').join('') ||
+      '<div class="empty">هنوز درخواستی به API ثبت نشده</div>';
+    const stats = Object.keys(apiStats || {})
+      .sort((a, b) => ((apiStats[b] || {}).n || 0) - ((apiStats[a] || {}).n || 0))
+      .slice(0, 12)
+      .map((k) => {
+        const r = apiStats[k] || {};
+        return '<div class="kv"><span class="mono">' + esc(k) + '</span><b>' + fa(r.n || 0) + ' فراخوان' +
+          (r.err ? ' <span class="badge bad">' + fa(r.err) + ' خطا</span>' : '') +
+          ' <span class="hint">' + fa(r.lastMs || 0) + 'ms' + (r.ip ? ' • ' + esc(r.ip) : '') + '</span></b></div>';
+      }).join('') || '<div class="empty">هنوز فراخوانی‌ای ثبت نشده</div>';
+    return '<div class="page-head"><div><h1>لاگ درخواست‌های API</h1><p>' + fa((apiLog || []).length) + ' رکوردِ خام • ' +
+      fa(Object.keys(apiStats || {}).length) + ' مسیر • هر نوشتن، خطا و کلیدِ API یک رکورد می‌گیرد</p></div>' +
+      '<div class="seg">' + '<button data-act="loglv" data-v="all">همهٔ رویدادها</button><button data-act="loglv" data-v="api" class="on">API</button></div></div>' +
+      '<div class="card"><header><span class="ic">' + icon('fa-list-check') + '</span><div><h3>شمارندهٔ مسیرهای API</h3><p>هر مسیر چند بار صدا زده شده و چند خطا داده — همین‌جا معلوم می‌شود کدام کلید مشغولِ کار است</p></div></header><div class="bd">' + stats + '</div></div>' +
+      '<div class="card"><div class="bd">' + rows + '</div></div>';
+  }
   function logsView() {
     const logs = S.d.logs || [], lv = S.tab.log || 'all';
-    const list = logs.filter((l) => lv === 'all' || l.level === lv);
+    /* نمایِ API جداست: رکوردهای خام + شمارندهٔ مسیرها */
+    if (lv === 'api') return apiLogsView(S.d.apiLog, S.d.apiStats);
+    /* فیلترِ «رادار» هم کنار سطوح — اسکنر صفحه‌ی کاربر اینجا لاگ می‌گذارد */
+    const list = logs.filter((l) => lv === 'all' || (lv === 'radar' ? l.actor === 'radar' : l.level === lv));
     return '<div class="page-head"><div><h1>لاگ فعالیت</h1><p>' + fa(logs.length) + ' رویداد • audit trail تغییرات ادمین</p></div>' +
-      '<div class="seg">' + [['all', 'همه'], ['success', 'موفق'], ['info', 'اطلاعات'], ['warn', 'هشدار'], ['error', 'خطا']].map(([k, l]) => '<button data-act="loglv" data-v="' + k + '" class="' + (lv === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div></div>' +
+      '<div class="seg">' + [['all', 'همه'], ['radar', 'رادار'], ['success', 'موفق'], ['info', 'اطلاعات'], ['warn', 'هشدار'], ['error', 'خطا'], ['api', 'API']].map(([k, l]) => '<button data-act="loglv" data-v="' + k + '" class="' + (lv === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div></div>' +
       '<div class="card"><div class="bd">' +
       (list.map((l) => '<div class="log"><span class="dot ' + (l.level === 'success' ? 'on' : l.level === 'error' ? 'bad' : 'warn') + '"></span>' +
         '<div class="l"><b>' + esc(l.action) + '</b> <span class="badge">' + esc(l.actor) + '</span> <span class="badge ' + (l.level === 'error' ? 'bad' : l.level === 'success' ? 'ok' : 'b2') + '">' + esc(l.level) + '</span>' +
-        '<div class="hint">' + esc(l.detail || '') + '</div></div><span class="hint mono" style="font-size:10px">' + new Date(l.ts).toLocaleString('fa-IR') + '</span></div>').join('') || '<div class="empty">رویدادی ثبت نشده</div>') +
+        '<div class="hint">' + esc(l.detail || '') + '</div>' + ((l.ip || l.path) ? '<div class="hint mono" style="font-size:10px">' + esc((l.method || '') + ' ' + (l.path || '')) + (l.ip ? ' • ' + esc(l.ip) : '') + (l.status ? ' • HTTP ' + fa(l.status) : '') + (l.who ? ' • ' + esc(l.who) : '') + '</div>' : '') + '</div><span class="hint mono" style="font-size:10px">' + new Date(l.ts).toLocaleString('fa-IR') + '</span></div>').join('') || '<div class="empty">رویدادی ثبت نشده</div>') +
       '</div></div>';
   }
 
@@ -1276,10 +1641,19 @@
     const d = S.d, s = d.settings;
     return '<div class="page-head"><div><h1>تنظیمات و پشتیبان</h1><p>کلیدهای API، پشتیبان‌گیری و بازنشانی</p></div></div>' +
       '<div class="grid g2">' +
-      '<div class="card"><header><span class="ic">' + icon('fa-key') + '</span><div><h3>کلیدهای API</h3><p>حداکثر ۱۰ کلید</p></div><div class="acts"><button class="btn sm s" data-act="key-new">' + icon('fa-plus') + ' کلید جدید</button></div></header>' +
-      '<div class="bd"><div class="list">' + ((d.keys || []).map((k) => '<div class="row-item"><div class="grow"><b class="mono" style="font-size:11px">' + esc(k.key) + '</b><div class="cell-sub">' + esc(k.name) + ' • ' + (k.ro ? 'فقط‌خواندنی' : 'دسترسی کامل') + '</div></div>' +
-        '<button class="btn sm ghost" data-act="copy" data-v="' + esc(k.key) + '">' + icon('fa-copy') + '</button>' +
-        '<button class="btn sm d" data-act="key-del" data-id="' + esc(k.id) + '">' + icon('fa-trash-can') + '</button></div>').join('') || '<div class="empty">کلیدی ساخته نشده</div>') + '</div></div></div>' +
+      /* ═══ کلیدهای API ═══
+         هر ردیف: خودِ کلید + دسترسی + آخرین استفاده. «آخرین استفاده» مهم است —
+         تا ادمین ببیند کلید واقعاً کار می‌کند (قبلاً کلید در هیچ مسیری پذیرفته
+         نمی‌شد و بی‌فایده بود) و کدام کلید را باید باطل کند. */
+      '<div class="card"><header><span class="ic">' + icon('fa-key') + '</span><div><h3>کلیدهای API</h3><p>حداکثر ۱۰ کلید — برای اسکریپت، ربات یا مانیتورینگ</p></div><div class="acts"><button class="btn sm s" data-act="key-new">' + icon('fa-plus') + ' کلید جدید</button></div></header>' +
+      '<div class="bd"><div class="list">' + ((d.keys || []).map((k) => '<div class="row-item"><div class="grow"><b class="mono" style="font-size:11px">' + esc(k.key) + '</b><div class="cell-sub">' + esc(k.name) + ' • ' + (k.ro ? 'فقط‌خواندنی' : 'دسترسی کامل') + ' • ' + (k.lastUsedAt ? 'آخرین استفاده: ' + ago(k.lastUsedAt) + (k.uses ? ' (' + fa(k.uses) + ' بار)' : '') : 'هنوز استفاده نشده') + '</div></div>' +
+        '<button class="btn sm ghost" data-act="copy" data-v="' + esc(k.key) + '" title="کپی کلید">' + icon('fa-copy') + '</button>' +
+        '<button class="btn sm ghost" data-act="key-scope" data-id="' + esc(k.id) + '" data-v="' + (k.ro ? '0' : '1') + '" title="' + (k.ro ? 'تبدیل به دسترسیِ کامل' : 'تبدیل به فقط‌خواندنی') + '">' + icon(k.ro ? 'fa-eye' : 'fa-eye-slash') + '</button>' +
+        '<button class="btn sm d" data-act="key-del" data-id="' + esc(k.id) + '" title="حذف کلید">' + icon('fa-trash-can') + '</button></div>').join('') || '<div class="empty">کلیدی ساخته نشده</div>') + '</div>' +
+      '<div class="hint" style="margin-top:10px">استفاده: هدرِ <b class="mono">Authorization: Bearer sk_…</b> (یا <b class="mono">x-api-key</b> یا <b class="mono">?key=</b>) — ' +
+      'مثال: <span class="mono">curl -H "Authorization: Bearer ' + esc((((d.keys || [])[0] || {}).key) || 'sk_…') + '" https://' + esc((typeof location !== 'undefined' ? location.host : 'panel')) + '/api/state</span><br>' +
+      'کلیدِ فقط‌خواندنی فقط مسیرهای خواندنی (state، connections، backup، exits) را می‌تواند صدا بزند؛ نوشتن با ۴۰۳ رد می‌شود. ساخت و حذفِ کلید و تغییرِ رمز فقط از همین پنل انجام می‌شود.</div>' +
+      '</div></div></div>' +
       /* ═══ پشتیبان و بازیابی با کشیدن و رها کردن ═══
          جایگزینِ دو مسیرِ قدیمی شد: دکمه‌ی «دریافت پشتیبان» که فایل را در
          مرورگر از state می‌ساخت (و همیشه با سرور یکی نبود) و inputِ پنهانِ
@@ -1386,25 +1760,599 @@
      قطعیِ ناگهانی سقفِ سختِ ۳ ثانیه در خودِ ورکر ثابت است (قابل تنظیم نیست). */
   function securityView() {
     const s = S.d.settings;
-    const store = S.d.storage || 'mem';
+    /* ⚠️ قبلاً از S.d.storage استفاده می‌شد که هرگز 'do' برنمی‌گرداند
+       (backendOf فقط d1/kv/mem می‌دهد). پس اگر فقط شیءِ ماندگار بایند بود،
+       برچسبِ قرمزِ «حافظه» نشان داده می‌شد در حالی که محدودیت دقیق کار می‌کرد —
+       یک هشدارِ کاذب. حالا از همان مرجعِ واقعیِ محدودیت می‌آید. */
+    const lim = limiterOf() || 'mem';
     const storeBadge =
-      store === 'd1' ? '<span class="badge ok">' + icon('fa-database') + ' مرجع محدودیت: D1 — سراسری و دقیق ✓</span>'
-        : store === 'kv' ? '<span class="badge warn">' + icon('fa-database') + ' مرجع محدودیت: KV — مشترک اما تقریبی</span>'
-          : store === 'do' ? '<span class="badge ok">' + icon('fa-server') + ' مرجع محدودیت: Durable Object — سراسری و دقیق ✓</span>'
+      lim === 'do' ? '<span class="badge ok">' + icon('fa-server') + ' مرجع محدودیت: Durable Object — سراسری و دقیق ✓</span>'
+        : lim === 'd1' ? '<span class="badge ok">' + icon('fa-database') + ' مرجع محدودیت: D1 — سراسری و دقیق ✓</span>'
+          : lim === 'kv' ? '<span class="badge warn">' + icon('fa-database') + ' مرجع محدودیت: KV — مشترک اما تقریبی</span>'
             : '<span class="badge bad">' + icon('fa-triangle-exclamation') + ' مرجع محدودیت: حافظه — فقط همین isolate؛ بین isolateها تضمین نمی‌شود</span>';
     return '<div class="page-head"><div><h1>امنیت و محدودیت اتصال</h1><p>سقف آی‌پی همزمان، آزادسازیِ آنی و تنظیمات امنیتی</p></div></div>' +
       '<div class="card" style="margin-bottom:12px"><header><span class="ic">' + icon('fa-shield-halved') + '</span>' +
       '<div><h3>محدودیت اتصال (فقط بر اساس آی‌پی)</h3><p>مدل Nova-Proxy — سقف برابر تعداد آی‌پی‌های همزمانِ هر کاربر</p></div>' +
       '<div class="acts">' + saveBtn('save-security') + '</div></header><div class="bd">' +
       '<div style="margin-bottom:10px">' + storeBadge + '</div>' +
-      '<div class="hint" style="margin-bottom:12px">آزادسازی آی‌پی: <b>آنی</b> هنگام قطع شدن؛ حداکثر <b>۳</b> ثانیه برای قطعیِ ناگهانی • ' +
+      '<div class="hint" style="margin-bottom:12px">آزادسازی آی‌پی: <b>آنی</b> هنگام قطع شدن؛ ' +
+      'برای قطعیِ بی‌خبر نهایتاً <b>' + fa(Number((UH.last && UH.last.diag && UH.last.diag.releaseSec)) || 90) + '</b> ثانیه • ' +
       'سقف سراسری: <b>' + fa(Number(s.sec.ipConnLimit) || 0) + '</b> (۰ = نامحدود)</div>' +
       SCHEMA.security.map((g) => acc(g.t, g.icon || 'fa-gear', g.f, s, g.two ? 'two' : 'two')).join('') +
       '<div class="hint" style="margin-top:12px">زمانِ آزادسازی دیگر قابل تنظیم نیست: ردیفِ اتصال همان لحظه‌ی قطع شدن (بستن، خطا، ' +
-      'انصراف، لغو) پاک می‌شود و اگر قطعی ناگهانی باشد نهایتاً ۳ ثانیه بعد در اولین درخواستِ جدید جایگزین می‌شود. ' +
-      'اتصالی که واقعاً ترافیک دارد با هر بایت تمدید می‌شود (حداکثر یک بار در ثانیه)، پس هیچ‌وقت اشتباهاً آزاد نمی‌شود.</div>' +
+      'انصراف، لغو) پاک می‌شود و اگر قطعیِ بی‌خبر باشد (kill شدنِ isolate، قطعِ ناگهانیِ موبایل) نهایتاً ' +
+      '<b>' + fa(Number((UH.last && UH.last.diag && UH.last.diag.releaseSec)) || 90) + '</b> ثانیه بعد در اولین درخواستِ جدید جایگزین می‌شود. ' +
+      '⚠️ اتصالِ باز ولی <b>بی‌ترافیک</b> (گوشی با صفحه‌ی خاموش) با ضربانِ هر ' +
+      '<b>' + fa(Number((UH.last && UH.last.diag && UH.last.diag.keepAliveSec)) || 45) + '</b> ثانیه سهمیه‌اش را نگه می‌دارد، ' +
+      'و اتصالِ فعال با هر بایت تمدید می‌شود (حداکثر یک بار در ' +
+      '<b>' + fa(Number((UH.last && UH.last.diag && UH.last.diag.activitySec)) || 30) + '</b> ثانیه) — پس هیچ‌وقت اشتباهاً آزاد نمی‌شود. ' +
+      'عددها را در «سلامت ورکر» بزنید تا مقادیرِ واقعیِ همین استقرار نمایش داده شود.</div>' +
       '</div></div>' +
       secExtra();
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     نمای اسکنر آی‌پی تمیز
+     ───────────────────────────────────────────────────────────────────
+     همه‌ی این مقادیر در تنظیمات (settings.scanner) ذخیره و با placeholder
+     «__SCANNER_CFG_JSON__» به صفحه‌ی کاربر تزریق می‌شوند؛ همان‌جا موتور
+     اسکن (رادار) را می‌چرخانند. اگر خالی/نامعتبر باشند، صفحه‌ی کاربر
+     پیش‌فرض‌های امن خودش را به کار می‌برد.
+     ═══════════════════════════════════════════════════════════════════ */
+  /* رنج‌های رسمیِ IPv4 کلودفلر — cloudflare.com/ips-v4 (مرجعِ موتورِ اسکن) */
+  const CF_CIDRS_UI = [
+    '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22',
+    '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20',
+    '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+    '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+  ];
+  const SCAN_PORTS_UI = [443, 2053, 2083, 2087, 2096, 8443];
+
+  /* ═══════════════════════════════════════════════════════════════════
+     موتورِ اسکنِ داخلِ پنل
+     ───────────────────────────────────────────────────────────────────
+     همان موتوری که در صفحه‌ی کاربر (رادار) می‌چرخد، اینجا داخلِ خودِ پنل
+     اجرا می‌شود تا ادمین بدون باز کردنِ صفحه‌ی کاربر اسکن کند، نتیجه را
+     ببیند و روی «IPهای پاک» اعمال کند.
+
+     پروب = Image (روشِ اثبات‌شده‌ی پنل نوا):
+       • onload یا onerror → لبه پاسخ داد → سالم
+       • تایم‌اوت           → مرده
+     چرا fetch نه: پروبِ fetch به آی‌پیِ خام به mode/CORS/کش و
+     AbortController گره خورده و روی شبکه‌ی ایران نتیجه‌ی ناپایدار می‌دهد.
+     ═══════════════════════════════════════════════════════════════════ */
+  const PANEL_SCAN = (function () {
+    const ip2n = (s) => s.split('.').reduce((a, x) => a * 256 + Number(x), 0);
+    const n2ip = (v) => { v = v >>> 0; return [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255].join('.'); };
+    const num = (v, lo, hi, d) => { const n = parseInt(v, 10); return (isFinite(n) && n >= lo && n <= hi) ? n : d; };
+
+    let running = false, cancel = false, results = [], done = 0, total = 0, keepN = 0;
+    /* شمارنده‌ی «پاسخ‌های خام» — مستقل از فیلترهای minRtt/maxRtt؛ اگر بعد از یک
+       اسکنِ کامل صفر بماند یعنی هیچ لبه‌ای به پروب جواب نداده است. */
+    let rawResponses = 0;
+    let floor = 0, baseMs = 0, rejectedFast = 0;
+
+    function blocksOf(ranges) {
+      const list = CF_CIDRS_UI.slice();
+      (ranges || []).forEach((c) => {
+        const t = String(c).trim();
+        if (/^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(t) && list.indexOf(t) < 0) list.push(t);
+      });
+      return list.map((c) => {
+        const parts = c.split('/');
+        const size = Math.pow(2, 32 - Number(parts[1]));
+        return { start: ip2n(parts[0]), size: size };
+      }).filter((b) => b.size >= 1 && isFinite(b.start));
+    }
+
+    /* حالتِ انتخابِ آی‌پی:
+       ── smart (پیش‌فرض): سهمِ متناسب با اندازه‌ی رنج + کفِ تضمینی برای هر رنج.
+          اندازه‌گیری روی فهرست‌های عمومیِ آی‌پیِ تمیز: ۹۶٪ آی‌پی‌های سالم در ۳
+          رنجِ بزرگ‌اند و ۹ رنجِ دیگر تقریباً خالی‌اند — پس «even» حدود ۸۰٪
+          بودجه را هدر می‌دهد.
+       ── even: هر رنج دقیقاً سهمِ برابر می‌گیرد (پوششِ کاملاً یکنواخت).
+       ── random: انتخابِ تصادفیِ وزنی بر کلِ فضای رنج‌ها (بدون کفِ تضمینی). */
+    function buildList(count, ranges, mode) {
+      const blocks = blocksOf(ranges);
+      if (!blocks.length) return [];
+      const out = [], seen = Object.create(null);
+      const totalSize = blocks.reduce((a, b) => a + b.size, 0) || 1;
+      const pickIn = (b) => {
+        for (let t = 0; t < 8; t++) {
+          const ip = n2ip(b.start + Math.floor(Math.random() * b.size));
+          if (!seen[ip]) { seen[ip] = 1; out.push(ip); return; }
+        }
+      };
+      const fillRandom = () => {
+        let guard = 0;
+        while (out.length < count && guard++ < count * 40) {
+          let n = Math.floor(Math.random() * totalSize), ip = null;
+          for (let i = 0; i < blocks.length; i++) {
+            if (n < blocks[i].size) { ip = n2ip(blocks[i].start + n); break; }
+            n -= blocks[i].size;
+          }
+          if (ip && !seen[ip]) { seen[ip] = 1; out.push(ip); }
+        }
+      };
+
+      if (mode === 'random') { fillRandom(); return out; }
+
+      if (mode === 'even') {
+        for (let i = 0; i < count; i++) pickIn(blocks[i % blocks.length]);
+        return out;
+      }
+
+      /* smart */
+      const floor = Math.max(4, Math.ceil(count * 0.005));
+      const quotas = blocks.map((b) => Math.max(floor, Math.floor(count * (b.size / totalSize))));
+      let sum = quotas.reduce((a, b) => a + b, 0);
+      while (sum > count) {
+        let big = 0;
+        for (let i = 1; i < quotas.length; i++) if (quotas[i] > quotas[big]) big = i;
+        if (quotas[big] <= floor) break;
+        quotas[big]--; sum--;
+      }
+      for (let i = 0; i < blocks.length; i++) {
+        for (let k = 0; k < quotas[i] && out.length < count; k++) pickIn(blocks[i]);
+      }
+      fillRandom();
+      return out;
+    }
+
+    /* فاصله‌ی کوتاهِ تصادفی بین پروب‌های یک آی‌پی — الگوی درخواست‌ها کمتر
+       شبیه اسکنر می‌شود و DPI کمتر اتصال را قطع می‌کند (روشِ SenPai Scanner). */
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    /* پورت‌هایی که کلودفلر روی آن‌ها HTTPS سرو می‌کند — پروبِ مرورگر https است،
+       پس پورتِ غیر-TLS با خطای SSL بی‌درنگ «پاسخ» می‌دهد و نتیجه را خراب می‌کند. */
+    const SCAN_TLS_PORTS = [443, 2053, 2083, 2087, 2096, 8443];
+
+    /* ═══ خودآزماییِ پروب ═══
+       RFC 5737 سه بازه‌ی آزمایشی دارد که هرگز مسیریابی نمی‌شوند (TEST-NET-1/2/3).
+       اگر پروب این‌ها را «سالم» ببیند، یعنی هر خطای سریعِ محلی (RST پروکسی/
+       فایروال) دارد «زنده» تفسیر می‌شود و نتیجه‌ی اسکن بی‌اعتبار است. */
+    const SCAN_CONTROL_IPS = ['192.0.2.1', '198.51.100.1', '203.0.113.1'];
+    async function selfTest(ports, timeout) {
+      const port = ports[0] || 443;
+      const t = Math.min(timeout, 1500);
+      for (const cip of SCAN_CONTROL_IPS) {
+        const rtt = await ping(cip, port, t);
+        if (rtt !== null) return { bad: true, ip: cip, rtt: rtt };
+      }
+      return { bad: false };
+    }
+
+    /* ═══ پروب — دوکاناله (Image + fetch) ═══
+       گواهیِ آی‌پیِ خام هیچ‌وقت معتبر نیست، پس مرورگر بعد از TLS اتصال را رد
+       می‌کند؛ «سرعتِ رسیدنِ خطا» خودش سیگنالِ زنده‌بودنِ لبه است:
+       خطا پیش از تایم‌اوت = سالم • تایم‌اوت = مرده.
+       چرا دو کاناله: نسخه‌ی اصلیِ همین پنل اول Image داشت و بعد به fetch مهاجرت
+       کرد («RST آنیِ فیلترشکن هم زنده حساب می‌شد»)، پنل نوا برعکس. پس هر دو را
+       موازی می‌فرستیم تا از کار افتادنِ یکی، اسکن را بی‌صدا خالی نکند. */
+    function ping(ip, port, timeout) {
+      return new Promise((res) => {
+        const t0 = performance.now();
+        let done = false, ctrl = null;
+        const img = new Image();
+        const fin = (ok) => {
+          if (done) return;
+          done = true;
+          img.onerror = img.onload = null;
+          try { if (ctrl) ctrl.abort(); } catch (e) {}
+          if (ok) rawResponses++;
+          res(ok ? Math.round(performance.now() - t0) : null);
+        };
+        const timer = setTimeout(() => fin(false), timeout);
+        const url = 'https://' + (port == 443 ? ip : ip + ':' + port) + '/cdn-cgi/trace?_=' + Math.random();
+
+        /* کانالِ ۱ — Image: به CORS/کش/AbortController وابسته نیست */
+        img.onerror = () => { clearTimeout(timer); fin(true); };
+        img.onload = () => { clearTimeout(timer); fin(true); };
+        img.src = url;
+
+        /* کانالِ ۲ — fetch(cors): روشِ نسخه‌ی اصلیِ پنل و اسکنرِ IRCF. AbortError
+           فقط از تایم‌اوتِ خودمان می‌آید ⇒ مرده؛ هر خطای دیگر ⇒ سالم. */
+        try {
+          ctrl = new AbortController();
+          fetch(url, { signal: ctrl.signal, mode: 'cors', cache: 'no-store' })
+            .then(() => { clearTimeout(timer); fin(true); })
+            .catch((err) => {
+              if (err && err.name === 'AbortError') return;
+              clearTimeout(timer); fin(true);
+            });
+        } catch (e) {}
+      });
+    }
+
+    /* پورت‌ها موازی آزموده می‌شوند (آی‌پیِ مرده فقط یک تایم‌اوت هزینه می‌دهد) و
+       پروب‌های تکمیلی فقط برای پورتِ برنده اجرا می‌شوند. */
+    async function probe(ip, ports, cfg) {
+      if (cancel) return null;
+      const first = await Promise.all(ports.map((p) => ping(ip, p, cfg.timeout)
+        .then((rtt) => (rtt === null ? null : { port: p, rtt: rtt }))));
+      const answered = first.filter(Boolean);
+      if (!answered.length) return null;
+      const alive = answered.filter((x) => x.rtt >= floor).sort((a, b) => a.rtt - b.rtt);
+      if (!alive.length) { rejectedFast++; return null; }
+      const best = alive[0];
+      const samples = [best.rtt];
+      for (let i = 1; i < cfg.probes; i++) {
+        if (cancel) break;
+        await sleep(10 + Math.floor(Math.random() * 50));
+        const rtt = await ping(ip, best.port, cfg.timeout);
+        if (rtt !== null && rtt >= floor) samples.push(rtt);
+      }
+      const avg = Math.round(samples.reduce((a, b) => a + b, 0) / samples.length);
+      const jitter = Math.max.apply(null, samples) - Math.min.apply(null, samples);
+      const loss = Math.round((1 - samples.length / cfg.probes) * 100);
+      if (samples.length < Math.min(cfg.probes, 2)) return null;
+      if (cfg.minRtt > 0 && avg < cfg.minRtt) return null;
+      if (cfg.maxRtt > 0 && avg > cfg.maxRtt) return null;
+      return { ip: ip, port: best.port, avg: avg, jitter: jitter, loss: loss, score: avg + jitter * 0.5 + loss * 20 };
+    }
+
+/* ═══ تأخیرِ پایه — درخواستِ کامل به دامنه‌ی خودِ پنل (روی کلادفلر) ═══
+
+       CORS/گواهی مهم نیست؛ تا لحظه‌ی رد شدن، درخواست رفته و برگشته و همین
+
+       برای اندازه‌گیریِ رفت‌وبرگشت کافی است. فقط تایم‌اوتِ خودمان یعنی هیچ. */
+
+    async function baseline() {
+
+      const t0 = performance.now();
+
+      let ctrl = null, timer = null;
+
+      try {
+
+        ctrl = new AbortController();
+
+        timer = setTimeout(() => { try { ctrl.abort(); } catch (e) {} }, 6000);
+
+        await fetch('https://' + location.host + '/cdn-cgi/trace?_=' + Math.random(),
+
+          { mode: 'cors', cache: 'no-store', signal: ctrl.signal });
+
+        clearTimeout(timer);
+
+      } catch (e) {
+
+        if (timer) clearTimeout(timer);
+
+        if (e && e.name === 'AbortError') return null;
+
+      }
+
+      const ms = Math.round(performance.now() - t0);
+
+      return ms >= 5 ? ms : null;
+
+    }
+
+    /* کفِ خودکار = کسری از تأخیرِ پایه. RSTِ میان‌راه ~۱ms است؛ لبه‌ی واقعی
+
+       حداقل یک رفت‌وبرگشت کامل می‌برد. بدون این کف، پاسخ‌های آنی «سریع‌ترین»
+
+       رتبه را می‌گیرند و آی‌پی‌های خراب در کانفیگ می‌نشینند. */
+
+    function autoFloor(base) {
+
+      if (!base) return 0;
+
+      return Math.min(200, Math.max(20, Math.round(base * 0.4)));
+
+    }
+
+    /* مقادیر از «همین صفحه» خوانده می‌شوند تا ادمین لازم نباشد اول ذخیره کند */
+    function readCfg() {
+      const g = (p, d) => { const el = $('#view [data-p="scanner.' + p + '"]'); return el ? el.value : d; };
+      const ports = String(g('ports', '')).split(/[,\s\n]+/)
+        .map((x) => parseInt(x, 10)).filter((x) => x > 0 && x < 65536).slice(0, 12);
+      return {
+        ipCount: num(g('ipCount', 2048), 16, 65536, 2048),
+        concurrency: num(g('concurrency', 16), 1, 256, 16),
+        timeout: num(g('timeout', 2000), 200, 10000, 2000),
+        probes: num(g('probes', 3), 1, 5, 3),
+        minRtt: num(g('minRtt', 0), 0, 5000, 0),
+        autoFloor: (function () { const cb = $('#view [data-p="scanner.autoFloor"]'); return cb ? !!cb.checked : true; })(),
+        maxRtt: num(g('maxRtt', 0), 0, 20000, 0),
+        keep: num(g('keep', 0), 0, 100, 0),
+        mode: (function () { const m = g('mode', 'smart'); return (m === 'random' || m === 'even') ? m : 'smart'; })(),
+        ranges: String(g('ranges', '')).split('\n').map((x) => x.trim()).filter(Boolean),
+        /* هرگز خالی نمی‌ماند — وگرنه اسکن بی‌صدا رد می‌شد — و فقط پورت‌های TLS:
+           پروبِ مرورگر https است و پورتِ غیر-TLS (مثل ۸۰) با خطای SSL بی‌درنگ
+           «پاسخ» می‌دهد و همه‌چیز زنده دیده می‌شود. */
+        ports: (function () {
+          const tls = ports.filter((p) => SCAN_TLS_PORTS.indexOf(p) >= 0);
+          return tls.length ? tls : [443];
+        })(),
+      };
+    }
+
+    const el = (id) => document.getElementById(id);
+
+    function paint() {
+      const bar = el('pScanBar'), st = el('pScanStatus'), wrap = el('pScanWrap');
+      if (bar) bar.style.width = (total ? Math.round(done / total * 100) : 0) + '%';
+      if (st) {
+        st.textContent = running
+          ? 'در حال اسکن… ' + fa(done) + ' از ' + fa(total) + ' • ' + fa(results.length) + ' آی‌پیِ سالم • پاسخ: ' + fa(rawResponses) + (floor ? ' • کف: ' + fa(floor) + 'ms' : '') + (rejectedFast ? ' • مردودِ سریع: ' + fa(rejectedFast) : '')
+          : (results.length
+            ? 'پایان — ' + fa(results.length) + ' آی‌پیِ سالم از ' + fa(total) + ' آی‌پیِ اسکن‌شده • پاسخ: ' + fa(rawResponses) + (floor ? ' • کف: ' + fa(floor) + 'ms' : '') + (rejectedFast ? ' • مردودِ سریع: ' + fa(rejectedFast) : '')
+            : 'آماده');
+      }
+      if (!wrap) return;
+      const top = results.slice().sort((a, b) => a.score - b.score).slice(0, keepN || 20);
+      if (!top.length) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
+      wrap.style.display = '';
+      wrap.innerHTML = '<div class="tbl-wrap"><table><thead><tr>' +
+        '<th>#</th><th>آی‌پی</th><th>تأخیر</th><th>لرزش</th><th>افت</th></tr></thead><tbody>' +
+        top.map((r, i) => '<tr' + (i === 0 ? ' style="color:var(--ac2);font-weight:700"' : '') + '>' +
+          '<td>' + fa(i + 1) + '</td>' +
+          '<td><span class="mono">' + esc(r.ip + ':' + r.port) + '</span></td>' +
+          '<td>' + fa(r.avg) + ' ms</td>' +
+          '<td>' + fa(r.jitter) + ' ms</td>' +
+          '<td>' + fa(r.loss) + '%</td></tr>').join('') +
+        '</tbody></table></div>';
+    }
+
+    function setBtn(text, ico) {
+      const b = el('pScanBtn');
+      if (b) b.innerHTML = icon(ico) + ' ' + text;
+    }
+
+    async function start() {
+      if (running) {
+        cancel = true;
+        const st = el('pScanStatus');
+        if (st) st.textContent = 'در حال توقف…';
+        return;
+      }
+      const cfg = readCfg();
+      const ips = buildList(cfg.ipCount, cfg.ranges, cfg.mode);
+      if (!ips.length) { toast('رنجِ معتبری برای اسکن نیست', 'err'); return; }
+
+      /* خودآزماییِ پروب پیش از شروع — اگر پروب به آی‌پی‌های آزمایشیِ RFC 5737 هم
+         «پاسخ» بدهد، هر خطای سریعِ محلی دارد «زنده» تفسیر می‌شود و نتیجه
+         بی‌اعتبار است؛ پیش از تلف‌کردنِ وقتِ ادمین این را می‌گوییم. */
+      const st0 = await selfTest(cfg.ports, cfg.timeout);
+      if (st0.bad) {
+        toast('هشدار: پروب به آی‌پیِ آزمایشی ' + st0.ip + ' هم در ' + fa(st0.rtt) +
+              ' میلی‌ثانیه پاسخ داد — نتیجه‌ی اسکن بی‌اعتبار است؛ «حداقل تأخیر» را روی ۶۰ بگذارید', 'err');
+      }
+
+      baseMs = await baseline();
+      floor = Math.max(cfg.minRtt, cfg.autoFloor ? autoFloor(baseMs) : 0);
+      running = true; cancel = false; results = []; done = 0; total = ips.length;
+      rawResponses = 0; rejectedFast = 0;
+      keepN = cfg.keep > 0 ? cfg.keep : 20;
+      const wrap = el('pScanWrap');
+      if (wrap) { wrap.style.display = 'none'; wrap.innerHTML = ''; }
+      setBtn('توقف اسکن', 'fa-stop');
+      paint();
+
+      try {
+        let cursor = 0;
+        const worker = async () => {
+          while (cursor < ips.length) {
+            /* هدفِ تعدادِ لازم پر شد یا کاربر توقف زد → همه‌ی workerها تمام می‌شوند */
+            if (cancel || results.length >= keepN) return;
+            const r = await probe(ips[cursor++], cfg.ports, cfg);
+            /* سقفِ نگه‌داری همین‌جا اعمال می‌شود: workerهای هم‌زمان می‌توانند
+               از بررسیِ ابتدای حلقه جلو بزنند و بدون این شرط تعدادِ نتیجه از
+               سقف بیشتر می‌شد (و شمارنده‌ی نمایش‌داده‌شده با فایلِ ذخیره‌شده
+               نمی‌خواند). */
+            if (r && results.length < keepN) results.push(r);
+            done++;
+            paint();
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(cfg.concurrency, ips.length) }, worker));
+
+        if (!results.length) {
+          /* ═══ فالبک: اسکنِ تازه بی‌نتیجه — آی‌پی‌های ذخیره‌شده را بیازما ═══ */
+          let fb = [];
+          if (!cancel) fb = await fallbackCheck(cfg);
+          if (!cancel && fb.length) {
+            results = fb;
+            paint();
+            toast('اسکنِ تازه بی‌نتیجه بود — ' + fa(fb.length) + ' آی‌پیِ ذخیره‌شده سالم است؛ «اعمال و ذخیره» را بزنید تا روی کانفیگ‌ها بنشیند', 'info');
+          } else if (!cancel) {
+            /* تفکیکِ دو حالتِ کاملاً متفاوت — «کار نمی‌کند» را به پیامِ قابل‌اقدام
+               تبدیل می‌کند: هیچ پاسخی نیامد (شبکه) در مقابل پاسخ آمد ولی فیلتر شد. */
+            toast(rawResponses === 0
+              ? 'هیچ آی‌پی به پروب پاسخ نداد — شبکه/مرورگر اتصالِ مستقیم TLS به آی‌پیِ خام را می‌بندد. تایم‌اوت را بالا ببرید یا از یک VPS اسکن کنید'
+              : 'هیچ آی‌پیِ سالمی پیدا نشد — «حداقل/حداکثر تأخیر» را بررسی کنید', 'err');
+          }
+        } else {
+          toast(fa(results.length) + ' آی‌پیِ سالم پیدا شد — «اعمال و ذخیره» را بزنید', 'info');
+        }
+      } finally {
+        running = false; cancel = false;
+        setBtn('شروع اسکن', 'fa-satellite-dish');
+        paint();
+      }
+    }
+
+    /* اعمال روی «IPهای پاک» — همان رفتاری که /radar-ips صفحه‌ی کاربر دارد:
+       آی‌پی‌های تازه اول فهرست، بدون تکرار، سقف ۱۰۰. */
+    async function apply() {
+      if (running) { toast('اول اسکن را متوقف کنید', 'err'); return; }
+      const top = results.slice().sort((a, b) => a.score - b.score).slice(0, keepN || 20).map((r) => r.ip);
+      if (!top.length) { toast('اول یک اسکن بگیرید', 'err'); return; }
+      const cur = Array.isArray(S.d.settings.cleanIPs) ? S.d.settings.cleanIPs.map((x) => String(x).split('#')[0]) : [];
+      const add = top.filter((ip) => cur.indexOf(ip) < 0);
+      const merged = top.concat(cur.filter((ip) => top.indexOf(ip) < 0)).slice(0, 100);
+      const r = await api('PUT', '/api/settings', { settings: { cleanIPs: merged } });
+      if (r && r.ok) {
+        S.d.settings.cleanIPs = merged;
+        toast(fa(add.length) + ' آی‌پیِ تازه ذخیره شد — کل فهرست: ' + fa(merged.length));
+      } else {
+        toast((r && r.error) || 'ذخیره نشد', 'err');
+      }
+    }
+
+    function reset() {
+      if (running) { toast('اول اسکن را متوقف کنید', 'err'); return; }
+      results = []; done = 0; total = 0;
+      const wrap = el('pScanWrap');
+      if (wrap) { wrap.style.display = 'none'; wrap.innerHTML = ''; }
+      paint();
+      toast('نتیجه‌ی اسکن پاک شد', 'info');
+    }
+
+    /* ═══ فالبکِ آی‌پی‌های ذخیره‌شده ═══
+       اگر اسکنِ تازه هیچ آی‌پی سالمی پیدا نکرد، آی‌پی‌های از قبل ذخیره‌شده در
+       «IPهای پاک» دوباره با همان پروب آزموده می‌شوند؛ سالم‌ها در results
+       می‌نشینند تا ادمین با «اعمال و ذخیره» تأییدشان کند. apply() تکراری‌ها را
+       نادیده می‌گیرد، پس چیزی دوباره ذخیره نمی‌شود. معیار relaxed: فقط
+       minRtt دستی (نه کفِ خودکار — اگر همان باعثِ صفر شدن شده باشد، فالبک
+       شانسِ دوباره دارد) + تایم‌اوتِ کمی بیشتر. */
+    async function fallbackCheck(cfg) {
+      const seen = {};
+      const cands = [];
+      const cur = Array.isArray(S.d.settings.cleanIPs) ? S.d.settings.cleanIPs : [];
+      for (let i = 0; i < cur.length; i++) {
+        const b = String(cur[i]).split('#')[0].trim();
+        if (/^\d{1,3}(\.\d{1,3}){3}$/.test(b) && !seen[b]) { seen[b] = 1; cands.push(b); }
+      }
+      if (!cands.length) return [];
+      const savedFloor = floor;
+      floor = (cfg && cfg.minRtt) || 0;
+      const fbCfg = {
+        timeout: Math.min(6000, Math.max((cfg && cfg.timeout) || 2000, 3000)),
+        probes: (cfg && cfg.probes) || 2,
+        minRtt: (cfg && cfg.minRtt) || 0,
+        maxRtt: (cfg && cfg.maxRtt) || 0,
+      };
+      const list = cands.slice(0, 40);
+      const out = [];
+      let cursor = 0;
+      const fbWorker = async () => {
+        while (cursor < list.length) {
+          if (cancel) return;
+          const r = await probe(list[cursor++], cfg.ports, fbCfg);
+          if (r) out.push(r);
+        }
+      };
+      try {
+        await Promise.all(Array.from({ length: Math.min(cfg.concurrency || 8, 8, list.length) }, fbWorker));
+      } finally {
+        floor = savedFloor;
+      }
+      out.sort((a, b) => a.score - b.score);
+      const kn = cfg.keep > 0 ? cfg.keep : 20;
+      return out.slice(0, kn);
+    }
+
+    return { start: start, apply: apply, reset: reset, fallbackCheck: fallbackCheck };
+  })();
+
+  function scannerView() {
+    const s = S.d.settings;
+    const sc = (s.scanner && typeof s.scanner === 'object' && !Array.isArray(s.scanner)) ? s.scanner : {};
+    const val = (k, d) => (sc[k] === undefined || sc[k] === null || sc[k] === '') ? d : sc[k];
+    const ranges = Array.isArray(sc.ranges) ? sc.ranges.filter(Boolean) : [];
+    const ports = Array.isArray(sc.ports) ? sc.ports : [];
+    const totalBlocks = CF_CIDRS_UI.length + ranges.length;
+
+    /* آمارِ سریع — یک نگاه کافی است */
+    const stats = '<div class="grid g4" style="margin-bottom:12px">' +
+      '<div class="stat"><div class="lbl">تعداد آی‌پی هر اسکن</div><div class="val">' + fa(Number(val('ipCount', 2048))) + '</div><div class="sub">پیش‌فرض ۲۰۴۸</div></div>' +
+      '<div class="stat"><div class="lbl">هم‌روندی</div><div class="val">' + fa(Number(val('concurrency', 16))) + '</div><div class="sub">پروبِ موازی</div></div>' +
+      '<div class="stat"><div class="lbl">تایم‌اوت هر پروب</div><div class="val">' + fa(Number(val('timeout', 2000))) + '<span style="font-size:11px"> ms</span></div><div class="sub">' + fa(Number(val('probes', 3))) + ' پروب برای هر آی‌پی</div></div>' +
+      '<div class="stat"><div class="lbl">رنج‌های اسکن</div><div class="val">' + fa(totalBlocks) + '</div><div class="sub">' + fa(CF_CIDRS_UI.length) + ' رسمی کلودفلر' + (ranges.length ? ' + ' + fa(ranges.length) + ' دلخواه' : '') + '</div></div>' +
+      '</div>';
+
+    /* ═══ کارتِ اصلی: کلیدها و اعداد ═══ */
+    const mainCard = '<div class="card"><header><span class="ic">' + icon('fa-tower-broadcast') + '</span>' +
+      '<div><h3>موتورِ اسکن</h3><p>این مقادیر در صفحه‌ی کاربر (رادار آی‌پی تمیز) اعمال می‌شوند</p></div>' +
+      '<div class="acts">' + saveBtn('save-scanner') + '</div></header><div class="bd">' +
+      '<div class="um-grid two">' +
+      field({ p: 'scanner.enabled', l: 'نمایش کارت اسکنر در صفحه‌ی کاربر', t: 'sw', h: 'خاموش = رادار در صفحه‌ی کاربر پنهان می‌شود' }, val('enabled', true)) +
+      field({ p: 'scanner.ipCount', l: 'تعداد آی‌پی هر اسکن', t: 'num', h: 'پیش‌فرض ۲۰۴۸ (قبلاً ۱۰۲۴ بود) • بازه‌ی مجاز ۱۶ تا ۶۵۵۳۶' }, val('ipCount', 2048)) +
+      field({ p: 'scanner.concurrency', l: 'هم‌روندی (پروب موازی)', t: 'num', h: 'بالاتر = سریع‌تر، ولی فشارِ بیشتر روی مرورگر و شبکه • پیش‌فرض ۱۶ (عددِ اثبات‌شده‌ی پنل نوا)' }, val('concurrency', 16)) +
+      field({ p: 'scanner.timeout', l: 'تایم‌اوت هر پروب (میلی‌ثانیه)', t: 'num', h: 'کوتاه‌تر = اسکن سریع‌تر، ولی زیرِ ۱۵۰۰ms روی شبکه‌ی موبایل خیلی از لبه‌های سالم «مرده» حساب می‌شوند • پیش‌فرض ۲۰۰۰' }, val('timeout', 2000)) +
+      field({ p: 'scanner.probes', l: 'تعداد پروب برای هر آی‌پی', t: 'num', h: '۱ تا ۵ • بیشتر = اندازه‌گیریِ دقیق‌ترِ پینگ و لرزش • پیش‌فرض ۳' }, val('probes', 3)) +
+      field({ p: 'scanner.keep', l: 'تعداد آی‌پیِ ذخیره‌شده', t: 'num', h: '۰ = همان سقفِ کانفیگِ کاربر • بیشینه ۱۰۰' }, val('keep', 0)) +
+      field({ p: 'scanner.autoFloor', l: 'کفِ خودکارِ تأخیر (توصیه می‌شود)', t: 'sw', h: 'روشن = تأخیرِ پایه تا کلادفلر اندازه‌گیری می‌شود و پاسخ‌های بی‌درنگ (RSTِ فیلترشکن/میان‌راه) که «سالم» دیده می‌شوند حذف می‌گردند — دلیلِ اصلیِ «آی‌پی پیدا می‌شود ولی در کانفیگ کار نمی‌کند»' }, val('autoFloor', true)) +
+      field({ p: 'scanner.minRtt', l: 'کفِ دستیِ تأخیر (ms)', t: 'num', h: '۰ = فقط کفِ خودکار. اگر پاسخ‌های بسیار سریع (زیر ۲۰ms) در نتیجه می‌بینید، اینجا مقدار بگذارید' }, val('minRtt', 0)) +
+      field({ p: 'scanner.maxRtt', l: 'حداکثر تأخیرِ قابل‌قبول (ms)', t: 'num', h: '۰ = بدون سقف • آی‌پی‌های کندتر از این دور ریخته می‌شوند' }, val('maxRtt', 0)) +
+      '</div>' +
+      '<div style="margin-top:10px">' +
+      field({
+        p: 'scanner.mode', l: 'حالتِ انتخاب آی‌پی', t: 'sel',
+        o: ['smart', 'even', 'random'],
+        lbls: {
+          smart: 'هوشمند — سهمِ متناسب با اندازه‌ی رنج (پیشنهادی)',
+          even: 'پوششِ یکنواختِ همه‌ی رنج‌ها',
+          random: 'تصادفیِ وزنی بر اساس اندازه‌ی رنج',
+        },
+      }, val('mode', 'smart')) +
+      '</div>' +
+      '<div class="hint" style="margin-top:8px">«هوشمند» بودجه‌ی اسکن را به‌تناسبِ اندازه‌ی هر رنج تقسیم می‌کند و به هر رنج یک کفِ ' +
+      'کوچک می‌دهد. اندازه‌گیری روی فهرست‌های عمومیِ آی‌پیِ تمیز نشان می‌دهد حدود ۹۶٪ آی‌پی‌های سالم در ۳ رنجِ بزرگ ' +
+      '(104.16.0.0/13 • 172.64.0.0/13 • 104.24.0.0/14) هستند و ۹ رنجِ دیگر تقریباً هیچ آی‌پیِ سالمی ندارند؛ پس «یکنواخت» ' +
+      'حدود ۸۰٪ بودجه را هدر می‌دهد. «تصادفی» هم وزنی است ولی کفِ تضمینی ندارد.</div>' +
+      '</div></div>';
+
+    /* ═══ پورت‌ها ═══ */
+    const portsCard = '<div class="card"><header><span class="ic">' + icon('fa-tower-broadcast') + '</span>' +
+      '<div><h3>پورت‌های اسکن</h3><p>خالی = پورت‌های TLS خودِ کانفیگ‌های همان کاربر</p></div>' +
+      '<div class="acts"><button class="btn sm ghost" data-act="scan-ports-config">' + icon('fa-rotate-left') + ' پورت‌های کانفیگ</button></div></header>' +
+      '<div class="bd">' +
+      '<div class="hint" style="margin-bottom:8px">فقط پورت‌های TLS معنی دارند: پروبِ مرورگر https است و پورتِ غیر-TLS با خطای SSL ' +
+      'بلافاصله «پاسخ» می‌دهد و نتیجه‌ی اسکن را خراب می‌کند. با کلیک روی هر پورت به‌فهرست اضافه/حذف می‌شود.</div>' +
+      '<div class="chips" id="scanPortChips">' + SCAN_PORTS_UI.map((p) => {
+        const on = ports.indexOf(p) >= 0;
+        return '<button type="button" class="chip" data-scan-port="' + p + '" style="' + (on ? 'border-color:var(--ac2);background:color-mix(in oklab,var(--ac2) 16%,transparent)' : 'opacity:.45') + '">' +
+          '<span class="mono">' + fa(p) + '</span></button>';
+      }).join('') + '</div>' +
+      '<div style="margin-top:10px">' +
+      field({ p: 'scanner.ports', l: 'پورت‌های اسکن (هر خط یکی — اختیاری)', t: 'area', dt: 'lines', h: 'خالی = پورت‌های کانفیگ • مثال: 443' }, ports.join('\n')) +
+      '</div>' +
+      '</div></div>';
+
+    /* ═══ رنج‌ها ═══ */
+    const rangesCard = '<div class="card"><header><span class="ic">' + icon('fa-globe') + '</span>' +
+      '<div><h3>رنج‌های آی‌پی</h3><p>پیش‌فرض: تمامِ رنج‌های رسمیِ IPv4 کلودفلر</p></div>' +
+      '<div class="acts"><button class="btn sm ghost" data-act="scan-ranges-clear">' + icon('fa-broom') + ' پاک‌کردن رنج‌های دلخواه</button></div></header>' +
+      '<div class="bd">' +
+      '<div class="hint" style="margin-bottom:8px">این فهرست <b>ثابت و کامل</b> است (مستقیماً از <span class="mono">cloudflare.com/ips-v4</span>) و همیشه اسکن می‌شود — ' +
+      'هیچ رنجی محدود یا حذف نمی‌شود. رنج‌های دلخواهِ شما <b>به</b> این فهرست اضافه می‌شوند، نه جای آن.</div>' +
+      '<div class="chips">' + CF_CIDRS_UI.map((c) => '<span class="chip"><span class="mono">' + esc(c) + '</span></span>').join('') + '</div>' +
+      '<div style="margin-top:12px">' +
+      field({ p: 'scanner.ranges', l: 'رنج‌های دلخواه (CIDR — هر خط یکی)', t: 'area', dt: 'lines', h: 'مثال: 104.16.0.0/13 • فقط CIDR معتبر پذیرفته می‌شود (حداکثر ۶۴ رنج)' }, ranges.join('\n')) +
+      '</div>' +
+      '<div class="hint" style="margin-top:8px">نکته: آی‌پی‌های تمیزِ پیدا‌شده در «شبکه ← IPهای پاک» پنل و روی کانفیگ‌های همان کاربر ذخیره می‌شوند؛ ' +
+      'لاگِ هر اسکن در «لاگ ← رادار» دیده می‌شود.</div>' +
+      '</div></div>';
+
+    /* ═══ کارتِ اجرای اسکن از خودِ پنل ═══
+       مقادیرِ همین صفحه استفاده می‌شوند، پس ادمین می‌تواند بدون ذخیره‌ی
+       تنظیمات یک اسکن آزمایشی بگیرد و نتیجه را ببیند. */
+    const runCard = '<div class="card"><header><span class="ic">' + icon('fa-satellite-dish') + '</span>' +
+      '<div><h3>اجرای اسکن از پنل</h3><p>بدون باز کردنِ صفحه‌ی کاربر — نتیجه را همین‌جا ببینید و روی «IPهای پاک» اعمال کنید</p></div>' +
+      '<div class="acts"><button class="btn sm ghost" data-act="panel-scan-reset">' + icon('fa-rotate-left') + ' پاک‌کردن نتیجه</button></div></header>' +
+      '<div class="bd">' +
+      '<div class="btn-row">' +
+      '<button class="btn p" id="pScanBtn" data-act="panel-scan-start">' + icon('fa-satellite-dish') + ' شروع اسکن</button>' +
+      '<button class="btn" data-act="panel-scan-apply">' + icon('fa-floppy-disk') + ' اعمال و ذخیره در «IPهای پاک»</button>' +
+      '</div>' +
+      '<div class="hint" style="margin:10px 0 8px">مقادیرِ <b>همین صفحه</b> استفاده می‌شوند (تعداد، هم‌روندی، تایم‌اوت، پورت‌ها و رنج‌ها) — لازم نیست اول ذخیره کنید. ' +
+      'پروب از مرورگرِ خودتان انجام می‌شود، پس نتیجه همان چیزی است که کاربرانتان می‌بینند.</div>' +
+      '<div style="height:8px;background:var(--panel2);border:1px solid var(--bs);border-radius:999px;overflow:hidden;margin-bottom:8px">' +
+      '<div id="pScanBar" style="height:100%;width:0;background:var(--ac2);transition:width .2s"></div></div>' +
+      '<div class="hint" id="pScanStatus">آماده</div>' +
+      '<div id="pScanWrap" style="display:none;margin-top:10px"></div>' +
+      '</div></div>';
+
+    return '<div class="page-head"><div><h1>اسکنر آی‌پی تمیز</h1><p>تنظیماتِ رادارِ صفحه‌ی کاربر — تعداد، سرعت، پورت‌ها و رنج‌ها</p></div>' +
+      '<button class="btn p" data-act="save-scanner">' + icon('fa-floppy-disk') + ' ذخیره</button></div>' +
+      stats + runCard + mainCard +
+      '<div class="grid g2">' + portsCard + rangesCard + '</div>' +
+      '<div class="btn-row" style="justify-content:center;margin-top:10px">' +
+      '<button class="btn p lg" data-act="save-scanner">' + icon('fa-floppy-disk') + ' ذخیره</button></div>';
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -1495,6 +2443,24 @@
       '<div class="acts"><button class="btn sm s" data-act="exit-new">' + icon('fa-plus') + ' افزودن</button>' +
       '<button class="btn sm" data-act="exit-reload">' + icon('fa-rotate') + ' بارخوانی</button></div></header>' +
       '<div class="bd"><div id="exitsOut">' + exitsHtml(EX.data) + '</div></div></div>';
+
+    /* ═══ Proxy IP — تستِ در دسترس بودن از سمتِ ورکر (روش BPB) ═══ */
+    const proxyCard = () => {
+      const list = (Array.isArray(S.d.settings.proxyIPs) ? S.d.settings.proxyIPs : []).map((x) => String(x).trim()).filter(Boolean);
+      const ps = (EX.data && EX.data.proxyStats) || null;
+      const statTxt = ps
+        ? '<span class="badge">در مسیر تونل — تلاش: ' + fa(ps.attempts) + ' • وصل: ' + fa(ps.connects) + ' • خطا: ' + fa(ps.fails) + '</span>'
+        : '<span class="badge">هنوز تلاشی در مسیر تونل ثبت نشده</span>';
+      return '<div class="card" id="proxyCard"><header><span class="ic">' + icon('fa-tower-broadcast') + '</span>' +
+        '<div><h3>Proxy IP — خروجیِ پشتیبان</h3>' +
+        '<p>وقتی اتصالِ مستقیم به مقصد برقرار نشود یا بی‌پاسخ بماند، همان بارِ اولیه از این ورودی‌ها relay می‌شود (روش BPB؛ فقط برای مقصدهایی که پشت Cloudflare‌اند)</p></div>' +
+        '<div class="acts"><button class="btn sm p" data-act="proxy-test">' + icon('fa-stethoscope') + ' تست از ورکر</button></div></header>' +
+        '<div class="bd"><div id="proxyOut">' +
+        (list.length
+          ? list.map((x) => '<div class="row-item">' + icon('fa-globe') + '<div class="grow"><span class="mono">' + esc(x) + '</span></div><span class="badge">—</span></div>').join('')
+          : '<div class="empty">Proxy IPی تعریف نشده — از «شبکه ← IPهای پروکسی» چند مورد وارد کنید</div>') +
+        '</div><div id="proxyStat" style="margin-top:8px">' + statTxt + '</div></div></div>';
+    };
 
     /* ═══ نام‌گذاری کانفیگ‌ها — الگوی کاملاً دلخواه + الگوهای آماده ═══ */
     const naming = () => {
@@ -1632,7 +2598,7 @@
 
       modeCard() + quickCard() +
       '<div style="padding:0 2px">' + essential() + portsAcc() + naming() + network() + telegram() + stealth() + advanced() + '</div>' +
-      pwCard() + exitsCard() +
+      pwCard() + exitsCard() + proxyCard() +
 
       '<div class="btn-row" style="justify-content:center;margin-top:10px">' +
       '<button class="btn p lg" data-act="save-config">' + icon('fa-floppy-disk') + ' ذخیره</button></div>';
@@ -1640,8 +2606,8 @@
 
   const VIEWS = {
     dash: dashView, users: usersView, sub: subView, monitor: monitorView, conns: connsView, logs: logsView, settings: settingsView,
-    config: configView,
-    update: () => configView(),
+    config: configView, scanner: scannerView,
+    update: updateView,
     proto: () => configView(),
     network: () => configView(),
     telegram: () => configView(),
@@ -1663,6 +2629,63 @@
   }
 
   /* ─────────── پوسته ─────────── */
+  /* ═══════ هشدارِ سراسریِ «محدودیت اعمال نمی‌شود» ═══════
+     چرا این بنر لازم است؟ چون وقتی هیچ مرجعِ مشترکی بایند نباشد، هیچ خطایی
+     رخ نمی‌دهد، پنل سالم به نظر می‌رسد و همه‌ی کارت‌ها سبزند — ولی سقفِ آی‌پی
+     عملاً بی‌اثر است. همین «سکوت» باعث شد باگ مدت‌ها پنهان بماند (حذف
+     wrangler.toml در کامیتِ 360e05c بایندینگ‌های LIMITER و DB را ناپدید کرد).
+     پس این بنر بالای همه‌ی نماها می‌آید و تا رفع نشود نمی‌رود.
+     مرجعِ تشخیص: فیلدِ `limiter` در پاسخِ /api/state؛ برای سازگاری با
+     UI‌های قدیمی، از `storage === 'mem'` هم به‌عنوان نشانه استفاده می‌شود. */
+  function limiterOf() {
+    const d = S.d || {};
+    if (d.limiter) return d.limiter;
+    if (d.limitEnforced === false) return 'mem';
+    return d.storage === 'mem' ? 'mem' : '';
+  }
+  function limiterBanner() {
+    if (limiterOf() !== 'mem') return '';
+    /* ⚠️ دو حالتِ کاملاً متفاوت که قبلاً یکی دیده می‌شدند:
+       (الف) هیچ بایندینگی نیست → باید بایند کنید.
+       (ب) بایندینگ هست ولی در عمل کار نمی‌کند (`limiterDegraded`) → شمارش
+           بی‌صدا به حافظه‌ی همین isolate افتاده. این حالتِ خطرناک‌تر است چون
+           پنل قبلاً سبز نشان می‌داد و کاربر فکر می‌کرد همه‌چیز درست است. */
+    const d = (S.d && S.d.settings) ? S.d : {};
+    const degraded = !!d.limiterDegraded;
+    const intended = d.limiterIntended || '';
+    const err = d.limiterError ? String(d.limiterError) : '';
+    if (degraded) {
+      return '<div class="card" style="border-color:var(--bad);margin-bottom:12px">' +
+        '<div class="bd" style="display:flex;gap:10px;align-items:flex-start">' +
+        '<span class="ic bad" style="flex:none">' + icon('fa-triangle-exclamation') + '</span>' +
+        '<div><b style="color:var(--bad)">بایندینگِ «' + esc(intended || 'مرجع') + '» هست ولی کار نمی‌کند — محدودیت آی‌پی اعمال نمی‌شود</b>' +
+        '<div class="hint" style="margin-top:6px">' +
+        'وجودِ بایندینگ کافی نیست: آزمونِ واقعیِ خواندن/نوشتنِ جدولِ ' +
+        '<span class="mono">conns</span> شکست خورد، پس شمارش بی‌صدا به حافظه‌ی ' +
+        '<b>همین isolate</b> افتاده است. روی کلاودفلر دو دستگاه تقریباً همیشه به دو ' +
+        'isolate مختلف می‌افتند، هر کدام فقط ۱ آی‌پی می‌بیند و سقف هرگز پر نمی‌شود — ' +
+        'یعنی «هیچ بلاکی نمی‌شود» بدونِ هیچ خطای دیده‌شدنی.' +
+        (err ? '<br><b>خطای واقعی:</b> <span class="mono">' + esc(err.slice(0, 220)) + '</span>' : '') +
+        '<br><b>رفع:</b> Settings → Bindings → <b>D1 database</b> با Variable name برابر ' +
+        '<span class="mono">DB</span> را بازبینی کنید و مطمئن شوید <b>پایگاه‌داده‌ی درست</b> ' +
+        'انتخاب شده است (جدولِ <span class="mono">conns</span> باید خودکار ساخته شود). ' +
+        'وضعیتِ کامل: <span class="mono">/health</span> (فیلدهای <span class="mono">limiterVerified</span> و ' +
+        '<span class="mono">limiterError</span>).</div>' +
+        '</div></div></div>';
+    }
+    return '<div class="card" style="border-color:var(--bad);margin-bottom:12px">' +
+      '<div class="bd" style="display:flex;gap:10px;align-items:flex-start">' +
+      '<span class="ic bad" style="flex:none">' + icon('fa-triangle-exclamation') + '</span>' +
+      '<div><b style="color:var(--bad)">محدودیت آی‌پی اعمال نمی‌شود</b>' +
+      '<div class="hint" style="margin-top:6px">' +
+      'هیچ مرجعِ مشترکی بین isolateها بایند نیست (نه <span class="mono">LIMITER</span>، ' +
+      'نه <span class="mono">DB</span>، نه <span class="mono">KV</span>)، پس هر isolate اتصال‌ها را ' +
+      'جداگانه می‌شمارد و سقف عملاً بی‌اثر است — بدون هیچ خطایی.<br>' +
+      '<b>رفع:</b> Settings → Bindings → Add → <b>D1 database</b> با Variable name برابر ' +
+      '<span class="mono">DB</span> (یا <b>Durable Object namespace</b> با نام <span class="mono">LIMITER</span> و کلاس ' +
+      '<span class="mono">ConnLimiter</span>). راهنمای کامل در <span class="mono">wrangler.toml</span> و README.</div>' +
+      '</div></div></div>';
+  }
   function render() {
     const nav = $('#nav');
     if (!S.token || !S.d) {
@@ -1678,10 +2701,12 @@
     ['#menuBtn', '#themeBtn', '#panicBtn', '#logoutBtn', '#searchBox'].forEach((x) => $(x).classList.remove('hide'));
     $('#brandName').textContent = s.panel.name;
     $('#brandVer').textContent = 'v' + d.version;
+    $('#brandVer').title = 'نسخه v' + d.version + ' • بیلد ' + (d.build || '—') + (d.rev ? ' • rev ' + String(d.rev).slice(0, 10) : '');
     $('#pageTitle').textContent = s.panel.name;
     $('#sfStore').textContent = d.storage === 'd1' ? 'D1 پایدار' : 'موقت';
     $('#sfUsers').textContent = fa(d.users.length) + ' کاربر';
     $('#sfVer').textContent = d.version;
+    $('#sfVer').title = 'بیلد ' + (d.build || '—');
     const panic = s.auth.panic;
     $('#tbState').textContent = panic ? 'Panic Mode فعال است' : 'سرویس فعال';
     $('#tbState').style.color = panic ? 'var(--bad)' : '';
@@ -1692,7 +2717,7 @@
       '<button class="nav-item ' + (S.view === id ? 'on' : '') + '" data-act="nav" data-view="' + id + '">' + icon(ic) + '<span>' + l + '</span>' +
       (id === 'users' ? '<span class="cnt">' + fa(d.users.length) + '</span>' : '') +
       (id === 'logs' ? '<span class="cnt">' + fa((d.logs || []).length) + '</span>' : '') + '</button>').join('') + '</div>').join('');
-    $('#view').innerHTML = '<div class="fade">' + (VIEWS[S.view] || dashView)() + '</div>';
+    $('#view').innerHTML = '<div class="fade">' + limiterBanner() + (VIEWS[S.view] || dashView)() + '</div>';
     if (S.view === 'sub') setTimeout(refreshPreview, 30);
     /* اتصال‌های زنده: داده‌ی قبلی همان لحظه رندر می‌شود و بارخوانی فقط همان
        دو بلوک را به‌روز می‌کند — جدول هیچ وقت خالی نمی‌شود. */
@@ -1703,8 +2728,8 @@
     const cw = $('#chartWrap');
     if (cw) {
       const ser = S.view === 'monitor'
-        ? ((S.range === 'm' ? d.stats.monthly : S.range === 'y' ? d.stats.yearly : d.stats.daily) || [])
-        : (d.stats.trafficSeries || []);
+        ? chartSeries(d, 'mon')
+        : chartSeries(d, 'dsh');
       bindCharts(cw, ser);
     }
     $('#foot').innerHTML = esc(s.panel.name) + ' • ' + esc(location.hostname) + ' • ورود: <span class="mono">/' + esc(s.auth.path) + '</span> • ساب: <span class="mono">/' + esc(s.sub.path) + '</span>';
@@ -1713,7 +2738,18 @@
   async function refresh() {
     if (!S.token) { render(); return; }
     const d = await api('GET', '/api/state');
-    if (d && !d.error) { S.d = d; render(); }
+    if (d && !d.error) {
+      S.d = d;
+      render();
+      /* ═══ اعلانِ نسخه‌ی تازه — پیش از این هیچ پیامی نمی‌آمد؛ حالا یک‌بار
+         برای هر نسخه اعلان می‌شود (تا هر رفرش بهانه‌ی تکراری نباشد) ═══ */
+      const info = d.updateInfo || {};
+      const key = info.latest ? 'updSeen:' + info.latest : '';
+      if (info.newer && key && localStorage.getItem(key) !== '1') {
+        try { localStorage.setItem(key, '1'); } catch (e) {}
+        toast('نسخه‌ی تازه در مخزن هست: ' + String(info.latest).slice(0, 40) + ' — از صفحه‌ی «به‌روزرسانی» نصب کنید', 'info');
+      }
+    }
   }
 
   /* ─────────── جستجوی سراسری ─────────── */
@@ -1768,6 +2804,29 @@
         cur.splice(at, 1);
       } else cur.push(p);
       portSet(cur);
+      return;
+    }
+
+    /* ═══════ اسکنر — چیپ‌های پورت ═══════
+       مثل انتخابگرِ پورتِ تونل، ولی مقدار را در textareaِ scanner.ports
+       می‌نویسد (همان فیلدی که با «ذخیره» به پنل می‌رود). */
+    const sp = e.target.closest('[data-scan-port]');
+    if (sp) {
+      e.preventDefault();
+      const ta = $('#view [data-p="scanner.ports"]');
+      if (!ta) return;
+      const p = parseInt(sp.dataset.scanPort, 10);
+      const cur = String(ta.value || '').split(/[,\s\n]+/).map((x) => parseInt(x, 10)).filter((x) => x > 0 && x < 65536);
+      const at = cur.indexOf(p);
+      if (at >= 0) cur.splice(at, 1); else cur.push(p);
+      ta.value = cur.join('\n');
+      /* رنگِ چیپ‌ها هم‌زمان به‌روز می‌شود تا وضعیت روشن بماند */
+      $$('#scanPortChips [data-scan-port]').forEach((b) => {
+        const on = cur.indexOf(parseInt(b.dataset.scanPort, 10)) >= 0;
+        b.style.borderColor = on ? 'var(--ac2)' : '';
+        b.style.background = on ? 'color-mix(in oklab,var(--ac2) 16%,transparent)' : '';
+        b.style.opacity = on ? '' : '.45';
+      });
       return;
     }
 
@@ -1842,21 +2901,49 @@
     const ufm = e.target.closest('[data-ufake-mode]');
     if (ufm) {
       e.preventDefault(); e.stopPropagation();
-      const cur = S.d.users.find((x) => x.id === ($('#mbox [data-act="user-save"]') || {}).dataset?.id) || {};
-      const patch = collect($('#mbox')); patch.fakes = readUserFakes();
+      const saveBtn = $('#mbox [data-act="user-save"]');
+      const cur = S.d.users.find((x) => x.id === (saveBtn || {}).dataset?.id) || {};
+      /* ⚠️ حالتِ فعلی را روی cur نگه می‌داریم؛ فهرستِ اختصاصی را از DOMِ فعلی
+         می‌خوانیم تا چیزی که ادمین نوشته با تعویضِ حالت گم نشود. */
+      const curFakes = readUserFakes();
+      const keep = Array.isArray(cur.fakes) && cur.fakes.length ? cur.fakes : curFakes;
+      const mode = ufm.dataset.ufakeMode;
+      const patch = collect($('#mbox'));
       Object.assign(cur, patch);
-      cur.fakeMode = ufm.dataset.ufakeMode;
-      if (cur.fakeMode === 'custom' && (!Array.isArray(cur.fakes) || !cur.fakes.length)) {
-        cur.fakes = [
-          { id: 'usage',     name: '📊 {usage}',     enabled: true, proto: 'vless',  pos: 1 },
-          { id: 'remaining', name: '🟢 {remaining}', enabled: true, proto: 'vless',  pos: 2 },
-          { id: 'expiry',    name: '📅 {expiry}',    enabled: true, proto: 'vless',  pos: 3 },
-          { id: 'channel',   name: '📢 {channel}',   enabled: true, proto: 'trojan', pos: 4 },
-        ];
-      }
+      cur.fakeMode = mode;
+      cur.fakes = keep;
       closeM(); userModal(cur);
       return;
     }
+    /* افزودن/پیش‌فرض/حذف کانفیگ فیک اختصاصی — پیش از نگهبانِ [data-act]
+       چون مودالِ کاربر ممکن است بسته و دوباره باز شود و رویدادِ فعلی گم شود */
+    const uact = e.target.closest('[data-act="ufake-add"], [data-act="ufake-reset"], [data-act="ufake-del"]');
+    if (uact) {
+      e.preventDefault(); e.stopPropagation();
+      const act = uact.dataset.act;
+      const cur = S.d.users.find((x) => x.id === ($('#mbox [data-act="user-save"]') || {}).dataset?.id);
+      if (!cur) return;
+      /* مقادیر فرم از DOM می‌آید؛ fakes را دست نمی‌زنیم — فقط در حافظه‌ی موقتِ
+         حالتِ custom تغییر می‌کند. آیتمِ حذف‌شده در پاسِ بعدی هم غایب است. */
+      const patch = collect($('#mbox'));
+      patch.fakeMode = cur.fakeMode || 'custom';
+      Object.assign(cur, patch);
+      if (!Array.isArray(cur.fakes)) cur.fakes = [];
+      const idx = Number(uact.dataset.i);
+      if (act === 'ufake-add') {
+        cur.fakes.push({ id: 'uf_' + Date.now().toString(36), name: '', enabled: true, proto: 'vless', pos: cur.fakes.length + 1 });
+      } else if (act === 'ufake-reset') {
+        cur.fakes = []; /* هیچ کانفیگ ثابتی وجود ندارد — فهرست فقط خالی می‌شود */
+      } else {
+        cur.fakes.splice(idx, 1);
+      }
+      cur.fakeMode = 'custom';
+      closeM(); userModal(cur);
+      if (act === 'ufake-add') setTimeout(() => { const el = $('#ufkList .fk-row:last-child .fk-name'); if (el) el.focus(); }, 80);
+      else toast(act === 'ufake-del' ? 'حذف شد' : 'همه پاک شد — برای اعمال، ذخیره کنید', act === 'ufake-del' ? 'err' : 'info');
+      return;
+    }
+
     /* سوییچ کانفیگ فیک کاربر */
     const ufsw = e.target.closest('[data-ufake-sw]');
     if (ufsw) {
@@ -1941,6 +3028,10 @@
       else if (a === 'open') window.open(v, '_blank');
       else if (a === 'fmt') { S.fmt = v; render(); }
       else if (a === 'range') { S.range = v; render(); }
+      /* ═══ کنترل‌های نمودار: بازه و واحد ═══ */
+      else if (a === 'dash-range') { const c = dashChartCfg(); c.range = v; dashChartSave(c); render(); }
+      else if (a === 'dash-unit') { trySet(MON_UNIT_KEY, v); render(); }
+      else if (a === 'chart-unit') { trySet(MON_UNIT_KEY, v); render(); }
       else if (a === 'loglv') { S.tab.log = v; render(); }
       /* ═══════ اتصال‌های زنده — فقط بارخوانی ═══════
          عملیاتِ روی نشستِ زنده (قطعِ موقت، مسدودسازیِ آی‌پی، آزادسازی) کاملاً
@@ -2001,15 +3092,10 @@
         toast('حذف شد', 'err');
       }
       else if (a === 'fake-reset') {
-        S.d.settings.sub.fakes = [
-          { id: 'usage',     name: '📊 {usage}',        enabled: true,  proto: 'vless',  pin: true, pos: 1 },
-          { id: 'remaining', name: '🟢 {remaining}',    enabled: true,  proto: 'vless',  pin: true, pos: 2 },
-          { id: 'expiry',    name: '📅 {expiry}',       enabled: true,  proto: 'vless',  pin: true, pos: 3 },
-          { id: 'channel',   name: '📢 {channel}',      enabled: true,  proto: 'trojan', pin: true, pos: 4 },
-          { id: 'panel',     name: '⚙️ {panel} v{ver}', enabled: false, proto: 'trojan', pin: true, pos: 5 },
-        ];
+        /* هیچ کانفیگ ثابتی وجود ندارد — همه پاک می‌شود */
+        S.d.settings.sub.fakes = [];
         render(); refreshPreview();
-        toast('به پیش‌فرض بازگشت — برای اعمال، ذخیره کنید', 'info');
+        toast('همه پاک شد — برای اعمال، ذخیره کنید', 'info');
       }
       else if (a === 'user-new') { const r = await api('POST', '/api/users', { name: 'کاربر ' + (S.d.users.length + 1) }); if (r.user) { S.sel = r.user.id; await refresh(); userModal(S.d.users.find((u) => u.id === r.user.id) || r.user, true); } }
       else if (a === 'user-edit') userModal(S.d.users.find((u) => u.id === id));
@@ -2030,9 +3116,56 @@
         const out = $('#subOut');
         if (out) out.innerHTML = '<pre class="code"><div class="hd"><span>' + esc(S.fmt) + ' • ' + esc(tx.length) + ' کاراکتر</span><button class="btn sm" data-act="copy" data-v="' + esc(tx.slice(0, 100000)).replace(/"/g, '&quot;') + '">کپی</button></div>' + esc(tx.slice(0, 6000)) + (tx.length > 6000 ? '\n…' : '') + '</pre>';
       }
+      else if (a === 'exp-mode') {
+        /* تغییرِ حالتِ انقضا — چیپ فعال + فیلدِ پنهان + نمایش/پنهانِ تعداد یا تاریخ */
+        const hm = $('#mbox [data-p="expiryMode"]'); if (hm) hm.value = v;
+        const cur = $('#mbox [data-act="exp-mode"].on');
+        if (cur) { cur.classList.remove('on'); cur.style.background = ''; cur.style.borderColor = ''; cur.style.color = ''; }
+        t.classList.add('on'); t.style.background = 'var(--ac)'; t.style.borderColor = 'var(--ac)'; t.style.color = '#fff';
+        const row = $('#mbox #expQtyRow'), lbl = row && row.querySelector('.hint');
+        if (row) {
+          const show = v === 'hours' || v === 'days';
+          row.style.display = show ? 'flex' : 'none';
+          if (lbl) lbl.textContent = v === 'days' ? 'روز — از همین لحظه' : 'ساعت — از همین لحظه';
+        }
+        const drow = $('#mbox #expDateRow');
+        if (drow) drow.style.display = v === 'date' ? 'flex' : 'none';
+        return;
+      }
       else if (a === 'user-save') {
         busy(t, 'ذخیره');
         const patch = collect($('#mbox'));
+        /* ═══ انقضا: ترجمه‌ی حالتِ انتخابی به فیلدهای سرور ═══
+           expiryMode/expQty فقط برای همین لحظه‌اند و به سرور نمی‌روند. */
+        const expMode = patch.expiryMode || 'none', expQty = Math.max(1, Number(patch.expQty) || 1);
+        delete patch.expiryMode; delete patch.expQty;
+        const fuOn = !!patch.expiryFirstUse;
+        /* ═══ سهمیه: تبدیلِ مقدار + واحد به مگابایت (برای ورکر) ═══
+           ورکر quotaMB را می‌فهمد؛ گیگابایت × ۱۰۲۴ می‌شود.
+           ⚠️ کلمه‌ی «off» به‌عنوان کلیدِ حذفِ سهمیه استفاده می‌شود چون
+           عددِ ۰ صریح است و نمی‌توان «وارد نشده» را از «صفر» تشخیص داد. */
+        const qv = patch.quotaVal, qu = $('#mbox [data-ua="quotaUnit"]');
+        const qn = Number(qv);
+        if (qv === undefined || qv === '' || isNaN(qn) || qn <= 0) { patch.quotaMB = 'off'; }
+        else { patch.quotaMB = Math.round(((qu && qu.value === 'GB') ? qn * 1024 : qn) * 100) / 100; }
+        delete patch.quotaVal;
+        const dv = patch.dailyQuotaVal, du = $('#mbox [data-ua="dailyQuotaUnit"]');
+        const dn = Number(dv);
+        if (dv === undefined || dv === '' || isNaN(dn) || dn <= 0) { patch.dailyQuotaMB = 'off'; }
+        else { patch.dailyQuotaMB = Math.round(((du && du.value === 'GB') ? dn * 1024 : dn) * 100) / 100; }
+        delete patch.dailyQuotaVal;
+        if (expMode === 'none') { patch.expiryDays = 0; patch.expiryFirstUse = false; }
+        else if (expMode === 'hours') { patch.expiryHours = expQty; patch.expiryFirstUse = fuOn; }
+        else if (expMode === 'days') { patch.expiryDays = expQty; patch.expiryFirstUse = fuOn; }
+        else if (expMode === 'date') {
+          /* تاریخِ مشخص — مقدارِ datetime-local به timestamp تبدیل می‌شود؛
+             ورکر فیلدِ expiryAt را بدون expiryDays/expiryHours عیناً ذخیره می‌کند */
+          const ts = patch.expDate ? new Date(patch.expDate).getTime() : NaN;
+          delete patch.expDate;
+          if (!isNaN(ts) && ts > 0) { patch.expiryAt = ts; patch.expiryFirstUse = fuOn; if (!fuOn) patch.expiryArmed = true; }
+          else { toast('تاریخ انقضا نامعتبر است', 'err'); free(t); return; }
+        }
+        else { patch.expiryFirstUse = fuOn; }
         /* کانفیگ‌های فیک اختصاصی از DOM خوانده می‌شوند */
         patch.fakes = readUserFakes();
         patch.fakeMode = patch.fakeMode || 'inherit';
@@ -2040,39 +3173,50 @@
         free(t);
         if (r.ok) { toast('ذخیره شد'); closeM(); await refresh(); } else toast(r.error || 'خطا', 'err');
       }
-      else if (a === 'ufake-add') {
-        if (!Array.isArray(u.fakes)) u.fakes = [];
-        u.fakes.push({ id: 'uf_' + Date.now().toString(36), name: '', enabled: true, proto: 'vless', pos: u.fakes.length + 1 });
-        /* بازتولید مودال برای نمایش ردیف جدید */
-        const patch = collect($('#mbox')); patch.fakes = readUserFakes(); patch.fakeMode = u.fakeMode || 'custom';
-        Object.assign(u, patch); u.fakeMode = 'custom';
-        closeM(); userModal(u);
-        setTimeout(() => { const el = $('#ufkList .fk-row:last-child .fk-name'); if (el) el.focus(); }, 80);
-      }
-      else if (a === 'ufake-reset') {
-        u.fakes = [
-          { id: 'usage',     name: '📊 {usage}',        enabled: true,  proto: 'vless',  pos: 1 },
-          { id: 'remaining', name: '🟢 {remaining}',    enabled: true,  proto: 'vless',  pos: 2 },
-          { id: 'expiry',    name: '📅 {expiry}',       enabled: true,  proto: 'vless',  pos: 3 },
-          { id: 'channel',   name: '📢 {channel}',      enabled: true,  proto: 'trojan', pos: 4 },
-          { id: 'panel',     name: '⚙️ {panel} v{ver}', enabled: false, proto: 'trojan', pos: 5 },
-        ];
-        const patch = collect($('#mbox')); patch.fakes = readUserFakes(); patch.fakeMode = 'custom';
-        Object.assign(u, patch); u.fakeMode = 'custom';
-        closeM(); userModal(u);
-        toast('به پیش‌فرض بازگشت', 'info');
-      }
-      else if (a === 'ufake-del') {
-        if (!Array.isArray(u.fakes)) u.fakes = [];
-        const patch = collect($('#mbox')); patch.fakes = readUserFakes(); patch.fakeMode = 'custom';
-        Object.assign(u, patch); u.fakeMode = 'custom';
-        u.fakes.splice(Number(t.dataset.i), 1);
-        closeM(); userModal(u);
-        toast('حذف شد', 'err');
+      /* این سه عملیات بالاتر (پیش از نگهبان data-act) مدیریت می‌شوند تا مودال بسته/باز نشود */
+      else if (a === 'cfg-cnt') {
+        /* انتخابِ سریعِ تعدادِ کانفیگ — فیلدِ «سقف کانفیگ» را پر می‌کند */
+        const inp = $('#mbox [data-p="maxConfigs"]'); if (inp) inp.value = v;
+        $$('#mbox [data-act="cfg-cnt"]').forEach((x) => {
+          const on = String(x.dataset.v) === String(v);
+          x.classList.toggle('on', on);
+          x.style.background = on ? 'var(--ac)' : ''; x.style.borderColor = on ? 'var(--ac)' : ''; x.style.color = on ? '#fff' : '';
+        });
+        return;
       }
       else if (a === 'regen') { const inp = $('#mbox [data-p="uuid"]'); if (inp) { inp.value = crypto.randomUUID(); toast('UUID جدید ساخته شد', 'info'); } }
       else if (a === 'close') closeM();
-      else if (a === 'key-new') { const r = await api('POST', '/api/keys', {}); if (r.ok) { toast('کلید ساخته شد'); await refresh(); } else toast(r.error || 'خطا', 'err'); }
+      /* ═══ کلیدهای API ═══
+         قبلاً دکمه بدونِ هیچ پرسشی کلید می‌ساخت و دسترسی‌اش را سرور از روی
+         «زوج/فرد بودنِ شماره» تعیین می‌کرد — یعنی کلید می‌توانست بی‌خواستِ ادمین
+         فقط‌خواندنی از آب دربیاید و «کار نکند». حالا نام و دسترسی را خودِ ادمین
+         انتخاب می‌کند و کلید ساخته‌شده همان‌جا در کلیپ‌بورد کپی می‌شود. */
+      else if (a === 'key-new') {
+        if (((S.d && S.d.keys) || []).length >= 10) { toast('حداکثر ۱۰ کلید — اول یکی را حذف کنید', 'err'); return; }
+        keyShow();
+      }
+      else if (a === 'key-save') {
+        const nmEl = $('#keyName'), roEl = $('#keyRo');
+        const name = (nmEl && nmEl.value || '').trim();
+        busy(t, 'در حال ساخت');
+        const r = await api('POST', '/api/keys', { name, ro: !!(roEl && roEl.checked) });
+        free(t);
+        if (r && r.ok) {
+          closeM();
+          await refresh();
+          const k = (r.key && r.key.key) || '';
+          if (k) copy(k);                      // کلید فقط یک بار نشان داده می‌شود — همان‌جا کپی می‌شود
+          toast('کلید «' + ((r.key && r.key.name) || name) + '» ساخته شد' + (r.key && r.key.ro ? ' (فقط‌خواندنی)' : ' (دسترسی کامل)'));
+        } else toast((r && (r.msg || r.error)) || 'ساخته نشد', 'err');
+      }
+      else if (a === 'key-scope') {
+        const k = ((S.d && S.d.keys) || []).find((x) => x.id === id);
+        busy(t, 'در حال تغییر');
+        const r = await api('POST', '/api/keys', { id, ro: t.dataset.v === '1' });
+        free(t);
+        if (r && r.ok) { await refresh(); toast('«' + ((k && k.name) || 'کلید') + '» ' + (r.ro ? 'فقط‌خواندنی شد' : 'دسترسی کامل گرفت')); }
+        else toast((r && (r.msg || r.error)) || 'تغییر نکرد', 'err');
+      }
       else if (a === 'key-del') { const r = await api('DELETE', '/api/keys?id=' + id); if (r.ok) { toast('کلید حذف شد', 'err'); await refresh(); } }
       else if (a === 'panel-new') { const name = prompt('نام پنل:'); const url = prompt('آدرس ورکر:'); if (name && url) { await api('POST', '/api/panels', { name, url }); toast('پنل لینک شد'); await refresh(); } }
       else if (a === 'panel-del') { await api('DELETE', '/api/panels?id=' + id); toast('حذف شد', 'err'); await refresh(); }
@@ -2184,9 +3328,62 @@
         toast(r.ok ? 'همه‌ی بررسی‌ها سالم بود ✓' : 'مشکلی پیدا شد — جزئیات را ببینید', r.ok ? 'ok' : 'err');
         if (r.error) toast('خطای سرور: ' + r.error, 'err');
       }
-      else if (a === 'upd-check') { busy(t, 'بررسی'); const r = await api('POST', '/api/action', { act: 'update-check' }); free(t); toast(r.msg || 'بررسی شد', 'info'); await refresh(); }
-      else if (a === 'upd-deploy') { busy(t, 'نصب'); const r = await api('POST', '/api/action', { act: 'update-deploy' }); free(t); toast(r.msg || 'نصب شد'); await refresh(); }
-      else if (a === 'upd-rollback') { busy(t, 'بازگشت'); const r = await api('POST', '/api/action', { act: 'update-rollback' }); free(t); toast(r.msg || 'بازگشت انجام شد', 'info'); await refresh(); }
+      else if (a === 'upd-check') { busy(t, 'بررسی'); const r = await api('POST', '/api/action', { act: 'update-check' }); free(t); toast(r.msg || 'بررسی شد', r.newer ? 'info' : 'ok'); CF.last = null; await refresh(); }
+      else if (a === 'upd-verify') {
+        busy(t, 'اعتبارسنجی');
+        const r = await api('POST', '/api/action', { act: 'update-verify' });
+        free(t);
+        toast(r.msg || 'اعتبارسنجی انجام شد', r.ok ? 'ok' : 'err');
+        await refresh();
+      }
+      else if (a === 'cf-check') {
+        busy(t, 'بررسیِ توکن');
+        /* مقدارِ روی صفحه هم فرستاده می‌شود تا کاربر مجبور نباشد اول ذخیره کند */
+        const root0 = $('#view');
+        const vals = root0 ? collect(root0) : {};
+        const r = await api('POST', '/api/upd/cfcheck', {
+          token: vals['upd.cfToken'] || '', account: vals['upd.cfAccount'] || '', script: vals['upd.script'] || '',
+        });
+        free(t);
+        CF.last = r;
+        toast(r.msg || (r.ok ? 'توکن سالم است' : 'بررسی انجام شد'), r.ok ? 'ok' : 'err');
+        await refresh();
+      }
+      else if (a === 'upd-deploy') {
+        if (!confirm('نسخه‌ی تازه روی ورکر کلادفلر منتشر شود؟\n\nبایندینگ‌ها (D1/DO) از اسکریپتِ فعلی خوانده و حفظ می‌شوند، ولی این یک انتشارِ واقعی است.')) return;
+        busy(t, 'استقرار');
+        const revBefore = String(S.d.rev || '');
+        const r = await api('POST', '/api/action', { act: 'update-deploy' });
+        free(t);
+        toast(r.msg || 'استقرار انجام شد', r.ok ? 'ok' : 'err');
+        await refresh();
+        /* ⚠️ بعد از استقرار، ورکر چند ثانیه بعد با بیلدِ تازه بالا می‌آید.
+           قبلاً همین‌جا کار تمام می‌شد و بنرِ «نسخه‌ی تازه» تا بررسیِ بعدی
+           (یک ساعت بعد) می‌ماند؛ کاربر فکر می‌کرد آپدیت نشده. حالا تا
+           فعال‌شدنِ بیلدِ تازه دنبال می‌کنیم و نتیجه را صریح می‌گوییم. */
+        if (r.ok) {
+          busy(t, 'انتشار');
+          let live = String(S.d.rev || '') !== revBefore;
+          for (let i = 0; i < 10 && !live; i++) {
+            await new Promise((res) => setTimeout(res, 2500));
+            await refresh();
+            live = String(S.d.rev || '') !== revBefore;
+          }
+          free(t);
+          toast(live
+            ? 'نسخه‌ی فعال اکنون v' + S.d.version + ' است و بنرِ نسخه‌ی تازه پاک شد'
+            : 'انتشار در کلادفلر چند لحظه بیشتر طول کشید — کمی بعد «بررسیِ تازه» را بزنید', live ? 'ok' : 'info');
+          await refresh();
+        }
+      }
+      else if (a === 'upd-rollback') {
+        if (!confirm('به نسخه‌ی قبلی برگردیم؟ (آخرین کامیتی که version.json را عوض کرده روی ورکر منتشر می‌شود)')) return;
+        busy(t, 'بازگشت');
+        const r = await api('POST', '/api/action', { act: 'update-rollback' });
+        free(t);
+        toast(r.msg || 'بازگشت انجام شد', r.ok ? 'ok' : 'err');
+        await refresh();
+      }
       else if (a === 'rotate-path') { const r = await api('POST', '/api/action', { act: 'rotate-path' }); toast('مسیر جدید: /' + (r.path || '')); await refresh(); }
       /* ═════════════════════════════════════════════════════════════
          مرحله‌ی ۴ — انتخابگرِ پورت
@@ -2196,6 +3393,24 @@
       else if (a === 'ports-essential') { portSet(PORT_ESSENTIAL); toast('فقط پورت‌های ضروری فعال شد — ذخیره را فراموش نکنید', 'info'); }
       else if (a === 'ports-recommended') { portSet(PORTS_DEFAULT); toast('پورت‌های ضروری + پیشنهادی فعال شد', 'info'); }
       else if (a === 'ports-all') { portSet(PORTS_ALL); toast('همه‌ی پورت‌های پشتیبانی‌شده فعال شد', 'info'); }
+      /* ═══════ اسکنر — بازگردانی به پیش‌فرض ═══════ */
+      else if (a === 'scan-ports-config') {
+        const ta = $('#view [data-p="scanner.ports"]');
+        if (ta) ta.value = '';
+        $$('#scanPortChips [data-scan-port]').forEach((b) => { b.style.borderColor = ''; b.style.background = ''; b.style.opacity = '.45'; });
+        toast('پورت‌ها پاک شد — اسکن روی پورت‌های خودِ کانفیگ‌های کاربر انجام می‌شود', 'info');
+      }
+      else if (a === 'scan-ranges-clear') {
+        const ta = $('#view [data-p="scanner.ranges"]');
+        if (ta) ta.value = '';
+        toast('رنج‌های دلخواه پاک شد — فقط رنج‌های رسمی کلودفلر اسکن می‌شوند', 'info');
+      }
+      /* ═══════ اسکنر — اجرا از خودِ پنل ═══════
+         دکمه‌ی شروع همان دکمه در حین اجرا به «توقف» تبدیل می‌شود، پس هر دو
+         حالت به یک اکشن می‌رسند. */
+      else if (a === 'panel-scan-start') PANEL_SCAN.start();
+      else if (a === 'panel-scan-apply') await PANEL_SCAN.apply();
+      else if (a === 'panel-scan-reset') PANEL_SCAN.reset();
 
       /* ═════════════════════════════════════════════════════════════
          مرحله‌ی ۴ — تغییر رمز عبور
@@ -2305,6 +3520,14 @@
       else if (a === 'exit-new') { EX.form = exitBlank(); EX.test = null; exShow(); const nm = $('#ex_link'); if (nm) nm.focus(); }
       else if (a === 'exit-cancel') { EX.form = null; exShow(); }
       else if (a === 'exit-reload') { busy(t, 'بارخوانی'); EX.test = null; await exLoad(); free(t); }
+      else if (a === 'exit-all') {
+        const v = t.dataset.v;
+        busy(t, 'اعمال');
+        const r = await api('POST', '/api/exits', { op: 'select-all', mode: v });
+        free(t);
+        toast(r.msg || 'اعمال شد', r.ok ? 'ok' : 'err');
+        await exLoad();
+      }
       else if (a === 'exit-edit') {
         const srv = ((EX.data && EX.data.servers) || []).find((x) => x.id === id);
         EX.form = srv ? exitRead(srv) : exitBlank();
@@ -2320,6 +3543,21 @@
         if (r && r.ok) { EX.form = null; await exLoad(); toast(r.msg || 'سرور خروجی ذخیره شد', 'ok'); }
         else toast((r && r.error) || 'ذخیره انجام نشد', 'err');
       }
+      else if (a === 'exit-strict') {
+        busy(t, 'در حال ذخیره');
+        const cur = !!((EX.data || {}).strict);
+        const r = await api('POST', '/api/exits', { op: 'strict', enabled: !cur });
+        free(t);
+        if (r && r.ok) { await exLoad(); toast(r.msg || 'وضعیتِ حالتِ سخت‌گیر ذخیره شد', 'ok'); }
+        else toast((r && r.error) || 'ذخیره انجام نشد', 'err');
+      }
+      else if (a === 'exit-ip') {
+        busy(t, 'در حال حلِ آی‌پی');
+        const r = await api('POST', '/api/exits', { op: 'resolve-ip', id });
+        free(t);
+        if (r && r.ok) { await exLoad(); toast(r.msg || ('آی‌پیِ خروجی: ' + r.ip), 'ok'); }
+        else toast((r && r.error) || 'حلِ آی‌پی انجام نشد', 'err');
+      }
       else if (a === 'exit-del') {
         const srv = ((EX.data && EX.data.servers) || []).find((x) => x.id === id);
         if (!confirm('سرور خروجیِ «' + ((srv && srv.name) || id) + '» حذف شود؟\nکانفیگ‌هایی که به آن وابسته بودند مستقیم می‌شوند.')) return;
@@ -2328,6 +3566,48 @@
         free(t);
         if (r && r.ok) { EX.form = null; EX.test = null; await exLoad(); toast(r.msg || 'حذف شد', 'ok'); }
         else toast((r && r.error) || 'حذف انجام نشد', 'err');
+      }
+      else if (a === 'exit-master') {
+        busy(t, 'در حال ذخیره');
+        const cur = !((EX.data || {}).enabled !== false);
+        const r = await api('POST', '/api/exits', { op: 'master', enabled: cur });
+        free(t);
+        if (r && r.ok) { EX.form = null; await exLoad(); toast(r.msg || 'وضعیتِ مسیر خروجی ذخیره شد', 'ok'); }
+        else toast((r && r.error) || 'ذخیره انجام نشد', 'err');
+      }
+      else if (a === 'exit-onoff') {
+        const srv = ((EX.data && EX.data.servers) || []).find((x) => x.id === id);
+        if (!srv) { toast('سرور پیدا نشد — فهرست را بارخوانی کنید', 'err'); return; }
+        const cur = srv.enabled !== false;
+        const goOn = !cur;
+        if (!confirm('سرور خروجیِ «' + srv.name + '» ' + (goOn
+          ? 'فعال شود؟' + '\nکانفیگ‌هایی که قبلاً آن را انتخاب کرده بودند دوباره از آن عبور می‌کنند.'
+          : 'غیرفعال شود؟ (توقفِ موقت)' + '\nتا فعال‌کردنِ دوباره هیچ کانفیگی از آن عبور نمی‌کند؛ انتخاب‌ها پاک نمی‌شوند.'))) return;
+        busy(t, 'در حال ذخیره');
+        const r = await api('POST', '/api/exits', { op: 'toggle', id, enabled: goOn });
+        free(t);
+        if (r && r.ok) { EX.form = null; await exLoad(); toast(r.msg || 'وضعیتِ سرور ذخیره شد', 'ok'); }
+        else toast((r && r.error) || 'ذخیره انجام نشد', 'err');
+      }
+      else if (a === 'proxy-test') {
+        busy(t, 'در حال تست از ورکر');
+        const r = await api('POST', '/api/proxyips/test', {});
+        free(t);
+        const box = $('#proxyOut'), stBox = $('#proxyStat');
+        if (box) {
+          const rows = (r && Array.isArray(r.results)) ? r.results : [];
+          box.innerHTML = rows.length
+            ? rows.map((x) => '<div class="row-item">' + icon(x.ok ? 'fa-circle-check' : 'fa-circle-xmark') +
+                '<div class="grow"><span class="mono">' + esc(x.input) + '</span>' +
+                (x.error ? '<div class="cell-sub">' + esc(x.error) + '</div>' : '') + '</div>' +
+                '<span class="badge ' + (x.ok ? 'ok' : 'bad') + '">' + (x.ok ? fa(x.ms) + ' ms' : 'ناموفق') + '</span></div>').join('')
+            : '<div class="empty">پاسخی نیامد</div>';
+        }
+        if (stBox && r && r.stats) {
+          stBox.innerHTML = '<div class="hint">در مسیر تونل: تلاش ' + fa(r.stats.attempts) + ' • وصلِ موفق ' + fa(r.stats.connects) + ' • خطا ' + fa(r.stats.fails) +
+            (r.stats.lastError ? ' — آخرین خطا: <span class="mono">' + esc(r.stats.lastError) + '</span>' : '') + '</div>';
+        }
+        toast((r && r.msg) || 'تست انجام شد', (r && r.reachable > 0) ? 'ok' : 'err');
       }
       else if (a === 'exit-test') {
         /* فرم دیگر فیلدی ندارد که بشود بدون ذخیره تستش کرد، پس تست فقط روی
@@ -2368,6 +3648,11 @@
     /* انتخابِ خروجی برای هر کانفیگ — بر پیش‌فرضِ سراسری مقدم است.
        مقدارِ select یا inherit/direct است یا شناسه‌ی یکی از سرورها. */
     if (e.target.id && e.target.id.indexOf('exSel-') === 0) {
+      if (!EX.data || EX.data.enabled === false) {
+        await exLoad();
+        toast('مسیرِ خروجی خاموش است — اول آن را از دکمه‌ی «فعال‌کردن» روشن کنید', 'info');
+        return;
+      }
       const uid = e.target.id.slice(6);
       const val = String(e.target.value || 'inherit');
       const named = val === 'inherit' || val === 'direct';
@@ -2540,7 +3825,7 @@
       '<div><h3>کانفیگ‌های فیک (اطلاعاتی)</h3>' +
       '<p>در ابتدای لیست ساب کلاینت نمایش داده می‌شوند تا مصرف و انقضا در برنامه دیده شود</p></div>' +
       '<div class="acts">' +
-      '<button class="btn sm" data-act="fake-reset" title="بازگشت به ۵ کانفیگ پیش‌فرض">' + icon('fa-rotate-left') + ' پیش‌فرض</button>' +
+      '<button class="btn sm" data-act="fake-reset" title="پاک‌کردن همه‌ی کانفیگ‌های فیک">' + icon('fa-eraser') + ' پاک‌کردن همه</button>' +
       '<button class="btn sm s" data-act="fake-add">' + icon('fa-plus') + ' افزودن</button>' +
       '<button class="btn sm p" data-act="fake-save">' + icon('fa-floppy-disk') + ' ذخیره</button>' +
       '</div></header>' +
@@ -2652,7 +3937,7 @@
       '</div></div>' +
       '<div class="btn-row" style="margin-bottom:8px">' +
       '<button class="btn sm s" data-act="ufake-add">' + icon('fa-plus') + ' افزودن</button>' +
-      '<button class="btn sm" data-act="ufake-reset">' + icon('fa-rotate-left') + ' پیش‌فرض</button></div>' +
+      '<button class="btn sm" data-act="ufake-reset">' + icon('fa-eraser') + ' پاک‌کردن همه</button></div>' +
       '<div class="fk-list" id="ufkList">' +
       (fakes.map((f, i) => userFakeRow(f, i)).join('') || '<div class="empty">موردی نیست</div>') +
       '</div>';
@@ -2691,6 +3976,48 @@
     return out;
   }
 
+  /* ═══ بخشِ انقضا در مودال کاربر ═══
+     سه حالت: «نامحدود»، «ساعت» (مثلاً ۱ یا ۲ ساعته)، «روز» + حالتِ ویژه‌ی
+     «تاریخِ مشخص». به‌علاوه یک کلید برای «شروع انقضا از اولین استفاده»:
+     وقتی روشن باشد expiryAt الان نوشته نمی‌شود؛ اولین بار که کاربر واقعاً
+     وصل شد، ورکر از همان لحظه انقضا را فعال می‌کند. */
+  function expirySection(u) {
+    const hasExpiry = !!u.expiryAt;
+    const remainH = hasExpiry ? Math.max(1, Math.ceil((u.expiryAt - Date.now()) / 3600000)) : 0;
+    const remainD = hasExpiry ? Math.max(1, Math.ceil((u.expiryAt - Date.now()) / 86400000)) : 0;
+    const fu = !!u.expiryFirstUse;
+    /* حالتِ پیش‌فرض: اگر کاربر انقضا دارد، «تاریخ مشخص» فعال است تا تاریخِ دقیق
+       قابل ویرایش باشد — قبلاً این حالت هرگز انتخاب نمی‌شد و هیچ فیلدی نشان داده نمی‌شد. */
+    const mode = !hasExpiry ? 'none' : (remainD >= 1 && remainH >= remainD * 24 ? 'days' : 'hours');
+    const qty = mode === 'days' ? remainD : remainH;
+    /* مقدارِ فیلدِ تاریخ — همین حالا + ۳۰ روز برای کاربرِ بدون انقضا */
+    const dtLocal = (ts) => { const d = new Date(ts); d.setSeconds(0, 0);
+      const p = (n) => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes()); };
+    const curDate = hasExpiry ? dtLocal(u.expiryAt) : dtLocal(Date.now() + 30 * 86400000);
+    const segBtn = (k, l) => '<button type="button" class="chip' + (mode === k ? ' on" style="background:var(--ac);border-color:var(--ac);color:#fff"' : '"') + ' data-act="exp-mode" data-v="' + k + '">' + l + '</button>';
+    return '<div class="um-sec"><div class="um-sec-h">' + icon('fa-hourglass-half') + '<span>انقضا</span></div>' +
+      '<input type="hidden" data-p="expiryMode" value="' + mode + '">' +
+      '<div class="seg" style="flex-wrap:wrap">' +
+        segBtn('none', 'نامحدود') + segBtn('hours', 'ساعتی') + segBtn('days', 'روزی') + segBtn('date', 'تاریخ مشخص') +
+      '</div>' +
+      '<div id="expQtyRow" style="display:' + (mode === 'hours' || mode === 'days' ? 'flex' : 'none') + ';align-items:center;gap:10px;margin-top:10px">' +
+        '<input type="number" min="1" step="1" data-p="expQty" value="' + esc(qty || 1) + '" style="max-width:110px">' +
+        '<span class="hint" style="margin:0">' + (mode === 'days' ? 'روز — از همین لحظه' : 'ساعت — از همین لحظه') + '</span>' +
+      '</div>' +
+      /* ═══ انتخابگرِ تاریخِ مشخص — قبلاً وجود نداشت و «هیچی» نشان نمی‌داد ═══ */
+      '<div id="expDateRow" style="display:' + (mode === 'date' ? 'flex' : 'none') + ';align-items:center;gap:10px;margin-top:10px">' +
+        '<input type="datetime-local" data-p="expDate" value="' + esc(curDate) + '" style="max-width:230px" class="mono">' +
+        '<span class="hint" style="margin:0">تاریخ و ساعتِ دقیقِ انقضا</span>' +
+      '</div>' +
+      '<div style="margin-top:12px">' +
+        field({ p: 'expiryFirstUse', l: 'شروع انقضا از اولین استفاده', t: 'sw' }, fu) +
+        '<div class="hint" style="margin-top:6px">روشن باشد → مدتِ انتخابی (ساعت/روز) از <b>اولین اتصالِ واقعی</b> کاربر شمرده می‌شود؛ تا آن لحظه انقضا فعال نیست و در کلاینت «نامحدود» دیده می‌شود.</div>' +
+      '</div>' +
+      (hasExpiry ? '<div class="hint" style="margin-top:6px">انقضای فعلی: ' + new Date(u.expiryAt).toLocaleString('fa-IR') + (fu && !u.expiryArmed ? ' — هنوز شروع نشده (منتظر اولین اتصال)' : ' (' + expTxt(u.expiryAt - Date.now()) + ' مانده)') + '</div>' : '') +
+      '</div>';
+  }
+
   function userModal(u, isNew) {
     if (!u) return;
     const v = (p) => {
@@ -2701,9 +4028,10 @@
       return val;
     };
     const F = (f) => field(f, v(f.p));
+    /* رشته‌های آماده (HTML) بدون تغییر رد می‌شوند — فقط اشیاء field پردازش می‌شوند */
     const sec = (title, icn, fields, cols) =>
       '<div class="um-sec"><div class="um-sec-h">' + icon(icn) + '<span>' + title + '</span></div>' +
-      '<div class="um-grid ' + (cols || '') + '">' + fields.map(F).join('') + '</div></div>';
+      '<div class="um-grid ' + (cols || '') + '">' + fields.map((f) => (typeof f === 'string' ? f : F(f))).join('') + '</div></div>';
 
     modal(
       '<header><span class="ic">' + icon('fa-user') + '</span>' +
@@ -2721,14 +4049,34 @@
         { p: 'secret', l: 'رمز Trojan (خام)', t: 'text', mono: 1, h: 'کلاینت خودش sha224 می‌گیرد' },
       ], 'two') +
       sec('سهمیه و محدودیت', 'fa-database', [
-        { p: 'quotaGB', l: 'سهمیه کل (GB)', t: 'num', h: '۰ = نامحدود' },
-        { p: 'dailyQuotaMB', l: 'سهمیه روزانه (MB)', t: 'num', h: '۰ = بدون سقف' },
-        { p: 'expiryDays', l: 'انقضا (روز)', t: 'num', h: '۰ = نامحدود' },
-        /* محدودیت دستگاهی حذف شد — فقط IP واقعی کلاینت شمرده می‌شود */
-        { p: 'ipLimit', l: 'سقف IP همزمان', t: 'num', h: '۰ = پیش‌فرض سراسری • بیشینه‌ی IPهای همزمان' },
+        /* ═══ انتخابِ حجم با مگابایت و گیگابایت (به‌جای فقط گیگابایت) ═══
+           واحدِ انتخابی در data-ua ذخیره می‌شود؛ موقعِ ذخیره به مگابایت
+           تبدیل و به سرور فرستاده می‌شود (quotaMB). */
+        '<div class="f"><span>سهمیه کل</span>' +
+          '<div style="display:flex;gap:6px;align-items:center">' +
+          '<input type="number" min="0" step="any" data-p="quotaVal" value="' + esc(u.quotaMB ? (u.quotaMB >= 1024 ? Math.round(u.quotaMB / 1024 * 100) / 100 : u.quotaMB) : (Number(u.quotaGB) || 0) * 1024) + '">' +
+          '<select data-ua="quotaUnit"><option value="MB"' + (u.quotaMB && u.quotaMB < 1024 ? ' selected' : '') + '>مگابایت (MB)</option><option value="GB"' + (!u.quotaMB || u.quotaMB >= 1024 ? ' selected' : '') + '>گیگابایت (GB)</option></select>' +
+          '</div>' +
+          '<div class="hint" style="margin-top:5px">۰ = نامحدود • می‌توانید بر حسب مگابایت یا گیگابایت وارد کنید</div></div>',
+        '<div class="f"><span>سهمیه روزانه</span>' +
+          '<div style="display:flex;gap:6px;align-items:center">' +
+          '<input type="number" min="0" step="any" data-p="dailyQuotaVal" value="' + esc(Number(u.dailyQuotaMB) || 0) + '">' +
+          '<select data-ua="dailyQuotaUnit"><option value="MB" selected>مگابایت (MB)</option><option value="GB">گیگابایت (GB)</option></select>' +
+          '</div>' +
+          '<div class="hint" style="margin-top:5px">۰ = بدون سقف</div></div>',
+        { p: 'ipLimit', l: 'سقف IP همزمان', t: 'num', h: '۰ = پیش‌فرض سراسری • بیشینه‌ی IPهای همزمان (اتصالِ بازِ بی‌ترافیک هم شمرده می‌شود)' },
         { p: 'maxConfigs', l: 'سقف کانفیگ', t: 'num', h: '۰ = پیش‌فرض' },
         { p: 'speedLimit', l: 'سقف سرعت (Mbps)', t: 'num', h: '۰ = نامحدود' },
       ], 'three') +
+      /* ═══ انتخابگرِ سریعِ تعدادِ کانفیگ — قبلاً فقط ورودیِ عددی بود ═══ */
+      '<div class="um-sec"><div class="um-sec-h">' + icon('fa-list-ol') + '<span>تعداد کانفیگ</span></div>' +
+      '<div class="chips" style="flex-wrap:wrap">' +
+        [0, 5, 10, 12, 15, 20, 30, 50].map((n) =>
+          '<button type="button" class="chip' + ((Number(u.maxConfigs) || 0) === n ? ' on" style="background:var(--ac);border-color:var(--ac);color:#fff"' : '"') +
+          ' data-act="cfg-cnt" data-v="' + n + '">' + (n === 0 ? 'پیش‌فرض پنل' : n) + '</button>').join('') +
+      '</div>' +
+      '<div class="hint" style="margin-top:6px">تعداد کانفیگ‌هایی که در ساب این کاربر ساخته می‌شود — «پیش‌فرض پنل» از Node limit تنظیمات پیروی می‌کند. انتخابِ سریع = پر شدن فیلدِ «سقف کانفیگ».</div></div>' +
+      expirySection(u) +
       sec('نام‌گذاری و تنظیمات اختصاصی', 'fa-gear', [
         { p: 'mode', l: 'حالت پروتکل', t: 'sel', o: ['inherit', 'alpha', 'beta', 'both'], lbls: { inherit: 'از پنل', alpha: 'Alpha — VLESS', beta: 'Beta — Trojan', both: 'Both' } },
         { p: 'fakeMode', l: 'کانفیگ‌های فیک', t: 'sel', o: ['inherit', 'custom', 'off'], lbls: { inherit: 'از پنل', custom: 'اختصاصی', off: 'خاموش' } },
@@ -2799,8 +4147,8 @@
   render();
   window.__sgBooted = true;
   refresh();
-  setInterval(() => { if (S.token && (S.view === 'dash' || S.view === 'monitor')) refresh(); }, 20000);
-  /* اتصال‌های زنده هر ۱۰ ثانیه به‌روز می‌شود — با بارخوانیِ هدفمند (cnLoad)،
+  setInterval(() => { if (S.token && (S.view === 'dash' || S.view === 'monitor' || S.view === 'logs' || S.view === 'users')) refresh(); }, 5000);
+  /* اتصال‌های زنده هر ۳ ثانیه به‌روز می‌شود (آنی/نزدیک‌آنی برای سقفِ تک‌کاربره) — با بارخوانیِ هدفمند (cnLoad)،
      نه رندرِ کل صفحه، تا جدول نپرد و فیلتر/مکانِ اسکرول از بین نرود. */
-  setInterval(() => { if (S.token && S.view === 'conns') cnLoad(); }, 10000);
+  setInterval(() => { if (S.token && S.view === 'conns') cnLoad(); }, 3000);
 })();
